@@ -992,6 +992,8 @@ export function SalesStaffTab({ filter }: Props) {
             {payRowsWithCosmetic.map((s) => {
               // 순 실적 = 치료 매출(화장품 제외) − 환불. 화장품 매출은 별도 컬럼(합산 X).
               const net = s.treatmentRevenue - s.refundAmount;
+              // 행 role 판정(치료사 vs 장비) — 렌더 내 중복 인라인 비교 방지.
+              const isTherapist = s.role === 'therapist';
               return (
                 <tr
                   key={`${s.role}:${s.staffId}`}
@@ -1000,7 +1002,7 @@ export function SalesStaffTab({ filter }: Props) {
                 >
                   <td className="px-3 py-2 font-medium">{s.staffName}</td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    {s.role === 'therapist' ? '치료사' : '장비명'}
+                    {isTherapist ? '치료사' : '장비명'}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-center">{s.count}</td>
                   {/* T-20260522-foot-DESIGNATED-THERAPIST AC-4 */}
@@ -1008,7 +1010,7 @@ export function SalesStaffTab({ filter }: Props) {
                     data-testid={`sales-staff-designated-cell-${s.role}-${s.staffId}`}
                     className="px-3 py-2 tabular-nums text-center"
                   >
-                    {s.role === 'therapist'
+                    {isTherapist
                       ? renderDesignatedCount(
                           s.staffId,
                           s.staffName,
@@ -1024,7 +1026,7 @@ export function SalesStaffTab({ filter }: Props) {
                   <td
                     className="px-3 py-2 tabular-nums text-right"
                   >
-                    {s.role === 'therapist'
+                    {isTherapist
                       ? renderCosmeticCell(
                           s.staffId,
                           s.staffName,
