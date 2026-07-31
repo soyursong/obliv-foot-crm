@@ -7912,7 +7912,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         data-testid="healthq-doc-window-btn"
                         onClick={() => openHealthQDocumentWindow(healthQResults[0], {
                           customerName: customer.name,
-                          chartNumber: customer.chart_number != null ? `F-${String(customer.chart_number).padStart(6, '0')}` : null,
+                          // T-20260731-foot-FOOTQST-POPUPWIN-CHARTNO-DUP: chart_number 저장값은 이미 'F-XXXX' 접두 포함(DB 트리거 채번).
+                          //   기존 `F-${padStart}` 재접두 → 이중('F-F-...') 회귀. 메인 화면과 동일 SSOT 포맷터(chartNoDisplay) 사용.
+                          chartNumber: chartNoDisplay(customer.chart_number),
                         })}
                         className="flex-1 rounded border border-[#C5BEA3] bg-[#F5EFE7] py-1 text-[10px] font-medium text-[#5C3D1E] hover:bg-[#EFE7DA] transition"
                       >별도창</button>
@@ -10096,7 +10098,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                               data-testid="healthq-doc-window-btn-modal"
                               onClick={() => openHealthQDocumentWindow(r, {
                                 customerName: customer.name,
-                                chartNumber: customer.chart_number != null ? `F-${String(customer.chart_number).padStart(6, '0')}` : null,
+                                // T-20260731-foot-FOOTQST-POPUPWIN-CHARTNO-DUP: 재접두('F-F-...') 회귀 제거 → 메인과 동일 SSOT(chartNoDisplay).
+                                chartNumber: chartNoDisplay(customer.chart_number),
                               })}
                               className="rounded border border-[#C5BEA3] bg-[#F5EFE7] px-3 py-1 text-[11px] font-medium text-[#5C3D1E] hover:bg-[#EFE7DA] transition"
                             >별도창(인쇄용)으로 보기</button>
