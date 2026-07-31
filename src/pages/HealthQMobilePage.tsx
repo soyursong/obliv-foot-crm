@@ -351,6 +351,15 @@ function SectionHeader({ num, title, sub }: { num: number; title: string; sub?: 
   );
 }
 
+// ── T-20260731-foot-FOOTQST-PHOTO-2SLOT-LR-BOTTOM: 발 좌/우 슬롯 ─────────────────
+//   DA pin(MSG-20260731-154603-u7l6): 오른발=Right=R / 왼발=Left=L (swap 금지, 대문자 canonical).
+type FootSide = 'R' | 'L';
+type SlotPhoto = { file: File; url: string };
+const FOOT_SLOTS: { side: FootSide; ko: string; en: string }[] = [
+  { side: 'R', ko: '오른발', en: 'Right foot' },
+  { side: 'L', ko: '왼발',  en: 'Left foot' },
+];
+
 // ── 메인 컴포넌트 ──────────────────────────────────────────────────────────────
 export default function HealthQMobilePage() {
   const { token } = useParams<{ token: string }>();
@@ -359,8 +368,10 @@ export default function HealthQMobilePage() {
   const [info,     setInfo]     = useState<TokenInfo | null>(null);
   const [data,     setData]     = useState<HealthQData>(emptyData);
   const [errorMsg, setErrorMsg] = useState('');
-  // T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 발/발톱 사진 첨부(선택). Pattern B — edge fn 서명 URL 업로드.
-  const [photos,   setPhotos]   = useState<{ file: File; url: string }[]>([]);
+  // T-20260731-foot-FOOTQST-PHOTO-2SLOT-LR-BOTTOM: 발 사진 첨부(선택) — 오른발(R)/왼발(L) 각 1장 슬롯.
+  //   Pattern B — edge fn(health-q-photo-sign) 서명 URL 업로드. foot_side 는 제출 RPC 로 laterality 연결.
+  const [footPhotos, setFootPhotos] =
+    useState<Record<FootSide, SlotPhoto | null>>({ R: null, L: null });
 
   // ── 토큰 검증 ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -452,15 +463,19 @@ export default function HealthQMobilePage() {
         // 스토리지 업로드 실패는 무시 — DB 저장이 주 경로
       }
 
-      // T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 첨부사진 Pattern B 업로드 → paths 수집.
+      // T-20260731-foot-FOOTQST-PHOTO-2SLOT: 오른발(R)/왼발(L) 슬롯 사진 Pattern B 업로드 → paths 수집.
       //   anon 은 버킷 직접 GRANT 없음 → edge fn(token 검증)이 token-경로 한정 서명 URL 발급 →
-      //   uploadToSignedUrl 로만 업로드. 제출 RPC(p_photos)가 result 연관 + path prefix 재검증.
-      const photoPayload: { path: string; content_type: string; byte_size: number }[] = [];
-      if (photos.length > 0) {
+      //   uploadToSignedUrl 로만 업로드. 제출 RPC(p_photos[].foot_side)가 result 연관 + laterality + path prefix 재검증.
+      //   업로드 순서 = FOOT_SLOTS 순서(R→L) → signRes.uploads[i] ↔ slotEntries[i] index-정렬 유지.
+      const photoPayload: { path: string; content_type: string; byte_size: number; foot_side: FootSide }[] = [];
+      const slotEntries = FOOT_SLOTS
+        .map((s) => ({ side: s.side, photo: footPhotos[s.side] }))
+        .filter((e): e is { side: FootSide; photo: SlotPhoto } => e.photo !== null);
+      if (slotEntries.length > 0) {
         const { data: signRes, error: signErr } = await anonClient.functions.invoke('health-q-photo-sign', {
           body: {
             token,
-            files: photos.map((p) => ({ content_type: p.file.type, byte_size: p.file.size })),
+            files: slotEntries.map((e) => ({ content_type: e.photo.file.type, byte_size: e.photo.file.size })),
           },
         });
         if (signErr || !signRes?.ok) {
@@ -471,11 +486,17 @@ export default function HealthQMobilePage() {
         }[];
         for (let i = 0; i < uploads.length; i++) {
           const u = uploads[i];
+          const entry = slotEntries[i];
           const { error: upErr } = await anonClient.storage
             .from(signRes.bucket as string)
-            .uploadToSignedUrl(u.path, u.upload_token, photos[i].file, { contentType: photos[i].file.type });
+            .uploadToSignedUrl(u.path, u.upload_token, entry.photo.file, { contentType: entry.photo.file.type });
           if (upErr) throw new Error(`사진 업로드 실패: ${upErr.message}`);
-          photoPayload.push({ path: u.path, content_type: photos[i].file.type, byte_size: photos[i].file.size });
+          photoPayload.push({
+            path: u.path,
+            content_type: entry.photo.file.type,
+            byte_size: entry.photo.file.size,
+            foot_side: entry.side,
+          });
         }
       }
 
@@ -500,29 +521,29 @@ export default function HealthQMobilePage() {
       setErrorMsg((e as Error).message);
       setStep('error');
     }
-  }, [token, info, data, photos]);
+  }, [token, info, data, footPhotos]);
 
   const set = (k: keyof HealthQData, v: unknown) =>
     setData((prev) => ({ ...prev, [k]: v }));
   const d = data;
 
-  // ── T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 사진 첨부 핸들러 (최대 10장) ────────
-  const addPhotos = (files: FileList | null) => {
-    if (!files) return;
-    // 입력창 value='' 리셋 전에 File 객체를 즉시 materialize(FileList 는 라이브 참조).
-    const picked = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    if (picked.length === 0) return;
-    setPhotos((prev) => {
-      const room = Math.max(0, 10 - prev.length);
-      const next = picked.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
-      return [...prev, ...next];
+  // ── T-20260731-foot-FOOTQST-PHOTO-2SLOT: 슬롯(오른발/왼발)별 사진 설정/해제 ────
+  //   슬롯당 1장(재선택 시 교체). 입력창 value='' 리셋 전에 File 을 즉시 materialize.
+  const setSlotPhoto = (side: FootSide, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith('image/')) return;
+    setFootPhotos((prev) => {
+      const existing = prev[side];
+      if (existing) URL.revokeObjectURL(existing.url);
+      return { ...prev, [side]: { file, url: URL.createObjectURL(file) } };
     });
   };
-  const removePhoto = (idx: number) => {
-    setPhotos((prev) => {
-      const target = prev[idx];
-      if (target) URL.revokeObjectURL(target.url);
-      return prev.filter((_, i) => i !== idx);
+  const clearSlotPhoto = (side: FootSide) => {
+    setFootPhotos((prev) => {
+      const existing = prev[side];
+      if (existing) URL.revokeObjectURL(existing.url);
+      return { ...prev, [side]: null };
     });
   };
 
@@ -1095,65 +1116,62 @@ export default function HealthQMobilePage() {
           </section>
         )}
 
-        {/* ── 사진 첨부 (선택) — T-20260731-foot-FOOTQST-PHOTO-UPLOAD ─────────────── */}
+        {/* ── 발 사진 첨부 (선택) — 오른발/왼발 2슬롯 · 맨 하단 — T-20260731-foot-FOOTQST-PHOTO-2SLOT ── */}
         <section className="space-y-4 rounded-2xl p-4"
-          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
+          style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}
+          data-testid="hq-foot-photo-section">
           <div>
             <h2 className="text-base font-semibold" style={{ color: C.dark }}>
-              {tt('발 · 발톱 사진 첨부', 'Attach foot / nail photos')}
+              {tt('발 사진 첨부', 'Attach foot photos')}
               <span className="text-xs font-normal ml-1" style={{ color: C.mutedText }}>
                 {tt('(선택)', '(optional)')}
               </span>
             </h2>
             <p className="text-xs mt-0.5" style={{ color: C.mutedText }}>
-              {tt('고민되는 부위를 촬영해 첨부해주세요. 최대 10장.',
-                  'Photograph the area of concern and attach. Up to 10 photos.')}
+              {tt('오른발 · 왼발을 각각 한 장씩 촬영해 첨부해주세요.',
+                  'Attach one photo each for the right and left foot.')}
             </p>
           </div>
 
-          {photos.length > 0 && (
-            <div className="grid grid-cols-3 gap-2" data-testid="hq-photo-grid">
-              {photos.map((p, i) => (
-                <div key={p.url} className="relative aspect-square overflow-hidden rounded-xl border"
-                  style={{ borderColor: C.border }}>
-                  <img src={p.url} alt="" className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(i)}
-                    aria-label={tt('사진 삭제', 'Remove photo')}
-                    className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white text-lg leading-none"
-                  >
-                    ×
-                  </button>
+          <div className="grid grid-cols-2 gap-3">
+            {FOOT_SLOTS.map((slot) => {
+              const p = footPhotos[slot.side];
+              return (
+                <div key={slot.side} className="space-y-1.5" data-testid={`hq-foot-slot-${slot.side}`}>
+                  <p className="text-sm font-semibold text-center" style={{ color: C.dark }}>
+                    {tt(slot.ko, slot.en)}
+                  </p>
+                  {p ? (
+                    <div className="relative aspect-square overflow-hidden rounded-2xl border"
+                      style={{ borderColor: C.border }}>
+                      <img src={p.url} alt={tt(slot.ko, slot.en)} className="h-full w-full object-cover"
+                        data-testid={`hq-foot-thumb-${slot.side}`} />
+                      <button
+                        type="button"
+                        onClick={() => clearSlotPhoto(slot.side)}
+                        aria-label={tt(`${slot.ko} 사진 삭제`, `Remove ${slot.en} photo`)}
+                        className="absolute top-1 right-1 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white text-lg leading-none"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed text-sm font-semibold active:scale-[0.99] transition"
+                      style={{ borderColor: C.borderActive, color: C.primary }}
+                    >
+                      <span className="text-2xl">📷</span>
+                      {tt('사진 추가', 'Add photo')}
+                      <input
+                        type="file" accept="image/*" className="hidden"
+                        onChange={(e) => { setSlotPhoto(slot.side, e.target.files); e.currentTarget.value = ''; }}
+                      />
+                    </label>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {photos.length < 10 && (
-            <div className="grid grid-cols-2 gap-2">
-              <label
-                className="flex min-h-[56px] cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-base font-semibold active:scale-[0.99] transition"
-                style={{ borderColor: C.borderActive, color: C.primary }}
-              >
-                📷 {tt('카메라 촬영', 'Camera')}
-                <input
-                  type="file" accept="image/*" capture="environment" multiple className="hidden"
-                  onChange={(e) => { addPhotos(e.target.files); e.currentTarget.value = ''; }}
-                />
-              </label>
-              <label
-                className="flex min-h-[56px] cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-base font-semibold active:scale-[0.99] transition"
-                style={{ borderColor: C.borderActive, color: C.primary }}
-              >
-                🖼 {tt('앨범 선택', 'Album')}
-                <input
-                  type="file" accept="image/*" multiple className="hidden"
-                  onChange={(e) => { addPhotos(e.target.files); e.currentTarget.value = ''; }}
-                />
-              </label>
-            </div>
-          )}
+              );
+            })}
+          </div>
         </section>
 
         <p className="text-center text-xs pb-4" style={{ color: C.mutedText }}>
