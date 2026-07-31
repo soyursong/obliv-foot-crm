@@ -10,7 +10,7 @@ deploy_ready_at: 2026-07-31T15:20:00+09:00
 deploy_ready_by: dev-foot
 db_migration: true
 build_passed: true
-commit_sha: PENDING_PUSH
+commit_sha: d0412c42
 e2e_spec: tests/e2e/T-20260731-foot-FOOTQST-PHOTO-UPLOAD.spec.ts
 signals_recorded: true
 da_consult: MSG-20260731-135832-y3x7
