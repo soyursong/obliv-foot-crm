@@ -150,6 +150,30 @@ export function ResultCard({ result, defaultExpanded = false }: { result: HQResu
   const nailSites = parseFootSites((result.form_data as Record<string, unknown>)?.concern_nail_sites);
   const submittedDate = format(new Date(result.submitted_at), 'yyyy.MM.dd HH:mm', { locale: ko });
 
+  // T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 첨부사진 — clinic 스코프 RLS + private 버킷 signed download URL.
+  const [photos, setPhotos] = useState<{ id: string; url: string }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('health_q_photos')
+        .select('id, storage_path')
+        .eq('result_id', result.id)
+        .order('sort_order', { ascending: true });
+      if (error || !data || !alive) return;
+      const signed = await Promise.all(
+        (data as { id: string; storage_path: string }[]).map(async (p) => {
+          const { data: s } = await supabase.storage
+            .from('foot-health-q-photos')
+            .createSignedUrl(p.storage_path, 60 * 30); // 30분 TTL
+          return { id: p.id, url: s?.signedUrl ?? '' };
+        }),
+      );
+      if (alive) setPhotos(signed.filter((p) => p.url));
+    })();
+    return () => { alive = false; };
+  }, [result.id]);
+
   return (
     <div className="rounded-xl border border-teal-100 bg-white overflow-hidden">
       {/* 헤더 */}
@@ -173,7 +197,7 @@ export function ResultCard({ result, defaultExpanded = false }: { result: HQResu
       {/* 내용 */}
       {expanded && (
         <div className="px-4 pb-4 space-y-2 border-t border-teal-50">
-          {fields.length === 0 && nailSites.length === 0 ? (
+          {fields.length === 0 && nailSites.length === 0 && photos.length === 0 ? (
             <p className="text-xs text-gray-400 pt-3">입력된 항목 없음</p>
           ) : (
             <>
@@ -191,6 +215,25 @@ export function ResultCard({ result, defaultExpanded = false }: { result: HQResu
                 <div className="pt-3">
                   <p className="text-xs font-medium text-gray-500 mb-1">고민되는 발톱 부위</p>
                   <FootToeIllustration value={nailSites} readOnly />
+                </div>
+              )}
+              {/* T-20260731-foot-FOOTQST-PHOTO-UPLOAD: 고객 첨부사진 (클릭 시 원본 새 탭) */}
+              {photos.length > 0 && (
+                <div className="pt-3">
+                  <p className="text-xs font-medium text-gray-500 mb-1">첨부 사진 ({photos.length})</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {photos.map((p) => (
+                      <a
+                        key={p.id}
+                        href={p.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block aspect-square overflow-hidden rounded-lg border border-teal-100"
+                      >
+                        <img src={p.url} alt="첨부 사진" className="h-full w-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

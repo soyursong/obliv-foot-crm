@@ -28,6 +28,13 @@ content_path = "./supabase/templates/recovery.html"
 #   X-Callback-Secret 검증(index.ts §AC-2, secret 불일치/누락 → 401 UNAUTHORIZED)에
 #   위임한다. → 게이트웨이 우회로 secret 검증이 인증의 단일 관문이 되므로 unauth hole 없음.
 # ─────────────────────────────────────────────────────────────────────────────
+# T-20260731-foot-FOOTQST-PHOTO-UPLOAD (DA CONSULT-REPLY MSG-20260731-135832-y3x7, Pattern B):
+#   발건강질문지 고객(anon)이 사진 업로드용 signed URL 을 발급받는 EF. anon 은 anon key(apikey)만 실어
+#   호출하고 실 인증은 EF 내부 health_q_tokens 검증(used_at NULL + 미만료)에 위임한다. anon 에 Storage
+#   버킷 INSERT 직접 GRANT 를 주지 않기 위한 정본 관문 → 게이트웨이 JWT 검사 대신 token 검증이 단일 게이트.
+[functions.health-q-photo-sign]
+verify_jwt = false
+
 [functions.reservation-ingest-from-dopamine]
 verify_jwt = false
 
