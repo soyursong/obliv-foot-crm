@@ -36,6 +36,7 @@ import {
   type TranType,
 } from './protocol';
 import { send as wsSend, type SendResult } from './catClient';
+import { isSimulationAmount } from './config';
 
 // ── 기능 플래그(기본 OFF) — DDL 적용 전 프로덕션 노출 0 ──────────────────────
 const viteEnv = ((import.meta as unknown as { env?: Record<string, string> }).env) ?? {};
@@ -66,13 +67,15 @@ export interface AttemptRecord {
   /** 취소 시 원거래 AUTHNO(승인 시 null). */
   originalAuthNo: string | null;
   status: AttemptStatus;
+  /** ★C6 테스트금액(1001~1006) 여부 — attempt·payments is_simulation 각인(매출/감사 제외). */
+  isSimulation: boolean;
   /** 응답 확정 후 채워짐. */
   authNo?: string | null;
   responseCode?: string | null;
 }
 
 /**
- * 시도 레코드 저장소(주입). 실 구현은 supabaseAttemptStore(payment_attempts 테이블, DDL 게이트).
+ * 시도 레코드 저장소(주입). 실 구현은 supabaseAttemptStore(cband_payment_attempts 테이블, DDL 게이트).
  * 상태머신은 이 인터페이스만 알면 되므로 unit 테스트에서 in-memory 스텁 주입 가능.
  */
 export interface AttemptStore {
@@ -80,7 +83,7 @@ export interface AttemptStore {
   insertAttempt(rec: AttemptRecord): Promise<void>;
   /** 응답 확정 후 상태·AUTHNO·응답코드 갱신(멱등 — MSG_TRACE 키). */
   updateAttempt(msgTrace: string, patch: Partial<AttemptRecord>): Promise<void>;
-  /** 승인 성공 시 수납(payments) 정본 기록. pg_provider='cband' + AUTHNO/MERNO/MSG_TRACE 저장. */
+  /** 승인 성공 시 수납(payments) 정본 기록. ★pos_provider='cband' + pos_transaction_id=AUTHNO(C1). 성공 시 attempt.payment_id 링크. */
   recordCardPayment(rec: AttemptRecord & { authNo: string }): Promise<void>;
 }
 
@@ -150,6 +153,7 @@ export async function runPaymentFlow(
     customerId: input.customerId,
     checkInId: input.checkInId,
     originalAuthNo: input.originalAuthNo ?? null,
+    isSimulation: isSimulationAmount(input.amount),  // ★C6 테스트금액(1001~1006) 격리
     status: 'requested',
   };
 

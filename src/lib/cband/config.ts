@@ -55,3 +55,12 @@ export function saveTerminalConfig(cfg: CbandTerminalConfig): void {
 export const CBAND_TEST_AMOUNTS = [1001, 1002, 1003, 1005, 1006] as const;
 /** 실거래 충돌로 테스트 금지 금액(§검증규칙). */
 export const CBAND_FORBIDDEN_TEST_AMOUNTS: ReadonlySet<number> = new Set([100, 1000, 1004, 1234]);
+
+const CBAND_TEST_AMOUNT_SET: ReadonlySet<number> = new Set(CBAND_TEST_AMOUNTS);
+/**
+ * ★C6 — 테스트금액(1,001~1,006, 1,004 제외) 여부. true 면 시도레코드·수납행 is_simulation=true 로 각인
+ * (payments 매출·감사 유니버스에서 제외, field-soak 시나리오6 케이블뽑기 격리).
+ */
+export function isSimulationAmount(amount: number): boolean {
+  return CBAND_TEST_AMOUNT_SET.has(amount);
+}

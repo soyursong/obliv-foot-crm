@@ -19,7 +19,14 @@ import {
   type AttemptRecord,
   type AttemptStore,
 } from '../../src/lib/cband/paymentFlow';
-import type { SendResult } from '../../src/lib/cband/catClient';
+import {
+  probeTerminal,
+  cancelProbe,
+  send as wsSend,
+  _resetInFlight,
+  type SendResult,
+  type ProbeResult,
+} from '../../src/lib/cband/catClient';
 
 /**
  * T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD — 코밴 CAT 직결 결제(플랜A)
@@ -281,5 +288,148 @@ test.describe('runPaymentFlow (★D 상태머신)', () => {
     });
     await expect(runPaymentFlow({ ...BASE, amount: 1001, tranType: TRANTYPE_APPROVE }, failStore, sender)).rejects.toThrow();
     expect(sent).toBe(false); // ★송신 전 차단
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// 5) ★C6 테스트금액 격리(is_simulation) + C1 채널상수(pos_provider, pg_provider 아님)
+// ══════════════════════════════════════════════════════════════════════════
+test.describe('C6 is_simulation / C1 pos_provider', () => {
+  test('C6: 테스트금액(1001~1006)은 attempt·payments is_simulation=true 각인', async () => {
+    const { store, attempts, payments } = makeMemStore();
+    const r = await approve({ ...BASE, amount: 1002 }, store, mockSender('{"RESPCODE":"0000","AUTHNO":"A2"}'));
+    expect(r.classification).toBe('APPROVED');
+    expect(attempts.get(r.msgTrace)?.isSimulation).toBe(true);
+    expect(payments).toHaveLength(1);
+    expect(payments[0].isSimulation).toBe(true); // payments 패리티(매출/감사 제외)
+  });
+
+  test('C6: 실거래 금액은 is_simulation=false (매출 유니버스 잔존)', async () => {
+    const { store, attempts, payments } = makeMemStore();
+    const r = await approve({ ...BASE, amount: 50000 }, store, mockSender('{"RESPCODE":"0000","AUTHNO":"A3"}'));
+    expect(r.classification).toBe('APPROVED');
+    expect(attempts.get(r.msgTrace)?.isSimulation).toBe(false);
+    expect(payments[0].isSimulation).toBe(false);
+  });
+
+  test('isSimulationAmount: 1001~1006(1004 제외) true, 그 외/금지금액 false', async () => {
+    const { isSimulationAmount, CBAND_TEST_AMOUNTS } = await import('../../src/lib/cband/config');
+    for (const a of CBAND_TEST_AMOUNTS) expect(isSimulationAmount(a)).toBe(true);
+    for (const a of [100, 1000, 1004, 1234, 50000, 0]) expect(isSimulationAmount(a)).toBe(false); // 1004=실거래충돌 금지
+  });
+
+  test('C1: 채널상수 = pos_provider(\'cband\') — pg_provider 아님(foot payments 컬럼 부재)', async () => {
+    const mod = await import('../../src/lib/cband/supabaseAttemptStore');
+    expect(mod.CBAND_POS_PROVIDER).toBe('cband');
+    // pg_provider 재도입 회귀 방지: 채널 export 는 pos_ 계열만(pg_provider 상수 미존재).
+    expect((mod as Record<string, unknown>).CBAND_PG_PROVIDER).toBeUndefined();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// 6) ★스펙 갱신 v2 — U3 probeTerminal 3분기 + U2 WebSocket 동시 1개(cancelProbe)
+//    (MSG-20260731-170753-p2f3 / MSG-20260731-171850-s2jv)
+// ══════════════════════════════════════════════════════════════════════════
+// 제어 가능한 Mock WebSocket — onopen/onerror/onclose 발화 타이밍을 테스트가 결정.
+class MockWS {
+  static instances: MockWS[] = [];
+  static reset() { MockWS.instances = []; }
+  static last(): MockWS { return MockWS.instances[MockWS.instances.length - 1]; }
+  url: string;
+  readyState = 0; // CONNECTING
+  closed = false;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onmessage: ((ev: { data: string }) => void) | null = null;
+  constructor(url: string) { this.url = url; MockWS.instances.push(this); }
+  send() { /* noop */ }
+  close() { this.closed = true; this.readyState = 3; }
+  fireOpen() { this.readyState = 1; this.onopen?.(); }
+  fireError() { this.onerror?.(); }
+  fireClose() { this.onclose?.(); }
+}
+
+test.describe('★U3 probeTerminal 3분기 / U2 동시1개(cancelProbe)', () => {
+  const realWS = (globalThis as Record<string, unknown>).WebSocket;
+  test.beforeEach(() => {
+    MockWS.reset();
+    cancelProbe();
+    _resetInFlight();
+    (globalThis as Record<string, unknown>).WebSocket = MockWS as unknown;
+  });
+  test.afterEach(() => {
+    cancelProbe();
+    _resetInFlight();
+    (globalThis as Record<string, unknown>).WebSocket = realWS;
+  });
+
+  test("U3 'ok': onopen 도달 → ok, 소켓 닫힘(즉시 열닫)", async () => {
+    const p = probeTerminal('ws://127.0.0.1:8888', 1000);
+    const ws = MockWS.last();
+    ws.fireOpen();
+    const r: ProbeResult = await p;
+    expect(r).toBe('ok');
+    expect(ws.closed).toBe(true); // 열림 즉시 닫음
+  });
+
+  test("U3 'blocked': onerror(차단 또는 데몬꺼짐) → blocked, 소켓 닫힘", async () => {
+    const p = probeTerminal('ws://127.0.0.1:8888', 1000);
+    const ws = MockWS.last();
+    ws.fireError();
+    expect(await p).toBe('blocked');
+    expect(ws.closed).toBe(true);
+  });
+
+  test("U3 'blocked': open 전 onclose → blocked", async () => {
+    const p = probeTerminal('ws://127.0.0.1:8888', 1000);
+    MockWS.last().fireClose();
+    expect(await p).toBe('blocked');
+  });
+
+  test("U3 'awaiting': 타임아웃까지 무반응(권한창 대기) → awaiting, ★소켓 닫지 않음", async () => {
+    const p = probeTerminal('ws://127.0.0.1:8888', 15);
+    const ws = MockWS.last();
+    expect(await p).toBe('awaiting');
+    expect(ws.closed).toBe(false); // ★사용자가 [허용] 누르면 이어서 open 가능 → 닫지 않음
+  });
+
+  test('U3: WS 미지원 환경 → blocked (버튼 대신 안내 대상)', async () => {
+    (globalThis as Record<string, unknown>).WebSocket = undefined;
+    expect(await probeTerminal('ws://127.0.0.1:8888', 15)).toBe('blocked');
+  });
+
+  test('★U2: send() 는 결제 소켓 열기 전 탐침 소켓을 닫는다(동시 1개)', async () => {
+    // 탐침 → awaiting(소켓 열린 채 유지)
+    const p = probeTerminal('ws://127.0.0.1:8888', 15);
+    const probeWs = MockWS.last();
+    expect(await p).toBe('awaiting');
+    expect(probeWs.closed).toBe(false);
+
+    const before = MockWS.instances.length;
+    // 결제 send → cancelProbe 로 탐침 소켓 종료 후 결제 소켓 신규 오픈.
+    const sp = wsSend('{"a":1}', '000000000001', { url: 'ws://127.0.0.1:8888', timeoutMs: 20 });
+    expect(probeWs.closed).toBe(true);                     // ★탐침 소켓 닫힘
+    expect(MockWS.instances.length).toBe(before + 1);      // 결제 소켓 1개만 신규
+    const res: SendResult = await sp;                      // 무응답 타임아웃(cleanup)
+    expect(res.timedOut).toBe(true);
+  });
+
+  test('★U2: cancelProbe() 로 진행 중 탐침 소켓 즉시 종료', async () => {
+    const p = probeTerminal('ws://127.0.0.1:8888', 1000);
+    const ws = MockWS.last();
+    cancelProbe();
+    expect(ws.closed).toBe(true);
+    // 타임아웃 정리(promise resolve 회수)
+    await Promise.race([p, new Promise((r) => setTimeout(() => r('awaiting'), 30))]);
+  });
+
+  test('★U2: 재탐침 시 이전 탐침 소켓을 먼저 닫아 동시 2개 방지', async () => {
+    const p1 = probeTerminal('ws://127.0.0.1:8888', 15);
+    const ws1 = MockWS.last();
+    const p2 = probeTerminal('ws://127.0.0.1:8888', 15); // 시작 시 cancelProbe → ws1 닫힘
+    expect(ws1.closed).toBe(true);
+    expect(await p1).toBe('awaiting');
+    expect(await p2).toBe('awaiting');
   });
 });

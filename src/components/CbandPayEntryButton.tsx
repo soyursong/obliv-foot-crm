@@ -15,8 +15,8 @@
  *   화면에 MSG_TRACE 를 크게 띄워 단말 [승인내역조회]로 확인하도록 안내.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, ShieldQuestion, PlugZap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -25,7 +25,7 @@ import { AmountInput, parseAmountRaw } from '@/components/ui/AmountInput';
 import { formatAmount } from '@/lib/format';
 import { isCbandPayEnabled, approve, type PaymentFlowResult } from '@/lib/cband/paymentFlow';
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
-import { probeTerminal } from '@/lib/cband/catClient';
+import { probeTerminal, cancelProbe, type ProbeResult } from '@/lib/cband/catClient';
 import { getTerminalConfig } from '@/lib/cband/config';
 
 interface Props {
@@ -37,7 +37,8 @@ interface Props {
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention';
 
 export default function CbandPayEntryButton({ checkInId, clinicId, customerId }: Props) {
-  const [terminalReady, setTerminalReady] = useState<boolean | null>(null); // null=탐지중
+  // ★U3: probe 결과 3분기 (null=탐지중 / 'ok' / 'awaiting' / 'blocked').
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState('');
   const [ui, setUi] = useState<UiState>('idle');
@@ -47,19 +48,23 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
   const cfg = getTerminalConfig();
   const enabled = isCbandPayEnabled() && cfg != null;
 
-  // ③ 단말 감지 — probeTerminal(열고 닫기만). 실패면 버튼 숨김(시나리오2).
+  // ③ 단말 감지 — probeTerminal(열고 닫기만). ★U3 3분기 결과를 그대로 반영.
+  const runProbe = useCallback(() => {
+    setProbe(null); // 탐지중
+    probeTerminal().then((r) => { if (mounted.current) setProbe(r); });
+  }, []);
+
   useEffect(() => {
     mounted.current = true;
-    if (!enabled) { setTerminalReady(false); return; }
-    let cancelled = false;
-    probeTerminal().then((ok) => { if (!cancelled && mounted.current) setTerminalReady(ok); });
-    return () => { cancelled = true; mounted.current = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+    if (!enabled) return;
+    runProbe();
+    // ★U2: 언마운트 시 잔여 탐침 소켓 정리(동시 1개 보장).
+    return () => { mounted.current = false; cancelProbe(); };
+  }, [enabled, runProbe]);
 
-  // 게이트: 플래그 OFF/설정 없음/단말 없음 → 미노출(기존 화면 무변경).
+  // 게이트 ①②: 플래그 OFF / 단말 미설정 PC → 미노출(시나리오2 "단말 없는 PC → 버튼 숨김" 유지).
+  // ★U3: 단말 설정이 있는 PC 는 probe 상태(awaiting/blocked)에서도 숨기지 않고 안내를 노출한다.
   if (!enabled) return null;
-  if (terminalReady !== true) return null;
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
   const canPay = amountNum > 0 && ui !== 'sending';
@@ -68,6 +73,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
     if (!cfg || !(amountNum > 0)) return;
     setUi('sending');
     setResult(null);
+    cancelProbe(); // ★U2: 결제 소켓 열기 전 탐침 소켓 확실히 종료(동시 1개). send 내부에서도 재호출됨.
     try {
       const r = await approve(
         { tid: cfg.tid, merno: cfg.merno, catPort: cfg.catPort, amount: amountNum, clinicId, customerId, checkInId },
@@ -92,6 +98,75 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
     setAmount('');
   }
 
+  // ★U3: probe 3분기 — 결제 버튼은 'ok' 에서만 노출. 그 외에는 숨기지 않고 상태 안내를 보인다.
+  //  · null(탐지중): 확인 중 표시(버튼 유지·비활성).
+  //  · 'awaiting'(권한창 대기): 버튼 유지 + 브라우저 [허용] 안내 + [다시 확인].  ★숨김 대상 아님.
+  //  · 'blocked'([차단] 또는 데몬 꺼짐): 안내 메시지(두 원인 함께) + [다시 확인].
+  if (probe === null) {
+    return (
+      <div
+        className="flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-50 py-2 text-sm text-gray-500"
+        data-testid="cband-probing"
+      >
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 카드 단말 확인 중…
+      </div>
+    );
+  }
+
+  if (probe === 'awaiting') {
+    return (
+      <div
+        className="w-full space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm"
+        data-testid="cband-awaiting"
+      >
+        <div className="flex items-center gap-2 font-semibold text-amber-800">
+          <ShieldQuestion className="h-4 w-4" /> 카드 단말 접속 허용이 필요합니다
+        </div>
+        <p className="text-amber-900">
+          브라우저에 <b>“이 사이트가 로컬 기기(카드 단말)에 접속하도록 허용하시겠습니까?”</b> 창이 뜨면
+          <b> [허용]</b>을 눌러 주세요. 한 번 허용하면 이 PC에서는 계속 카드결제를 쓸 수 있습니다.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
+          data-testid="btn-cband-reprobe"
+          onClick={runProbe}
+        >
+          허용한 뒤 다시 확인
+        </Button>
+      </div>
+    );
+  }
+
+  if (probe === 'blocked') {
+    return (
+      <div
+        className="w-full space-y-2 rounded-md border border-rose-300 bg-rose-50 p-3 text-sm"
+        data-testid="cband-blocked"
+      >
+        <div className="flex items-center gap-2 font-semibold text-rose-800">
+          <PlugZap className="h-4 w-4" /> 카드 단말에 연결하지 못했습니다
+        </div>
+        <p className="text-rose-900">
+          다음 중 하나입니다: ① 브라우저에서 로컬 기기 접속을 <b>[차단]</b>했거나, ② 카드 단말
+          프로그램이 <b>꺼져 있습니다</b>. 주소창의 자물쇠 → 사이트 설정에서 차단을 해제하거나,
+          단말 프로그램을 켠 뒤 아래 <b>[다시 확인]</b>을 눌러 주세요.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full border-rose-300 text-rose-800 hover:bg-rose-100"
+          data-testid="btn-cband-reprobe"
+          onClick={runProbe}
+        >
+          다시 확인
+        </Button>
+      </div>
+    );
+  }
+
+  // probe === 'ok' → 결제 버튼 + 다이얼로그
   return (
     <>
       <Button
