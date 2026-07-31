@@ -72,7 +72,7 @@ import { formatDateTimeDots } from '@/lib/format';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
-  CheckSquare, Square, Move, Check,
+  CheckSquare, Square, Move, Check, Printer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -2691,6 +2691,226 @@ export function PenChartTab({
     captureUndoAsync();
   };
 
+  // ── T-20260731-foot-PENCHART-PRINT-DOWNLOAD: 출력/다운로드 공용 flatten ──────────
+  //   [핵심] handleDrawSave 의 합성(bg + draw + placedItems 래스터 + 화이트 획)을 그대로 재현하되
+  //   *비파괴*로 수행한다. 저장은 라이브 draw 캔버스(canvasRef)에 직접 rasterize 후 setMode('list')로
+  //   세션을 종료하므로 파괴가 무해하지만, 출력/다운로드는 사용자가 계속 편집하므로 라이브 캔버스·상태
+  //   (placedItems/화이트 획/미확정 텍스트)를 절대 변형하면 안 된다. → draw 레이어를 복사본에 그린다.
+  //   AC-3: 모든 레이어(배경 양식 bgCanvas + 필기/형광펜/지우개 + placedItems 텍스트·상용구 + 화이트 획
+  //   + 미확정 텍스트 입력)를 누락 없이 단일 캔버스로 flatten. 결과 해상도 = bgCanvas(1588×2246, A4).
+  const buildFlattenedCanvas = (): HTMLCanvasElement | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+    const bgCanvas = bgCanvasRef.current;
+
+    // 1) draw 레이어 복사본 (라이브 canvasRef 비파괴). 물리 픽셀 1:1 복사.
+    const drawCopy = document.createElement('canvas');
+    drawCopy.width = canvas.width;
+    drawCopy.height = canvas.height;
+    const dCtx = drawCopy.getContext('2d');
+    if (!dCtx) return null;
+    dCtx.drawImage(canvas, 0, 0); // 기존 필기/형광펜/지우개(clearRect 반영) 획
+
+    // 2) placedItems + 미확정 텍스트 rasterize — handleDrawSave(L2727~)와 동일 로직/좌표계.
+    //    라이브 draw ctx 는 initCanvas 에서 ctx.scale(DRAW_DPR) 적용됨 → 복사본도 동일 스케일로 논리좌표 정합.
+    dCtx.scale(DRAW_DPR, DRAW_DPR);
+    const _tPos = textInputPosRef.current;
+    const _tVal = textInputValueRef.current;
+    const pendingTextItems: PlacedItem[] = [];
+    if (_tPos && _tVal.trim()) {
+      pendingTextItems.push({
+        id: `txt-print-${_tPos.x}-${_tPos.y}`,
+        type: 'text',
+        x: _tPos.x,
+        y: _tPos.y,
+        text: _tVal,
+        fontSize: Math.round(penSizeRef.current * 4 + 6),
+        color: penColorRef.current,
+      });
+    }
+    const itemsToRasterize = pendingTextItems.length > 0
+      ? [...placedItems, ...pendingTextItems]
+      : placedItems;
+    for (const item of itemsToRasterize) {
+      const lines = item.text.split('\n');
+      dCtx.save();
+      dCtx.font = `${item.fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
+      dCtx.fillStyle = item.color;
+      dCtx.textBaseline = 'top';
+      dCtx.globalAlpha = 1;
+      const lineH = item.fontSize + 6;
+      lines.forEach((line, i) => {
+        dCtx.fillText(line, item.x, item.y + i * lineH);
+      });
+      dCtx.restore();
+    }
+
+    // 3) 화이트 획(source-atop) — handleDrawSave(L2756~)와 동일. draw 레이어 위 흰 덮기.
+    if (whiteStrokesAllRef.current.length > 0) {
+      dCtx.save();
+      dCtx.globalCompositeOperation = 'source-atop';
+      dCtx.strokeStyle = '#ffffff';
+      dCtx.fillStyle = '#ffffff';
+      dCtx.globalAlpha = 1;
+      dCtx.lineCap = 'round';
+      dCtx.lineJoin = 'round';
+      for (const { path, lineWidth } of whiteStrokesAllRef.current) {
+        if (path.length === 0) continue;
+        dCtx.lineWidth = lineWidth;
+        dCtx.beginPath();
+        dCtx.arc(path[0].x, path[0].y, lineWidth / 2, 0, Math.PI * 2);
+        dCtx.fill();
+        if (path.length > 1) {
+          dCtx.beginPath();
+          dCtx.moveTo(path[0].x, path[0].y);
+          for (let i = 1; i < path.length; i++) dCtx.lineTo(path[i].x, path[i].y);
+          dCtx.stroke();
+        }
+      }
+      dCtx.restore();
+    }
+
+    // 4) 배경 양식 + draw 레이어 합성 — bgCanvas 원본 해상도 기준(다운스케일 없음).
+    const out = document.createElement('canvas');
+    if (bgCanvas && bgCanvas.width > 0 && bgCanvas.height > 0) {
+      out.width = bgCanvas.width;
+      out.height = bgCanvas.height;
+      const oCtx = out.getContext('2d');
+      if (!oCtx) return null;
+      oCtx.drawImage(bgCanvas, 0, 0);
+      oCtx.drawImage(drawCopy, 0, 0, bgCanvas.width, bgCanvas.height);
+    } else {
+      out.width = canvas.width;
+      out.height = canvas.height;
+      const oCtx = out.getContext('2d');
+      if (!oCtx) return null;
+      oCtx.drawImage(drawCopy, 0, 0);
+    }
+    return out;
+  };
+
+  // 출력물 상단 헤더용 라벨(환자명·날짜) — AC-4. DOCFORM-FIRSTVISIT-MGMTRECORD(deployed) 헤더 준용.
+  const escapeHtmlText = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const printDateStr = () => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`;
+  };
+  const downloadFileStamp = () => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  };
+  const safeDataUrlFromFlatten = (): string | null => {
+    const flat = buildFlattenedCanvas();
+    if (!flat) {
+      toast.error('출력할 내용이 없습니다. 양식을 먼저 선택해주세요.');
+      return null;
+    }
+    try {
+      return flat.toDataURL('image/png');
+    } catch (e) {
+      const isSecErr = e instanceof Error && e.name === 'SecurityError';
+      toast.error(
+        isSecErr
+          ? '출력 실패: 배경 이미지 보안(CORS) 오류로 캔버스를 내보낼 수 없습니다. 화면 새로고침 후 다시 시도해주세요.'
+          : `출력 실패: ${e instanceof Error ? e.message : '알 수 없는 오류'}`,
+      );
+      return null;
+    }
+  };
+
+  // [다운로드] — flatten 캔버스를 PNG 로컬 저장 (AC-2). blob URL → <a download> 트리거.
+  const handlePenChartDownload = () => {
+    const dataUrl = safeDataUrlFromFlatten();
+    if (!dataUrl) return;
+    try {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `펜차트_${(customerName ?? '환자').replace(/[\\/:*?"<>|]/g, '')}_${downloadFileStamp()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      toast.error(`다운로드 실패: ${e instanceof Error ? e.message : '알 수 없는 오류'}`);
+    }
+  };
+
+  // [출력] — flatten 캔버스를 A4 인쇄창으로 (AC-1). 상단 환자명·날짜 헤더(AC-4).
+  //   DOCFORM-FIRSTVISIT-MGMTRECORD(deployed) print 동선 준용: window.open + document.write +
+  //   @page margin:0 (브라우저 기본 헤더 제거, DOCPRINT-BROWSERHEADER-REMOVE 계승) + img onload 후 print.
+  const handlePenChartPrint = () => {
+    const dataUrl = safeDataUrlFromFlatten();
+    if (!dataUrl) return;
+    const w = window.open('', '_blank');
+    if (!w) {
+      toast.error('팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도해주세요.');
+      return;
+    }
+    const nameLabel = escapeHtmlText(customerName ?? '');
+    const dateLabel = printDateStr();
+    // @page margin:0 → 크롬이 여백 박스에 인쇄일시·title 을 자동삽입하지 못하게 함(DOCPRINT-BROWSERHEADER-REMOVE).
+    //   물리 여백은 .page padding 으로 이관. flex column + height:297mm → 헤더+이미지 단일 페이지 보장.
+    const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>펜차트</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  html, body { margin: 0; padding: 0; }
+  .page {
+    box-sizing: border-box;
+    width: 210mm;
+    height: 297mm;
+    padding: 8mm;
+    display: flex;
+    flex-direction: column;
+    page-break-after: avoid;
+  }
+  .doc-header {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 3mm 5mm;
+    margin-bottom: 4mm;
+    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+    font-size: 12pt;
+    font-weight: bold;
+    color: #1a1a1a;
+  }
+  .doc-header .label { color: #555; font-weight: normal; margin-right: 4px; }
+  .doc-body { flex: 1 1 auto; min-height: 0; display: flex; align-items: flex-start; justify-content: center; }
+  .doc-body img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page:last-child { page-break-after: avoid; }
+  }
+</style>
+</head><body>
+  <div class="page">
+    <div class="doc-header">
+      <span><span class="label">환자명</span>${nameLabel || '-'}</span>
+      <span><span class="label">출력일</span>${dateLabel}</span>
+    </div>
+    <div class="doc-body"><img src="${dataUrl}" alt="펜차트" /></div>
+  </div>
+</body></html>`;
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    const img = w.document.querySelector('img');
+    if (img && !(img as HTMLImageElement).complete) {
+      (img as HTMLImageElement).onload = () => w.print();
+      (img as HTMLImageElement).onerror = () => w.print();
+    } else {
+      setTimeout(() => w.print(), 300);
+    }
+  };
+
   // ── 캔버스 저장 ──────────────────────────────────────────────────────
   const handleDrawSave = async () => {
     const canvas = canvasRef.current;
@@ -3663,6 +3883,26 @@ export function PenChartTab({
               title="전체 초기화"
             >
               <RotateCcw className="h-3.5 w-3.5" /> 초기화
+            </button>
+            {/* T-20260731-foot-PENCHART-PRINT-DOWNLOAD: 다운로드 — flatten PNG 로컬 저장 */}
+            <button
+              onClick={handlePenChartDownload}
+              disabled={saving}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              title="현재 작성 내용을 PNG 이미지로 내려받기"
+              data-testid="penchart-edit-download"
+            >
+              <Download className="h-3.5 w-3.5" /> 다운로드
+            </button>
+            {/* T-20260731-foot-PENCHART-PRINT-DOWNLOAD: 출력 — flatten 후 A4 인쇄창(환자명·날짜 헤더) */}
+            <button
+              onClick={handlePenChartPrint}
+              disabled={saving}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              title="현재 작성 내용을 인쇄/PDF로 출력"
+              data-testid="penchart-edit-print"
+            >
+              <Printer className="h-3.5 w-3.5" /> 출력
             </button>
             {/* 취소 */}
             <Button
