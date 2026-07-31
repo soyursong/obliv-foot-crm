@@ -1,0 +1,73 @@
+{
+  "ticket": "T-20260731-foot-LOGIN-FAIL-ESKI-ACCT-RECOVER",
+  "captured_at": "2026-07-31T02:31:50.951Z",
+  "target_email": "es.ki@medibuilder.com",
+  "project": "https://rxlomoozakkjesdqjtvd.supabase.co",
+  "mode": "READ-ONLY",
+  "exact_count": 1,
+  "variant_count": 0,
+  "variants": [],
+  "account": {
+    "id": "302f27a0-0cdc-4000-a427-eb18b94bc98e",
+    "email": "es.ki@medibuilder.com",
+    "created_at": "2026-07-23T01:34:55.955539Z",
+    "updated_at": "2026-07-31T02:16:15.127425Z",
+    "email_confirmed_at": null,
+    "confirmed_at": null,
+    "recovery_sent_at": null,
+    "confirmation_sent_at": "2026-07-23T01:34:55.970705Z",
+    "banned_until": null,
+    "deleted_at": null,
+    "last_sign_in_at": null,
+    "phone": null,
+    "is_sso_user": null,
+    "identities_count": 0,
+    "identity_providers": [],
+    "app_metadata_providers": [
+      "email"
+    ]
+  },
+  "identities": [],
+  "mapping": {
+    "user_profiles_by_email": [
+      {
+        "id": "302f27a0-0cdc-4000-a427-eb18b94bc98e",
+        "email": "es.ki@medibuilder.com",
+        "name": "(present)",
+        "role": "staff",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "active": true,
+        "approved": true,
+        "created_at": "2026-07-23T01:34:55.955197+00:00",
+        "access_tier": "member",
+        "updated_at": "2026-07-31T02:07:02.209888+00:00",
+        "exempt_from_restrictions": false
+      }
+    ],
+    "user_profiles_by_uid": {
+      "col": "id",
+      "rows": [
+        {
+          "id": "302f27a0-0cdc-4000-a427-eb18b94bc98e",
+          "email": "es.ki@medibuilder.com",
+          "name": "(present)",
+          "role": "staff",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "active": true,
+          "approved": true,
+          "created_at": "2026-07-23T01:34:55.955197+00:00",
+          "access_tier": "member",
+          "updated_at": "2026-07-31T02:07:02.209888+00:00",
+          "exempt_from_restrictions": false
+        }
+      ]
+    },
+    "staff_by_email": null,
+    "staff_by_uid": null,
+    "errors": [
+      "staff.email: column staff.email does not exist"
+    ]
+  },
+  "cause_hint": "EMAIL_NOT_CONFIRMED(로그인 거부 유력); NO_identities",
+  "boundary": "auth.audit_log_entries(recovery 발송 원장)는 prod pg 접근 필요 — 본 진단은 admin user.recovery_sent_at 로 대체"
+}

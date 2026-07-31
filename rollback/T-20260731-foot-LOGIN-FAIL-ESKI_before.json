@@ -1,0 +1,16 @@
+{
+  "ticket": "T-20260731-foot-LOGIN-FAIL-ESKI-ACCT-RECOVER",
+  "captured_at": "2026-07-31T02:33:41.547Z",
+  "id": "302f27a0-0cdc-4000-a427-eb18b94bc98e",
+  "email": "es.ki@medibuilder.com",
+  "before": {
+    "email_confirmed_at": null,
+    "confirmed_at": null,
+    "banned_until": null,
+    "deleted_at": null,
+    "identities_cnt": 0,
+    "last_sign_in_at": null,
+    "updated_at": "2026-07-31T02:16:15.127425Z"
+  },
+  "note": "rollback=email_confirm 은 비파괴적 상태전환. 필요시 재확인. temp pw 는 미기재(콘솔전용)."
+}

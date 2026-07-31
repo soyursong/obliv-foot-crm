@@ -1,0 +1,17 @@
+{
+  "ticket": "T-20260731-foot-LOGIN-FAIL-ESKI-ACCT-RECOVER",
+  "applied_at": "2026-07-31T02:33:42.369Z",
+  "id": "302f27a0-0cdc-4000-a427-eb18b94bc98e",
+  "email": "es.ki@medibuilder.com",
+  "id_email_reverify": "PASS(INV-4)",
+  "before_email_confirmed_at": null,
+  "after_email_confirmed_at": "2026-07-31T02:33:41.918168Z",
+  "after_identities": [
+    "email"
+  ],
+  "login_proof": "OK (server-side signInWithPassword, uid=302f27a0-0cdc-4000-a427-eb18b94bc98e)",
+  "cause": "email_confirmed_at=NULL(미확인 계정) → confirm-email GoTrue 로그인 거부(=비번 오류로 표출)",
+  "fix": "admin email_confirm=true + 임시비번 재설정. temp pw 는 responder 보안 relay(콘솔전용, git 미기재).",
+  "db_change": false,
+  "phi_note": "실명/비번 원문 미기재"
+}
