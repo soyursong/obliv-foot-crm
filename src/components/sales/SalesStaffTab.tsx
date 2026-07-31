@@ -130,17 +130,34 @@ interface CosmeticLineRow {
   price: number | null;
   seller_staff_id: string | null;
   service_id: string | null;
+  /** 판매 시점 스냅샷 제품명 (T-20260731 드릴다운 팝업 표시용) */
+  service_name: string | null;
   check_ins: {
     therapist_id: string | null;
     clinic_id: string | null;
     checked_in_at: string | null;
     customer_id: string | null;
+    /** T-20260731 드릴다운: 고객성함·차트번호 표시(기존 담당치료사별 화면 권한 범위 내) */
+    customers: { name: string | null; chart_number: string | null } | null;
   } | null;
 }
 
 interface CosmeticStat {
   amount: number;
   count: number;
+}
+
+// ── T-20260731-foot-COSMETIC-SALES-DETAIL-POPUP: 화장품 매출 칸 클릭 → 판매내역 드릴다운 ──
+//   팝업 행은 집계(cosmeticBySeller)와 **동일한 cosmeticLines 배열·동일 버킷 로직**에서 파생한다.
+//   → Σ(팝업 행 금액) === 칸 표시금액(AC3 불변식)이 구조적으로 보장됨(별도 쿼리 신설 금지).
+interface CosmeticDetailRow {
+  key: string;
+  customerName: string;
+  chartNumber: string | null;
+  productName: string;
+  amount: number;
+  /** 판매일자 (KST, YYYY-MM-DD) — 현장 대조 편의 */
+  saleDate: string | null;
 }
 
 /** 치료 매출 + 화장품 매출을 병기하는 행 (별도 컬럼 A안, 합산 X). */
@@ -185,6 +202,12 @@ export function SalesStaffTab({ filter }: Props) {
   //   2번차트 라우팅은 기존 자산(useChart().openChart) 재사용 — 신규 라우팅 신설 금지(AC3).
   const { openChart } = useChart();
   const [designatedDialog, setDesignatedDialog] = useState<{
+    staffId: string;
+    staffName: string;
+  } | null>(null);
+
+  // T-20260731-foot-COSMETIC-SALES-DETAIL-POPUP: 화장품 매출 칸 클릭 → 판매내역 드릴다운 팝업.
+  const [cosmeticDialog, setCosmeticDialog] = useState<{
     staffId: string;
     staffName: string;
   } | null>(null);
@@ -318,8 +341,11 @@ export function SalesStaffTab({ filter }: Props) {
       const { data, error } = await supabase
         .from('check_in_services')
         .select(`
-          price, seller_staff_id, service_id,
-          check_ins!inner(therapist_id, clinic_id, checked_in_at, customer_id)
+          price, seller_staff_id, service_id, service_name,
+          check_ins!inner(
+            therapist_id, clinic_id, checked_in_at, customer_id,
+            customers(name, chart_number)
+          )
         `)
         .in('service_id', cosmeticIds)
         .eq('check_ins.clinic_id', clinic!.id)
@@ -348,6 +374,33 @@ export function SalesStaffTab({ filter }: Props) {
       e.amount += r.price ?? 0;
       e.count += 1;
       m.set(bucket, e);
+    }
+    return m;
+  }, [cosmeticLines]);
+
+  // ── T-20260731 드릴다운: 버킷별 판매 건 목록 ─────────────────────────────────────
+  //   cosmeticBySeller 와 동일 소스(cosmeticLines)·동일 버킷 로직으로 파생 →
+  //   Σ(목록 금액) === cosmeticBySeller.amount === 칸 표시금액(AC3) 구조 보장.
+  const cosmeticDetailBySeller = useMemo<Map<string, CosmeticDetailRow[]>>(() => {
+    const m = new Map<string, CosmeticDetailRow[]>();
+    cosmeticLines.forEach((r, idx) => {
+      const bucket = r.seller_staff_id ?? r.check_ins?.therapist_id ?? null;
+      if (!bucket) return; // 미상 → 집계·목록 모두 제외 (칸과 동일 기준)
+      const arr = m.get(bucket) ?? [];
+      const at = r.check_ins?.checked_in_at ?? null;
+      arr.push({
+        key: `${r.service_id ?? 'svc'}-${r.check_ins?.customer_id ?? 'walkin'}-${idx}`,
+        customerName: r.check_ins?.customers?.name ?? '(비회원/워크인)',
+        chartNumber: r.check_ins?.customers?.chart_number ?? null,
+        productName: r.service_name ?? '(제품명 없음)',
+        amount: r.price ?? 0,
+        // checked_in_at 은 KST(+09:00) 바운드로 조회됨 → 앞 10자리(YYYY-MM-DD)만 표시
+        saleDate: at ? at.slice(0, 10) : null,
+      });
+    });
+    // 판매일자 → 금액 내림차순 정렬(표시 편의, 합계 불변)
+    for (const arr of m.values()) {
+      arr.sort((a, b) => (b.saleDate ?? '').localeCompare(a.saleDate ?? '') || b.amount - a.amount);
     }
     return m;
   }, [cosmeticLines]);
@@ -652,6 +705,116 @@ export function SalesStaffTab({ filter }: Props) {
     </Dialog>
   );
 
+  // ── T-20260731 화장품 매출 칸 렌더 (클릭 → 드릴다운) ─────────────────────────────
+  //   amount>0 → 클릭 가능한 링크형(팝업). amount<=0(—) → 클릭 무반응 텍스트(AC4).
+  const renderCosmeticCell = (
+    staffId: string,
+    staffName: string,
+    amount: number,
+    testId: string,
+  ) => {
+    if (amount <= 0) {
+      return (
+        <span data-testid={testId} className="text-muted-foreground">
+          —
+        </span>
+      );
+    }
+    return (
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={() => setCosmeticDialog({ staffId, staffName })}
+        className="cursor-pointer font-semibold text-teal-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-teal-900"
+        title="화장품 판매 내역 보기"
+      >
+        {formatAmount(Math.round(amount))}원
+      </button>
+    );
+  };
+
+  // 현재 팝업 대상 치료사의 화장품 판매 건 목록 + 합계 (동일 소스 파생 → 칸 금액과 정합).
+  const cosmeticDialogRows = cosmeticDialog
+    ? cosmeticDetailBySeller.get(cosmeticDialog.staffId) ?? []
+    : [];
+  const cosmeticDialogTotal = cosmeticDialogRows.reduce((s, r) => s + r.amount, 0);
+
+  // ── 화장품 판매내역 드릴다운 Dialog (AC1·AC2·AC3·AC6) ───────────────────────────
+  const CosmeticDetailDialog = (
+    <Dialog
+      open={!!cosmeticDialog}
+      onOpenChange={(open) => {
+        if (!open) setCosmeticDialog(null);
+      }}
+    >
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle data-testid="cosmetic-dialog-title">
+            {cosmeticDialog?.staffName} — 화장품 판매 내역
+          </DialogTitle>
+          <DialogDescription>
+            {basis === 'deduction' ? '차감기준' : '수납기준'} · {from} ~ {to} · {cosmeticDialogRows.length}건
+          </DialogDescription>
+        </DialogHeader>
+        {cosmeticDialogRows.length === 0 ? (
+          <div
+            data-testid="cosmetic-dialog-empty"
+            className="py-8 text-center text-sm text-muted-foreground"
+          >
+            판매 내역이 없습니다.
+          </div>
+        ) : (
+          <div className="max-h-[60vh] overflow-auto rounded-lg border text-xs">
+            <table className="w-full border-collapse">
+              <thead className="sticky top-0 z-10 bg-muted/70">
+                <tr>
+                  {['고객성함', '차트번호', '판매제품명', '판매일자', '금액'].map((h) => (
+                    <th
+                      key={h}
+                      className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody data-testid="cosmetic-dialog-list">
+                {cosmeticDialogRows.map((r) => (
+                  <tr key={r.key} className="border-b transition hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium">{r.customerName}</td>
+                    <td className="px-3 py-2 font-mono text-teal-600">
+                      {chartNoBadge(r.chartNumber)}
+                    </td>
+                    <td className="px-3 py-2">{r.productName}</td>
+                    <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                      {r.saleDate ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums text-right font-semibold">
+                      {formatAmount(Math.round(r.amount))}원
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-muted/40 font-semibold">
+                  <td colSpan={4} className="px-3 py-2 text-right">
+                    합계
+                  </td>
+                  <td
+                    data-testid="cosmetic-dialog-total"
+                    className="px-3 py-2 tabular-nums text-right text-teal-700"
+                  >
+                    {formatAmount(Math.round(cosmeticDialogTotal))}원
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
   // ── 렌더 ────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -737,10 +900,14 @@ export function SalesStaffTab({ filter }: Props) {
                   </td>
                   {/* T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 화장품 매출 별도 컬럼(합산 X) */}
                   <td
-                    data-testid={`sales-staff-deduct-cosmetic-${s.staffId}`}
-                    className="px-3 py-2 tabular-nums text-right font-semibold text-teal-700"
+                    className="px-3 py-2 tabular-nums text-right"
                   >
-                    {s.cosmeticRevenue > 0 ? `${formatAmount(Math.round(s.cosmeticRevenue))}원` : '—'}
+                    {renderCosmeticCell(
+                      s.staffId,
+                      s.staffName,
+                      s.cosmeticRevenue,
+                      `sales-staff-deduct-cosmetic-${s.staffId}`,
+                    )}
                   </td>
                 </tr>
               ))}
@@ -778,6 +945,7 @@ export function SalesStaffTab({ filter }: Props) {
           </p>
         </div>
         {DesignatedListDialog}
+        {CosmeticDetailDialog}
       </div>
     );
   }
@@ -854,10 +1022,16 @@ export function SalesStaffTab({ filter }: Props) {
                   </td>
                   {/* T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-3): 화장품 매출 별도 컬럼(seller 귀속) */}
                   <td
-                    data-testid={`sales-staff-cosmetic-${s.role}-${s.staffId}`}
-                    className="px-3 py-2 tabular-nums text-right font-semibold text-teal-700"
+                    className="px-3 py-2 tabular-nums text-right"
                   >
-                    {s.cosmeticRevenue > 0 ? `${formatAmount(Math.round(s.cosmeticRevenue))}원` : '—'}
+                    {s.role === 'therapist'
+                      ? renderCosmeticCell(
+                          s.staffId,
+                          s.staffName,
+                          s.cosmeticRevenue,
+                          `sales-staff-cosmetic-${s.role}-${s.staffId}`,
+                        )
+                      : <span className="text-muted-foreground">—</span>}
                   </td>
                   <td
                     data-testid={`sales-staff-refund-${s.role}-${s.staffId}`}
@@ -925,6 +1099,7 @@ export function SalesStaffTab({ filter }: Props) {
         </p>
       </div>
       {DesignatedListDialog}
+      {CosmeticDetailDialog}
     </div>
   );
 }
