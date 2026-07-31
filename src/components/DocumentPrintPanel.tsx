@@ -546,6 +546,66 @@ ${pages.join('\n')}
   return w;
 }
 
+// ─── T-20260731-foot-DOCREPRINT-GENERALFORMS-STAGE2 ───
+//   일반서식(영수증·처방전·치료확인서) 재출력 = 발행 저장본(form_submissions.field_data 스냅샷) 그대로
+//   read-only '다시보기' + [행정정보 수정]으로 행정필드만 in-place 편집(1단계 소견서·진단서 B안 UX 이식).
+//   접근A(field_data JSONB in-place, db_change=false) — planner 판정 2026-08-01(MSG-51de diagnose 근거).
+//
+//   LOCKED 방화벽(AC-1): [행정정보 수정] mutation 은 아래 화이트리스트 키만 병합(부분 patch).
+//     narrative 키(영수증 금액·급여구분·항목그리드 / 처방전 처방약내용·용법·교부번호 issue_no /
+//     치료확인서 치료내용·상병·기간)는 절대 미변경. field_data 통째 덮어쓰기 금지.
+//   issue_no 재발번 금지(AC-3): 재출력은 read-only render(buildPageHtml/bindHtmlTemplate)만, 신규 발번 없음.
+//   medical gate-free(AC-4): 신규 의료판단·처방 재생성 로직 0. read-only render + 행정필드 정정만.
+//   서식별 화이트리스트는 각 HTML 템플릿 field set 대조로 확정(htmlFormTemplates.ts placeholder 실측).
+const GENERAL_REPRINT_ADMIN_WHITELIST: Record<string, { key: string; label: string }[]> = {
+  // 영수증(구 양식): '진료의사 : {{doctor_name}}' 렌더 → EDITABLE=발급일·담당의명 / LOCKED=금액·급여구분·항목그리드(fee_grid_html/*_covered/receipt_total)
+  bill_receipt: [
+    { key: 'issue_date', label: '발급일' },
+    { key: 'doctor_name', label: '담당의명' },
+  ],
+  // 영수증(신 양식): 담당의(진료의사) 표시란 자체가 없음(대표자란={{receipt_representative}}=clinics.representative_name
+  //   개설자 고정 → 법정 대표자, LOCKED). → EDITABLE=발급일만. LOCKED=금액·급여구분·항목·대표자.
+  bill_receipt_new: [
+    { key: 'issue_date', label: '발급일' },
+  ],
+  // 처방전: 담당의명 표시는 처방전 전용 {{prescriber_name}}(T-20260718 RX-DOCTOR-BIND, doctor_name=billing 대표자 축과 분리).
+  //   → EDITABLE=발급일·담당의명(prescriber_name) / LOCKED=처방약 내용(rx_items_html)·용법(usage_days)·교부번호(issue_no)·면허번호(prescriber_license_no)
+  rx_standard: [
+    { key: 'issue_date', label: '발급일' },
+    { key: 'prescriber_name', label: '담당의명' },
+  ],
+  // 치료·통원확인서: EDITABLE=발급일·담당의·용도 / LOCKED=치료내용·상병(diag_*)·기간(visit_date/visit_days/discharge_date)
+  treat_confirm: [
+    { key: 'issue_date', label: '발급일' },
+    { key: 'doctor_name', label: '담당의' },
+    { key: 'purpose', label: '용도' },
+  ],
+  treat_confirm_code: [
+    { key: 'issue_date', label: '발급일' },
+    { key: 'doctor_name', label: '담당의' },
+    { key: 'purpose', label: '용도' },
+  ],
+  treat_confirm_nocode: [
+    { key: 'issue_date', label: '발급일' },
+    { key: 'doctor_name', label: '담당의' },
+    { key: 'purpose', label: '용도' },
+  ],
+  visit_confirm: [
+    { key: 'issue_date', label: '발급일' },
+    { key: 'doctor_name', label: '담당의' },
+    { key: 'purpose', label: '용도' },
+  ],
+};
+const GENERAL_REPRINT_FORM_KEYS = new Set(Object.keys(GENERAL_REPRINT_ADMIN_WHITELIST));
+
+/** 일반서식 발행 저장본(status='printed') 중 최신본을 찾는다. submissions 는 created_at DESC 정렬. */
+function findLatestPrintedSubmission(
+  submissions: FormSubmission[],
+  templateId: string,
+): FormSubmission | null {
+  return submissions.find((s) => s.template_id === templateId && s.status === 'printed') ?? null;
+}
+
 // ─── 메인 컴포넌트 ───
 
 export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false }: Props) {
@@ -556,6 +616,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   const [batchPrinting, setBatchPrinting] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FormTemplate | null>(null);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  // T-20260731-foot-DOCREPRINT-GENERALFORMS-STAGE2: 일반서식 재출력 '다시보기' 뷰어 대상.
+  const [reprintViewer, setReprintViewer] = useState<{ template: FormTemplate; submission: FormSubmission } | null>(null);
   // staff.id (issued_by FK — profile.id ≠ staff.id, user_id 경유 조회)
   const [staffId, setStaffId] = useState<string | null>(null);
   // T-20260708-foot-DOCPRINT-DOCTOR-SELECT-DROPDOWN: 서류 출력 시 '진료 원장님'을 상시 드롭다운으로 선택.
@@ -1102,9 +1164,22 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   };
 
   // ── 단건 카드 클릭 → 다이얼로그 ──
-  const handleSelectTemplate = (tpl: FormTemplate) => {
+  //   T-20260731-foot-DOCREPRINT-GENERALFORMS-STAGE2: 일반서식(영수증·처방전·치료확인서)이면서
+  //   당일/기존 출력 저장본(status='printed')이 있으면 → 편집 팝업이 아니라 '다시보기'(ReprintViewer)로 진입.
+  //   이력이 없으면 기존대로 편집 팝업(IssueDialog=당일 서류 발행). 소견서·진단서 등은 무영향.
+  const openIssueDialog = (tpl: FormTemplate) => {
     setSelectedTemplate(tpl);
     setIssueDialogOpen(true);
+  };
+  const handleSelectTemplate = (tpl: FormTemplate) => {
+    if (GENERAL_REPRINT_FORM_KEYS.has(tpl.form_key)) {
+      const printed = findLatestPrintedSubmission(submissions, tpl.id);
+      if (printed) {
+        setReprintViewer({ template: tpl, submission: printed });
+        return;
+      }
+    }
+    openIssueDialog(tpl);
   };
 
   const handleIssued = () => {
@@ -1969,6 +2044,22 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         />
       )}
 
+      {/* T-20260731-foot-DOCREPRINT-GENERALFORMS-STAGE2: 일반서식 재출력 '다시보기' 뷰어 */}
+      {reprintViewer && (
+        <ReprintViewerDialog
+          template={reprintViewer.template}
+          submission={reprintViewer.submission}
+          open={!!reprintViewer}
+          onOpenChange={(o) => { if (!o) setReprintViewer(null); }}
+          onSaved={() => { load(); onUpdated(); }}
+          onNewIssue={() => {
+            const t = reprintViewer.template;
+            setReprintViewer(null);
+            openIssueDialog(t);
+          }}
+        />
+      )}
+
       {/* 진료비 영수증 등록 다이얼로그 (T-20260509-foot-CHART1-LAYOUT-REAPPLY) */}
       <InvoiceDialog
         checkIn={checkIn}
@@ -2158,6 +2249,228 @@ function TemplateSection({
         })}
       </div>
     </div>
+  );
+}
+
+// ─── T-20260731-foot-DOCREPRINT-GENERALFORMS-STAGE2: 일반서식 재출력 '다시보기' 뷰어 ───
+//   발행 저장본(field_data 스냅샷)을 read-only 로 렌더(입력 팝업 X) → 그대로 재출력.
+//   [행정정보 수정] = 행정 화이트리스트 키만 in-place patch(LOCKED narrative 미변경).
+//   [당일 서류 발행] = 신규/재발행용 편집 팝업(IssueDialog)으로 전환.
+function ReprintViewerDialog({
+  template,
+  submission,
+  open,
+  onOpenChange,
+  onSaved,
+  onNewIssue,
+}: {
+  template: FormTemplate;
+  submission: FormSubmission;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+  onNewIssue: () => void;
+}) {
+  const whitelist = GENERAL_REPRINT_ADMIN_WHITELIST[template.form_key] ?? [];
+  // 저장 스냅샷 로컬 상태(편집 저장 시 갱신 → 미리보기/재출력 즉시 반영).
+  const [fieldData, setFieldData] = useState<Record<string, string>>(
+    () => ({ ...(submission.field_data ?? {}) }),
+  );
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  // 다이얼로그가 다른 서류로 재오픈될 때 스냅샷 리셋(같은 서류 재편집 시 stale 방지).
+  useEffect(() => {
+    setFieldData({ ...(submission.field_data ?? {}) });
+    setEditMode(false);
+  }, [submission.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isLandscape = template.form_key === 'bill_detail';
+
+  // read-only 미리보기 HTML — 인쇄 경로와 동일 렌더러(buildPageHtml) 재사용. 화면용 스케일만 추가.
+  const previewDoc = useMemo(() => {
+    const pageHtml = buildPageHtml(template, fieldData, '');
+    const pageW = isLandscape ? '297mm' : '210mm';
+    const pageH = isLandscape ? '210mm' : '297mm';
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      html,body{margin:0;padding:0;background:#f3f4f6;}
+      .page{box-sizing:border-box;position:relative;width:${pageW};min-height:${pageH};padding:23mm 10mm 12mm;background:#fff;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.18);}
+      .page-landscape{box-sizing:border-box;width:297mm;min-height:210mm;padding:23mm 10mm 12mm;}
+    </style></head><body>${pageHtml}</body></html>`;
+  }, [template, fieldData, isLandscape]);
+
+  const handleReprint = () => {
+    // AC-3: read-only 재출력 — 저장 스냅샷 그대로 인쇄. issue_no 재발번·form_submissions INSERT 없음.
+    const pageHtml = buildPageHtml(template, fieldData, '');
+    openBatchPrintWindow([pageHtml], `${template.name_ko} 재출력`, isLandscape);
+  };
+
+  const startEdit = () => {
+    const d: Record<string, string> = {};
+    whitelist.forEach((w) => { d[w.key] = fieldData[w.key] ?? ''; });
+    setDraft(d);
+    setEditMode(true);
+  };
+
+  const handleSaveAdmin = async () => {
+    setSaving(true);
+    try {
+      // 최신 행을 재조회해 stale 스냅샷으로 narrative 를 덮어쓰지 않도록 fresh base 로 병합.
+      const { data: fresh, error: fErr } = await supabase
+        .from('form_submissions')
+        .select('field_data, status')
+        .eq('id', submission.id)
+        .maybeSingle();
+      if (fErr) throw fErr;
+      if (!fresh) { toast.error('발행 기록을 찾을 수 없습니다.'); return; }
+      if (fresh.status !== 'printed') {
+        toast.error('재출력 편집 대상(출력 완료본)이 아닙니다.');
+        return;
+      }
+      const base = { ...((fresh.field_data as Record<string, string>) ?? {}) };
+      // LOCKED 방화벽(AC-1): 화이트리스트 키만 병합. 그 외(narrative)는 base 그대로 보존.
+      const patch: Record<string, string> = { ...base };
+      const whitelistKeys = new Set(whitelist.map((w) => w.key));
+      whitelist.forEach((w) => { patch[w.key] = (draft[w.key] ?? '').trim(); });
+      // 담당의명 편집 시 재출력 프리필 소스(attending_doctor_name)도 동기화 → 정정본 일관 반영.
+      if (whitelistKeys.has('doctor_name')) {
+        patch.attending_doctor_name = (draft.doctor_name ?? patch.doctor_name ?? '').trim();
+        whitelistKeys.add('attending_doctor_name');
+      }
+      // 방어적 불변식: 화이트리스트 밖 키는 base 와 100% 동일해야 한다(LOCKED 미변경 보증).
+      for (const k of Object.keys(base)) {
+        if (whitelistKeys.has(k)) continue;
+        if (patch[k] !== base[k]) {
+          toast.error('잠금 항목 변경이 감지되어 저장을 중단했습니다.');
+          return;
+        }
+      }
+      const { data: updated, error } = await supabase
+        .from('form_submissions')
+        .update({ field_data: patch })
+        .eq('id', submission.id)
+        .eq('status', 'printed')
+        .select('id');
+      if (error) throw error;
+      // rows-affected 가드(cross-CRM write 표준): RLS/스코프 불일치로 0행이면 사일런트 유실 → 실패 처리.
+      if (!updated || updated.length === 0) {
+        toast.error('행정정보 저장에 실패했습니다(변경 반영 0건).');
+        return;
+      }
+      setFieldData(patch);
+      setEditMode(false);
+      toast.success('행정정보가 수정되었습니다.');
+      onSaved();
+    } catch {
+      toast.error('행정정보 수정 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl" data-testid="reprint-viewer-dialog">
+        <DialogHeader>
+          <DialogTitle className="text-base flex items-center gap-1.5">
+            <Printer className="h-4 w-4 text-teal-600" />
+            {template.name_ko} · 재출력(다시보기)
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* read-only 안내 배너 */}
+        <div className="flex items-center gap-2 rounded-md bg-teal-50 border border-teal-200 px-2.5 py-1.5 text-xs text-teal-700">
+          <FileCheck className="h-3.5 w-3.5 shrink-0" />
+          발행 저장본을 그대로 다시 보는 화면입니다. 본문 내용은 잠금(수정 불가)이며, 행정 항목만 정정할 수 있습니다.
+        </div>
+
+        {/* 저장본 미리보기 (read-only) */}
+        <div
+          className="w-full overflow-auto rounded border bg-gray-100 flex justify-center"
+          style={{ maxHeight: '48vh' }}
+        >
+          <div style={{ width: 492, height: isLandscape ? 460 : 696 }}>
+            <iframe
+              title="문서 미리보기"
+              srcDoc={previewDoc}
+              data-testid="reprint-preview-frame"
+              sandbox=""
+              style={{
+                width: isLandscape ? 1123 : 794,
+                height: isLandscape ? 794 : 1123,
+                transform: 'scale(0.62)',
+                transformOrigin: 'top left',
+                border: 'none',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* 행정정보 수정 패널 */}
+        {editMode ? (
+          <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/60 p-3" data-testid="reprint-admin-edit-panel">
+            <div className="text-xs font-semibold text-amber-700">행정 항목 정정</div>
+            {whitelist.map((w) => (
+              <div key={w.key} className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{w.label}</Label>
+                <Input
+                  className="h-10 text-sm"
+                  value={draft[w.key] ?? ''}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, [w.key]: e.target.value }))}
+                  data-testid={`reprint-admin-input-${w.key}`}
+                />
+              </div>
+            ))}
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                size="sm"
+                className="bg-teal-600 hover:bg-teal-700 gap-1"
+                onClick={handleSaveAdmin}
+                disabled={saving}
+                data-testid="reprint-admin-save-btn"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {saving ? '저장 중…' : '저장'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditMode(false)} disabled={saving}>
+                취소
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          {!editMode && whitelist.length > 0 && (
+            <Button
+              variant="outline"
+              className="gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+              onClick={startEdit}
+              data-testid="reprint-admin-edit-btn"
+            >
+              행정정보 수정
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            className="gap-1"
+            onClick={onNewIssue}
+            data-testid="reprint-new-issue-btn"
+          >
+            당일 서류 발행(새로 입력)
+          </Button>
+          <Button
+            className="gap-1 bg-teal-600 hover:bg-teal-700"
+            onClick={handleReprint}
+            disabled={editMode}
+            data-testid="reprint-print-btn"
+          >
+            <Printer className="h-4 w-4" />
+            재출력
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
