@@ -53,10 +53,9 @@ import { rxFreqCore } from '@/lib/rxFormat';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Lock, Pill, Search, Trash2, X } from 'lucide-react';
-// T-20260607-foot-MEDCHART-CONSULT-DRAWER: 진료차트 우측 "📋 상담" 탭 (A안 — 서랍에서 탭으로 이식)
-import ConsultRecordTab from '@/components/ConsultRecordTab';
-// T-20260703-foot-STAFFPHOTO-CHART-LINK: 직원촬영 임상사진 원장 조회 탭(readOnly). 느슨 결합 드롭인.
-import TreatmentPhotoGallery from '@/components/TreatmentPhotoGallery';
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 3구역 '상담'·'임상사진' 탭 삭제(원장 U0ALGAAAJAV 직접 컨펌 캐논).
+//   ConsultRecordTab(구 T-20260607-CONSULT-DRAWER, superseded) / TreatmentPhotoGallery 원장뷰(구 T-20260703-STAFFPHOTO-CHART-LINK, superseded)
+//   두 탭 모두 read-only 뷰어(입력능력 0) → CONDITIONAL_GO 안전가드상 무회귀 삭제. import 제거.
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -65,7 +64,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { checkRxRoleGate, rxRoleGateMessage, rxInsuranceGateMessage, rxInsuranceOverrideConfirm } from '@/lib/prescriptionGate';
 import { evaluateRxInsuranceGate, searchServiceRxDrugs } from '@/lib/prescribableDrugs';
-import { formatAmount, formatPhone, todaySeoulISODate, chartNoBadge, birthDateYMD } from '@/lib/format';
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 2026-07-30): 2구역 처방내역 재소싱 —
+//   PMW 유입 처방약(약이름)을 JINRYO-ALIMPAN read 로직(extractRxDrugNames) 재사용해 표시. 무근거 재구현 금지.
+import { extractRxDrugNames } from '@/lib/opinionRequest';
+import { formatAmount, formatPhone, todaySeoulISODate, seoulISODate, chartNoBadge, birthDateYMD } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260609-foot-DOCCALL-DOCTOR-ACK AC8: 환자차트에도 ✋ 표시(대기 pulse / 확인 후 파란 고정).
 import { DoctorAckBadge } from '@/components/doctor/DoctorAck';
@@ -263,6 +265,14 @@ interface TreatmentImage {
   name: string;
 }
 
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 3구역 '발행서류' 탭 — 해당 고객 발행서류 일자별 리스트.
+//   원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
+//   소스 = form_submissions (CustomerChartPage L3260-3261 발행서류 조회 패턴 재사용, read-only·additive·처방무관).
+interface IssuedDocEntry {
+  formKey: string | null;
+  ts: string | null; // printed_at ?? signed_at
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface MedicalChartPanelProps {
@@ -296,7 +306,8 @@ export interface MedicalChartPanelProps {
   //   임상경과 오기입 차단용 — readOnly=true 면 textarea readOnly + 저장 버튼(embed footer) 미노출.
   // T-20260609-foot-VISITLOG-NAMING-CLARIFY: 패널 열림 시 우측 기본 탭 지정(deep-link/QA 진입용).
   //   미지정 시 기존과 동일하게 'rx'. ?medchart=visit_hist 진입 시 '방문이력' 콘텐츠를 바로 노출하기 위함.
-  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult' | 'clinical_photos';
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 'consult'·'clinical_photos' 탭 삭제. 하위호환 위해 legacy 값 수신은 허용하되 기본 fallback 처리.
+  initialRightTab?: 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images';
   //   default false → 기존 모든 호출자(DoctorCallDashboard 등) 동작 무변경(AC-4 회귀가드).
   readOnly?: boolean;
   // T-20260611-foot-DOCDASH-TABLEVIEW-CONVERGE B안 (문지은 대표원장, '둘다해줘'):
@@ -330,6 +341,38 @@ function fmtDateFull(dateStr: string): string {
   } catch {
     return dateStr;
   }
+}
+
+// T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 form_key → 한국어 라벨.
+//   CustomerChartPage L6789-6795 FORM_KEY_LABEL 재사용 + 풋 의료서류(소견서/진단서/처방전/계산서) 보강.
+const ISSUED_DOC_LABEL: Record<string, string> = {
+  personal_checklist_general: '개인정보+체크리스트 (일반)',
+  personal_checklist_senior: '개인정보+체크리스트 (어르신)',
+  pen_chart: '보험차트',
+  consent_form: '동의서',
+  receipt: '영수증',
+  bill_receipt: '진료비 계산서·영수증',
+  diag_opinion: '소견서',
+  diagnosis: '진단서',
+  rx_standard: '처방전',
+  koh_result: 'KOH 검사결과',
+};
+function fmtDocLabel(formKey: string | null): string {
+  if (!formKey) return '서류';
+  return ISSUED_DOC_LABEL[formKey] ?? formKey;
+}
+// 발행 시각을 일자별 그룹(yyyy-MM-dd)으로 묶어 최신순 반환.
+function groupIssuedDocsByDate(rows: IssuedDocEntry[]): { date: string; items: IssuedDocEntry[] }[] {
+  const map = new Map<string, IssuedDocEntry[]>();
+  for (const r of rows) {
+    if (!r.ts) continue;
+    const day = r.ts.slice(0, 10); // ISO yyyy-MM-dd
+    if (!map.has(day)) map.set(day, []);
+    map.get(day)!.push(r);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1)) // 최신 일자 먼저
+    .map(([date, items]) => ({ date, items }));
 }
 
 // ── T-20260609-foot-TIMELINE-FILTER-PREVIEW-FIX (문지은 대표원장 field-soak) ──────────────
@@ -573,6 +616,10 @@ export default function MedicalChartPanel({
   //   섹션이 진단명↔치료사차트 사이에 뒤늦게 삽입 → 임상경과/치료사차트를 아래로 밀어내는 CLS 주범.
   //   in-flight 동안 동일 높이 skeleton으로 자리를 미리 점유해 pop-in 점프 제거.
   const [visitPaymentsLoading, setVisitPaymentsLoading] = useState(false);
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 슬랙 ts 1785395371.418339):
+  //   2구역 처방내역 = 해당 방문 PMW 유입 처방약(약이름). 소스=check_in_services(services.category_label='처방약').
+  //   비어있으면(legacy/수기 갭·G1) 기존 formRx(medical_charts.prescription_items) 구조화 표시로 자연 폴백.
+  const [visitRxDrugNames, setVisitRxDrugNames] = useState<string[]>([]);
   // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2 [B]): 진단명 입력은 자동완성/이력 datalist 폐지 →
   //   DiagnosisFolderPicker(폴더 탐색 + 원장별 즐겨찾기) 선택전용으로 전환. 별도 상태 불요(picker 자체조회).
   //   저장값은 순수 상병명(formDx) — medical_charts.diagnosis 저장경로 무변경.
@@ -628,6 +675,13 @@ export default function MedicalChartPanel({
 
   // ── 선택 차트 (null = 새 기록 모드) ──────────────────────────────────────────
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안, 김주연 총괄 확정 슬랙 ts 1785396595.742999):
+  //   좌측 날짜 목록 = 고객이 내원(체크인)한 날짜 전부(check_ins ∪ medical_charts). 차트 미작성 내원일도
+  //   "미기록" 빈 상태 행으로 표시. 아래 checkInDates 는 해당 고객의 내원(check_ins) KST 일자 distinct 집합.
+  //   selectedVirtualDate = 현재 선택된 '미기록(차트 없는)' 날짜 행(하이라이트 + 그 날짜 신규작성 앵커).
+  //   db_change=false — check_ins 는 기존 데이터, 스키마 변경 없음. 우측 '방문이력' 탭과 동일 소스(checked_in_at).
+  const [checkInDates, setCheckInDates] = useState<string[]>([]);
+  const [selectedVirtualDate, setSelectedVirtualDate] = useState<string | null>(null);
   // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: loadData(차트 서버조회)가 최초 1회 완료됐는지 신호.
   //   clinical variant 의 today-차트 자동선택(clinicalInit)이 "아직 charts 미로드(초기 빈 배열)" 상태에서
   //   먼저 돌아 ref 가 굳는 레이스를 차단하기 위함. loadData finally 직전 true, 매 로드 시작 시 false 로 재게이트.
@@ -753,7 +807,8 @@ export default function MedicalChartPanel({
   // ── 우측 패널 탭 (AC-1 + MEDCHART-SYNC → TREATMEMO-CHART-MERGE: 처방세트 / 상용구 / 진료내역 / 진료이미지)
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo 탭 제거 — [치료사차트] 섹션에 통합
   // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 'consult' 탭(📋 상담) 추가
-  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult' | 'clinical_photos'>('rx');
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 3구역 탭에서 'consult'·'clinical_photos' 제거.
+  const [rightTab, setRightTab] = useState<'rx' | 'phrase' | 'super' | 'visit_hist' | 'images'>('rx');
   // T-20260605-foot-RX-PHRASE-CLICK-INSERT: 체크박스 다중선택 → 클릭 시 ✓ 즉시삽입 단일화.
   //   행 클릭 → 그 행만 ✓ 버튼 노출(단일 활성), ✓ 클릭 → 즉시 삽입. (펜차트 PHRASE-MULTISELECT 와 별개 패널)
   const [clickedPhraseId, setClickedPhraseId] = useState<number | null>(null);
@@ -795,6 +850,11 @@ export default function MedicalChartPanel({
   const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
   const [treatImagesLoaded, setTreatImagesLoaded] = useState(false);
   const [treatImagesLoading, setTreatImagesLoading] = useState(false);
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (3구역 '발행서류' 탭 상단)
+  const [issuedDocs, setIssuedDocs] = useState<IssuedDocEntry[]>([]);
+  const [issuedDocsLoaded, setIssuedDocsLoaded] = useState(false);
+  const [issuedDocsLoading, setIssuedDocsLoading] = useState(false);
+  const [issuedDocsError, setIssuedDocsError] = useState(false);
 
   // T-20260603-foot-CHART-SPECIAL-NOTE: 특이사항 공용 누적칸 (좌측 타임라인 ⑤)
   const [specialNotes, setSpecialNotes] = useState<SpecialNoteEntry[]>([]);
@@ -830,7 +890,7 @@ export default function MedicalChartPanel({
     chartsLoadedRef.current = false;
     setLoading(true);
     try {
-      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes, clinicDoctorsRes] = await Promise.all([
+      const [custRes, chartsRes, phrasesRes, rxSetsRes, treatMemosRes, staffRes, superRes, specialNotesRes, clinicDoctorsRes, checkInDatesRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
@@ -905,6 +965,17 @@ export default function MedicalChartPanel({
           .eq('active', true)
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: true }),
+        // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안): 해당 고객의 내원(check_ins) 일자.
+        //   좌측 날짜 목록을 check_ins ∪ medical_charts 로 union 확장하기 위한 소스. checked_in_at(우측 방문이력 탭과 동일)
+        //   을 KST 일자로 환산해 distinct. db_change 없음(기존 데이터 read-only). limit 는 장기 재진 고객 안전폭.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('check_ins')
+          .select('checked_in_at')
+          .eq('customer_id', customerId)
+          .eq('clinic_id', clinicId)
+          .order('checked_in_at', { ascending: false })
+          .limit(500),
       ]);
 
       if (custRes.data) setCustomer(custRes.data as CustomerBasic);
@@ -978,6 +1049,16 @@ export default function MedicalChartPanel({
       //   삭제된 차트는 deletedCharts 로 분리(목록 기본 숨김, 관리자 "삭제된 차트 보기" 토글로만 조회).
       setCharts(merged.filter((c) => !c.is_deleted));
       setDeletedCharts(merged.filter((c) => !!c.is_deleted));
+      // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안): 내원(check_ins) 일자 distinct(KST) 적재.
+      //   checked_in_at(UTC timestamptz) → seoulISODate 로 KST 일자 환산 후 중복 제거. 조회 실패 시 빈 배열
+      //   (=기존 medical_charts 단독 목록으로 자연 폴백, 무회귀). 렌더에서 chart 없는 일자만 '미기록' 가상 행으로 표시.
+      {
+        const ciRows = (checkInDatesRes?.data as { checked_in_at: string | null }[] | null) ?? [];
+        const dates = ciRows
+          .map((r) => (r.checked_in_at ? seoulISODate(r.checked_in_at) : null))
+          .filter((d): d is string => !!d);
+        setCheckInDates([...new Set(dates)]);
+      }
       // T-20260611-foot-DOCDASH-CLINICAL-SAVE-FAIL: charts 서버조회 성공 반영 완료 → today-차트 자동선택 허용.
       //   (성공 경로에서만 true. 실패 시 false 유지 → 빈 charts 로 today-차트 자동선택이 굳지 않음)
       chartsLoadedRef.current = true;
@@ -1022,6 +1103,37 @@ export default function MedicalChartPanel({
     }
   }, [customerId]);
 
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B): 2구역 처방내역 재소싱 로더.
+  //   해당 방문(date)의 PMW 유입 처방약(약이름)을 check_in_services 에서 조회.
+  //   loadVisitPayments 와 동일한 방문 해석 패턴(check_ins by customer_id+date → check_in_id) 재사용 +
+  //   JINRYO-ALIMPAN read 로직(extractRxDrugNames: services.category_label='처방약' 필터 → service_name) 재사용.
+  //   B=약이름-only. 조회 불가/0건이면 빈 배열 → 렌더에서 기존 formRx 구조화 테이블로 자연 폴백(G1 legacy).
+  const loadVisitRxDrugNames = useCallback(async (date: string) => {
+    if (!customerId || !date) { setVisitRxDrugNames([]); return; }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: checkIns } = await (supabase as any)
+        .from('check_ins')
+        .select('id')
+        .eq('customer_id', customerId)
+        .gte('created_at', `${date}T00:00:00+09:00`)
+        .lte('created_at', `${date}T23:59:59+09:00`);
+      if (!checkIns?.length) { setVisitRxDrugNames([]); return; }
+      const ids = (checkIns as { id: string }[]).map(c => c.id);
+      const { data: cisData, error } = await supabase
+        .from('check_in_services')
+        .select('check_in_id, service_name, services:service_id(category_label)')
+        .in('check_in_id', ids);
+      if (error) throw error;
+      const names = extractRxDrugNames((cisData ?? []) as Array<Record<string, unknown>>);
+      // 동일 방문 내 동일 약 중복 표기 방지(순서 보존).
+      setVisitRxDrugNames([...new Set(names)]);
+    } catch {
+      // 처방약 조회 불가 → 폴백(빈 배열) → formRx 구조화 표시(G1). 차트 자체는 정상.
+      setVisitRxDrugNames([]);
+    }
+  }, [customerId]);
+
   // ── 폼 채우기 ────────────────────────────────────────────────────────────────
 
   const resetForm = useCallback((chart?: MedicalChart | null) => {
@@ -1044,6 +1156,7 @@ export default function MedicalChartPanel({
       // T-20260608-foot-MEDCHART-SIGN-AUDIT (Phase 2): 저장된 차트의 진료의 복원(레거시는 ''→재선택 필요).
       setFormSigningDoctorId(chart.signing_doctor_id ?? '');
       loadVisitPayments(chart.visit_date);
+      loadVisitRxDrugNames(chart.visit_date); // 문원장 B: 2구역 처방내역 PMW 재소싱
     } else {
       setFormDate(today);
       setFormDx('');
@@ -1054,8 +1167,9 @@ export default function MedicalChartPanel({
       // 신규 작성: 진료의 미선택 — 아래 자동기본값 effect가 의사 계정이면 본인으로 채움(AC-P2-1).
       setFormSigningDoctorId('');
       loadVisitPayments(today);
+      loadVisitRxDrugNames(today); // 문원장 B: 2구역 처방내역 PMW 재소싱
     }
-  }, [loadVisitPayments]);
+  }, [loadVisitPayments, loadVisitRxDrugNames]);
 
   // T-20260608-foot-MEDCHART-SIGN-AUDIT AC-P2-1 (자동 기본값): 신규 작성 + 진료의 미선택일 때,
   //   로그인 계정이 의사이고 이름이 일치하는 활성 의사가 있으면 본인 자동 선택.
@@ -1204,7 +1318,11 @@ export default function MedicalChartPanel({
       setPhrasePopoverVisible(false);
       setClickedPhraseId(null);
       // T-20260609-foot-VISITLOG-NAMING-CLARIFY: deep-link 진입(?medchart=visit_hist)이면 해당 탭으로 열기. 기본은 'rx'(불변).
-      setRightTab(initialRightTab ?? 'rx');
+      // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 삭제된 탭('consult'/'clinical_photos') legacy deep-link 방어 —
+      //   존재하지 않는 탭 값이면 blank 패널 대신 'rx'로 fallback(런타임 안전).
+      const validTabs = ['rx', 'phrase', 'super', 'visit_hist', 'images'] as const;
+      const requestedTab = initialRightTab && (validTabs as readonly string[]).includes(initialRightTab) ? initialRightTab : 'rx';
+      setRightTab(requestedTab);
       // T-20260526-foot-MEDCHART-SYNC: 참고 데이터 리셋 (새 고객 열릴 때마다)
       // T-20260527-foot-TREATMEMO-CHART-MERGE: treatMemos는 loadData에서 자동 재로드됨
       setTreatMemos([]);
@@ -1212,6 +1330,10 @@ export default function MedicalChartPanel({
       setVisitHistLoaded(false);
       setTreatImages([]);
       setTreatImagesLoaded(false);
+      // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 리스트 리셋 (새 고객 열림마다)
+      setIssuedDocs([]);
+      setIssuedDocsLoaded(false);
+      setIssuedDocsError(false);
       // T-20260526-foot-VISIT-FOLD-FILTER: 리셋
       setExpandedChartIds(new Set<string>());
       setMemoFilters(new Set<MemoFilter>());
@@ -1351,6 +1473,7 @@ export default function MedicalChartPanel({
 
   function selectChart(chart: MedicalChart) {
     setSelectedChartId(chart.id);
+    setSelectedVirtualDate(null); // 실차트 선택 시 '미기록' 가상행 하이라이트 해제
     resetForm(chart);
     setPhrasePopoverVisible(false);
     setEditMode(false); // AC-4: 저장된 차트 진입 시 읽기전용
@@ -1358,9 +1481,32 @@ export default function MedicalChartPanel({
 
   function selectNew() {
     setSelectedChartId(null);
+    setSelectedVirtualDate(null);
     resetForm(null);
     setPhrasePopoverVisible(false);
     setEditMode(true); // AC-4: 신규 작성은 즉시 편집 가능
+  }
+
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안, 김주연 총괄 ts 1785396595.742999):
+  //   좌측 날짜 목록에서 '차트 미작성 내원일'(가상 행)을 클릭했을 때. 로드할 medical_charts 레코드가 없으므로
+  //   selectedChartId=null(=신규작성 시맨틱: 저장 시 그 날짜로 INSERT, 유령 UPDATE 방지) + 폼을 해당 내원일로
+  //   앵커한 빈 상태(미기록)로 초기화. 원장이 그대로 진료경과를 작성해 저장하면 그 날짜 차트가 생성된다.
+  function selectVirtualDate(date: string) {
+    setSelectedChartId(null);
+    setSelectedVirtualDate(date);
+    // resetForm 에 해당 내원일자만 채운 빈 차트를 넘겨 formDate·방문결제/처방 로드를 그 날짜로 앵커(빈 상태 유지).
+    resetForm({
+      id: `virtual:${date}`,
+      visit_date: date,
+      diagnosis: null,
+      treatment_record: null,
+      clinical_progress: null,
+      doctor_memo: null,
+      prescription_items: null,
+      signing_doctor_id: null,
+    } as unknown as MedicalChart);
+    setPhrasePopoverVisible(false);
+    setEditMode(false); // 빈 상태(미기록) 진입 — 원장이 [수정/작성]으로 편집 진입
   }
 
   // ── 저장 ─────────────────────────────────────────────────────────────────────
@@ -2042,11 +2188,48 @@ export default function MedicalChartPanel({
     }
   }, [customerId, treatImagesLoaded, treatImagesLoading]);
 
+  // ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 lazy load ──
+  //   원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업". 소스=form_submissions.
+  //   CustomerChartPage L3260-3261 발행서류 조회 패턴을 재사용(신규 쿼리 설계 없이 read-only·additive).
+  //   처방(rx)/상용구(phrase) HOLD 무관 — 삭제/재소싱 대상 탭을 건드리지 않는다.
+  const loadIssuedDocs = useCallback(async () => {
+    if (!customerId || issuedDocsLoaded || issuedDocsLoading) return;
+    setIssuedDocsLoading(true);
+    setIssuedDocsError(false);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('form_submissions')
+        .select('printed_at, signed_at, field_data, form_templates!template_id(form_key)')
+        .eq('customer_id', customerId)
+        .order('printed_at', { ascending: false, nullsFirst: false })
+        .limit(50);
+      if (error) throw error;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = ((data as any[]) ?? []).map((s): IssuedDocEntry => ({
+        // form_templates 조인 우선, 폴백 field_data.form_key (CustomerChartPage L3486 동일 폴백)
+        formKey:
+          (s.form_templates?.form_key as string | undefined) ??
+          ((s.field_data as Record<string, unknown> | null)?.form_key as string | undefined) ??
+          null,
+        ts: (s.printed_at as string | null) ?? (s.signed_at as string | null) ?? null,
+      }));
+      // 발행 시각(printed/signed)이 있는 항목만 = 실제 발행 이력. 미발행 draft 제외.
+      setIssuedDocs(rows.filter((r) => r.ts));
+    } catch {
+      setIssuedDocsError(true);
+    } finally {
+      setIssuedDocsLoaded(true);
+      setIssuedDocsLoading(false);
+    }
+  }, [customerId, issuedDocsLoaded, issuedDocsLoading]);
+
   // ── 탭 전환 시 lazy load 트리거 ────────────────────────────────────────────────
   // T-20260527-foot-TREATMEMO-CHART-MERGE: treat_memo는 loadData에서 로드 → 탭 트리거 제거
   useEffect(() => {
     if (rightTab === 'visit_hist') loadVisitHistory();
     else if (rightTab === 'images') loadTreatImages();
+    else if (rightTab === 'super') loadIssuedDocs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightTab]);
 
@@ -2067,8 +2250,23 @@ export default function MedicalChartPanel({
         (b.visit_date || '').localeCompare(a.visit_date || '') ||
         (b.created_at || '').localeCompare(a.created_at || ''))
     : activeCharts;
-  // 실데이터(활성/삭제) 0건 = 빈 상태(더미 아님). placeholder만 노출.
-  const isEmptyState = displayCharts.length === 0;
+
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안, 김주연 총괄 ts 1785396595.742999):
+  //   좌측 날짜 목록 = check_ins ∪ medical_charts 일자 union. 차트가 있는 일자는 기존 차트 행 그대로,
+  //   차트 없는 내원일(check_ins만 있는 날)은 '미기록' 가상 행으로 표시(클릭 시 빈 상태/그날 신규작성 앵커).
+  //   실차트가 있는 일자는 가상 행에서 제외(중복 방지). 최신일 우선 정렬(차트/가상 통합).
+  const chartVisitDates = new Set(displayCharts.map((c) => c.visit_date));
+  const virtualVisitDates = checkInDates.filter((d) => !chartVisitDates.has(d));
+  type TimelineRow =
+    | { kind: 'chart'; date: string; chart: MedicalChart }
+    | { kind: 'virtual'; date: string };
+  const timelineRows: TimelineRow[] = [
+    ...displayCharts.map((c): TimelineRow => ({ kind: 'chart', date: c.visit_date, chart: c })),
+    ...virtualVisitDates.map((d): TimelineRow => ({ kind: 'virtual', date: d })),
+  ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  // 차트/내원(가상) 모두 0건 = 빈 상태(더미 아님). placeholder만 노출.
+  const isEmptyState = timelineRows.length === 0;
 
   // T-20260526-foot-VISIT-FOLD-FILTER: 필터 적용 (OR 로직)
   // T-20260609-foot-MEDCHART-SOAK-REFINE item2 (문지은 대표원장 field-soak 버그):
@@ -3053,7 +3251,48 @@ export default function MedicalChartPanel({
                       '필터 결과 없음' 빈 상태(날짜행 소거) 제거 — 방문 날짜행은 항상 보존, 내용만 가린다. */}
 
                   {/* 아코디언 엔트리 목록 */}
-                  {filteredDisplayCharts.map(chart => {
+                  {/* T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (1구역 진료경과 B안): 통합 타임라인(차트 ∪ 내원).
+                      차트 없는 내원일(kind:'virtual')은 '미기록' 빈 상태 행으로 표시 — 클릭 시 그 날짜 빈 폼 앵커. */}
+                  {timelineRows.map((row) => {
+                    if (row.kind === 'virtual') {
+                      const isSel = selectedVirtualDate === row.date;
+                      return (
+                        <div
+                          key={`virtual-${row.date}`}
+                          className="border-b border-border/40"
+                          data-testid="medical-chart-timeline-virtual-entry"
+                          data-visit-date={row.date}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => selectVirtualDate(row.date)}
+                            className={`w-full text-left pl-1.5 pr-2 py-2 hover:bg-muted transition-colors min-w-0 ${
+                              isSel ? 'bg-teal-50 border-l-2 border-l-teal-500' : ''
+                            }`}
+                            data-testid={`chart-select-virtual-${row.date}`}
+                          >
+                            <div className="flex items-center gap-1.5 leading-tight">
+                              {/* 유형 닷 컬럼 폭만 유지(내용 없음 → 전부 transparent) */}
+                              <span className="flex items-center gap-1 shrink-0">
+                                <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-transparent" />
+                              </span>
+                              <span className="text-[11px] font-semibold text-teal-700 shrink-0">
+                                {fmtDateShort(row.date)}
+                              </span>
+                              <span
+                                className="ml-auto text-[9px] text-muted-foreground bg-muted/50 border border-border rounded px-1 shrink-0"
+                                data-testid="timeline-unrecorded-badge"
+                              >
+                                미기록
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    }
+                    const chart = row.chart;
                     const isExpanded = expandedChartIds.has(chart.id);
                     const hasTreat = hasTreatMemo(chart);
                     const hasDoc = hasDocMemo(chart);
@@ -3371,7 +3610,7 @@ export default function MedicalChartPanel({
                     <Input
                       type="date"
                       value={formDate}
-                      onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); }}
+                      onChange={(e) => { setFormDate(e.target.value); loadVisitPayments(e.target.value); loadVisitRxDrugNames(e.target.value); }}
                       disabled={isReadOnly}
                       className="h-9 text-sm text-left border-0 max-w-[150px] disabled:opacity-100 disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                       data-testid="medical-chart-date"
@@ -3468,7 +3707,28 @@ export default function MedicalChartPanel({
                     <div className="flex items-center mb-1 min-h-[1.125rem]">
                       <label className="text-xs font-semibold text-muted-foreground">처방내역</label>
                     </div>
-                    {formRx.length > 0 ? (
+                    {/* T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE Phase A (문원장 B, 2026-07-30 ts 1785395371.418339):
+                        2구역 처방내역 = 해당 방문 PMW(결제미니창) 유입 처방약, 약이름만 표시(재소싱).
+                        소스=check_in_services 처방약(extractRxDrugNames 재사용). 용법/횟수/일수 미표시=B 의도적 결정(회귀 아님).
+                        PMW 처방약 없으면(legacy/수기·G1) 아래 기존 formRx 구조화 테이블로 폴백(무회귀). */}
+                    {visitRxDrugNames.length > 0 ? (
+                      <div
+                        className="rounded-lg bg-card overflow-hidden"
+                        data-testid="prescription-items-pmw"
+                      >
+                        <ul className="divide-y divide-gray-200">
+                          {visitRxDrugNames.map((nm, idx) => (
+                            <li
+                              key={idx}
+                              className="px-3 py-1.5 text-xs font-medium break-words"
+                              data-testid={`rx-pmw-name-${idx}`}
+                            >
+                              {nm}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : formRx.length > 0 ? (
                       /* T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-4: 테두리 전부 제거 —
                          외곽 테두리(border) 제거 + 내부 입력칸/버튼 테두리·그림자도 전부 제거
                          (arbitrary variant [&_input]/[&_button]). 기능 동선(추가/수정/삭제·세트 반영) 무변경.
@@ -4062,12 +4322,15 @@ export default function MedicalChartPanel({
                 <div className={`flex flex-col min-h-0 flex-1 pl-7 ${rightPanelCollapsed ? 'hidden' : ''}`}>
                 {/* 탭 헤더 — 5개 아이콘+라벨 컴팩트 */}
                 <div className="flex-none border-b">
-                  {/* 상단 행: 처방세트 / 상용구 / 슈퍼상용구 (T-20260603-foot-RX-SUPER-PHRASE) */}
+                  {/* 상단 행: 처방세트 / 상용구 / 발행서류
+                      T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): '슈퍼상용구'→'발행서류' 개칭(원장 캐논).
+                        템플릿(applySuperPhrase) 기능은 유지 — 개칭은 라벨/의미만. (처방세트·상용구 삭제는 Phase A 2구역 PMW
+                        read-path 검증 후 별도 진행 — CONDITIONAL_GO 안전가드 국소 HOLD, planner FOLLOWUP) */}
                   <div className="flex border-b border-border/30">
                     {([
                       { key: 'rx', label: '처방세트' },
                       { key: 'phrase', label: '상용구' },
-                      { key: 'super', label: '슈퍼상용구' },
+                      { key: 'super', label: '발행서류' },
                     ] as const).map(({ key, label }) => (
                       <button
                         key={key}
@@ -4084,15 +4347,14 @@ export default function MedicalChartPanel({
                       </button>
                     ))}
                   </div>
-                  {/* 하단 행: 방문이력 / 진료이미지 / 📋 상담
-                      (T-20260527-foot-TREATMEMO-CHART-MERGE: 치료메모 탭 제거,
-                       T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 추가 — A안) */}
+                  {/* 하단 행: 방문이력 / 진료이미지
+                      T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): '임상사진'·'상담' 탭 삭제(원장 U0ALGAAAJAV 직접
+                        컨펌 캐논 '삭제 항목=처방세트·상용구·상담·임상사진'). 두 탭은 read-only 뷰어(입력능력 0) → 무회귀 삭제.
+                        supervisor NOTIFY 완료(탭 부재를 QA 회귀로 오판 금지). */}
                   <div className="flex">
                     {([
                       { key: 'visit_hist', label: '방문이력' },
                       { key: 'images', label: '진료이미지' },
-                      { key: 'clinical_photos', label: '임상사진' },
-                      { key: 'consult', label: '상담' },
                     ] as const).map(({ key, label }) => (
                       <button
                         key={key}
@@ -4298,18 +4560,71 @@ export default function MedicalChartPanel({
                   {/* 슈퍼상용구 탭 (T-20260603-foot-RX-SUPER-PHRASE) — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
                   {rightTab === 'super' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-super-content">
+                      {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (상단) ──
+                          원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
+                          소스=form_submissions(read-only·additive). 처방/상용구 HOLD 무관. */}
+                      <div className="rounded-lg border bg-muted/10" data-testid="issued-docs-section">
+                        <div className="flex items-center gap-1.5 px-3 py-2 border-b bg-muted/20 text-xs font-semibold text-foreground">
+                          <FileText className="h-3.5 w-3.5 text-teal-600" />
+                          발행 서류 (일자별)
+                        </div>
+                        <div className="p-2">
+                          {issuedDocsLoading ? (
+                            <div className="flex items-center justify-center gap-1.5 py-3 text-[11px] text-muted-foreground" data-testid="issued-docs-loading">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> 불러오는 중…
+                            </div>
+                          ) : issuedDocsError ? (
+                            <div className="rounded-md border border-dashed border-red-200 bg-red-50/40 p-3 text-[11px] text-red-600 text-center" data-testid="issued-docs-error">
+                              발행 서류를 불러오지 못했습니다
+                            </div>
+                          ) : issuedDocs.length === 0 ? (
+                            <div className="rounded-md border border-dashed p-3 text-[11px] text-muted-foreground text-center" data-testid="issued-docs-empty">
+                              발행된 서류가 없습니다
+                            </div>
+                          ) : (
+                            <div className="space-y-2" data-testid="issued-docs-list">
+                              {groupIssuedDocsByDate(issuedDocs).map((grp) => (
+                                <div key={grp.date} data-testid="issued-docs-date-group">
+                                  <div className="text-[10px] font-semibold text-teal-700 px-1 pb-0.5">
+                                    {fmtDateShort(grp.date)}
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    {grp.items.map((doc, di) => (
+                                      <div
+                                        key={`${grp.date}-${di}`}
+                                        className="flex items-center justify-between rounded bg-card border px-2 py-1 text-[11px]"
+                                        data-testid="issued-doc-row"
+                                      >
+                                        <span className="truncate">{fmtDocLabel(doc.formKey)}</span>
+                                        <span className="text-[10px] text-muted-foreground flex items-center gap-1 flex-shrink-0">
+                                          <FileText className="h-3 w-3" />
+                                          {doc.ts ? format(new Date(doc.ts), 'HH:mm', { locale: ko }) : '-'}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 발행서류 템플릿(구 슈퍼상용구) 목록 — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
+                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">서류 템플릿</div>
+
                       {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
                           (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
 
                       {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
                       {superLoadError ? (
                         <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="super-phrase-load-error">
-                          슈퍼상용구를 불러오지 못했습니다<br />
+                          발행서류 템플릿을 불러오지 못했습니다<br />
                           <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
                         </div>
                       ) : superPhrases.length === 0 ? (
                         <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="super-phrase-empty">
-                          등록된 슈퍼상용구 없음
+                          등록된 발행서류 템플릿 없음
                         </div>
                       ) : (
                         superPhrases.map(sp => (
@@ -4454,31 +4769,9 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
-                  {/* ── T-20260703-foot-STAFFPHOTO-CHART-LINK: 임상사진 탭 (직원촬영 → 원장 조회) ─────
-                      canonical treatment_photos(private 'treatment-photos' 버킷, signed URL) 읽기전용 갤러리.
-                      readOnly → 원장 뷰에서 촬영/삭제 버튼 비노출(업로드·삭제=직원 전용, 조회=원장 포함 전체).
-                      느슨 결합: customerId/clinicId props만 전달 → 총괄 배치 컨펌 시 위치 이동 자유. */}
-                  {rightTab === 'clinical_photos' && (
-                    <div className="p-3" data-testid="right-panel-clinical-photos-content">
-                      <TreatmentPhotoGallery
-                        customerId={customerId}
-                        clinicId={clinicId}
-                        readOnly
-                      />
-                    </div>
-                  )}
-
-                  {/* ── T-20260607-foot-MEDCHART-CONSULT-DRAWER: 📋 상담 탭 (A안 — 서랍에서 이식) ─────
-                      check_ins 상담단계 기록 읽기전용. 탭 전환만으로 좌측 진료폼 입력은 유지된다. */}
-                  {rightTab === 'consult' && (
-                    // T-20260629-foot-CONSULTTAB-DATE-FILTER-UX (B안, 문지은 대표원장):
-                    //   선택한 차트의 날짜(visit_date)를 넘겨 해당일 상담기록 그룹을 최상단으로.
-                    //   미선택(신규 작성 등)이면 null → 기존 전체 이력·정렬 그대로.
-                    <ConsultRecordTab
-                      customerId={customerId}
-                      selectedDate={selectedChart?.visit_date ?? null}
-                    />
-                  )}
+                  {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): '임상사진'·'상담' 탭 삭제 ─────
+                      임상사진(구 T-20260703-STAFFPHOTO-CHART-LINK, superseded) + 상담(구 T-20260607-CONSULT-DRAWER,
+                      superseded) 콘텐츠 블록 제거. 원장 직접 컨펌 캐논 '삭제 항목' 명시 + read-only 뷰어(입력능력 0). */}
                 </div>
                 {/* T-20260605-foot-RX-PHRASE-CLICK-INSERT: 하단 일괄 '삽입' 버튼 제거 — 행 내 ✓ 즉시삽입으로 단일화 */}
                 </div>{/* /패널 본문 (PHRASE-CHECKBOX-ARROW AC6-3 접힘 래퍼) */}

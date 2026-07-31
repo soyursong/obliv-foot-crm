@@ -2760,9 +2760,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //   값이 우측 탭 키면 그 탭으로, 그 외 truthy면 기본 탭으로 패널을 열어 '방문이력' 라벨을 노출 보장.
   const [searchParams] = useSearchParams();
   const medchartParam = searchParams.get('medchart');
-  const RIGHT_TAB_KEYS = ['rx', 'phrase', 'super', 'visit_hist', 'images', 'consult'] as const;
+  // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase B): 'consult'·'clinical_photos' 탭 삭제 → deep-link 키에서도 제거.
+  //   legacy ?medchart=consult 진입 시 undefined → MedicalChartPanel 기본 탭('rx')으로 안전 fallback.
+  const RIGHT_TAB_KEYS = ['rx', 'phrase', 'super', 'visit_hist', 'images'] as const;
   const medchartInitialTab = (RIGHT_TAB_KEYS as readonly string[]).includes(medchartParam ?? '')
-    ? (medchartParam as 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images' | 'consult')
+    ? (medchartParam as 'rx' | 'phrase' | 'super' | 'visit_hist' | 'images')
     : undefined;
   const { profile, loading: authLoading } = useAuth();
   // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 = prod rrn_decrypt 게이트.
