@@ -2397,8 +2397,13 @@ ${COMMON_STYLE}
   .fvmr-code-line { display: block; margin: 1px 0; }
 </style>
 <div class="form-wrap">
-  <div class="title" style="letter-spacing:8px;">초 진 관 리 기 록 지</div>
-  <div class="subtitle">FIRST-VISIT MANAGEMENT RECORD</div>
+  <!-- T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item1(AC-1): 상단 제목을 기존 foot 서류(소견서·진단서)
+       표준 flex 헤더(중앙정렬 class="title")로 통일 + 제목 아래 영문 부제 제거. -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 24px; letter-spacing:8px;">초 진 관 리 기 록 지</div>
+    <div style="flex:1;"></div>
+  </div>
 
   <!-- ① 고객 정보 + ② 초진일 -->
   <table style="table-layout:fixed; margin-top:6px;">
@@ -2444,12 +2449,13 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- 증상경과 (item 6 신규 — 자유텍스트 + 상용구) -->
+  <!-- 증상경과 (자유텍스트 + 상용구) -->
+  <!-- T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item5(AC-5): 증상경과 인쇄 박스도 약 3배 확대(42px→130px). -->
   <table style="margin-top:4px;">
     <tbody>
       <tr>
         <td class="fvmr-sec-label">증상경과</td>
-        <td class="fvmr-area">{{symptom_progress}}</td>
+        <td class="fvmr-area" style="height:130px; vertical-align:top;">{{symptom_progress}}</td>
       </tr>
     </tbody>
   </table>

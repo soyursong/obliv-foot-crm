@@ -157,6 +157,22 @@ import { DocFormSettingsDialog, DOC_PURPOSE_OPTIONS } from '@/components/DocForm
 //   체크칩 토글 → 필드값 '✔'(체크) / ''(미체크) → HTML 템플릿 {{key}} (.cbx 네모 안 ✔) 바인딩.
 //   field_map 에 넣지 않고 전용 블록으로 렌더 → 텍스트 input 중복 노출 방지(자유텍스트만 field_map).
 const FIRST_VISIT_MGMT_CHECK_MARK = '✔';
+// T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item6(AC-6): 고객정보 블록을 담당의사 항목 하단으로 이동.
+//   아래 키는 입력패널 상단(담당의사 하단) 전용 블록에서 렌더 → 하단 field_map 일반 루프에서는 제외.
+//   item3(AC-3): 방문목적 기타칸(vp_other_text)도 방문목적 체크그룹 하위 조건부 렌더로 이동 → 일반 루프 제외.
+const FIRST_VISIT_MGMT_CUSTOMER_INFO_KEYS = [
+  'patient_name', 'patient_birthdate', 'patient_phone', 'visit_date', 'symptom_history', 'skin_status',
+] as const;
+const FIRST_VISIT_MGMT_RELOCATED_KEYS = new Set<string>([
+  ...FIRST_VISIT_MGMT_CUSTOMER_INFO_KEYS,
+  'vp_other_text',
+]);
+// T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item4(AC-4): '시술 및 처방' 드롭다운을 서비스관리 4개 카테고리로 한정 + 그룹 나열.
+//   서비스관리(Services.tsx)는 category_label(레거시 NULL 은 category 폴백)로 탭 분류 → 동일 기준(effectiveCategoryLabel)으로
+//   기본/검사/풋케어/수액만 노출·optgroup 그룹핑. 순서 = 현장 요청 순서(기본·검사·풋케어·수액).
+const FVMR_PROCEDURE_CATEGORIES = ['기본', '검사', '풋케어', '수액'] as const;
+const fvmrEffectiveCategory = (s: { category_label: string | null; category: string | null }): string =>
+  (s.category_label ?? s.category ?? '').trim();
 interface FvmrCheckGroup { label: string; options: Array<{ key: string; label: string }> }
 // T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 항목② 관리부위·발가락·초진촬영기록 체크그룹 제거.
 //   항목④ '초기 관리 내용' 체크박스 → '시술 및 처방' 드롭다운(아래 전용 블록)으로 대체하며 체크그룹에서 제거.
@@ -2239,7 +2255,8 @@ function IssueDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, treatingDoctorName, dutyDoctors]);
   // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 다중 의사 선택
-  const [clinicDoctors, setClinicDoctors] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
+  // T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item2(AC-2): staff_id = 직원공간 원장 role 브릿지 키(clinic_doctors↔staff).
+  const [clinicDoctors, setClinicDoctors] = useState<{ id: string; name: string; is_default: boolean; staff_id: string | null }[]>([]);
   const [selectedClinicDoctorId, setSelectedClinicDoctorId] = useState<string>('');
   const [clinicDoctorOverrides, setClinicDoctorOverrides] = useState<Record<string, string>>({});
   // ── T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 초진 관리기록지 전용(격리) 상태 ──
@@ -2249,11 +2266,20 @@ function IssueDialog({
   //   항목⑥ 증상경과 상용구 = 펜차트 상용구 시스템(phrase_templates, phrase_type='pen_chart') READ-ONLY 재사용.
   //   선택 결과는 allValues memo 에 procedure_rx_html / diagnosis_codes_html(_html raw) 로 주입 → 인쇄·persist.
   //   증상경과 자유텍스트는 manualValues(updateField 'symptom_progress') 로 흐름. 전 상태는 form_key 게이트 + 언마운트 리셋.
-  type MgmtCodeSvc = { id: string; name: string; service_code: string | null; category_label: string | null };
+  // T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item4(AC-4): category 추가 — 서비스관리 탭 기준(category_label ?? category)
+  //   으로 4개 카테고리(기본/검사/풋케어/수액)만 필터·그룹핑(Services.tsx effectiveCategoryLabel 동일 로직).
+  type MgmtCodeSvc = { id: string; name: string; service_code: string | null; category_label: string | null; category: string | null };
   type MgmtCodePick = { id: string; name: string; code: string };
   const [mgmtCodeServices, setMgmtCodeServices] = useState<MgmtCodeSvc[]>([]);
   const [mgmtProcedures, setMgmtProcedures] = useState<MgmtCodePick[]>([]);
   const [mgmtDiagnoses, setMgmtDiagnoses] = useState<MgmtCodePick[]>([]);
+  // T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item2(AC-2, Option A 승인 — planner MSG-uhdw 회신):
+  //   담당의사 실시간 연동을 staff_id 브릿지 조인으로 구현. 직원공간(staff) 원장 role active 행의 id 집합을 SSOT 로 로드 →
+  //   clinic_doctors.staff_id 가 이 집합에 속하는 행만 노출(연결된 staff.active=true+role director). 직원공간 퇴사(staff.active=false)가
+  //   자동 반영되어 김상은류(clinic_doctors.active=true 잔존)가 제외됨. 면허/직인은 clinic_doctors 유지(무손실).
+  //   ★NULL행(clinic_doctors.staff_id IS NULL, 미링크)=HIDE(숨김) 확정 — 링크 없는 행은 정의상 직원공간 원장목록 밖(불변식).
+  //   READ-only·db_change:false. null=아직 미로드(필터 미적용, 잠시 clinicDoctors 그대로).
+  const [mgmtActiveDirectorStaffIds, setMgmtActiveDirectorStaffIds] = useState<Set<string> | null>(null);
   const [mgmtPhrases, setMgmtPhrases] = useState<{ id: number; name: string; content: string }[]>([]);
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
@@ -2443,14 +2469,14 @@ function IssueDialog({
     // T-20260516-foot-CLINIC-DOC-INFO: clinic_doctors 로드
     supabase
       .from('clinic_doctors')
-      .select('id, name, is_default')
+      .select('id, name, is_default, staff_id')
       .eq('clinic_id', checkIn.clinic_id)
       .eq('active', true)
       .order('sort_order')
       .order('created_at')
       .then(({ data }) => {
         if (cancelled || !data) return;
-        const docs = data as { id: string; name: string; is_default: boolean }[];
+        const docs = data as { id: string; name: string; is_default: boolean; staff_id: string | null }[];
         setClinicDoctors(docs);
         // 기본 의사 또는 첫 번째 사전 선택
         if (docs.length > 1) {
@@ -2499,36 +2525,61 @@ function IssueDialog({
     return () => { cancelled = true; };
   }, [open, checkIn.customer_id, checkIn.clinic_id]);
 
-  // ── T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 초진 관리기록지 전용 소스 로드(격리 — 다른 서류 무영향) ──
-  //   ①② 코드 드롭다운 소스 = services(결제 미니창과 동일 테이블, READ-ONLY). ③ 상용구 = phrase_templates(펜차트, READ-ONLY).
+  // ── T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2 / P3: 초진 관리기록지 전용 소스 로드(격리 — 다른 서류 무영향) ──
+  //   ①② 코드 드롭다운 소스 = services(결제 미니창과 동일 테이블, READ-ONLY).
+  //   ③ 상용구 = P3 item5(AC-5): 진료관리>슈퍼상용구(super_phrases.clinical_progress, READ-ONLY)로 소스 전환.
+  //     ※ DIAGNOSE(P2 S6='펜차트 상용구'=phrase_templates.pen_chart vs P3 지정='슈퍼상용구'=super_phrases): 두 소스는
+  //       상이한 테이블. 현장 지정(슈퍼상용구)에 맞춰 super_phrases 의 임상경과(clinical_progress) 슬롯을 증상경과에 삽입.
+  //   ④ 담당의사(P3 item2/AC-2): 직원공간 staff 원장 role active 명단(SSOT) 로드 → clinic_doctors 드롭다운 교집합 필터.
   useEffect(() => {
     if (!open || template.form_key !== 'first_visit_mgmt_record') {
       setMgmtCodeServices([]);
       setMgmtPhrases([]);
       setMgmtProcedures([]);
       setMgmtDiagnoses([]);
+      setMgmtActiveDirectorStaffIds(null);
       return;
     }
     let cancelled = false;
     // 코드 소스(치료코드 + 상병코드) — category_label 로 분기(결제 미니창 TAB_CATEGORY_MAP 과 동일 기준).
     supabase
       .from('services')
-      .select('id, name, service_code, category_label')
+      .select('id, name, service_code, category_label, category')
       .eq('clinic_id', checkIn.clinic_id)
       .eq('active', true)
       .order('sort_order')
       .then(({ data }) => {
         if (!cancelled && data) setMgmtCodeServices(data as MgmtCodeSvc[]);
       });
-    // 증상경과 상용구 — 펜차트 상용구 시스템 재사용(phrase_type='pen_chart', is_active).
+    // 증상경과 상용구 — 진료관리>슈퍼상용구(super_phrases) READ-ONLY 재사용. 임상경과(clinical_progress) 슬롯만 사용.
     supabase
-      .from('phrase_templates')
-      .select('id, name, content')
+      .from('super_phrases')
+      .select('id, name, clinical_progress')
       .eq('is_active', true)
-      .eq('phrase_type', 'pen_chart')
       .order('sort_order')
       .then(({ data }) => {
-        if (!cancelled && data) setMgmtPhrases(data as { id: number; name: string; content: string }[]);
+        if (cancelled || !data) return;
+        const phrases = (data as { id: number; name: string; clinical_progress: string | null }[])
+          .filter((d) => (d.clinical_progress ?? '').trim() !== '')
+          .map((d) => ({ id: d.id, name: d.name, content: d.clinical_progress ?? '' }));
+        setMgmtPhrases(phrases);
+      });
+    // 담당의사 실시간 연동(item2/AC-2, Option A) — 직원공간 원장 role active 행의 id 집합(SSOT).
+    //   clinic_doctors.staff_id 가 이 집합에 속하는 행만 노출(staff_id 브릿지 조인). staff.active=false(퇴사) → 자동 제외.
+    supabase
+      .from('staff')
+      .select('id')
+      .eq('clinic_id', checkIn.clinic_id)
+      .eq('role', 'director')
+      .eq('active', true)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const ids = new Set(
+          (data as { id: string | null }[])
+            .map((d) => (d.id ?? '').trim())
+            .filter((id) => id.length > 0),
+        );
+        setMgmtActiveDirectorStaffIds(ids);
       });
     return () => { cancelled = true; };
   }, [open, template.form_key, checkIn.clinic_id]);
@@ -2601,6 +2652,35 @@ function IssueDialog({
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClinicDoctorId]);
+
+  // T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item2(AC-2, Option A 승인): 초진 관리기록지 담당의사 드롭다운 =
+  //   clinic_doctors 를 staff_id 브릿지로 직원공간 원장 role active id 집합과 조인 → 연결된 staff.active=true 행만 노출.
+  //   퇴사/비활성 원장(예: 김상은=clinic_doctors.active=true 잔존이나 staff.active=false)이 자동 제외돼 불변식
+  //   '직원관리 원장목록=담당의사 선택목록' 충족. ★NULL행(staff_id IS NULL 미링크)=HIDE(planner 확정). 다른 서류
+  //   (form_key≠mgmt)는 기존 clinicDoctors 그대로(격리·회귀0). 집합 미로드(null) 동안엔 clinicDoctors 그대로(잠시).
+  const visibleClinicDoctors = useMemo(() => {
+    if (template.form_key !== 'first_visit_mgmt_record' || mgmtActiveDirectorStaffIds === null) return clinicDoctors;
+    return clinicDoctors.filter((d) => {
+      // NULL(미링크)=HIDE. 안전장치(선택·비블로커): 미링크 행이 조회시점 발견되면 dev-console warn 남겨 backfill 표면화(silent drop 방지).
+      if (!d.staff_id) {
+        // eslint-disable-next-line no-console
+        console.warn(`[FVMR item2] clinic_doctors "${d.name}"(${d.id}) staff_id 미링크 — 담당의사 목록에서 숨김(HIDE). 직원공간 원장 링크 backfill 필요 여부 확인.`);
+        return false;
+      }
+      return mgmtActiveDirectorStaffIds.has(d.staff_id);
+    });
+  }, [template.form_key, clinicDoctors, mgmtActiveDirectorStaffIds]);
+
+  // 초진 관리기록지: 필터 후 선택 원장이 목록에서 빠지면(예: 김상은) 재직 원장으로 재선택.
+  useEffect(() => {
+    if (template.form_key !== 'first_visit_mgmt_record') return;
+    if (visibleClinicDoctors.length === 0) return;
+    setSelectedClinicDoctorId((prev) => {
+      if (prev && visibleClinicDoctors.some((d) => d.id === prev)) return prev;
+      const def = visibleClinicDoctors.find((d) => d.is_default) ?? visibleClinicDoctors[0];
+      return def.id;
+    });
+  }, [template.form_key, visibleClinicDoctors]);
 
   // 복수 원장님일 때 selectedDoctorName을 doctor_name 필드에 주입
   // T-20260513-foot-BILLING-DETAIL-EDIT: computedTotal로 total_amount 자동 갱신
@@ -3062,6 +3142,55 @@ function IssueDialog({
     } else {
       setManualValues((prev) => ({ ...prev, [key]: value }));
     }
+  };
+
+  // T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item6(AC-6): field_map 입력 1건 렌더 헬퍼.
+  //   기존 하단 루프 JSX 를 그대로 추출 → 초진 관리기록지 '고객정보' 상단 이동 블록에서 재사용(이중구현 방지).
+  const renderEditableField = (f: FieldMapEntry) => {
+    const val = allValues[f.key] ?? '';
+    // doctor_name: 단일 자동 세팅이면 자동 뱃지, 복수면 위 배너에서 처리
+    const isAuto =
+      f.key === 'doctor_name'
+        ? dutyDoctors.length === 1
+        : f.key in autoValues && autoValues[f.key] !== '';
+    return (
+      <div key={f.key}>
+        <Label className="text-xs flex items-center gap-1">
+          {f.label}
+          {isAuto && (
+            <Badge
+              variant="outline"
+              className="text-[9px] px-1 py-0 text-teal-600 border-teal-300"
+            >
+              {f.key === 'doctor_name' ? '근무캘린더' : '자동'}
+            </Badge>
+          )}
+        </Label>
+        {f.type === 'multiline' ? (
+          <Textarea
+            value={val}
+            onChange={(e) => updateField(f.key, e.target.value)}
+            placeholder={f.label}
+            rows={3}
+            className="text-sm mt-1"
+          />
+        ) : (
+          <Input
+            type={f.type === 'date' ? 'date' : 'text'}
+            value={val}
+            onChange={(e) => {
+              if (f.key === 'doctor_name' && dutyDoctors.length > 1) {
+                setSelectedDoctorName(e.target.value);
+              } else {
+                updateField(f.key, e.target.value);
+              }
+            }}
+            placeholder={f.label}
+            className="text-sm mt-1"
+          />
+        )}
+      </div>
+    );
   };
 
   // 비급여 서비스 직접 추가 핸들러 (T-20260507-foot-PATIENT-FLOW-E2E)
@@ -3649,15 +3778,18 @@ function IssueDialog({
               </div>
             )}
 
-            {/* T-20260516-foot-CLINIC-DOC-INFO: 다중 의사 등록 시 면허번호 기준 의사 선택 */}
-            {clinicDoctors.length > 1 && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-2">
+            {/* T-20260516-foot-CLINIC-DOC-INFO: 다중 의사 등록 시 면허번호 기준 의사 선택
+                T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item2(AC-2): 초진 관리기록지는 항목명을
+                '담당의사'로 표시 + 목록을 visibleClinicDoctors(직원공간 원장 role active 교집합)로 실시간 연동
+                → 퇴사/비활성 원장(예: 김상은) 자동 제외. 타 서류는 기존 라벨/전체 clinicDoctors 그대로(격리). */}
+            {visibleClinicDoctors.length > 1 && (
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-2" data-testid="docprint-doctor-select">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-800">
                   <Stethoscope className="h-3.5 w-3.5" />
-                  면허번호·직인 기준 의사 선택
+                  {template.form_key === 'first_visit_mgmt_record' ? '담당의사' : '면허번호·직인 기준 의사 선택'}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {clinicDoctors.map((d) => (
+                  {visibleClinicDoctors.map((d) => (
                     <button
                       key={d.id}
                       className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
@@ -3672,6 +3804,19 @@ function IssueDialog({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item6(AC-6): 고객 정보 블록(성명·생년월일·연락처·
+                초진일·증상 발생 경위·피부상태)을 담당의사 항목 하단에 렌더(순서 이동). 하단 일반 루프에서는 제외(중복 방지).
+                renderEditableField 재사용(이중구현 금지). CUSTOMER_INFO_KEYS 순서 = 현장 요청 순서. */}
+            {template.form_key === 'first_visit_mgmt_record' && (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-3" data-testid="fvmr-customer-info">
+                <Label className="text-xs font-semibold text-slate-700">고객 정보</Label>
+                {FIRST_VISIT_MGMT_CUSTOMER_INFO_KEYS.map((key) => {
+                  const f = editableFields.find((e) => e.key === key);
+                  return f ? renderEditableField(f) : null;
+                })}
               </div>
             )}
 
@@ -3811,6 +3956,18 @@ function IssueDialog({
                         );
                       })}
                     </div>
+                    {/* T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item3(AC-3): 방문목적 [기타] 체크 시
+                        자유 텍스트 입력칸 노출 → {{vp_other_text}} 인쇄 바인딩. 미체크 시 미노출. */}
+                    {grp.label === '방문 목적' &&
+                      (allValues.vp_other ?? '') === FIRST_VISIT_MGMT_CHECK_MARK && (
+                        <Input
+                          data-testid="fvmr-vp-other-text"
+                          value={allValues.vp_other_text ?? ''}
+                          onChange={(e) => updateField('vp_other_text', e.target.value)}
+                          placeholder="기타 방문목적 직접 입력"
+                          className="text-sm bg-white mt-1.5"
+                        />
+                      )}
                   </div>
                 ))}
               </div>
@@ -3820,7 +3977,8 @@ function IssueDialog({
                 + 증상경과 자유텍스트 + 상용구(펜차트 재사용). 초진 관리기록지 전용(격리). */}
             {template.form_key === 'first_visit_mgmt_record' && (
               <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 space-y-4">
-                {/* 항목④ 시술 및 처방 — 결제 미니창 치료코드(비-상병 서비스) 드롭다운 → 선택 삽입 */}
+                {/* 항목④ 시술 및 처방 — T-20260730 P3 item4(AC-4): 서비스관리 4개 카테고리(기본/검사/풋케어/수액)만
+                    카테고리별 optgroup 으로 그룹 나열(전체 코드 노출 → 4카테고리 한정). 선택 시 칩으로 삽입. */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-sky-800">시술 및 처방</Label>
                   <select
@@ -3838,13 +3996,19 @@ function IssueDialog({
                     }}
                   >
                     <option value="">치료 코드 선택…</option>
-                    {mgmtCodeServices
-                      .filter((s) => (s.category_label ?? '') !== '상병')
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.service_code ? `${s.service_code} · ${s.name}` : s.name}
-                        </option>
-                      ))}
+                    {FVMR_PROCEDURE_CATEGORIES.map((cat) => {
+                      const items = mgmtCodeServices.filter((s) => fvmrEffectiveCategory(s) === cat);
+                      if (items.length === 0) return null;
+                      return (
+                        <optgroup key={cat} label={cat}>
+                          {items.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.service_code ? `${s.service_code} · ${s.name}` : s.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
                   {mgmtProcedures.length > 0 && (
                     <div className="flex flex-wrap gap-1.5" data-testid="fvmr-procedure-chips">
@@ -3908,15 +4072,16 @@ function IssueDialog({
                   )}
                 </div>
 
-                {/* 항목⑥ 증상경과 — 자유텍스트 + 상용구(펜차트 phrase_templates 재사용) 버튼 삽입 */}
+                {/* 항목⑥ 증상경과 — T-20260730 P3 item5(AC-5): 입력칸 약 3배 확대(rows 3→9) + 상용구 소스를
+                    진료관리>슈퍼상용구(super_phrases.clinical_progress)로 전환. 버튼 클릭 시 임상경과 문구 삽입. */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-sky-800">증상경과</Label>
                   <Textarea
                     data-testid="fvmr-symptom-progress"
                     value={allValues.symptom_progress ?? ''}
                     onChange={(e) => updateField('symptom_progress', e.target.value)}
-                    placeholder="증상경과 입력 (상용구 버튼으로 문구 삽입 가능)"
-                    rows={3}
+                    placeholder="증상경과 입력 (슈퍼상용구 버튼으로 문구 삽입 가능)"
+                    rows={9}
                     className="text-sm bg-white"
                   />
                   {mgmtPhrases.length > 0 && (
@@ -3943,52 +4108,15 @@ function IssueDialog({
             )}
 
             <div className="space-y-3">
-              {editableFields.map((f) => {
-                const val = allValues[f.key] ?? '';
-                // doctor_name: 단일 자동 세팅이면 자동 뱃지, 복수면 위 배너에서 처리
-                const isAuto =
-                  f.key === 'doctor_name'
-                    ? dutyDoctors.length === 1
-                    : f.key in autoValues && autoValues[f.key] !== '';
-                return (
-                  <div key={f.key}>
-                    <Label className="text-xs flex items-center gap-1">
-                      {f.label}
-                      {isAuto && (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] px-1 py-0 text-teal-600 border-teal-300"
-                        >
-                          {f.key === 'doctor_name' ? '근무캘린더' : '자동'}
-                        </Badge>
-                      )}
-                    </Label>
-                    {f.type === 'multiline' ? (
-                      <Textarea
-                        value={val}
-                        onChange={(e) => updateField(f.key, e.target.value)}
-                        placeholder={f.label}
-                        rows={3}
-                        className="text-sm mt-1"
-                      />
-                    ) : (
-                      <Input
-                        type={f.type === 'date' ? 'date' : 'text'}
-                        value={val}
-                        onChange={(e) => {
-                          if (f.key === 'doctor_name' && dutyDoctors.length > 1) {
-                            setSelectedDoctorName(e.target.value);
-                          } else {
-                            updateField(f.key, e.target.value);
-                          }
-                        }}
-                        placeholder={f.label}
-                        className="text-sm mt-1"
-                      />
-                    )}
-                  </div>
-                );
-              })}
+              {/* T-20260730-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P3 item6(AC-6): 초진 관리기록지는 고객정보 블록을
+                  담당의사 하단 전용 블록으로 이동했으므로 여기(하단 일반 루프)에서는 제외(+item3 vp_other_text 제외). */}
+              {editableFields
+                .filter((f) =>
+                  template.form_key === 'first_visit_mgmt_record'
+                    ? !FIRST_VISIT_MGMT_RELOCATED_KEYS.has(f.key)
+                    : true,
+                )
+                .map((f) => renderEditableField(f))}
             </div>
           </div>
 
