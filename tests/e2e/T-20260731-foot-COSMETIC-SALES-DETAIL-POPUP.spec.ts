@@ -36,6 +36,16 @@ async function openStaffTab(page: Page) {
   await tab.click();
   await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
   await expect(page.locator('[data-testid="sales-staff-basis-toggle"]')).toBeVisible({ timeout: 10_000 });
+  // ★ T-20260731 REOPEN: 기본 기간(오늘)은 화장품 매출 0건인 날이 잦아 AC3 금액 단언이
+  //   상시 skip → m.set 누락(팝업 상세 영구 빈 Map) 회귀를 놓쳤다. 화장품 실데이터가 있는
+  //   범위를 강제해 AC3(팝업 합계===칸)가 실제 실행되게 한다(prod 실데이터 클릭 커버).
+  await page.locator('[data-testid="sales-preset-custom"]').click();
+  await page.locator('[data-testid="sales-date-from"]').fill('2026-07-01');
+  await page.locator('[data-testid="sales-date-to"]').fill('2026-08-31');
+  await page
+    .locator('[data-testid="sales-staff-loading"]')
+    .waitFor({ state: 'hidden', timeout: 20_000 })
+    .catch(() => {});
 }
 
 async function settleDeduction(page: Page): Promise<'data' | 'empty'> {

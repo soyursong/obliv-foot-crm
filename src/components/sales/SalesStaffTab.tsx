@@ -397,6 +397,11 @@ export function SalesStaffTab({ filter }: Props) {
         // checked_in_at 은 KST(+09:00) 바운드로 조회됨 → 앞 10자리(YYYY-MM-DD)만 표시
         saleDate: at ? at.slice(0, 10) : null,
       });
+      // ★ T-20260731 REOPEN 버그픽스: 새 버킷 배열을 맵에 반드시 커밋해야 한다.
+      //   m.set 누락 시 arr(=m.get(bucket)??[])는 매 iteration 새 빈 배열이라 push 후 버려져
+      //   cosmeticDetailBySeller 가 영구히 빈 Map → 모든 화장품 칸 클릭이 "판매 내역 없음"으로 렌더됐음.
+      //   cosmeticBySeller(집계)는 m.set 이 있어 칸 금액은 정상 → 칸 금액 vs 팝업 divergence 재현.
+      m.set(bucket, arr);
     });
     // 판매일자 → 금액 내림차순 정렬(표시 편의, 합계 불변)
     for (const arr of m.values()) {
