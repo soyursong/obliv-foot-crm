@@ -522,6 +522,19 @@ export async function loadEffectiveInsuranceGrade(
 }
 
 /**
+ * ── T-20260801-foot-BILLDETAIL-M0111-SIMPLETREAT-CATMAP ───────────────────────────
+ * 진찰료성 명칭 판정 정규식 SSOT. category_label==='기본'(진찰료 버킷) 중 실제 진찰료인
+ * line-item 을 명칭으로 정밀판정한다(진찰/상담/초진/재진). '기본' 급여라도 단순처치(M0111,
+ * '단순처치 [1일]') 등 처치성 항목은 여기 불일치 → 진찰료 아님(처치및수술료로 분류).
+ *
+ * ⚠ footBillDetailCategory(표시 category)·isConsultationFeeItem(가산 base 필터) 양쪽이
+ *   반드시 이 단일 상수를 공유한다. 종전 두 함수가 각자 판정(전자는 무조건 '진찰료',
+ *   후자만 명칭 정밀판정)하며 divergence → M0111 이 진찰료로 오분류된 근본원인이었다.
+ *   재divergence 방지를 위해 정규식을 여기서만 정의한다(byte-동일 보장).
+ */
+const CONSULTATION_FEE_NAME_RE = /진찰|상담|초진|재진/;
+
+/**
  * 진료비 세부산정내역서 category 열 = 서비스별 HIRA 항목분류 표시값.
  *
  * T-20260707-foot-BILLDETAIL-CATEGORY-HARDCODE:
@@ -551,7 +564,12 @@ export function footBillDetailCategory(service: BillingService, covered: boolean
   }
   // 2) category_label(서비스 유형) 매핑 — 라이브 유일 신호
   switch (service.category_label) {
-    case '기본':     return '진찰료';       // 초진/재진 진찰료
+    case '기본':
+      // 진찰료성 명칭(진찰/상담/초진/재진)만 진찰료. 단순처치(M0111) 등 처치성 '기본' 급여는
+      // isConsultationFeeItem 과 동일 predicate 로 처치및수술료(비급여면 기타)로 분리한다.
+      // (T-20260801-foot-BILLDETAIL-M0111-SIMPLETREAT-CATMAP: 두 함수 divergence 해소)
+      if (CONSULTATION_FEE_NAME_RE.test(service.name ?? '')) return '진찰료';
+      return covered ? '처치및수술료' : '기타';
     case '검사':     return '검사료';       // KOH도말·일반진균검사·피검사
     case '풋케어':   return '처치및수술료'; // 레이저 시술·프리컨디셔닝 등 치료
     case '수액':     return '기타';         // 주사/수액
@@ -595,7 +613,8 @@ export function isConsultationFeeItem(
   // 1) HIRA enum(권위) 우선 — 'consultation' 만 진찰료
   if (svc.hira_category) return svc.hira_category === 'consultation';
   // 2) category_label='기본'(진찰료 버킷) 중 진찰료성 명칭만(단순처치 등 처치성 제외)
-  if (svc.category_label === '기본') return /진찰|상담|초진|재진/.test(svc.name ?? '');
+  //    ↳ CONSULTATION_FEE_NAME_RE = footBillDetailCategory 와 공유하는 SSOT(재divergence 방지)
+  if (svc.category_label === '기본') return CONSULTATION_FEE_NAME_RE.test(svc.name ?? '');
   return false;
 }
 
