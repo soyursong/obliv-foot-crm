@@ -15,6 +15,7 @@
  */
 
 import { formatAmount } from '@/lib/format';
+import { computeBillDetailRounding } from '@/lib/footBilling';
 
 /** 가산 요율 — 야간/공휴일 공통 30% (의원급 진찰료 표준, body canon 동일). */
 export const SURCHARGE_RATE = 0.3;
@@ -294,11 +295,18 @@ export function applyNightHolidaySurcharge(
       //   비-10원배수)을 detail_total 에 더해 세부내역서 합계의 10원 절사가 깨졌다("갑자기 안 됨"). → 가산 fold 후
       //   계(detail_subtotal)를 다시 10원 절사해 별표2 제1항(문서 grain 10원 미만 절사) 정합을 회복하고,
       //   계 + 끝처리조정 = 합계 불변식을 유지(detail_rounding recompute). 수동편집(overriddenKeys) 시 종전 bump 유지.
+      //
+      //   ★ AC-9 (SSOT 우회 정정 — 이은상 팀장 확정 2026-08-01, MSG-30gw): 종전 인라인 floor 복제
+      //     (Math.floor(detSub/10)*10 / detFloored−detSub)를 제거하고 f1802047(T-20260719-foot-MEDCALC-
+      //     DETAIL-LAYOUT-FIX)의 **단일 산식 SSOT computeBillDetailRounding(가산 fold 후 payable) 호출로 통일**한다.
+      //     복제본이 존재하면 가산 유무에 따라 detail_rounding 산출 주체가 (SSOT vs 인라인 복제)로 재분기하여
+      //     f1802047 "4경로 단일 산식" AC 가 깨졌다. → 산출 주체를 computeBillDetailRounding 하나로 수렴(4경로 복원).
+      //     값은 동형(roundedTotal=floor10, adjustment=roundedTotal−payable) — 산출 지점만 SSOT 로 통일(무회귀).
       if (!overriddenKeys.has('detail_total') && !overriddenKeys.has('detail_rounding')) {
-        const detSub = parseAmt(base.detail_subtotal);
-        const detFloored = Math.floor(detSub / 10) * 10;
-        base.detail_total = formatAmount(detFloored);
-        base.detail_rounding = formatAmount(detFloored - detSub);
+        const detSub = parseAmt(base.detail_subtotal); // 가산 본인분(sc.copay) fold 후 payable(계 행, 절사 전)
+        const { adjustment, roundedTotal } = computeBillDetailRounding(detSub);
+        base.detail_total = formatAmount(roundedTotal);
+        base.detail_rounding = formatAmount(adjustment);
       } else {
         bump('detail_total', sc.copay);
       }

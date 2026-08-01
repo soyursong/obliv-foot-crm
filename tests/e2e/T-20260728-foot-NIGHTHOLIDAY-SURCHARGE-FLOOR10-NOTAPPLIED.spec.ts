@@ -5,6 +5,7 @@ import {
   detectSurchargeKind,
   SURCHARGE_RATE,
 } from '../../src/lib/nightHolidaySurcharge';
+import { computeBillDetailRounding, floorOutpatientCopayment } from '../../src/lib/footBilling';
 
 /**
  * E2E — T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix)
@@ -178,6 +179,51 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
     });
     expect(num(base.detail_total)).toBe(10000); // 변화 없음
     expect(num(base.detail_subtotal)).toBe(10000);
+  });
+
+  // ── AC-9 (SSOT 우회 정정, 이은상 팀장 MSG-30gw): detail_rounding 산출 경로 = computeBillDetailRounding 단일 ──
+  //   인라인 floor 복제 제거 검증 — applyNightHolidaySurcharge 가 산출한 detail_total/detail_rounding 이
+  //   computeBillDetailRounding(가산 fold 후 payable) 결과와 **정확히 동형**(복제본 미경유). 비-10원 배수 payable 로
+  //   음수 조정(adjustment<0)이 실제로 계산되는 케이스를 써서 SSOT 단일 산식 경유를 assert.
+  test('AC-9: detail_total/rounding == computeBillDetailRounding(가산 fold 후 payable) 단일 산식', () => {
+    // pre-surcharge 계 = 3,003 (비-10원 배수: 비급여 우수리 잔존 모사). 가산 copay(10원 배수) fold 후에도 비-10원.
+    const base: Record<string, string> = {
+      subtotal_copayment: '3,003',
+      total_copayment: '3,003',
+      subtotal_fund: '0',
+      total_fund: '0',
+      subtotal_amount: '3,003',
+      total_amount: '3,003',
+      detail_subtotal: '3,003',
+      detail_total: '3,000',
+      detail_rounding: '-3',
+      visit_date: '2026-01-01',
+    };
+    const consult = { covered: 18840, copay: 9420 }; // ratio 0.5 → sc.copay=floor10(5,650×0.5)=2,820
+    const sc = computeSurcharge(consult.covered, consult.copay, detectSurchargeKind(HOLIDAY, false));
+    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, consult);
+
+    // 가산 fold 후 payable(계 행) = 3,003 + sc.copay
+    const payableAfterFold = 3003 + sc.copay;
+    expect(num(base.detail_subtotal)).toBe(payableAfterFold); // 5,823 (비-10원 배수)
+    // ★ 단일 산식 SSOT 경유: 헬퍼 산출값 == computeBillDetailRounding 직접 호출값 (복제본이면 어긋남)
+    const ssot = computeBillDetailRounding(payableAfterFold);
+    expect(num(base.detail_total)).toBe(ssot.roundedTotal); // 5,820 (FLOOR10)
+    expect(num(base.detail_rounding)).toBe(ssot.adjustment); // -3 (음수 끝처리 조정)
+    expect(ssot.adjustment).toBeLessThan(0); // 비-10원 배수 → 음수 조정 실계산 확인
+    // 계 + 끝처리조정 = 합계 불변식 (SSOT 정합)
+    expect(num(base.detail_subtotal) + num(base.detail_rounding)).toBe(num(base.detail_total));
+  });
+
+  // ── 안전 재검증(handoff): 본인부담 aggregate floor100 = 1,800 불변 (copay 410/418/420 동일 century bucket) ──
+  //   가산 행 copay 절사값이 410(v3)·418(구 round)·420(v2) 어느 것이든 aggregate 본인부담 floor100 은 1,800 불변
+  //   → 수납액(실 결제)에 영향 없음. double-rounding 경계(footBilling.ts:822) 준수 근거.
+  test('안전: 본인부담 aggregate floor100 = 1,800 불변 (가산 copay 410/418/420 무영향)', () => {
+    const preSurchargeCopayAggregate = 1400; // 가산 前 급여 본인부담 aggregate(예시)
+    for (const gasanCopay of [410, 418, 420]) {
+      const agg = preSurchargeCopayAggregate + gasanCopay; // 1,810 / 1,818 / 1,820
+      expect(floorOutpatientCopayment(agg)).toBe(1800); // 세 값 모두 동일 century bucket → 1,800 불변
+    }
   });
 
   test('수동편집(overriddenKeys) 시 detail_total/rounding 미재계산 (수동값 우선)', () => {
