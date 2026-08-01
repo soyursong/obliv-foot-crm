@@ -10,12 +10,14 @@ import {
  * E2E — T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix)
  * 야간·공휴일 30% 가산금 및 서류 총액의 10원 단위 절사(FLOOR) 미적용 → 절사 적용.
  *
- * RC(diagnose-first, v2 확정 — 이은상 팀장 MSG-20260801-104838-19iu):
+ * RC(diagnose-first, v3 확정 — 이은상 팀장 = 필드 authority, FIX-REQUEST v3 MSG-5a4o):
  *   범위 = (a) 가산 라인 절사-지점 결함. (b) 서류총액 computeBillDetailRounding 회귀 아님(추적 불필요).
  *   1차(13ff260b)는 amount 만 floor10 하고 copay=round(amount×ratio)/covered=amount−copay 로 산출해
- *   copay·covered 가 **비-10원배수로 잔존** → 가산 행 표시(공단 988 등)·계 행 fold 가 어긋나 3원 불일치.
- *   v2: computeSurcharge 에서 amount·copay 를 각각 절사 前 base×RATE 기준 floor10, covered=amount−copay
- *       → 총액·공단·본인 전부 10원 배수(단일 절사 지점). 본인부담 base(copayment)×RATE floor10 라 본인분 보존.
+ *   copay·covered 가 **비-10원배수로 잔존**(418/982) → 가산 행 표시·계 행 fold 어긋나 불일치.
+ *   v2(ba921932)는 copay 를 copayment×RATE floor10 로 유도 → 420/980. 그러나 필드 실측(F-4741, 김병완
+ *       2026-08-01, 총괄 화면 확인)은 표시비율 기준 418→floor10 410/990 → v2 와 divergence(HOLD).
+ *   v3(본 커밋): 절사된 amount 를 실 표시비율(ratio=copayment/base)로 분할 후 copay 에 floor10 적용,
+ *       covered=amount−copay 로 잔차 흡수 → 총액·본인·공단 전부 10원 배수 + 필드 TARGET 1,400/410/990 정합.
  *
  * 순수 함수 직접 import 로 결정론적 금액 검증(가산율 30% canon 불변).
  */
@@ -54,7 +56,7 @@ test.describe('AC-1/AC-2 — 가산 산출값 10원 단위 절사(FLOOR)', () =>
     expect(sc.amount).toBe(5650);
   });
 
-  // ── v2 검증 #1: 가산 행 총액·공단·본인 끝자리 0 (단일 절사 지점) ──
+  // ── v3 검증 #1: 가산 행 총액·공단·본인 끝자리 0 (단일 절사 지점) ──
   test('검증#1: amount·copay·covered 전부 10원 배수(끝자리 0)', () => {
     const cases: Array<[number, number]> = [
       [18840, 5652], [18840, 9420], [4680, 1400], [12345, 4321], [33333, 10000],
@@ -68,13 +70,20 @@ test.describe('AC-1/AC-2 — 가산 산출값 10원 단위 절사(FLOOR)', () =>
     }
   });
 
-  // ── v2 실사례 회귀(이은상 팀장 신고 수치): 1,408→1,400 / 988→980, 본인부담 420 불변 ──
-  test('검증#1 실사례: 총액 1,400 / 본인 420(불변) / 공단 980', () => {
-    // base×0.3≈1,404→floor 1,400. copayment×0.3=420→floor 420. covered=1,400−420=980.
+  // ── v3 실사례(F-4741, 김병완 2026-08-01, 총괄 화면 확인 = 필드 TARGET authority): 1,400 / 410 / 990 ──
+  test('검증#1 실사례(필드 TARGET): 총액 1,400 / 본인 410 / 공단 990 — 세 값 10원 배수', () => {
+    // base×0.3=1,404→floor10 1,400. ratio=1,400/4,680≈0.2992. copay=floor10(1,400×0.2992)=floor10(418.8)=410.
+    // covered=1,400−410=990. (구 round=418, v2 divergent=420 — 필드 실측은 410/990.)
     const sc = computeSurcharge(4680, 1400, detectSurchargeKind(HOLIDAY, false));
     expect(sc.amount).toBe(1400); // 1,408(구 round) → 1,400(floor10)
-    expect(sc.copay).toBe(420); // 본인부담 420 불변(별표2 정합)
-    expect(sc.covered).toBe(980); // 988(비-10원) → 980(끝자리 0)
+    expect(sc.copay).toBe(410); // ★ 필드 TARGET — floor10(amount×ratio). round(418)·v2(420) 아님
+    expect(sc.covered).toBe(990); // 1,400 − 410 (잔차 흡수, 끝자리 0)
+    expect(sc.copay + sc.covered).toBe(sc.amount); // 불변식
+    // ★ v2(ba921932) divergence 회귀 가드: copay 가 420(copayment×RATE floor10)이면 안 됨.
+    expect(sc.copay).not.toBe(420);
+    expect(sc.covered).not.toBe(980);
+    // ★ 구 1차(round) 회귀 가드: 418(비-10원)이면 안 됨.
+    expect(sc.copay).not.toBe(418);
   });
 });
 
@@ -109,7 +118,7 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
       visit_date: '2026-01-01',
     };
     // 진찰료-only 가산 base 주입: covered=18,840, copay=9,420(ratio 0.5).
-    // v2: sc.amount=5,650, sc.copay=floor10(9,420×0.3)=floor10(2,826)=2,820(★10원 배수), sc.covered=2,830.
+    // v3: sc.amount=5,650, sc.copay=floor10(5,650×0.5)=floor10(2,825)=2,820(★10원 배수), sc.covered=2,830.
     applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, {
       covered: 18840,
       copay: 9420,
@@ -185,7 +194,7 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
       copay: 9420,
     });
     // overridden → 재절사 스킵, 종전 bump 경로(수동값 우선). detail_total 은 재계산되지 않음.
-    // v2: sc.copay=floor10(9,420×0.3)=2,820 → 10,000 + 2,820 = 12,820.
+    // v3: sc.copay=floor10(5,650×0.5)=2,820 → 10,000 + 2,820 = 12,820.
     expect(num(base.detail_subtotal)).toBe(12820); // 계는 fold 반영
   });
 });
