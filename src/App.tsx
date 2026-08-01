@@ -1,9 +1,12 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- lazy<T> 자체가 ComponentType<any> 상한을 요구
-import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+// T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER: recovery 딥링크 착지 분류(순수 로직 SSOT)
+import { detectRecoveryFromHash } from '@/lib/passwordRecovery';
 import { ProtectedRoute, RoleGuard } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 // T-20260610-foot-SPA-VERSION-AUTORELOAD: 배포 후 stale-app 재발방지 — 신버전 감지 배너
@@ -90,6 +93,8 @@ const HealthQMobilePage = lazyWithRetry(() => import('@/pages/HealthQMobilePage'
 // T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제페이지(신규 route, 기능플래그 게이트).
 //   기존 /payment/* (미니창) 와 분리 — 플래그 OFF 시 페이지 내부에서 /admin 리다이렉트(신규 노출 0).
 const PaymentPlanb = lazyWithRetry(() => import('@/pages/PaymentPlanb'));
+// T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER: recovery 딥링크 → 새 비밀번호 설정 화면
+const ResetPassword = lazyWithRetry(() => import('@/pages/ResetPassword'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -146,6 +151,55 @@ function CheckinRoute() {
   );
 }
 
+/**
+ * T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER
+ *
+ * recovery 메일 링크는 verify 후 site_url(redirect_to) 루트로 리다이렉트하며 URL hash 에
+ * recovery 토큰(#...type=recovery) 또는 만료/오류(#error=...&error_code=otp_expired) 를 담고 착지한다.
+ *
+ * 문제(원 defect): supabase-js 가 hash 를 파싱해 세션을 세팅하고 PASSWORD_RECOVERY 이벤트를 발화하지만,
+ *   이를 수신해 재설정 폼을 렌더하는 화면이 없어 루트 라우트(/ → /admin, catch-all *)에 그대로 흡수됨
+ *   → 사용자가 새 비밀번호를 설정할 수 없음.
+ *
+ * 해법: 착지 hash 를 모듈 로드 시점(supabase-js 가 hash 를 소거하기 전)에 동기 캡처 + PASSWORD_RECOVERY
+ *   이벤트 이중 감지 → recovery 모드일 때 Routes 대신 ResetPassword 를 렌더(루트 흡수 차단).
+ *   redirect_to(GoTrue) 설정은 무변경(site_url 루트 유지) — FE 라우트/핸들러 추가만(최소침습).
+ *
+ * 회귀 무결(AC-3): recovery 토큰/오류 hash 가 없으면 recovery=expired=false → 평소 Routes 그대로 렌더.
+ */
+const INITIAL_RECOVERY = detectRecoveryFromHash(
+  typeof window !== 'undefined' ? window.location.hash : '',
+);
+
+function RecoveryGate({ children }: { children: ReactNode }) {
+  const [recovery, setRecovery] = useState(INITIAL_RECOVERY.recovery);
+  const [expired, setExpired] = useState(INITIAL_RECOVERY.expired);
+
+  useEffect(() => {
+    // 이중 감지: 모듈 로드 시 hash 를 놓친 경우(async 소거 경쟁)에도 이벤트로 복구.
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecovery(true);
+        setExpired(false);
+      }
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  if (recovery || expired) {
+    return (
+      <ResetPassword
+        expired={expired && !recovery}
+        onDone={() => {
+          setRecovery(false);
+          setExpired(false);
+        }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -168,9 +222,16 @@ function App() {
         <UpdateBanner />
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
+            {/* T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER: recovery 딥링크 착지 시
+                Routes 대신 ResetPassword 렌더(루트/admin 흡수 차단). 평소엔 통과(회귀 0). */}
+            <RecoveryGate>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              {/* recovery 딥링크 전용 라우트(직접 접근·향후 redirect_to 지정 대비 fallback).
+                  주 경로는 RecoveryGate(루트 착지 감지) — 이 라우트는 recovery 세션 없이 진입 시
+                  updateUser 실패를 만료 안내 화면으로 강등한다(무한로딩·백지 금지). */}
+              <Route path="/reset-password" element={<ResetPassword />} />
               {/* T-20260602-foot-CHECKIN-STALE-COPY-CONSOLIDATE (AC2):
                   jongno-foot 셀프접수 canonical=foot-checkin.pages.dev(soyursong/foot-checkin) 단일.
                   /checkin/jongno-foot 은 vercel.json permanent 301 edge redirect 로 canonical 이관(무중단).
@@ -281,6 +342,7 @@ function App() {
               <Route path="/" element={<Navigate to="/admin" replace />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>
+            </RecoveryGate>
           </Suspense>
         </BrowserRouter>
       </AuthProvider>
