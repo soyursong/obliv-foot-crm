@@ -1,0 +1,72 @@
+{
+  "auth_context": "management-api /database/query = service_role (RLS bypass, NOT anon)",
+  "cols": [
+    {
+      "column_name": "hira_category",
+      "data_type": "text"
+    },
+    {
+      "column_name": "hira_code",
+      "data_type": "text"
+    },
+    {
+      "column_name": "hira_score",
+      "data_type": "numeric"
+    },
+    {
+      "column_name": "name",
+      "data_type": "text"
+    }
+  ],
+  "rows": [
+    {
+      "id": "e9a8a107-ab76-4b4d-8bda-792ea9f2fdb2",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "service_code": "AA155",
+      "hira_code": null,
+      "name": "재진진찰료",
+      "hira_score": null,
+      "hira_category": null,
+      "is_insurance_covered": true,
+      "active": false
+    },
+    {
+      "id": "1a82c70a-07fe-4321-be44-8a206e3d1aa0",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "service_code": "AA222",
+      "hira_code": null,
+      "name": "재진-물리치료,주사 등 시술받은 경우",
+      "hira_score": "49.09",
+      "hira_category": null,
+      "is_insurance_covered": true,
+      "active": true
+    },
+    {
+      "id": "117befad-e8f8-48c6-b496-89c37a68a441",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "service_code": "AA254",
+      "hira_code": null,
+      "name": "재진진찰료-의원",
+      "hira_score": "139.85",
+      "hira_category": null,
+      "is_insurance_covered": true,
+      "active": true
+    },
+    {
+      "id": "eaf0449e-75db-4b7e-acc6-bfceef0c4d0c",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "service_code": "C2100001",
+      "hira_code": null,
+      "name": "재진진찰료(영상판독)",
+      "hira_score": null,
+      "hira_category": null,
+      "is_insurance_covered": false,
+      "active": false
+    }
+  ]
+}
+
+===== 대조 판정 =====
+auth_context: management-api /database/query = service_role (RLS bypass, NOT anon)
+[AA254] id=117befad-e8f8-48c6-b496-89c37a68a441 sc=AA254 hira=null name="재진진찰료-의원" active=true | foot=139.85 vs canon=139.85 => MATCH ✅ (무정정) | 표시액 foot=13,370 vs canon=13,370
+[AA222] id=1a82c70a-07fe-4321-be44-8a206e3d1aa0 sc=AA222 hira=null name="재진-물리치료,주사 등 시술받은 경우" active=true | foot=49.09 vs canon=49.09 => MATCH ✅ (무정정) | 표시액 foot=4,690 vs canon=4,690
