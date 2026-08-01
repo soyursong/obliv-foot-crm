@@ -68,6 +68,9 @@ export function DocumentReprintPopup({ customerId, customerName, onClose }: Prop
   const [custName, setCustName] = useState<string | null>(customerName ?? null);
   // 재출력/당일발행 대상 체크인 — 설정 시 DocumentPrintPanel 중첩 모달 오픈(차트 docReissueCheckIn 패턴 동일).
   const [reissueCheckIn, setReissueCheckIn] = useState<CheckIn | null>(null);
+  // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: 진입 mode — '당일 서류 발행'(true)이면 이전 발행분
+  //   재출력 인터셉트/프리필 없이 빈 신규 발행으로 진입. '서류 재출력'(false)=STAGE2 저장본 다시보기 유지.
+  const [reissueNewMode, setReissueNewMode] = useState(false);
 
   const load = useCallback(async () => {
     if (!customerId) return;
@@ -173,7 +176,7 @@ export function DocumentReprintPopup({ customerId, customerName, onClose }: Prop
               <button
                 type="button"
                 disabled={!latestCheckIn}
-                onClick={() => { if (latestCheckIn) setReissueCheckIn(latestCheckIn); }}
+                onClick={() => { if (latestCheckIn) { setReissueNewMode(true); setReissueCheckIn(latestCheckIn); } }}
                 data-testid="btn-doc-reprint-issue-today"
                 className={cn(
                   'inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] font-medium transition',
@@ -219,7 +222,7 @@ export function DocumentReprintPopup({ customerId, customerName, onClose }: Prop
                         <span className="flex-1" />
                         <button
                           type="button"
-                          onClick={() => setReissueCheckIn(ci)}
+                          onClick={() => { setReissueNewMode(false); setReissueCheckIn(ci); }}
                           data-testid="btn-doc-reprint-reissue"
                           className="inline-flex shrink-0 items-center gap-1 rounded border border-sage-300 bg-sage-50 px-1.5 py-0.5 text-[10px] font-medium text-sage-700 transition hover:bg-sage-100"
                         >
@@ -304,6 +307,7 @@ export function DocumentReprintPopup({ customerId, customerName, onClose }: Prop
                 onUpdated={() => { void load(); }}
                 altStatus={altStatus}
                 historyAtTop
+                newIssueMode={reissueNewMode}
               />
             </div>
           </div>

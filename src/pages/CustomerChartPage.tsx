@@ -2817,6 +2817,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const [slotDwellNowMs, setSlotDwellNowMs] = useState(() => Date.now());
   // T-20260515-foot-DOC-REISSUE-BTN: 서류 재발급 모달 대상 체크인
   const [docReissueCheckIn, setDocReissueCheckIn] = useState<CheckIn | null>(null);
+  // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: 모달 진입 mode — '당일 서류 발행'(true)이면
+  //   DocumentPrintPanel 이 이전 발행분 재출력 인터셉트/프리필 없이 빈 신규 발행으로 진입. '서류 재출력'(false)=STAGE2 유지.
+  const [docReissueNewMode, setDocReissueNewMode] = useState(false);
   const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
@@ -7270,7 +7273,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                 <button
                                   type="button"
                                   disabled={isCancelled}
-                                  onClick={(e) => { e.stopPropagation(); setDocReissueCheckIn(ci); }}
+                                  onClick={(e) => { e.stopPropagation(); setDocReissueNewMode(false); setDocReissueCheckIn(ci); }}
                                   className={cn(
                                     'flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition shrink-0',
                                     isCancelled
@@ -7408,6 +7411,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         onUpdated={() => {}}
                         altStatus={altStatus}
                         historyAtTop
+                        newIssueMode={docReissueNewMode}
                       />
                     </div>
                   </div>
@@ -8022,7 +8026,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   <button
                     type="button"
                     disabled={!latestCheckIn}
-                    onClick={() => { if (latestCheckIn) setDocReissueCheckIn(latestCheckIn); }}
+                    onClick={() => { if (latestCheckIn) { setDocReissueNewMode(true); setDocReissueCheckIn(latestCheckIn); } }}
                     data-testid="btn-doc-issue-today"
                     className={cn(
                       'inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] font-medium transition',
@@ -8067,7 +8071,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           <button
                             type="button"
                             disabled={!matchedCi}
-                            onClick={() => { if (matchedCi) setDocReissueCheckIn(matchedCi); }}
+                            onClick={() => { if (matchedCi) { setDocReissueNewMode(false); setDocReissueCheckIn(matchedCi); } }}
                             data-testid="btn-doc-reprint"
                             title={matchedCi ? '' : '접수(내원) 기록이 있는 예약만 서류 재출력이 가능합니다'}
                             className={cn(

@@ -242,6 +242,11 @@ interface Props {
   /** T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 서류재발급 모달 전용 레이아웃.
    *  true 시 [발행 이력]을 패널 상단으로 이동 + 2단(2열) 진열. 미지정(false) 시 기존 위치/1열 유지(타 surface 무영향). */
   historyAtTop?: boolean;
+  /** T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: '당일 서류 발행'(신규 입력) 진입 여부.
+   *  true 시 발행 저장본(form_submissions.field_data) 재출력 인터셉트(STAGE2 ReprintViewer)·이전 발행분
+   *  프리필(담당의/선택항목 복원)을 모두 비활성화 → 항상 빈 IssueDialog(신규 발행)로 진입.
+   *  미지정(false)=기존 STAGE2 재출력 동작 그대로(AC-3 회귀 0). 진입 mode 신호는 부모(차트 서류탭/우클릭 팝업)가 주입. */
+  newIssueMode?: boolean;
 }
 
 // ── T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX 헬퍼 ──
@@ -608,7 +613,7 @@ function findLatestPrintedSubmission(
 
 // ─── 메인 컴포넌트 ───
 
-export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false }: Props) {
+export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false, newIssueMode = false }: Props) {
   const { profile } = useAuth();
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
@@ -763,6 +768,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   //   checkIn.id당 1회만 적용 → 사용자가 자동세팅 후 바꾼 선택을 덮어쓰지 않는다.
   const prefillAppliedRef = useRef<string | null>(null);
   useEffect(() => {
+    // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: '당일 서류 발행'(신규) 진입은 이전 발행분
+    //   프리필(담당의/선택항목 복원)을 미적용 → 빈 상태로 시작(이전 방문 연동 없음). 재출력 진입만 프리필 유지.
+    if (newIssueMode) return;
     if (prefillAppliedRef.current === checkIn.id) return;           // 이미 이 예약에 적용 — 재적용 금지
     if (submissions.length === 0 || templates.length === 0) return; // 이력 없음/템플릿 미로드 — 프리필 없음
     // 발행된(무효 제외) 서류의 form_key 집합 = 최초 선택 출력내용 항목 복원(template_id→form_key)
@@ -1172,7 +1180,11 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     setIssueDialogOpen(true);
   };
   const handleSelectTemplate = (tpl: FormTemplate) => {
-    if (GENERAL_REPRINT_FORM_KEYS.has(tpl.form_key)) {
+    // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: '당일 서류 발행'(newIssueMode) 진입 시엔
+    //   저장본 재출력 인터셉트를 건너뛰고 항상 빈 편집 팝업(신규 발행)으로 진입한다.
+    //   이 스코프의 checkIn 에 이미 발행 저장본(latestCheckIn=이전 방문일 수 있음)이 있어도 이전 field_data 를
+    //   프리필하지 않는다. 재출력은 별도 '서류 재출력' 진입점(newIssueMode=false)에서만 STAGE2 동작 유지(AC-3).
+    if (!newIssueMode && GENERAL_REPRINT_FORM_KEYS.has(tpl.form_key)) {
       const printed = findLatestPrintedSubmission(submissions, tpl.id);
       if (printed) {
         setReprintViewer({ template: tpl, submission: printed });
