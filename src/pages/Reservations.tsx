@@ -177,6 +177,7 @@ interface ReservationDraft {
   memo: string;
   booking_memo: string;  // T-20260504-foot-MEMO-RESTRUCTURE: 예약 경로 확인용
   visit_route?: string;  // AC-5: 초진/예약없이방문 방문경로 (customers.visit_route에 저장)
+  inflow_channel?: string; // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 유입경로 canonical 코드(예약행 + 고객 first-touch 상속)
   referral_name?: string; // T-20260515-foot-REFERRAL-NAME: 지인소개 시 소개자 성함
   registrar_type?: string; // T-20260612-foot-RESV-ROUTE-AUTOCLASS: 등록자 선택('desk'|'tm') → 방문경로 대분류 자동 고정 (form-only, DB 미저장)
   existingId?: string;
@@ -212,6 +213,9 @@ type CanonicalCreateInput = {
   //   reservations.brief_note (W2 신규 컬럼). booking_memo(예약메모)와 별개 칸. CRM-local 임상 메타.
   brief_note?: string | null;
   visit_route?: string | null;
+  // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 유입경로 이벤트값(canonical 코드). 예약행 inflow_channel 영속 +
+  //   고객 first_inflow_channel first-write-wins 상속(재진 재예약 = 미갱신). TM(source_system=dopamine)은 EF 유입이라 이 폼 무접점.
+  inflow_channel?: string | null;
   registrar_id?: string | null; // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약등록자(예약행 컬럼 기존)
   registrar_name?: string | null; // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 표시 스냅샷(생성 시 영속)
   referral_name?: string | null;
@@ -304,6 +308,24 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     await supabase.from('customers').update({ visit_route: input.visit_route }).eq('id', input.customerId);
   }
 
+  // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 고객 최초유입 canonical first-write-wins 상속.
+  //   customers.first_inflow_channel 이 비어있을 때만 stamp → 재진 재예약은 기존 값 유지(자동 상속, 재입력 요구 없음).
+  //   forward-only. 물리 불변가드(BEFORE UPDATE 트리거)는 Phase-2 — 현재는 app-layer first-write-wins.
+  if (input.customerId && input.inflow_channel) {
+    const { data: curCust } = await supabase
+      .from('customers')
+      .select('first_inflow_channel')
+      .eq('id', input.customerId)
+      .maybeSingle();
+    const existing = (curCust as { first_inflow_channel?: string | null } | null)?.first_inflow_channel;
+    if (!existing) {
+      await supabase
+        .from('customers')
+        .update({ first_inflow_channel: input.inflow_channel, first_inflow_at: new Date().toISOString() })
+        .eq('id', input.customerId);
+    }
+  }
+
   // ② 패키지연결 + 치료사 preferred 포함 페이로드
   const payload = {
     clinic_id: input.clinicId,
@@ -324,6 +346,8 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로/예약등록자를 예약행에 직접 영속(편집경로 popup L928 과 동일 컬럼).
     //   기존 컬럼(reservations.visit_route / registrar_id) — 신규 스키마 0. 미전달(다른 생성경로)이면 null 로 무해.
     visit_route: input.visit_route ?? null,
+    // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 예약행 유입경로 이벤트값 영속(canonical 코드). 미전달 시 null(무해).
+    inflow_channel: input.inflow_channel ?? null,
     registrar_id: input.registrar_id ?? null,
     // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 이름 스냅샷도 생성 시 영속.
     //   기존 컬럼(reservations.registrar_name) — 신규 스키마 0. 편집경로(popup saveRouteAndRegistrar)와 동일 컬럼.
@@ -3817,6 +3841,7 @@ function ReservationEditor({
       memo: state.memo,
       booking_memo: state.booking_memo,
       visit_route: state.visit_route,
+      inflow_channel: state.inflow_channel ?? null,
       referral_name: state.referral_name,
       linked_package_id: state.linked_package_id,
       preferred_therapist_id: state.visit_type === 'returning' ? (overrideTherapistId || null) : null,

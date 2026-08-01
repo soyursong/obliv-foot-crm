@@ -173,6 +173,11 @@ export interface Customer {
   gender?: 'M' | 'F' | null;
   inflow_channel?: string | null;
   inflow_source?: string | null;
+  // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 최초유입 canonical(first-touch, immutable first-write-wins).
+  //   이벤트축(reservations/check_ins.inflow_channel)과 의도적 별칭=축 방화벽. system_codes code_type='inflow_channel'.
+  first_inflow_channel?: string | null;
+  first_inflow_at?: string | null;
+  first_inflow_source_ref?: string | null;
   // 건보 본인부담 산출 (T-20260504-foot-INSURANCE-COPAYMENT)
   rrn_vault_id?: string | null;
   insurance_grade?: InsuranceGrade | null;
@@ -496,6 +501,8 @@ export interface CheckIn {
   sort_order: number;
   skip_reason: string | null;
   created_at: string;
+  /** T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 유입경로 이벤트값(워크인=예약없는 접수 발급앵커). */
+  inflow_channel?: string | null;
   /** 진료정보 — T-20260430-foot-TREATMENT-LABEL */
   consultation_done: boolean;
   treatment_kind: string | null;
@@ -806,6 +813,9 @@ export interface Reservation {
   /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약경로(방문경로 대분류). customers.visit_route enum 재사용 SSOT.
    *  W2-DB: 네이버·인콜 ADD(B안: legacy 인바운드 존치). */
   visit_route?: VisitRoute | null;
+  /** T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 유입경로 이벤트값(예약 발급 카드). system_codes code_type='inflow_channel'.
+   *  source_system(매출축)·visit_route(legacy)·referral_source(freeze legacy)와 직교축 방화벽. */
+  inflow_channel?: string | null;
   /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 마스터 FK(reservation_registrars). */
   registrar_id?: string | null;
   /** T-20260610-foot-RESV-REGISTRAR-ROUTE-FIELDS: 예약등록자 성함 스냅샷(고객박스 @표시·이력 안정). */

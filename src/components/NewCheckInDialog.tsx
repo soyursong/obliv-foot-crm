@@ -37,6 +37,8 @@ import {
   INSURANCE_GRADE_SHORT_LABELS,
   type InsuranceGrade,
 } from '@/lib/insurance';
+// T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 신규 접수 유입경로 필수 선택(11코드) + 기타 사유필수.
+import { useInflowChannels } from '@/hooks/useInflowChannels';
 
 interface Props {
   open: boolean;
@@ -59,6 +61,11 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   // T-20260721-foot-BILLING-REMAINING-WORK §3b: 신규 고객 접수 시 자격등급 필수입력.
   //   null = 미선택 → 신규 고객 INSERT 차단(재발방지). 기존/예약연결 고객은 차트2 등급 관리 → 비대상.
   const [insuranceGrade, setInsuranceGrade] = useState<InsuranceGrade | null>(null);
+  // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 신규 접수 유입경로 canonical 코드(inbound./partner./internal.).
+  //   미선택 = 신규 고객 저장 차단(자유입력란 폐지). inbound.etc 선택 시 사유 필수 → first_inflow_source_ref.
+  const [inflowChannel, setInflowChannel] = useState<string>('');
+  const [inflowReason, setInflowReason] = useState('');
+  const inflow = useInflowChannels(clinicId);
   const [submitting, setSubmitting] = useState(false);
   const [todayReservations, setTodayReservations] = useState<Reservation[]>([]);
   // T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 예약 고객(customer_id) → 차트번호 맵
@@ -78,6 +85,8 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setPhone('');
     setVisitType('new');
     setInsuranceGrade(null);
+    setInflowChannel('');
+    setInflowReason('');
     setLinkedReservation(null);
     setSelectedCustomerId(null);
     setTodayReservations([]);
@@ -275,6 +284,19 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
           setSubmitting(false);
           return;
         }
+        // ── T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 신규 접수 유입경로 필수 선택 ──
+        //   RPC 배포 완료(inflow.available) 시에만 강제 — 미배포/오버레이 전부숨김 환경은 게이트 완화(무중단).
+        //   inbound.etc = 사유 필수(first_inflow_source_ref). forward-only·first-write-wins(최초유입 canonical).
+        if (inflow.available && !inflowChannel) {
+          toast.error('유입경로를 선택하세요');
+          setSubmitting(false);
+          return;
+        }
+        if (inflow.available && inflow.requiresReason(inflowChannel) && !inflowReason.trim()) {
+          toast.error('기타 유입경로는 사유를 입력하세요');
+          setSubmitting(false);
+          return;
+        }
         const { data: created, error: cErr } = await supabase
           .from('customers')
           .insert({
@@ -287,6 +309,10 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
             insurance_grade: insuranceGrade,
             insurance_grade_source: 'manual_input',
             insurance_grade_verified_at: new Date().toISOString(),
+            // INFLOW: 최초유입 canonical(first-touch, immutable first-write-wins). 신규 고객이므로 최초 write.
+            first_inflow_channel: inflowChannel || null,
+            first_inflow_at: inflowChannel ? new Date().toISOString() : null,
+            first_inflow_source_ref: inflow.requiresReason(inflowChannel) ? inflowReason.trim() : null,
           })
           .select('id')
           .single();
@@ -349,6 +375,9 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         status: newStatus,
         queue_number: queueData as number,
         consultant_id: consultantId,
+        // INFLOW event anchor(워크인=예약없는 접수 발급앵커). 신규 접수에서 캡처한 이벤트값만 기록.
+        //   기존/예약연결 고객은 미재입력 → null(forward-only, first-touch canonical은 customers.first_inflow_channel).
+        inflow_channel: inflowChannel || null,
       })
       .select('id')
       .single();
@@ -607,6 +636,47 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* ── T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 신규 접수 유입경로 필수 선택 드롭다운 ──
+              신규(미식별) 접수에서만 노출·필수. 기존/예약연결 고객은 최초유입 canonical 자동상속 → 숨김(회귀 0).
+              배포순서 graceful: RPC 미배포(available=false) 시 렌더 skip → 저장 게이트 완화(무중단). */}
+          {!selectedCustomerId && !linkedReservation?.customer_id && inflow.available && (
+            <div className="space-y-1">
+              <Label htmlFor="ci-inflow">
+                유입경로 <span className="text-red-600">*</span>
+                <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                  (어떻게 알고 오셨는지)
+                </span>
+              </Label>
+              <select
+                id="ci-inflow"
+                data-testid="checkin-inflow-channel"
+                value={inflowChannel}
+                onChange={(e) => {
+                  setInflowChannel(e.target.value);
+                  if (!inflow.requiresReason(e.target.value)) setInflowReason('');
+                }}
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">— 선택 —</option>
+                {inflow.options.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {inflow.requiresReason(inflowChannel) && (
+                <input
+                  type="text"
+                  data-testid="checkin-inflow-reason"
+                  value={inflowReason}
+                  onChange={(e) => setInflowReason(e.target.value)}
+                  placeholder="유입경로 사유를 입력하세요"
+                  className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              )}
             </div>
           )}
 
