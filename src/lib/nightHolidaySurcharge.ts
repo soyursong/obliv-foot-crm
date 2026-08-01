@@ -142,7 +142,14 @@ export function surchargeMark(kind: SurchargeKind | null, target: SurchargeKind)
  * @param base  진찰료 급여 총액(= 본인부담금 + 공단부담금).
  * @param copayment 진찰료 급여 본인부담금(비례 분할 기준).
  * @param kind  detectSurchargeKind 결과. null 이면 전부 0(가산 없음, 회귀 방지).
- * @returns amount=가산 총액(반올림), copay=가산 본인부담분, covered=가산 공단부담분(amount-copay).
+ * @returns amount=가산 총액(10원 미만 절사·FLOOR), copay=가산 본인부담분, covered=가산 공단부담분(amount-copay).
+ *
+ * ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, diagnose-first (a)) ──
+ *   가산 산출값은 **10원 미만 절사(FLOOR)** — 국민건강보험법 시행령 별표2 제1항(요양급여비용총액 10원 미만 절사) 정합.
+ *   종전 Math.round(반올림)은 5원 이상에서 절상(초과징수)되어 요양급여비용총액이 10원 배수를 벗어났다:
+ *     18,840 × 0.3 = 5,652 → (round) 5,652 → 총액 24,492 [X] / (floor10) 5,650 → 총액 24,490 [O]
+ *   CEIL·ROUND 복귀 금지(footBilling.ts CIT-2026-001/002 FLOOR canon 동일 계열). 절사는 항상 하향(초과징수 방지).
+ *   copay/covered 분할은 절사된 amount 를 기준으로 비례 분할해 합(copay+covered)이 정확히 amount 와 일치한다.
  */
 export function computeSurcharge(
   base: number,
@@ -150,7 +157,8 @@ export function computeSurcharge(
   kind: SurchargeKind | null,
 ): { amount: number; copay: number; covered: number } {
   if (!kind || base <= 0) return { amount: 0, copay: 0, covered: 0 };
-  const amount = Math.round(base * SURCHARGE_RATE);
+  // 10원 미만 절사(FLOOR) — 별표2 제1항. round(초과징수)→floor 정정. CEIL/ROUND 복귀 금지.
+  const amount = Math.floor((base * SURCHARGE_RATE) / 10) * 10;
   const ratio = copayment > 0 ? Math.min(1, copayment / base) : 0;
   const copay = Math.round(amount * ratio);
   const covered = Math.max(0, amount - copay);
@@ -264,8 +272,21 @@ export function applyNightHolidaySurcharge(
       bump('subtotal_amount', sc.amount);
       bump('total_amount', sc.amount);
       // 합계(총액 열) = 본인부담금 + 비급여(공단 제외, GONGDAN-HIDE-COPAY-ONLY B안) → 가산 본인분만.
+      // 계(절사전, detail_subtotal)에 가산 본인분 반영.
       bump('detail_subtotal', sc.copay);
-      bump('detail_total', sc.copay);
+      // ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, diagnose-first (b)) ──
+      //   RC: computeBillDetailRounding(floor10)이 가산 前 payableB 만 10원 절사한 뒤, 여기서 가산 본인분(sc.copay,
+      //   비-10원배수)을 detail_total 에 더해 세부내역서 합계의 10원 절사가 깨졌다("갑자기 안 됨"). → 가산 fold 후
+      //   계(detail_subtotal)를 다시 10원 절사해 별표2 제1항(문서 grain 10원 미만 절사) 정합을 회복하고,
+      //   계 + 끝처리조정 = 합계 불변식을 유지(detail_rounding recompute). 수동편집(overriddenKeys) 시 종전 bump 유지.
+      if (!overriddenKeys.has('detail_total') && !overriddenKeys.has('detail_rounding')) {
+        const detSub = parseAmt(base.detail_subtotal);
+        const detFloored = Math.floor(detSub / 10) * 10;
+        base.detail_total = formatAmount(detFloored);
+        base.detail_rounding = formatAmount(detFloored - detSub);
+      } else {
+        bump('detail_total', sc.copay);
+      }
     }
   }
 }
