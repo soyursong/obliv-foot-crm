@@ -172,6 +172,30 @@ interface ManualPaymentRow {
   created_at: string;
 }
 
+/** T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후 수납 수정 감사 로그 행 */
+interface ClosingEditLogRow {
+  id: string;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  revision_after: number;
+  edited_by_name: string | null;
+  edited_at: string;
+}
+
+/** 감사 로그 필드 → 한글 라벨 */
+const EDIT_LOG_FIELD_KO: Record<string, string> = {
+  amount: '금액',
+  method: '결제수단',
+  customer_name: '성함',
+  pay_time: '결제시각',
+  chart_number: '차트번호',
+  lead_source: '유입경로',
+  visit_type: '초/재진',
+  staff_name: '결제담당',
+  memo: '메모',
+};
+
 /** 결제내역 탭에서 표시되는 통합 행 */
 interface EnrichedRow {
   sort_key: string;
@@ -614,6 +638,23 @@ export default function Closing() {
         .order('pay_time', { ascending: true, nullsFirst: true });
       if (error) throw error;
       return (data ?? []) as ManualPaymentRow[];
+    },
+  });
+
+  // ── T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후 수납 수정 이력(AC-6) ──
+  //   closing_edit_log = 필드단위 감사(누가·언제·무엇을→무엇으로). 화면에서 바로 조회.
+  const { data: editLog = [] } = useQuery<ClosingEditLogRow[]>({
+    queryKey: ['closing-edit-log', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('closing_edit_log')
+        .select('id, field, old_value, new_value, revision_after, edited_by_name, edited_at')
+        .eq('clinic_id', clinic!.id)
+        .eq('close_date', date)
+        .order('edited_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as ClosingEditLogRow[];
     },
   });
 
@@ -2219,6 +2260,37 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               </CardContent>
             </Card>
           )}
+
+          {/* ── T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK (AC-6): 확정 후 수납 수정 이력 ── */}
+          {editLog.length > 0 && (
+            <Card className="border bg-card" data-testid="closing-edit-log-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground">
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                  확정 후 수정 이력
+                  <Badge variant="secondary" className="ml-1">{editLog.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5 text-sm text-foreground max-h-64 overflow-y-auto">
+                {editLog.map((e) => (
+                  <div key={e.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border/50 pb-1.5 last:border-0" data-testid="edit-log-row">
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {format(new Date(e.edited_at), 'MM/dd HH:mm')}
+                    </span>
+                    <span className="font-medium">{e.edited_by_name ?? '—'}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{EDIT_LOG_FIELD_KO[e.field] ?? e.field}</span>
+                    <span className="tabular-nums">
+                      <span className="text-rose-600 line-through">{e.old_value ?? '—'}</span>
+                      <span className="mx-1 text-muted-foreground">→</span>
+                      <span className="text-emerald-700 font-medium">{e.new_value ?? '—'}</span>
+                    </span>
+                    <Badge variant="outline" className="text-[10px]">개정 {e.revision_after}</Badge>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
             </TabsContent>
 
             {/* T-20260708-foot-REDPAY-CLOSING-TAB: 레드페이 하위탭 (카드단말기 자동수집 + 대조) */}
@@ -2241,11 +2313,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           closeDate={date}
           staffList={staffList}
           editTarget={manualEditTarget}
+          dayIsClosed={isClosed}
           onClose={() => { setShowManualDialog(false); setManualEditTarget(null); }}
           onSaved={() => {
             setShowManualDialog(false);
             setManualEditTarget(null);
             qc.invalidateQueries({ queryKey: ['closing-manual', clinic.id, date] });
+            // T-20260730-EDIT-NO-UNLOCK: 확정일 수정 = 재확정(revision+1) → 일마감 매출 합계 자동 재산출 위해 전체 새로고침
+            refresh();
           }}
         />
       )}
@@ -2299,11 +2374,13 @@ interface ManualEntryDialogProps {
   staffList: Staff[];
   /** 수정 모드용 — null이면 신규 추가 모드 */
   editTarget: ManualPaymentRow | null;
+  /** T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정(closed) 일마감이면 수정 저장을 원자적 재확정 RPC로 라우팅 */
+  dayIsClosed?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose, onSaved }: ManualEntryDialogProps) {
+function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, dayIsClosed = false, onClose, onSaved }: ManualEntryDialogProps) {
   const isEdit = editTarget !== null;
   const [payTime, setPayTime] = useState(editTarget?.pay_time ?? format(new Date(), 'HH:mm'));
   const [chartNumber, setChartNumber] = useState(editTarget?.chart_number ?? '');
@@ -2450,6 +2527,35 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
 
     let error;
     if (isEdit && editTarget) {
+      // ── T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK ──
+      //   확정(closed)된 일마감의 수납 수정 = 명시적 '해제' 클릭 없이(A안 UX sugar) 저장.
+      //   내부는 반드시 원자적 unlock→edit→re-confirm(revision+1)+감사 (RPC). raw update 금지(divergence).
+      //   미확정(open) 일마감은 기존 무회귀 경로(plain update — 재확정 불필요).
+      if (dayIsClosed) {
+        const { data, error: rpcErr } = await supabase.rpc('closing_edit_manual_payment_reconfirm', {
+          p_manual_id: editTarget.id,
+          p_clinic_id: clinicId,
+          p_new: {
+            amount: amt,
+            method,
+            customer_name: customerName.trim(),
+            pay_time: payTime || null,
+            chart_number: chartNumber || null,
+            lead_source: leadSource || null,
+            visit_type: visitType || null,
+            staff_name: staffName || null,
+            memo: memo || null,
+          },
+        });
+        setSaving(false);
+        if (rpcErr) { toast.error(`수정 실패: ${rpcErr.message}`); return; }
+        const res = (data ?? {}) as { no_change?: boolean; revision_after?: number };
+        toast.success(res.no_change
+          ? '변경 사항 없음'
+          : `수납 수정 완료 — 매출 자동 재확정 (개정 ${res.revision_after ?? '?'})`);
+        onSaved();
+        return;
+      }
       ({ error } = await supabase
         .from('closing_manual_payments')
         .update({ ...basePayload, amount: amt, method, updated_at: new Date().toISOString() })
