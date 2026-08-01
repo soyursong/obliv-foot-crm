@@ -22,14 +22,15 @@
  *   호출부:
  *     · OpinionDocTab.handlePrint(원장탭)  → loadAutoBindContext(checkIn, row.issued_by_name, row.issued_by_doctor_id)
  *     · medDocPrintGate.printAuthoredMedDoc(데스크·수납) → loadAutoBindContext(ctx.checkIn, doc.issuedByName, doc.issuedByDoctorId)
- *   ⚠ 스코프 격리: autoBindContext.shouldForceInstitutionSeal(문지은→법인인감, 07-14 DOCTOR-UNLINKED
- *     commit 0ed89b54) + 미지정폴백(sealFallbackToInstitution) 로직 무변경. 빌링서식(계산서·영수증·
- *     세부산정내역서)의 자체 loadAutoBindContext 호출부(발행자 인자 미전달) 무접점 → 07-14 정책 회귀 0.
+ *   ⚠ 갱신(T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-B, 이은상 팀장 2026-07-31):
+ *     구 07-14 UNLINKED '미지정폴백=기관명+법인인감' 잔재(shouldForceInstitutionSeal/sealFallbackToInstitution
+ *     도장-우회)가 제거되어 07-16 슬롯키드 규칙(개인직인)에 정합. 이제 미지정 폴백도 대표원장 개인명·개인직인.
+ *     대표자란 법인 인감({{institution_seal_html}}=getStampUrl)은 독립 경로라 무접촉(무회귀). 아래 회귀 블록 갱신.
  *
  * AC (canon 티켓):
  *   시나리오1  문지은 발행 소견서 → 도장란에 문지은 본인 직인(김윤기 아님)
  *   시나리오2  타 진료의(김윤기/한동훈/김상은) 발행 → 각 본인 직인, 오매핑 0
- *   회귀       빌링서식 문지은→법인인감(07-14) 불변 / 레거시(id 부재) 이름폴백 / autoBindContext.ts 무변경
+ *   AC-B(2차)  미지정 폴백 → 대표원장(문지은) 개인명 + 개인직인(구 기관명+법인인감 잔재 제거) / autoBindContext.ts 변경
  *
  * 실행: npx playwright test --project=unit T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH.spec.ts
  * NOTE: 도장 결선 = loadAutoBindContext 의 clinicDoctor 해석 규칙(DB I/O). 배선 계약=정적 소스 가드 +
@@ -106,11 +107,12 @@ test.describe('스코프 격리: 07-14 빌링서식 법인인감 정책 불변',
     expect(ABC_SRC).toMatch(/clinicDoctorId\?:\s*string,?/);
   });
 
-  test('shouldForceInstitutionSeal = sealFallbackToInstitution 반환(미지정폴백 한정, 불변)', () => {
-    expect(ABC_SRC).toMatch(/function\s+shouldForceInstitutionSeal/);
-    expect(ABC_SRC, '법인인감 강제 경로가 미지정폴백 외로 확장됨(07-14 정책 훼손)').toMatch(
-      /shouldForceInstitutionSeal[\s\S]{0,120}return\s+sealFallbackToInstitution;/,
-    );
+  test('AC-B(T-20260731): 미지정 폴백 도장-우회 체인 제거 — shouldForceInstitutionSeal/seal-null 강제 소거', () => {
+    // 07-14 UNLINKED 잔재(미지정폴백 한정 법인인감 강제) 제거 → 07-16 슬롯키드(개인직인) 정합.
+    expect(ABC_SRC, 'shouldForceInstitutionSeal 잔존(AC-B3 미정리)').not.toMatch(/function\s+shouldForceInstitutionSeal/);
+    expect(ABC_SRC, 'seal_image_url=null 강제(법인인감 우회) 잔존').not.toMatch(/seal_image_url:\s*null/);
+    // 대표자란 법인 인감(별도 토큰)은 독립 경로 → 유지(무회귀).
+    expect(ABC_SRC, 'institution_seal_html(getStampUrl) 축은 무접촉이어야 함').toMatch(/institution_seal_html/);
   });
 
   test('clinicDoctorId 1순위 결선(id 직접 지정) 규칙 유지', () => {
@@ -124,24 +126,19 @@ interface Doc { id: string; name: string; seal: string | null; is_default: boole
 function resolveSeal(
   clinicDoctors: Doc[],
   opts: { clinicDoctorId?: string; doctorNameOverride?: string; treatingDoctorId?: string | null },
-): { doctorName: string | null; seal: string | null; sealFallbackToInstitution: boolean } {
+): { doctorName: string | null; seal: string | null } {
   const { clinicDoctorId, doctorNameOverride, treatingDoctorId } = opts;
   const treatingDoctor = treatingDoctorId
     ? clinicDoctors.find((d) => d.id === treatingDoctorId) ?? null
     : null;
 
-  // doctorName 결정 (L650~): override 있으면 그 이름, 없으면 치료의(단순화: 방문 치료의)
+  // doctorName 결정: override → 치료의 → 미지정 폴백(대표원장 is_default 개인명, AC-B: 기관명 덮어쓰기 제거).
   let doctorName: string | null = null;
-  let sealFallbackToInstitution = false;
   if (doctorNameOverride !== undefined) doctorName = doctorNameOverride || null;
   else if (treatingDoctor?.name) doctorName = treatingDoctor.name;
   else if (clinicDoctors.length > 0) {
-    // L693~703: duty/치료의 미지정 자동발행 폴백 — 대표원장(is_default)로 이름 채우고 법인인감 강제.
     const representative = clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
-    if (representative?.name) {
-      doctorName = representative.name;
-      sealFallbackToInstitution = true;
-    }
+    if (representative?.name) doctorName = representative.name;
   }
 
   // clinicDoctor 결선 (L711~)
@@ -150,13 +147,10 @@ function resolveSeal(
   if (!clinicDoctor && clinicDoctorId === undefined && doctorNameOverride === undefined && treatingDoctor)
     clinicDoctor = treatingDoctor;
   if (!clinicDoctor && doctorName) clinicDoctor = clinicDoctors.find((d) => d.name === doctorName) ?? null;
-  if (!clinicDoctor) {
-    clinicDoctor = clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
-    sealFallbackToInstitution = true;
-  }
-  // forceInstitutionSeal = sealFallbackToInstitution (미지정폴백 한정): 도장 슬롯을 법인인감으로 비움
-  const seal = sealFallbackToInstitution ? null : clinicDoctor?.seal ?? null;
-  return { doctorName, seal: clinicDoctor ? seal : null, sealFallbackToInstitution };
+  if (!clinicDoctor) clinicDoctor = clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
+
+  // AC-B(T-20260731): 미지정 폴백에서도 법인인감 강제(seal=null) 제거 → 결선된 의사 개인직인 그대로.
+  return { doctorName, seal: clinicDoctor?.seal ?? null };
 }
 
 // 프로드 실측 clinic_doctors(jongno-foot) — seal 은 식별용 축약.
@@ -187,7 +181,6 @@ test.describe('도장 결선: 발행자-앵커(F-4808 실측 재현)', () => {
     expect(r.doctorName).toBe('문지은');
     expect(r.seal, '문지은 발행인데 김윤기 도장(오매핑)').toBe('seal_문지은');
     expect(r.seal).not.toBe('seal_김윤기');
-    expect(r.sealFallbackToInstitution, '지정 진료의인데 미지정폴백 오진입').toBe(false);
   });
 
   test('시나리오1(레거시 폴백): 스냅샷 id 부재 → 발행자명 이름폴백으로 문지은 도장', () => {
@@ -198,7 +191,6 @@ test.describe('도장 결선: 발행자-앵커(F-4808 실측 재현)', () => {
     });
     expect(r.doctorName).toBe('문지은');
     expect(r.seal, '레거시 이름폴백 실패').toBe('seal_문지은');
-    expect(r.sealFallbackToInstitution).toBe(false);
   });
 
   test('시나리오2(오매핑 0): 각 진료의 발행 → 각 본인 직인', () => {
@@ -215,12 +207,12 @@ test.describe('도장 결선: 발행자-앵커(F-4808 실측 재현)', () => {
   });
 });
 
-test.describe('회귀 0: 빌링서식 미지정폴백(07-14 법인인감) 경로 불변', () => {
-  test('발행자·치료의 모두 미지정 → 대표원장(문지은) 폴백 + 법인인감 강제(seal 비움)', () => {
-    // 빌링서식 자체 호출부(loadAutoBindContext(checkIn), 발행자 인자 미전달, 치료의도 없음)
+test.describe('AC-B(T-20260731): 미지정 폴백 = 대표원장 개인명 + 개인직인(구 07-14 법인인감 잔재 제거)', () => {
+  test('발행자·치료의 모두 미지정 → 대표원장(문지은) 개인명 + 문지은 개인직인(seal 비움 아님)', () => {
+    // 미지정 자동발행 폴백(loadAutoBindContext(checkIn), 발행자 인자 미전달, 치료의도 없음).
     const r = resolveSeal(DOCS, {});
-    expect(r.doctorName, '미지정 폴백은 대표원장명').toBe('문지은');
-    expect(r.sealFallbackToInstitution, '미지정폴백 미진입(07-14 정책 훼손)').toBe(true);
-    expect(r.seal, '미지정폴백인데 개인직인이 샘(07-14 회귀)').toBeNull();
+    expect(r.doctorName, '미지정 폴백은 대표원장 개인명').toBe('문지은');
+    expect(r.seal, 'AC-B: 미지정 폴백에서도 개인직인 유지(법인인감 강제 제거)').toBe('seal_문지은');
+    expect(r.seal, 'seal=null 강제(법인인감 우회)가 남아있음(AC-B 미적용)').not.toBeNull();
   });
 });

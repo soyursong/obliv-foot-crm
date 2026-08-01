@@ -206,27 +206,17 @@ export function deriveBirthYYMMDDFromRrn(rrn: string | null | undefined): string
 }
 
 /**
- * T-20260716-foot-DOCFEE-NONPAY-SEAL [AC2 슬롯키드 최종 규칙, 현장 owner 김주연 총괄 U0ATDB587PV [A]
- *   확정 2026-07-16T13:52 KST, planner FIX-REQUEST MSG-20260716-135623-ngmk].
- *   현장 [A] 원문: "7/15 보내주신 개인 직인으로 교체 / 법인 인감은 박영진 대표자 성함 들어갈 때 매핑."
- *
- * ★규칙 재정정(슬롯 주체로 결정 — 문서 단위·doctor is_default 아님):
- *   - 박영진 대표자 성함 표기 슬롯(영수증/계산서/세부내역서 대표자란) → 법인 인감.
- *     → 별도 토큰 {{institution_seal_html}}(= getStampUrl, 항상 법인 인감)이 담당. 본 판정과 무관.
- *   - 문지은 원장 서명란(진료의 축 서류) → 개인 직인(foot_seal_문지은.png, 7/15 clean asset).
- *     → 한동훈·김윤기·김상은과 동일하게 {{doctor_seal_html}} = clinic_doctors.seal_image_url 렌더.
- *
- * ∴ 7/14 AC-6 v2 '문지은(is_default)=항상 법인 인감' 규칙 SUPERSEDE — is_default 조건 제거.
- *   도장 슬롯을 법인 인감으로 강제하는 유일 경로 = 진료의 미지정 자동발행 폴백
- *   (sealFallbackToInstitution). 그 경로는 이름란도 기관명으로 재정합됨(하단 로직 유지).
- *   지정 진료의(문지은 포함 전원)는 각자 개인직인 유지 → 슬롯키드 정합(오매핑 0, ★법적 정확성).
+ * T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND [AC-B, 이은상 팀장 2026-07-31 지시 →
+ *   김주연 총괄 2026-07-16 슬롯키드 규칙(개인직인)의 미적용 구간 정합. 총괄 규칙 번복 아님].
+ *   진료의 미지정 자동발행 폴백에서도 (a) 의사명은 결선된 대표원장 '개인명' 유지(기관명 덮어쓰기 제거),
+ *   (b) 도장은 개인 직인({{doctor_seal_html}} = clinic_doctors.seal_image_url) 그대로 렌더(법인 인감 우회 제거).
+ *   → 07-14 UNLINKED 잔재(미지정=기관명+법인 인감)를 제거해 07-16 슬롯키드 규칙과 정합.
+ *   shouldForceInstitutionSeal / sealFallbackToInstitution 도장-우회 체인 전체 삭제(호출부와 함께 정리, AC-B3).
+ *   ⚠ 대표자란 법인 인감({{institution_seal_html}} = getStampUrl, 세부산정내역·계산서/영수증)은 독립 경로 →
+ *     무접촉(§6 LOGIC-LOCK 유지). 본 변경은 {{doctor_seal_html}} 축만 건드린다.
+ *   ⚠ 리스크(총괄 통지): 미지정 폴백에서 대표원장 개인명+개인직인이 찍히면 실제 진료하지 않은 의사 명의
+ *     서명 서류 가능성. 근본 해소(발행 시 진료의 결선 성공)는 후속 별건 — 본건은 표기 정합까지.
  */
-export function shouldForceInstitutionSeal(
-  _isDefaultDoctor: boolean | null | undefined,
-  sealFallbackToInstitution: boolean,
-): boolean {
-  return sealFallbackToInstitution;
-}
 
 export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string> {
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -640,15 +630,8 @@ export async function loadAutoBindContext(
   // 4순위: 첫 번째 활성 director (fallback)
   let doctorName: string | null = null;
 
-  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN#3, field-confirm B안 2026-07-14T10:22 KST,
-  //   김주연 총괄 U0ATDB587PV]: 진료의 "미지정 폴백" 서류의 도장은 대표원장(문지은) 개인직인이 아니라
-  //   오블리브오리진 법인 인감(빨간, 기관 대표 도장)으로 찍어야 한다("문지은 원장님 도장은 요청한 적
-  //   없는데 기존 대표 도장 어디갔어?"). 법인 인감 = getStampUrl()(jongno-foot-stamp.png, priority-2)
-  //   = 7-13 이전 미지정 서류에 실제로 찍히던 '기존 대표 도장'. 아래 폴백 경로에서만 true → 도장 슬롯을
-  //   법인 인감으로 강제(개인직인 seal_image_url 우회). 지정 진료의(override/치료테이블/clinicDoctorId)는
-  //   무영향 — 해당 원장 개인 도장(한동훈印/김윤기印/김상은印) 그대로 유지(오매핑 0, ★법적 정확성).
-  let sealFallbackToInstitution = false;
-
+  // T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-B: 미지정 폴백 도장-우회 로직 제거.
+  //   sealFallbackToInstitution 플래그·법인 인감 강제 삭제 → 폴백에서도 결선된 대표원장 개인명·개인직인 유지.
   if (doctorNameOverride !== undefined) {
     // 빈 문자열('')이면 미선택 상태 유지, 비어있지 않으면 사용
     doctorName = doctorNameOverride || null;
@@ -696,11 +679,8 @@ export async function loadAutoBindContext(
       const representative =
         clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0] ?? null;
       if (representative?.name) {
-        // 대표원장으로 임시 세팅 → 아래 clinicDoctor 상세(면허번호 등) 결선에 사용.
-        //   최종 이름·도장은 sealFallbackToInstitution 블록(하단)에서 기관명+법인 인감으로 재정합
-        //   ('문지은 이름 + 법인 도장' 미스매치 방지, REOPEN#4).
+        // 미지정 폴백: 대표원장(is_default) 개인명으로 결선(공란 방지) → 개인 직인 그대로 렌더(AC-B, 법인 인감 강제 제거).
         doctorName = representative.name;
-        sealFallbackToInstitution = true;
       }
     }
   }
@@ -724,43 +704,16 @@ export async function loadAutoBindContext(
       clinicDoctor = clinicDoctors.find((d) => d.name === doctorName) ?? null;
     }
     if (!clinicDoctor) {
+      // 지정 진료의 미특정 → is_default(대표원장)로 결선. 개인 직인 그대로 렌더(AC-B, 법인 인감 강제 제거).
       clinicDoctor = clinicDoctors.find((d) => d.is_default) ?? clinicDoctors[0];
-      // REOPEN#3 B안: 지정 진료의를 특정하지 못해 is_default(대표원장)로 떨어진 경우도 미지정 폴백 →
-      //   도장은 법인 인감(director-fallback 등 doctorName이 clinic_doctor와 미매칭인 경로 포함).
-      sealFallbackToInstitution = true;
     }
   }
 
-  // T-20260713-foot-DOCPRINT-DOCTOR-UNLINKED [REOPEN#4 name↔seal 정합 보정, planner FIX-REQUEST
-  //   MSG-20260714-103328-mq1p, 김주연 총괄 U0ATDB587PV field-confirm 2026-07-14T10:22 KST]:
-  //   미지정 폴백 슬롯의 도장은 대표원장(문지은) 개인직인이 아니라 오블리브오리진 법인 인감으로 렌더한다.
-  //   개인직인 seal_image_url을 비워 doctor_seal_html(L317)이 getStampUrl()(법인 인감, priority-2)로
-  //   폴스루하게 한다. ★단 REOPEN#3에서 도장만 법인 인감으로 되돌리고 이름란(세부산정 '대표자'/
-  //   계산서·영수증 '진료의사')은 문지은 개인명으로 남겨 '문지은 이름 + 법인 도장' 미스매치가 발생.
-  //   총괄 명시("문지은 원장님 도장은 요청한 적 없다") → 미지정 이름란도 문지은 개인명 제거하고
-  //   기관명으로 채운다(이름↔도장 세트 정합). 공란은 ❶ 재발(AC-8/9 회귀)이므로 기관명 채택 —
-  //   기관명 vs 공란 최종 표기는 종결 confirm_gate ★★ 라이브 렌더 현장 실측에서 확정 후 스왑 가능.
-  //   지정 진료의(한동훈/김윤기/김상은)는 상단에서 개인 이름·개인 도장으로 결선되어 이 분기 미도달 →
-  //   무영향(오매핑 0, ★법적 정확성). ★DB 데이터 정합(문지은 seal_image_url NULL)과 이중 방어.
-  //
-  // T-20260716-foot-DOCFEE-NONPAY-SEAL [AC2 슬롯키드 최종 규칙, 현장 owner 김주연 총괄 U0ATDB587PV [A]
-  //   2026-07-16T13:52 KST, MSG-20260716-135623-ngmk] — 7/14 AC-6 v2 '문지은=항상 법인 인감' SUPERSEDE.
-  //   슬롯키드: 박영진 대표자란 → 법인 인감({{institution_seal_html}}, getStampUrl, 별도 토큰) / 문지은
-  //   원장 서명란 → 개인직인({{doctor_seal_html}} = clinic_doctors.seal_image_url = foot_seal_문지은.png).
-  //   ∴ 문지은도 한동훈·김윤기·김상은과 동일하게 지정 시 개인직인 렌더 — is_default 강제 제거.
-  //   도장을 법인 인감으로 강제하는 유일 경로 = ③진료의 미지정 자동발행 폴백(sealFallbackToInstitution).
-  //   그 폴백은 이름란도 기관명으로 재정합한다(아래). 지정 진료의(문지은 포함)는 개인직인·개인명 유지.
-  const forceInstitutionSeal = shouldForceInstitutionSeal(clinicDoctor?.is_default, sealFallbackToInstitution);
-  if (sealFallbackToInstitution) {
-    // ③미지정 폴백: 이름란도 기관명으로 재정합('기관명 + 법인 도장' 세트 정합, REOPEN#4).
-    const institutionName = (clinicData?.name ?? '오블리브 풋센터 종로').trim();
-    if (institutionName) doctorName = institutionName;
-  }
-  // ③미지정 폴백 한정: 도장 슬롯을 법인 인감으로 강제(개인직인 seal_image_url 비움 → getStampUrl 폴스루).
-  //   지정 진료의(문지은 포함)는 forceInstitutionSeal=false → 개인직인 seal_image_url 그대로 렌더.
-  if (forceInstitutionSeal && clinicDoctor?.seal_image_url) {
-    clinicDoctor = { ...clinicDoctor, seal_image_url: null };
-  }
+  // T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-B1/AC-B2 [이은상 팀장 2026-07-31]:
+  //   미지정 폴백의 (a) 이름란→기관명 덮어쓰기(구 AC-B1) + (b) 개인직인→법인 인감 우회(구 AC-B2) 2개 블록 제거.
+  //   → 결선된 대표원장 개인명·개인직인을 그대로 유지한다(§2 RC = 07-14 UNLINKED 잔재를 07-16 슬롯키드 규칙에 정합).
+  //   지정 진료의(override/치료테이블/clinicDoctorId)는 상단에서 개인명·개인직인 결선 → 무영향(오매핑 0).
+  //   ⚠ {{institution_seal_html}}(getStampUrl, 대표자란 법인 인감)은 독립 경로 → 무접촉(§6 유지, 무회귀).
 
   // 직인 이미지: storage path → signed URL (1시간)
   if (clinicDoctor?.seal_image_url) {
