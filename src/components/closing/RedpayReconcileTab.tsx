@@ -20,6 +20,12 @@ import { formatAmount } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import {
+  fetchUnassignedInflowMetric,
+  formatInflowRate,
+  type UnassignedInflowMetric,
+} from '@/lib/redpayPlanbInflowMetric';
+import { REDPAY_PLANB_TTL } from '@/lib/redpayPlanbTtl';
 
 // ── 타입 ──────────────────────────────────────────────────────
 type ReconStatus =
@@ -101,6 +107,24 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
     },
   });
 
+  // ── 미배정 결제함 유입률 (T-20260729-foot-REDPAY-PLANB-UNASSIGNED-INFLOW-METRIC) ──
+  //   read-only 운영지표 — pending_payment.status(expired|failed) count only.
+  //   ★ payments / 매출 split 무접점(redpayPlanbInflowMetric lib이 JOIN 금지 계약 보유).
+  //   일별 grain: [date 00:00 KST, 다음날 00:00 KST) 반개구간(created_at 기준).
+  const dayStartIso = `${date}T00:00:00+09:00`;
+  const dayEndMs = new Date(dayStartIso).getTime() + 24 * 60 * 60 * 1000;
+  const dayEndIso = new Date(dayEndMs).toISOString();
+  //   확정 안정 시점 = 대상일 종료 + 보관창(60분) + 유효창(5분) 경과 후(late-match 반영).
+  //   그 전이면 expired 과대집계 가능 → '잠정' 표기.
+  const settleMs = dayEndMs + REDPAY_PLANB_TTL.retentionMs + REDPAY_PLANB_TTL.autoConnectMs;
+  const isProvisional = Date.now() < settleMs;
+
+  const { data: inflow, isLoading: inflowLoading } = useQuery<UnassignedInflowMetric>({
+    queryKey: ['redpay-inflow-metric', clinicId, date],
+    enabled: !!clinicId,
+    queryFn: () => fetchUnassignedInflowMetric(clinicId, dayStartIso, dayEndIso),
+  });
+
   // 적재 freshness (AC-7)
   const { data: freshness } = useQuery<Freshness | null>({
     queryKey: ['redpay-freshness', clinicId],
@@ -122,6 +146,12 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
         () => {
           qc.invalidateQueries({ queryKey: ['redpay-recon', clinicId, date] });
           qc.invalidateQueries({ queryKey: ['redpay-freshness', clinicId] });
+        })
+      // 선점표 상태 전이(open→matched/expired/failed) 시 미배정 유입률 즉시 갱신
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'pending_payment', filter: `clinic_id=eq.${clinicId}` },
+        () => {
+          qc.invalidateQueries({ queryKey: ['redpay-inflow-metric', clinicId, date] });
         })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -184,6 +214,58 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
           <div className="tabular-nums font-semibold text-lg text-amber-700">{mismatchCount}건</div>
         </div>
       </div>
+
+      {/* 미배정 결제함 유입률 (T-20260729 UNASSIGNED-INFLOW-METRIC) — read-only 운영지표 */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center justify-between gap-2">
+            <span>
+              미배정 결제함 유입률{' '}
+              <span className="text-xs font-normal text-muted-foreground">(선점 만료·미매칭으로 자동연결 실패한 비율)</span>
+            </span>
+            {isProvisional && (
+              <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-500 border-slate-200 shrink-0">
+                잠정
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {inflowLoading ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">불러오는 중…</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border bg-card p-3 text-center">
+                  <div className="text-xs text-muted-foreground mb-1">전체 선점</div>
+                  <div className="tabular-nums font-semibold text-lg">{inflow?.totalPreempts ?? 0}건</div>
+                </div>
+                <div className="rounded-lg border bg-amber-50 border-amber-200 p-3 text-center">
+                  <div className="text-xs text-amber-700 mb-1">미배정 유입</div>
+                  <div className="tabular-nums font-semibold text-lg text-amber-700">{inflow?.unassignedCount ?? 0}건</div>
+                  <div className="text-[10px] text-amber-600/80 mt-0.5">
+                    만료 {inflow?.expiredCount ?? 0} · 실패 {inflow?.failedCount ?? 0}
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-card p-3 text-center">
+                  <div className="text-xs text-muted-foreground mb-1">유입률</div>
+                  <div className="tabular-nums font-semibold text-lg">{inflow ? formatInflowRate(inflow) : '0.0%'}</div>
+                </div>
+              </div>
+              {isProvisional && (
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  ※ 오늘·최근 날짜는 <b>잠정치</b>입니다. 만료된 선점도 최대 {REDPAY_PLANB_TTL.retentionMin}분 동안
+                  뒤늦게 자동연결될 수 있어, 그 시간이 지난 뒤 확정 수치로 안정됩니다.
+                </p>
+              )}
+              <p className="text-[11px] text-muted-foreground mt-1">
+                ※ 결제 대기시간을 {REDPAY_PLANB_TTL.autoConnectMin}분으로 줄이면서 “시간이 짧아 자동연결하지 못하고
+                미배정 결제함으로 넘어간 몫”을 추적하는 지표입니다(매출 집계와 무관, 선점표 상태만 집계).
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 대조 목록 (CRM 수납 ↔ 레드페이) — read-only */}
       <Card>
