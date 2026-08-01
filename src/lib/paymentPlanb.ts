@@ -129,6 +129,96 @@ export async function fetchPendingPaymentStatus(id: string): Promise<PendingPaym
   return (data as PendingPaymentRow | null) ?? null;
 }
 
+// ── 수신 대기 취소 (OPT3 §1 — 팝업 '수신대기 취소') ──────────────────────────
+/**
+ * T-20260730-foot-REDPAY-PLANB-OPT3-V3-BUILD #1 — 수신 대기중인 선점(status='open')을 수동 취소.
+ *   status='open' → 'cancelled' 전이(행 보존, DELETE 아님 — 미배정 유입지표 정합 유지).
+ *   rows-affected 가드: WHERE status='open' 로 이미 매칭/만료/취소된 건은 no-op(=0 → notOpen).
+ *   ★매출 무접점: pending_payment 만 전이(payments write 없음, §550 Model A).
+ */
+export interface CancelPendingPaymentResult {
+  ok: boolean;
+  /** open 이 아니어서 취소되지 않음(이미 매칭/만료/취소됨). */
+  notOpen?: boolean;
+  reason?: 'not_open' | 'db_error';
+  message?: string;
+}
+
+export async function cancelPendingPayment(id: string): Promise<CancelPendingPaymentResult> {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('pending_payment')
+    .update({ status: 'cancelled', updated_at: nowIso })
+    .eq('id', id)
+    .eq('status', 'open') // rows-affected 가드 — open 만 취소 대상.
+    .select('id');
+  if (error) return { ok: false, reason: 'db_error', message: error.message };
+  if ((data?.length ?? 0) === 0) {
+    return { ok: false, notOpen: true, reason: 'not_open', message: '이미 처리(매칭·만료·취소)된 건입니다.' };
+  }
+  return { ok: true };
+}
+
+// ── 미결제 배지 상태 (OPT3 §④ — 기존 [미결제] 배지 확장 데이터소스) ──────────────
+/**
+ * 특정 체크인의 플랜B 선점 배지 상태 — '수납 대기 · {금액}원' / '수납 완료' 노출용.
+ *   최신 open|matched 선점 1건을 조회(취소·만료는 배지 대상 아님 → 기존 미결제 배지로 폴백).
+ *   · open    → 수납 대기(expected_amount 표시).
+ *   · matched → 수납 완료.
+ *   · 없음    → null (기존 결제완료/미결제 배지 로직 그대로).
+ */
+export interface CheckInPlanbBadge {
+  status: 'open' | 'matched';
+  expectedAmount: number;
+}
+
+export async function fetchCheckInPlanbBadge(checkInId: string): Promise<CheckInPlanbBadge | null> {
+  const { data, error } = await supabase
+    .from('pending_payment')
+    .select('status, expected_amount, created_at')
+    .eq('check_in_id', checkInId)
+    .in('status', ['open', 'matched'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const status = (data as { status: string }).status;
+  if (status !== 'open' && status !== 'matched') return null;
+  return {
+    status: status as 'open' | 'matched',
+    expectedAmount: Number((data as { expected_amount: number }).expected_amount) || 0,
+  };
+}
+
+// ── 수신 대기 목록 (OPT3 §6 — pending_payment where status=open) ─────────────────
+export interface OpenPendingListRow {
+  id: string;
+  clinic_id: string;
+  customer_id: string | null;
+  check_in_id: string | null;
+  expected_amount: number;
+  created_at: string;
+  expires_at: string;
+}
+
+/**
+ * status='open' 수신 대기 선점 목록 — OPT3 §6 소형 리스트 뷰 데이터소스.
+ *   clinicId 지정 시 해당 클리닉만. 최신순. 저비용 read(기존 스키마 재사용).
+ */
+export async function listOpenPendingPayments(clinicId?: string | null): Promise<OpenPendingListRow[]> {
+  let q = supabase
+    .from('pending_payment')
+    .select('id, clinic_id, customer_id, check_in_id, expected_amount, created_at, expires_at')
+    .eq('status', 'open')
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (clinicId) q = q.eq('clinic_id', clinicId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as OpenPendingListRow[];
+}
+
 // ── 직원 안내 문구 / TTL re-export (page 편의) ────────────────────────────────
 export { REDPAY_PLANB_TTL, REDPAY_PLANB_AUTO_RECORD_NOTICE };
 

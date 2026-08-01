@@ -26,6 +26,7 @@ import {
   type UnassignedInflowMetric,
 } from '@/lib/redpayPlanbInflowMetric';
 import { REDPAY_PLANB_TTL } from '@/lib/redpayPlanbTtl';
+import PlanbPendingReceiveList from '@/components/PlanbPendingReceiveList';
 
 // ── 타입 ──────────────────────────────────────────────────────
 type ReconStatus =
@@ -266,6 +267,9 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
           )}
         </CardContent>
       </Card>
+
+      {/* 수신 대기 목록 (OPT3 #6) — 기능플래그 ON 시에만 렌더(OFF=null, 기존 화면 무변경) */}
+      <PlanbPendingReceiveList clinicId={clinicId} />
 
       {/* 대조 목록 (CRM 수납 ↔ 레드페이) — read-only */}
       <Card>

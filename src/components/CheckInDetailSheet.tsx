@@ -7,6 +7,7 @@ import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, P
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 // T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제 진입(기능플래그 게이트, OFF 시 null 반환 → 기존 화면 무변경).
 import PlanbPaymentEntryButton from '@/components/PlanbPaymentEntryButton';
+import PlanbSusuScheduleButton from '@/components/PlanbSusuScheduleButton';
 // T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD: 코밴 CAT 직결 결제 진입(3중 게이트, OFF/미탐지 시 null → 기존 화면 무변경).
 import CbandPayEntryButton from '@/components/CbandPayEntryButton';
 import { type FootSite, parseFootSite, isCompleteFootSite, parseFootSites } from '@/components/FootSiteSelector';
@@ -46,6 +47,8 @@ import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
 // T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 결제 상세 항목별 명세 표시(AC-2)
 import { PaymentItemsView } from '@/components/PaymentItemsView';
+import { useCheckInPlanbBadge } from '@/hooks/useCheckInPlanbBadge';
+import { isPaymentPlanbEnabled } from '@/lib/paymentPlanb';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 import { visitRouteOptionsFor } from '@/lib/types';
@@ -1220,6 +1223,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     .filter((p) => p.payment_type === 'payment')
     .reduce((s, p) => s + p.amount, 0);
 
+  // ── 레드페이 플랜B OPT3 §④ — [미결제] 배지 확장 (T-20260730-foot-REDPAY-PLANB-OPT3-V3-BUILD) ──
+  //   기능플래그(VITE_PAYMENT_PLANB) ON 일 때만 조회 — OFF 면 요청 자체 없음(기존 배지 로직 무변경, 회귀 0).
+  //   open → '수납 대기 · {금액}원' / matched → '수납 완료'. 없음 → 기존 결제완료/미결제 배지 폴백.
+  const planbFlagOn = isPaymentPlanbEnabled();
+  const planbBadge = useCheckInPlanbBadge(checkIn?.id, planbFlagOn);
+
   // ── T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 미저장 메모 보호 ──
   // 시트 콘텐츠 하위 input/textarea의 input 이벤트(버블)로 사용자 입력 발생을 감지.
   // (React setState 기반 값 변경은 DOM input 이벤트를 발화하지 않음 — 실제 사용자 타이핑만 dirty 처리)
@@ -2067,7 +2076,19 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-muted-foreground">결제</span>
-              {totalPaid > 0 ? (
+              {/* OPT3 §④ — [미결제] 배지 확장(신설 아님): 플래그 ON + 선점 존재 시 수납 대기/완료 표기.
+                  없음/플래그 OFF → 기존 결제완료/미결제 배지 그대로(회귀 0). */}
+              {planbFlagOn && planbBadge.data ? (
+                planbBadge.data.status === 'matched' ? (
+                  <Badge variant="success" className="text-xs" data-testid="planb-badge-susu-done">
+                    수납 완료
+                  </Badge>
+                ) : (
+                  <Badge variant="teal" className="text-xs" data-testid="planb-badge-susu-waiting">
+                    수납 대기 · {formatAmount(planbBadge.data.expectedAmount)}원
+                  </Badge>
+                )
+              ) : totalPaid > 0 ? (
                 <Badge variant="success" className="text-xs">
                   결제완료 {formatAmount(totalPaid)}
                 </Badge>
@@ -2075,6 +2096,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <Badge variant="outline" className="text-xs text-orange-600">미결제</Badge>
               )}
             </div>
+            {/* OPT3 §③ — '카드 수납예정등록' 버튼을 [결제 등록] '위'에 신설(총괄 v2 확정, MSG-x3ui).
+                기존 [결제 등록] 버튼은 라벨·동작 그대로 아래로 이동. 기능플래그 ON 시에만 렌더(OFF=null). */}
+            <PlanbSusuScheduleButton
+              checkInId={checkIn.id}
+              clinicId={checkIn.clinic_id}
+              customerId={checkIn.customer_id ?? null}
+              customerLabel={`${checkIn.customer_name ?? '환자'} ${chartNoBadge(chartNumber)}`}
+              onChanged={() => planbBadge.refetch()}
+            />
             {payments.length > 0 ? (
               <div className="space-y-1.5">
                 {payments.map((p) => (
@@ -2137,7 +2167,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <CreditCard className="h-3.5 w-3.5" /> 결제 등록
               </Button>
             )}
-            {/* 비대기형 결제(플랜B) 진입 — 기능플래그 ON 시에만 렌더(OFF=무노출, 기존 흐름 무변경) */}
+            {/* (구) 비대기형 결제(플랜B NOWAIT 풀페이지 route) 진입 — OPT3 팝업이 이 surface 를 대체(supersede).
+                기능플래그 ON 시에만 렌더(OFF=무노출). NOWAIT spec 회귀 보존 위해 유지 — OPT3 현장 confirm 후 제거 예정. */}
             <PlanbPaymentEntryButton checkInId={checkIn.id} hasCustomer={!!checkIn.customer_id} />
             {/* 코밴 CAT 직결 결제(플랜A) — 플래그 ON + 단말설정 + 단말감지 3중 게이트 시에만 렌더(OFF/미탐지=무노출) */}
             <CbandPayEntryButton checkInId={checkIn.id} clinicId={checkIn.clinic_id} customerId={checkIn.customer_id ?? null} />

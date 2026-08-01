@@ -11,6 +11,7 @@ import {
   isApprovedRaw,
   isWithinValidWindow,
   isWithinRetention,
+  isAutoCancelTarget,
   retentionCutoffIso,
   groupPendingByAmount,
   selectCandidateRaw,
@@ -151,4 +152,39 @@ Deno.test("received_at 은 매칭 판정에서 완전히 무관(정정2 핵심)"
   // 승인시각은 유효창 내, 도착시각은 유효창 밖(+10분) → received_at 기준이면 탈락했을 케이스.
   const r = raw({ approved_at: "2026-07-29T12:02:00.000Z", received_at: "2026-07-29T12:10:00.000Z" });
   assertEquals(selectCandidateRaw(p, [r], new Set())?.id, "r1", "도착시각 무관, 승인시각만으로 매칭");
+});
+
+// ── #4 autoCancelPass 대상 판정 (T-20260730-foot-REDPAY-PLANB-OPT3-V3-BUILD) ─────
+Deno.test("isAutoCancelTarget: 보관창(1h) 초과분만 취소 대상 (match-before-cancel 경계)", () => {
+  const now = "2026-07-30T13:00:00.000Z";
+  // 보관창 딱 초과(정확히 now - 1h) = 취소 대상(경계 포함).
+  assert(
+    isAutoCancelTarget("2026-07-30T12:00:00.000Z", now),
+    "expires_at == now-1h → 취소 대상(보관창 딱 종료)",
+  );
+  // 보관창 초과(now - 1h 이전) = 취소 대상.
+  assert(
+    isAutoCancelTarget("2026-07-30T11:30:00.000Z", now),
+    "expires_at < now-1h → 취소 대상",
+  );
+  // 보관창 내(now - 1h 이후) = 취소 금지(late 웹훅 매칭 여지).
+  assertFalse(
+    isAutoCancelTarget("2026-07-30T12:30:00.000Z", now),
+    "expires_at > now-1h → 보관창 내 → 취소 금지(matchPass 여지)",
+  );
+});
+
+Deno.test("isAutoCancelTarget ⊥ isWithinRetention: 두 판정은 상보(겹침 0)", () => {
+  const now = "2026-07-30T13:00:00.000Z";
+  for (const exp of [
+    "2026-07-30T11:00:00.000Z", // 보관창 초과
+    "2026-07-30T12:00:00.000Z", // 경계
+    "2026-07-30T12:59:00.000Z", // 보관창 내
+  ]) {
+    // 한 건이 두 판정에서 동시에 true 가 되면 안 된다(취소와 매칭후보 동시 위험 배제).
+    assertFalse(
+      isAutoCancelTarget(exp, now) && isWithinRetention(exp, now),
+      `상보성 위반(exp=${exp}) — autoCancel 대상과 retention 후보가 겹침`,
+    );
+  }
 });

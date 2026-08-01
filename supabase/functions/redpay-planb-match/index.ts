@@ -163,6 +163,34 @@ async function matchPass(
   return { matched, skippedAmbiguous, retentionCandidates };
 }
 
+// ── ③ AUTO-CANCEL 패스 — 보관창(1h) 초과 미매칭 선점 → cancelled ──────────────────
+//   T-20260730-foot-REDPAY-PLANB-OPT3-V3-BUILD #4 (§CARRY-AUTOCANCEL-FEASIBILITY salvage 승계).
+//   ★match-before-cancel 순서 강제: 반드시 matchPass '이후' 3번째 패스로 실행 —
+//     같은 invocation 내 late 웹훅 매칭(matchPass)이 자동취소보다 항상 우선(보관창 내 건은 여기 도달 전 matched).
+//   대상 = status ∈ {expired, failed} AND expires_at <= now - RETENTION_MS(보관창 초과).
+//     · expires_at 컷오프 SSOT = RETENTION_MS(src/lib/redpayPlanbTtl.retentionMs 미러, 1h 하드코딩 금지).
+//     · 보관창 내(late 웹훅 매칭 여지 有) 건은 절대 취소하지 않음(retentionCutoffIso 경계, isWithinRetention 상보).
+//   ★상태전환만(DELETE 아님 — 행 보존 → 미배정 유입지표 정합). 'cancelled' CHECK 旣존재(mig 20260727) = DDL 불요.
+//   ★감사구분 컬럼(cancel_source 등)은 2차/ADDITIVE 유예(PAYWRITE-DA-CONSULT 번들 판정) — 1차는 상태전환만.
+//   rows-affected 가드: .select('id') 반환 0건이면 no-op(대상 없음 skip).
+async function autoCancelPass(nowIso: string): Promise<number> {
+  // 컷오프 = now - RETENTION_MS. expires_at <= 컷오프 = 보관창 초과(match.isAutoCancelTarget 와 동치).
+  const cutoffIso = retentionCutoffIso(nowIso, RETENTION_MS);
+  const { data, error } = await supabase
+    .from("pending_payment")
+    .update({ status: "cancelled", updated_at: nowIso })
+    .in("status", ["expired", "failed"])   // 미매칭 종료 선점만(open/matched/cancelled 무접촉).
+    .lte("expires_at", cutoffIso)          // 보관창 초과분만 — 보관창 내는 matchPass 여지 위해 제외.
+    .select("id");
+  if (error) {
+    console.error(`${LOG}[AUTO-CANCEL] update 오류: ${error.message}`);
+    throw error;
+  }
+  const n = data?.length ?? 0;
+  if (n > 0) console.log(`${LOG}[AUTO-CANCEL] ${n}건 (expired|failed)→cancelled (등록 후 보관창 초과, 매칭창 종료).`);
+  return n;
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== "POST" && req.method !== "GET") {
     return json(405, { ok: false, error: "method_not_allowed" });
@@ -179,8 +207,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const nowIso = new Date().toISOString();
   try {
+    // ★패스 순서 = expire → match → autoCancel. match-before-cancel 구조 강제(별도 cron 금지, OPT3 #4).
     const expired = await expirePass(nowIso);
     const { matched, skippedAmbiguous, retentionCandidates } = await matchPass(nowIso);
+    const autoCancelled = await autoCancelPass(nowIso);
     return json(200, {
       ok: true,
       run_at: nowIso,
@@ -188,6 +218,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       matched,
       skipped_ambiguous: skippedAmbiguous,
       retention_candidates: retentionCandidates, // 보관창(만료 후 1h) 내 expired 선점 수(관측).
+      auto_cancelled: autoCancelled,             // 보관창 초과 → cancelled 전이 수(OPT3 #4, 관측).
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -100,6 +100,25 @@ export function retentionCutoffIso(
   return new Date(Date.parse(nowIso) - retentionMs).toISOString();
 }
 
+/**
+ * autoCancel 대상 판정 (T-20260730-foot-REDPAY-PLANB-OPT3-V3-BUILD #4).
+ *   ★match-before-cancel: 이 판정은 matchPass '이후' autoCancelPass 에서만 소비 —
+ *     보관창(retention, 1h) '초과'한 미매칭 선점만 대상. 보관창 내(late 웹훅 매칭 여지)면 절대 취소하지 않는다.
+ *   조건: expires_at <= now - retention  (= !isWithinRetention 의 여집합, 동일 컷오프 SSOT).
+ *   호출부(index.ts)는 여기에 status ∈ {expired, failed} 필터를 추가로 강제(승인/매칭 완료 건 무접촉).
+ *   경계: expires_at == now-retention 도 취소 대상(보관창 딱 종료). isWithinRetention 의 경계(exp > now-retention)와 상보.
+ */
+export function isAutoCancelTarget(
+  expiresAtIso: string,
+  nowIso: string,
+  retentionMs: number = RETENTION_MS,
+): boolean {
+  const exp = Date.parse(expiresAtIso);
+  const now = Date.parse(nowIso);
+  if (Number.isNaN(exp) || Number.isNaN(now)) return false;
+  return exp <= now - retentionMs;
+}
+
 /** (clinic_id, expected_amount) 그룹핑 — 2건+ 은 모호(자동매칭 제외). */
 export function groupPendingByAmount(pendings: PendingRow[]): Map<string, PendingRow[]> {
   const groups = new Map<string, PendingRow[]>();
