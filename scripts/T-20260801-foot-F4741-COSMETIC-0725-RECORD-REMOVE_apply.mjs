@@ -1,17 +1,17 @@
 /**
  * T-20260801-foot-F4741-COSMETIC-0725-RECORD-REMOVE — archive-first APPLY (prod)
  *
- * ⚠️ GATE: DA CONSULT GO + 현장(김주연 총괄) 재confirm + supervisor DB-GATE 통과 전 실행 금지.
- *          provenance 상 대상행은 실 VAN카드 승인건과 auto_matched 된 실결제(중복 없음).
- *          파괴적 삭제이므로 게이트 없이는 --apply 하지 말 것.
+ * ★ REGRAIN 2026-08-01 (DA Branch A GO 조건부). 삭제대상 = check_in_services 풋화장품 7/25 3라인(73,000),
+ *   부모 check_in fdd5c165(미접촉 불변식). 前 payments 30a9ac47 그레인 = RETRACT-AS-MOOT.
+ *
+ * ⚠️ 3중 GATE: DA GO(✅) + 총괄(김주연) 재confirm + supervisor MIG-GATE 통과 전 --apply 금지.
+ *    (soft-void 컬럼 부재 확인 → 물리 archive-first 경로. §3.1 대표게이트 불요=DA Q4.)
  *
  * 동작(단일 원자 트랜잭션):
- *   1) archive 테이블 2종 생성(per-op unique):
- *      - _archive_f4741_cosmetic_0725_payment_20260801 (LIKE payments) : payment 본행 전컬럼 보존
- *      - _archive_f4741_cosmetic_0725_links_20260801 : SET NULL 자식 링크 원본(순소실0·가역)
- *   2) G-freeze/G-active/G-refs 재검증 → drift 시 RAISE(abort)
- *   3) archive INSERT (컬럼완전성 by-construction: LIKE + SELECT *)
- *   4) DELETE payment 1행 (SET NULL 자식 링크 자동 NULL) → rows-affected=1 & remaining=0 검증
+ *   1) archive 테이블 생성(per-op unique): _archive_f4741_cosmetic_0725_cis_20260801 (LIKE check_in_services) + deny-all RLS.
+ *   2) G-freeze(rows=3·속성) + G-parent(미결제) + G-refs(child 0) + Branch-C 가드(a/b/c) 재검증 → drift 시 RAISE(abort).
+ *   3) archive INSERT (LIKE + SELECT * = 컬럼완전성 by-construction) → count==3 검증.
+ *   4) DELETE 3라인 → rows-affected==3 & remaining==0 검증 (net-loss 0).
  *
  * 실행:  node scripts/..._apply.mjs --apply    (플래그 없으면 no-op)
  */
@@ -44,90 +44,85 @@ async function runSQL(query) {
   return res.json();
 }
 
-const TARGET_PAYMENT_ID = '30a9ac47-b90d-4ee7-b4f2-7b1861264afc';
 const CUSTOMER_ID = '259abd32-d784-4c45-b59e-1ccae1b69492';
-const ARCH_PAY = '_archive_f4741_cosmetic_0725_payment_20260801';
-const ARCH_LINK = '_archive_f4741_cosmetic_0725_links_20260801';
+const PARENT_CHECKIN = 'fdd5c165-8375-470e-9b9d-cad851de93a6';
+const CIS_IDS = ['eeb760b3-6931-4b57-b05f-979f7cc1287e', '08162a7a-aa4e-411f-9824-0f2044c9f8ff', 'a2dbbbfa-c890-4397-bbaf-4ddf205d383f'];
+const SVC_IDS = ['89095450-223f-4863-89a9-c7f32f62809d', 'e17ba3a3-4842-4097-87bc-0778a64d2755', 'cb6443a3-fe53-40e7-bd51-a4444d8a8966'];
+const TWIN_CIS = ['5104417a-4520-4e3b-8666-1e79f987e8e8', '37e32d58-91bd-4762-81ab-a2484f2a3bfd', '54d94955-7934-420b-bc02-6dd3904a3991'];
+const GUARD_PAYMENT = 'b7ab6496-9efc-429c-9d5c-60a248eabc15';
+const ARCH_CIS = '_archive_f4741_cosmetic_0725_cis_20260801';
 const TICKET = 'T-20260801-foot-F4741-COSMETIC-0725-RECORD-REMOVE';
+const L = (a) => a.map((x) => `'${x}'`).join(',');
 
 const APPLY = process.argv.includes('--apply');
 if (!APPLY) {
-  console.log('no-op: --apply 플래그 필요. (GATE: DA GO + 현장 재confirm + supervisor DB-GATE 선행)');
+  console.log('no-op: --apply 플래그 필요. (3중 GATE: DA GO✅ + 총괄 재confirm + supervisor MIG-GATE 선행 / HOLD)');
   process.exit(0);
 }
 
 const SQL = `
 BEGIN;
 -- 1) archive 테이블 (per-op unique, LIKE=컬럼완전성 by-construction / 제약 미상속)
-CREATE TABLE IF NOT EXISTS public.${ARCH_PAY} (LIKE public.payments);
-ALTER TABLE public.${ARCH_PAY}
+CREATE TABLE IF NOT EXISTS public.${ARCH_CIS} (LIKE public.check_in_services);
+ALTER TABLE public.${ARCH_CIS}
   ADD COLUMN IF NOT EXISTS archived_at timestamptz DEFAULT now(),
   ADD COLUMN IF NOT EXISTS archived_ticket text;
-CREATE TABLE IF NOT EXISTS public.${ARCH_LINK} (
-  child_table text, child_id uuid, link_col text, orig_payment_id uuid,
-  archived_at timestamptz DEFAULT now(), archived_ticket text
-);
--- deny-all RLS (PHI 잔류 방어)
-ALTER TABLE public.${ARCH_PAY} ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.${ARCH_LINK} ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.${ARCH_CIS} ENABLE ROW LEVEL SECURITY;  -- deny-all (PHI-인접 잔류 방어)
 
 DO $$
-DECLARE v_pay int; v_arch int; v_lnk int; v_remaining int;
-        v_active int; v_cascade int; v_blocker int;
+DECLARE v_arch int; v_del int; v_remaining int; v_freeze int; v_parent_pay int;
+        v_childfk int; v_pi int; v_sc int; v_twin int; v_guard int;
 BEGIN
-  -- [G-freeze/G-active] 대상 실재 + active + 속성 재검증
-  SELECT count(*) INTO v_active FROM public.payments
-   WHERE id='${TARGET_PAYMENT_ID}' AND customer_id='${CUSTOMER_ID}'
-     AND accounting_date='2026-07-25' AND amount=10500 AND status='active'
-     AND is_simulation=false AND check_in_id IS NULL AND service_charge_id IS NULL
-     AND package_id IS NULL
-     AND NOT EXISTS (SELECT 1 FROM public.payment_items pi WHERE pi.payment_id='${TARGET_PAYMENT_ID}');
-  IF v_active <> 1 THEN RAISE EXCEPTION 'G-freeze/active ABORT: 대상 속성 drift (matched=%)', v_active; END IF;
+  -- [G-freeze] 대상 3행 + 속성(금액합 73000·부모·no-pkg) 재검증
+  SELECT count(*) INTO v_freeze FROM public.check_in_services
+   WHERE id IN (${L(CIS_IDS)}) AND check_in_id='${PARENT_CHECKIN}'
+     AND is_package_session=false AND package_session_id IS NULL;
+  IF v_freeze <> 3 THEN RAISE EXCEPTION 'G-freeze ABORT: 대상 3행 drift (matched=%)', v_freeze; END IF;
+  IF (SELECT coalesce(sum(price),0) FROM public.check_in_services WHERE id IN (${L(CIS_IDS)})) <> 73000
+    THEN RAISE EXCEPTION 'G-freeze ABORT: 금액합≠73000'; END IF;
 
-  -- [G-refs] CASCADE/blocker 자식 0 재검증 (SET NULL 2건만 허용)
-  SELECT
-    (SELECT count(*) FROM public.claim_diagnoses WHERE payment_id='${TARGET_PAYMENT_ID}')
-   +(SELECT count(*) FROM public.payment_items WHERE payment_id='${TARGET_PAYMENT_ID}')
-   INTO v_cascade;
-  SELECT
-    (SELECT count(*) FROM public.package_credit_ledger WHERE source_payment_id='${TARGET_PAYMENT_ID}')
-   +(SELECT count(*) FROM public.payments WHERE parent_payment_id='${TARGET_PAYMENT_ID}')
-   INTO v_blocker;
-  IF v_cascade <> 0 THEN RAISE EXCEPTION 'G-refs ABORT: CASCADE child 발생 (%). archive 재설계 필요', v_cascade; END IF;
-  IF v_blocker <> 0 THEN RAISE EXCEPTION 'G-refs ABORT: blocker child 발생 (%). re-anchor 필요', v_blocker; END IF;
+  -- [G-parent] 부모 check_in 미결제(payments=0)
+  SELECT count(*) INTO v_parent_pay FROM public.payments WHERE check_in_id='${PARENT_CHECKIN}';
+  IF v_parent_pay <> 0 THEN RAISE EXCEPTION 'Branch-C ABORT: 부모 check_in payment 존재 (%)', v_parent_pay; END IF;
 
-  -- 3) archive: payment 본행 + SET NULL 링크원본
-  INSERT INTO public.${ARCH_PAY} SELECT p.*, now(), '${TICKET}' FROM public.payments p WHERE p.id='${TARGET_PAYMENT_ID}';
+  -- [G-refs / HARD#1] cis 3행 참조 자식 0 (선언 FK + 데이터-값 settlement)
+  SELECT count(*) INTO v_childfk FROM pg_constraint con
+    JOIN pg_class pcl ON pcl.oid=con.confrelid
+   WHERE con.contype='f' AND pcl.relname='check_in_services' AND pcl.relnamespace='public'::regnamespace;
+  SELECT count(*) INTO v_pi FROM public.payment_items WHERE check_in_id='${PARENT_CHECKIN}' AND service_id IN (${L(SVC_IDS)});
+  SELECT count(*) INTO v_sc FROM public.service_charges WHERE check_in_id='${PARENT_CHECKIN}' AND service_id IN (${L(SVC_IDS)});
+  IF v_childfk <> 0 THEN RAISE EXCEPTION 'HARD#1 ABORT: 선언 inbound FK 발생 (%). cascade archive 재설계', v_childfk; END IF;
+  IF (v_pi + v_sc) <> 0 THEN RAISE EXCEPTION 'Branch-C(a) ABORT: payment/allocation 링크 취득 (pi=% sc=%)', v_pi, v_sc; END IF;
+
+  -- [Branch-C(b),(c)] 8/1 twin셋 3 실재 + b7ab6496 73000 active
+  SELECT count(*) INTO v_twin FROM public.check_in_services WHERE id IN (${L(TWIN_CIS)});
+  SELECT count(*) INTO v_guard FROM public.payments WHERE id='${GUARD_PAYMENT}' AND amount=73000 AND status='active';
+  IF v_twin <> 3 THEN RAISE EXCEPTION 'Branch-C(b) ABORT: 8/1 twin셋 부재 (%)', v_twin; END IF;
+  IF v_guard <> 1 THEN RAISE EXCEPTION 'Branch-C(c) ABORT: b7ab6496(73000) 부재/불일치'; END IF;
+
+  -- 3) archive INSERT (LIKE + SELECT *)
+  INSERT INTO public.${ARCH_CIS} SELECT c.*, now(), '${TICKET}' FROM public.check_in_services c WHERE c.id IN (${L(CIS_IDS)});
   GET DIAGNOSTICS v_arch = ROW_COUNT;
-  INSERT INTO public.${ARCH_LINK}(child_table, child_id, link_col, orig_payment_id, archived_ticket)
-  SELECT 'redpay_raw_transactions', id, 'matched_payment_id', matched_payment_id, '${TICKET}'
-    FROM public.redpay_raw_transactions WHERE matched_payment_id='${TARGET_PAYMENT_ID}'
-  UNION ALL
-  SELECT 'payment_reconciliation_log', id, 'payment_id', payment_id, '${TICKET}'
-    FROM public.payment_reconciliation_log WHERE payment_id='${TARGET_PAYMENT_ID}';
-  GET DIAGNOSTICS v_lnk = ROW_COUNT;
-  IF v_arch <> 1 THEN RAISE EXCEPTION 'archive ABORT: payment archive=% (기대1)', v_arch; END IF;
+  IF v_arch <> 3 THEN RAISE EXCEPTION 'archive ABORT: cis archive=% (기대3)', v_arch; END IF;
 
-  -- 4) DELETE 본행 (SET NULL 자식 링크 자동 NULL)
-  DELETE FROM public.payments WHERE id='${TARGET_PAYMENT_ID}';
-  GET DIAGNOSTICS v_pay = ROW_COUNT;
-  SELECT count(*) INTO v_remaining FROM public.payments WHERE id='${TARGET_PAYMENT_ID}';
-  IF v_pay <> 1 OR v_remaining <> 0 THEN
-    RAISE EXCEPTION 'DELETE ABORT: deleted=% remaining=% (기대 1/0)', v_pay, v_remaining;
+  -- 4) DELETE 3라인 (자식 0 → dangling 무)
+  DELETE FROM public.check_in_services WHERE id IN (${L(CIS_IDS)});
+  GET DIAGNOSTICS v_del = ROW_COUNT;
+  SELECT count(*) INTO v_remaining FROM public.check_in_services WHERE id IN (${L(CIS_IDS)});
+  IF v_del <> 3 OR v_remaining <> 0 THEN
+    RAISE EXCEPTION 'DELETE ABORT: deleted=% remaining=% (기대 3/0)', v_del, v_remaining;
   END IF;
 
-  RAISE NOTICE 'APPLY OK: archived_payment=% archived_links=% deleted=% remaining=%', v_arch, v_lnk, v_pay, v_remaining;
+  RAISE NOTICE 'APPLY OK: archived=% deleted=% remaining=% (net-loss 0)', v_arch, v_del, v_remaining;
 END $$;
 COMMIT;
 `;
 
 runSQL(SQL)
   .then(async () => {
-    // 사후 검증
-    const rem = await runSQL(`select count(*)::int as n from public.payments where id='${TARGET_PAYMENT_ID}';`);
-    const arch = await runSQL(`select count(*)::int as n from public.${ARCH_PAY};`);
-    const lnk = await runSQL(`select count(*)::int as n from public.${ARCH_LINK};`);
-    console.log(`APPLY 완료: remaining_payment=${rem?.[0]?.n} archived_payment=${arch?.[0]?.n} archived_links=${lnk?.[0]?.n}`);
-    console.log('※ 롤백: scripts/..._rollback.sql');
+    const rem = await runSQL(`select count(*)::int as n from public.check_in_services where id in (${L(CIS_IDS)});`);
+    const arch = await runSQL(`select count(*)::int as n from public.${ARCH_CIS};`);
+    console.log(`APPLY 완료: remaining_cis=${rem?.[0]?.n} (기대0) archived_cis=${arch?.[0]?.n} (기대3)`);
+    console.log('※ 롤백: scripts/..._rollback.sql (archive → 원 테이블 복원)');
   })
   .catch((e) => { console.error('APPLY 실패(트랜잭션 롤백됨):', e.message); process.exit(1); });
