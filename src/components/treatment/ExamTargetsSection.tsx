@@ -28,7 +28,7 @@
 //   B. 당일 일자 그룹 기본 펼침 — expandedDates 초기값을 오늘(KST)로 세팅(마운트 즉시 펼침, 데이터 로드 타이밍 무의존).
 //      과거 일자는 접힘 유지·토글 무회귀(기존 그룹 UI 관례 계승).
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -508,6 +508,27 @@ export default function ExamTargetsSection({ date, nameInteraction }: Props) {
 
   const totalCount = groups.reduce((sum, g) => sum + g.rows.length, 0);
   const today = seoulISODate(new Date());
+
+  // T-20260801-foot-GUNBLOOD-DEFAULTEXPAND-RECUR (b) 런타임 RC 수정:
+  //   기존엔 expandedDates 를 '마운트 시점 오늘'로만 동결(useState 초기값). 태블릿을 24시간 상시 켜두는
+  //   풋센터 UX 에서 세션이 자정을 넘기면 마운트일(어제)에 고정되어, 부모 날짜 네비게이터('오늘' 버튼)나
+  //   자정 롤오버로 표시 그룹이 '진짜 오늘'로 바뀌어도 동결 set 에 새 오늘이 없어 today 그룹이 접힘 렌더됐다
+  //   (7/30 배포일엔 신선 마운트라 정상 → 날짜 넘어가며 재발한 '계속 접혀있음' 재발의 실제 원인).
+  //   → 현재일(KST)이 바뀌면 새 오늘을 expandedDates 에 추가(당일 자동 펼침 복원). 문자열 값이 실제로
+  //   달라질 때(하루 1회)만 발화하므로 사용자가 당일 안에서 오늘을 접은 선택과 충돌하지 않는다.
+  //   refetchInterval(30s) 재렌더가 자정 직후 발화를 보장. 부모 tz(local) ↔ 자식 tz(KST) 불일치도 여기서 흡수.
+  const prevTodayRef = useRef(today);
+  useEffect(() => {
+    if (prevTodayRef.current !== today) {
+      prevTodayRef.current = today;
+      setExpandedDates((prev) => {
+        if (prev.has(today)) return prev;
+        const next = new Set(prev);
+        next.add(today);
+        return next;
+      });
+    }
+  }, [today]);
 
   // RELOCATE[1]: 균검사지 발급 — 진료대시보드(KohReportTab.handlePublish)에서 이전한 발급 동선.
   //   기존 로직 재사용: 조갑부위(nail_sites) + 생년월일 게이트 → buildKohFieldData → publish_koh_result RPC.
