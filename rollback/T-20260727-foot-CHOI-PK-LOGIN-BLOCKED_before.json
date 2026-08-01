@@ -1,0 +1,13 @@
+{
+  "ticket": "T-20260727-foot-CHOI-PK-LOGIN-BLOCKED",
+  "captured_at": "2026-08-01T17:51:37.495Z",
+  "id": "d9bde8a8-887b-4c98-845e-fcc85d6d25af",
+  "email": "pk.choi@medibuilder.com",
+  "email_confirmed_at": "2026-07-21T07:22:06.216083Z",
+  "banned_until": null,
+  "deleted_at": null,
+  "updated_at": "2026-08-01T17:14:27.412815Z",
+  "last_sign_in_at": "2026-07-29T02:38:35.851104Z",
+  "identities_cnt": 0,
+  "note": "recovery token/link NOT captured (sensitive). rollback=link expiry(default) / re-issue."
+}

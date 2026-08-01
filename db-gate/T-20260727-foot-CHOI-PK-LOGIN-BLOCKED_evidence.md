@@ -1,53 +1,43 @@
-# T-20260727-foot-CHOI-PK-LOGIN-BLOCKED — 진단 evidence
+# T-20260727-foot-CHOI-PK-LOGIN-BLOCKED — recovery 링크 재발급 evidence
 
-- 대상: 최필경 / pk.choi@medibuilder.com / slack U05L6HE7QF6
-- auth uid: d9bde8a8-887b-4c98-845e-fcc85d6d25af (foot prod rxlomoozakkjesdqjtvd) <!-- UUID(비밀 아님) gitleaks:allow -->
-- 진단 일시(UTC): 2026-07-27
-- db_change: **없음** (READ-ONLY 진단 + 비파괴 복구링크 발급)
+## 대상
+- 최필경 총괄 (pk.choi@medibuilder.com, slack U05L6HE7QF6, role=manager)
+- auth uid: `d9bde8a8-887b-4c98-845e-fcc85d6d25af` <!-- gitleaks:allow (Supabase auth uid, 비-secret; before.json에도 旣존재) -->
+- CRM: obliv-foot-crm (Supabase rxlomoozakkjesdqjtvd)
 
-## 표준 준수
-- Cross-CRM Auth Identity Resolution: `?email=` 서버필터 단독 신뢰 금지.
-  → `listUsers` 페이지네이션 전수 스캔(55 users) + 클라이언트 email 매칭(1 hit) + `getUserById` id↔email 재검증(일치 true). 발급 직전 재검증 재수행.
-- GoTrue admin email filter ban 표준 준수.
+## 실행 (reopen 2026-07-28 FOLLOWUP)
+- 러너: `scripts/T-20260727-foot-CHOI-PK-LOGIN-BLOCKED_recover.mjs`
+- DRY → APPLY (2026-08-01T17:51Z 실행)
+- 방식: `admin.generateLink(type=recovery)`, `redirect_to=https://obliv-foot-crm.pages.dev/login` (정본 CF Pages)
+- 평문 비번 미생성 — 재설정 링크 방식만.
 
-## AC#1 — auth.users 상태 스냅샷 (BEFORE, 조치 후 동일 — 비파괴)
-| 항목 | 값 | 판정 |
-|------|----|----|
-| banned_until | `<omitempty ABSENT>` (raw GoTrue GET) | 차단 아님 |
-| deleted_at | `<omitempty ABSENT>` | 삭제 아님 |
-| email_confirmed_at | 2026-07-21T07:22:06.216083Z | 확인됨 |
-| last_sign_in_at | 2026-07-21T09:04:43.133811Z | 7/21 마지막 성공 로그인 |
-| created_at | 2026-07-21T02:11:30.933861Z | |
-| **updated_at** | **2026-07-27T00:34:27.201841Z** | **오늘(7/27 09:34 KST) auth row 갱신 — 자격증명(비밀번호) 변경 정황** |
-| app_metadata.provider | email | |
+## Cross-CRM Auth Identity Resolution 표준 준수
+- `?email=` 서버필터 단독 신뢰 금지 → `listUsers` 전량 페이지네이션 후 client-side exact(lowercase) email 매칭.
+- exact-email 매칭 계정 수 = **1** (유일성 assert 통과).
+- 링크 발급 직후 반환 `user.id↔email` 재검증 통과 (resolved=returned=d9bde8a8.../pk.choi@medibuilder.com).
 
-> GoTrue는 `banned_until`/`deleted_at`을 omitempty로 직렬화 → 응답에서 필드 부재 = null = 미차단/미삭제. supabase-js 매핑 객체의 undefined 재확인 위해 raw admin REST(`/auth/v1/admin/users/{id}`)로 교차검증함.
+## 계정 상태 스냅샷 (before, rollback/T-20260727-foot-CHOI-PK-LOGIN-BLOCKED_before.json)
+| 필드 | 값 |
+|------|----|
+| banned_until | null |
+| deleted_at | null |
+| email_confirmed_at | 2026-07-21T07:22:06Z |
+| last_sign_in_at | **2026-07-29T02:38:35Z** (2026-07-29 11:38 KST) |
+| identities_cnt | 0 |
 
-## AC#2 — user_profiles(uid) 대조 (7/21값과 일치, 변화 없음)
-```
-id:        d9bde8a8-887b-4c98-845e-fcc85d6d25af
-email:     pk.choi@medibuilder.com
-name:      최필경
-role:      manager          ← 7/21값 유지 (정상)
-approved:  true             ← 7/21값 유지 (정상)
-active:    true             ← 7/21값 유지 (정상)
-clinic_id: 74967aea-a60b-4da3-a0e7-9c997a930bc8 (종로 풋센터)
-updated_at:2026-07-21T08:09:21.800857+00:00  ← 7/21 이후 무변경
-```
-by-id / by-email 조회 동일 1행 (uid 미연결 유령 프로필 없음).
+## 원인 판정
+- 서버측 계정 이상 없음(banned/deleted 無, email 확인, role=manager 유지) — 7/27 진단 재확인.
+- RC = 자격증명 레벨(비번 불일치) 차단. 인가 오염 0. → recovery 링크 재발급으로 해소(비파괴).
 
-## AC#3 — 판정: **분기 (b) 정상**
-- auth 인가상태(차단/삭제/미확인) **이상 없음**, user_profiles(manager/approved/active) **모두 정상·7/21값 유지**.
-- 되돌릴 인가상태 오염 **없음** → 단일-row 비파괴 복구 대상 **없음**(파괴적 조치 불요).
-- 유일 변화축 = auth `updated_at`이 오늘 갱신됨 = **자격증명(비밀번호) 레벨 변화**로 로그인 불가 정황. (앱 로그인은 approved/active 통과, 차단은 credential 단계)
-- ⇒ **비밀번호 재설정 링크 발급** 경로.
+## ★ 주목 — reopen 이후 정상 로그인 흔적
+- `last_sign_in_at = 2026-07-29T02:38:35Z` = **7/28 reopen(17:17 KST) 이후 시점**.
+- 최필경 계정이 7/29 오전 이미 로그인 성공한 것으로 보임 → 현장에서 이미 복구되었을 가능성.
+- 그럼에도 reopen AC 이행 위해 **fresh recovery 링크 재발급 완료**. responder가 현재 로그인 가능 여부 우선 확인 권장.
 
-## AC#4 — 조치: 비밀번호 재설정 링크 발급 (비파괴, 평문비번 미생성)
-- `admin.generateLink({type:'recovery', redirectTo: https://obliv-foot-crm.pages.dev/login})` — 이메일 미발송, 1회용 복구 링크만 생성.
-- 발급 직전 id↔email 재검증 통과 후 생성.
-- 앱 구조: `detectSessionInUrl` 기본 true(implicit flow) → 링크 클릭 시 세션 자동수립·자동로그인 → 계정메뉴 > 비밀번호 변경(ChangePasswordDialog)에서 새 비번 설정 가능.
-- **action_link 원문은 1회용 secret → 본 evidence/신호/커밋에 미기재.** responder 경유 최필경 본인에게만 비공개 전달.
+## 조치 결과
+- recovery 링크 재발급 성공 (action_link = 콘솔 전용, 민감 토큰 → git 커밋물 미기재).
+- `generateLink`는 이메일 자동발송 안 함 → 링크만 responder MQ relay(AC step3, 재설정 링크 방식).
+- 파괴적 조치 불요. DB 스키마/데이터 변경 없음(auth 토큰 regen only). code_change=false.
 
-## 스크립트
-- `scripts/T-20260727-foot-CHOI-PK-LOGIN-BLOCKED_diag.mjs` (READ-ONLY 진단)
-- `scripts/T-20260727-foot-CHOI-PK-LOGIN-BLOCKED_gen_recovery_link.mjs` (링크 발급, env-only key)
+## 롤백
+- recovery 토큰은 GoTrue 기본 만료(1h~24h) 또는 재발급 시 무효화 → 별도 롤백 불요.
