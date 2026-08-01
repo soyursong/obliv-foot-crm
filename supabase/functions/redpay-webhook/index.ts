@@ -49,6 +49,14 @@ import {
   buildWebhookRawRow,
   type RedpayWebhookEnvelope,
 } from "./verify.ts";
+import {
+  isNon2xx,
+  isRealWebhookDelivery,
+  extractErrorSummary,
+  buildNon2xxAlertText,
+  makeDedup,
+  type Non2xxAlertContext,
+} from "./non2xx-alert.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -59,6 +67,8 @@ const REDPAY_BUSINESS_NO_ALLOW  = Deno.env.get("REDPAY_WEBHOOK_BUSINESS_NO_ALLOW
   ?? Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
+// T-20260729-...-NON2XX-ALERT-ROOTCAUSE Part B: 동일원인 dedup 창(기본 60s, 짧게 = 도달 우선).
+const REDPAY_ALERT_DEDUP_WINDOW_MS = Number(Deno.env.get("REDPAY_ALERT_DEDUP_WINDOW_MS") ?? "") || 60_000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -149,6 +159,31 @@ async function sendSlackMessage(channel: string, text: string, token: string): P
   }
 }
 
+// ── non-2xx 상시 알림 (T-20260729-...-NON2XX-ALERT-ROOTCAUSE Part B) ──────────────
+//   choke point: 핸들러가 반환한 응답이 non-2xx 면 즉시 장쳰봇 명의 슬랙 알림.
+//   ★관측 전용 — 알림 실패/예외가 결제 응답(Response)에 절대 영향 주지 않음(호출측이 예외 삼킴).
+const _non2xxDedup = makeDedup(REDPAY_ALERT_DEDUP_WINDOW_MS);
+async function alertNon2xx(
+  status: number,
+  bodyText: string,
+  ctx: Non2xxAlertContext,
+  nowIso: string,
+): Promise<void> {
+  const errorSummary = extractErrorSummary(bodyText);
+  const key = `${status}:${errorSummary}`;
+  const decision = _non2xxDedup(key, Date.now());
+  if (!decision.send) {
+    console.warn(`${LOG}[NON2XX-ALERT] dedup 억제(창 내 동일원인) status=${status} reason=${errorSummary}`);
+    return;
+  }
+  const text = buildNon2xxAlertText(status, errorSummary, ctx, nowIso, decision.suppressedSince);
+  const sent = await sendSlackMessage(REDPAY_ALERT_CHANNEL, text, REDPAY_SLACK_BOT_TOKEN);
+  console.warn(
+    `${LOG}[NON2XX-ALERT] status=${status} reason=${errorSummary} trxid=${ctx.trxid ?? "∅"} ` +
+      `tid=${ctx.tid ?? "∅"} slack_sent=${sent} (channel_set=${REDPAY_ALERT_CHANNEL ? "y" : "n"}).`,
+  );
+}
+
 // ── clinic_id 해석(slug 안정키, 요청 단위 캐시) ──────────────────────────────────
 let _clinicIdCache: string | null = null;
 async function resolveClinicId(): Promise<string | null> {
@@ -210,7 +245,7 @@ async function resolveFootMerchantSet(nowMs: number): Promise<FootMerchantResolu
   return res; // 캐시 없음 → 컴파일타임 FOOT_MERCHANT_SET(현행 동치)
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+async function handleWebhook(req: Request, alertCtx: Non2xxAlertContext): Promise<Response> {
   // ── T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 허용목록 introspection (내부 전용·인증 뒤) ──
   //   GET ?introspect=whitelist + Authorization: Bearer <SERVICE_ROLE_KEY>. 미인증 공개 금지(fail-safe).
   //   결제 수신 POST 경로와 완전 격리(top early-return) — 결제 로직 무영향. read-only·no-DB·no-mutation.
@@ -266,6 +301,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(200, { ok: true, status: "ignored_invalid", reason: v.reason });
   }
   const { kind, eventId, data, amount, status } = v;
+
+  // non-2xx 알림용 컨텍스트 채움(이후 500(clinic/db) 등에서도 trxid/tid 포함되도록 조기 세팅).
+  alertCtx.eventId = eventId;
+  alertCtx.trxid = data.trxid ?? null;
+  alertCtx.tid = data.tid ?? null;
+  alertCtx.merchantId = data.merchant_id ?? null;
 
   // ── 4. business_no 방어 필터 (AC-2.6, 서울오리진) ────────────────────────────
   if (!isAllowedBusinessNo(data.business_no, REDPAY_BUSINESS_NO_ALLOW)) {
@@ -377,4 +418,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error(`${LOG} 처리 예외 → 500: ${err instanceof Error ? err.message : String(err)} (event_id=${eventId}).`);
     return json(500, { ok: false, error: "unexpected_error" });
   }
+}
+
+// ── choke point (T-20260729-...-NON2XX-ALERT-ROOTCAUSE Part B) ────────────────────
+//   handleWebhook 이 반환한 응답을 관측 → 실제 결제 push(POST)가 non-2xx 면 즉시 슬랙 알림.
+//   ★알림은 결제 응답을 절대 변형·지연·차단하지 않음: 원 응답을 그대로 반환하고,
+//     알림 발송은 clone 한 body 로 별도 수행(예외는 전부 삼켜 결제 경로 무영향).
+Deno.serve(async (req: Request): Promise<Response> => {
+  const method = req.method;
+  let isIntrospection = false;
+  try {
+    isIntrospection = method === "GET"
+      && new URL(req.url).searchParams.get("introspect") === "whitelist";
+  } catch { /* URL 파싱 실패 무시 */ }
+
+  const alertCtx: Non2xxAlertContext = {};
+  const res = await handleWebhook(req, alertCtx);
+
+  // AC-B1: 실제 웹훅 결제 push(POST)가 non-2xx 반환 시 즉시 알림(introspection/비-POST 프로브 제외).
+  if (isNon2xx(res.status) && isRealWebhookDelivery(method, isIntrospection)) {
+    try {
+      const bodyText = await res.clone().text();
+      await alertNon2xx(res.status, bodyText, alertCtx, new Date().toISOString());
+    } catch (e) {
+      // 알림 실패는 결제 응답에 영향 없음 — 로그만.
+      console.error(`${LOG}[NON2XX-ALERT] 알림 처리 예외(응답 무영향): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return res;
 });
