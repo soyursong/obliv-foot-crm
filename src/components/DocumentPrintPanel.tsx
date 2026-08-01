@@ -66,6 +66,7 @@ import { supabase } from '@/lib/supabase';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
+import { isLaserService } from '@/lib/laserService';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
 import { buildDocSerial, docSerialPrefix, buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
 import type { CheckIn } from '@/lib/types';
@@ -260,19 +261,9 @@ function parseAmountStr(v: string | null | undefined): number {
 // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: applyBillReceiptNewCategoryTokens 는
 //   footBilling.ts SSOT 로 승격(export)됨 — 결제미니창(PATH-4)과 동일 토큰 주입 공유. import 로 소비.
 
-// T-20260522-foot-ALT-BADGE AC-12: 레이저 관련 서비스 판별 — category OR name 기반
-function isLaserService(svc: { service_code?: string | null; name?: string; category?: string }): boolean {
-  const cat = svc.category ?? '';
-  const name = svc.name ?? '';
-  const code = svc.service_code ?? '';
-  // category가 laser/heated_laser 이거나, 이름에 '레이저' 포함, 또는 코드가 레이저 관련
-  return (
-    cat === 'laser' ||
-    cat === 'heated_laser' ||
-    name.includes('레이저') ||
-    code.toUpperCase().startsWith('MM') // 이학요법료 레이저 수가코드 접두사
-  );
-}
+// T-20260522-foot-ALT-BADGE AC-12: 레이저 관련 서비스 판별 — category OR name 기반.
+//   T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: 로직을 @/lib/laserService SSOT 로 승격,
+//   결제 미니창(PaymentMiniWindow)과 공유(중복정의 금지). 기존 호출부(isLaserService(...))는 무변경.
 
 // T-20260522-foot-ALT-BADGE AC-6: 패키지 유형과 레이저코드 호환성 검증 (ALT OFF 전체 패키지 공통)
 // - 패키지에 해당 레이저 회차가 없으면 삽입 차단 (잘못된 레이저코드 삽입 방지)

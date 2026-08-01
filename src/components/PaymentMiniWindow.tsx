@@ -25,6 +25,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
 import {
+  AlertCircle,
   AlertTriangle,
   Check,
   ChevronRight,
@@ -64,6 +65,7 @@ import { useAuth } from '@/lib/auth';
 //   applyStatusFlagTransition('dark_gray') / promoteVisitTypeToReturning 미호출(완료칸 이동은 Dashboard handleDrop 전담).
 //   두 헬퍼는 완료 이동(handleDrop) 경로가 소유 → 여기 import 제거(unused). 로직 이관 아님, 부수효과 위치 원복.
 import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
+import { isLaserService } from '@/lib/laserService';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
@@ -932,6 +934,13 @@ interface Props {
   onSettled?: () => void;
   /** 시술 저장 완료 후 (AC-7 수납대기 금액 갱신용) */
   onSaved?: () => void;
+  /**
+   * T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT(보험 반려 대상) 활성 여부.
+   *   origin = T-20260522-foot-ALT-BADGE AC-6/AC-12(서류패널). true 시 레이저 수가코드의
+   *   수납 항목 삽입을 차단(toast + early return)하고 상단 경고 배너를 표시한다.
+   *   미지정(false)=기존 동선 그대로(비ALT 회귀 0). 부모(Dashboard)가 대상 고객의 alt_status 주입.
+   */
+  altStatus?: boolean;
 }
 
 // ── T-20260724-foot-CHART2-TREATREQ-PKG-DECOUPLE (Surface B) ────────────────────
@@ -960,7 +969,7 @@ async function snapshotExamFlags(checkInId: string): Promise<ExamFlagState> {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onSaved }: Props) {
+export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onSaved, altStatus = false }: Props) {
   // T-20260727-foot-PMW-SETTLE-NOAUTOCOMPLETE(19:47): dark_gray flag 전이 제거로 profile(actor) 미사용 →
   //   useAuth 값 미구독(완료칸 이동/회색은 Dashboard handleDrop 이 actor 컨텍스트 소유).
   useAuth();
@@ -988,6 +997,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+
+  // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: 고객 ALT(보험 반려 대상) 활성 여부.
+  //   서류패널(DocumentReprintPopup line 80)과 동일 패턴 — customers.alt_status 를 컴포넌트가 직접 취득.
+  //   Dashboard(부모)의 check_ins→customers embed 는 alt_status 를 포함하지 않으므로(타입/3-select 미보강),
+  //   miniPayTarget 을 어느 핸들러가 세팅하든 견고하도록 여기서 customer_id 로 self-source 한다.
+  //   effectiveAltStatus = prop(altStatus) || 자체취득(custAltStatus) — 어느 쪽이든 ALT 면 차단(fail-safe).
+  const [custAltStatus, setCustAltStatus] = useState(false);
 
   // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: clinics.hira_unit_value(환산지수) — 급여항목 base 를
   //   서버 calc_copayment 와 동일하게 ROUND(hira_score × hira_unit_value) 로 미러하기 위한 점당단가.
@@ -1150,6 +1166,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     setRxItemDosages({});
     // T-20260526-foot-COPAY-MINI-BUG: 리셋
     setCustomerInsuranceGrade(null);
+    // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT 상태 리셋(고객 전환 시 stale 차단 방지)
+    setCustAltStatus(false);
     // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 환산지수 리셋
     setClinicHiraUnitValue(null);
     // T-20260620-foot-PMW-OUTSTANDING-PREFILL: 미수금 리셋
@@ -1165,6 +1183,20 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
         .then((grade) => {
           setCustomerInsuranceGrade(grade);
+        });
+    }
+
+    // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: 고객 ALT 활성 여부 비동기 로드(레이저코드 삽입 차단용).
+    //   DocumentReprintPopup 과 동일하게 customers.alt_status 단일 조회. best-effort — 실패 시 false(차단 안 함) 유지.
+    if (checkIn.customer_id) {
+      supabase
+        .from('customers')
+        .select('alt_status')
+        .eq('id', checkIn.customer_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          const cust = data as { alt_status?: boolean | null } | null;
+          setCustAltStatus(cust?.alt_status ?? false);
         });
     }
 
@@ -1633,8 +1665,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
 
   // AC-4: 스크롤 — tabServices 전체 표시
 
+  // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: 유효 ALT 상태 = prop(부모 주입) 또는 자체취득 중 하나라도 ON.
+  //   차단·배너 모든 판정은 이 값을 SSOT 로 사용(fail-safe: 어느 소스든 ALT 면 레이저코드 차단).
+  const effectiveAltStatus = altStatus || custAltStatus;
+
   // ── 코드 클릭 → 선택 목록에 추가 ─────────────────────────────────────────
   const handleSelectService = (svc: Service) => {
+    // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT 활성 고객 → 레이저 수가코드 삽입 차단.
+    //   origin = T-20260522-foot-ALT-BADGE AC-12(서류패널 handleAddService). 보험 반려 대상.
+    if (effectiveAltStatus && isLaserService(svc)) {
+      toast.error('ALT 활성 고객 — 레이저코드 삽입이 차단되었습니다. (보험 반려 대상)', {
+        description: 'ALT 해제 후 레이저코드를 추가할 수 있습니다.',
+        duration: 5000,
+      });
+      return;
+    }
     setSelectedItems((prev) => {
       const idx = prev.findIndex((i) => i.service.id === svc.id);
       if (idx >= 0) {
@@ -2931,6 +2976,21 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
           </DialogTitle>
         </DialogHeader>
 
+        {/* T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT 활성 → 레이저코드 삽입 차단 경고 배너.
+            origin = T-20260522-foot-ALT-BADGE AC-13(DocumentPrintPanel). 문구/스타일 그대로 이식,
+            surface 맥락만 '서류' → '수납 항목' 으로 맞춤. ALT 아님 시 미표시(비ALT 회귀 0). */}
+        {effectiveAltStatus && (
+          <div className="px-5 py-2 border-b shrink-0" data-testid="pmw-alt-laserblock-banner">
+            <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 px-2.5 py-1.5">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+              <span className="text-xs text-red-700">
+                <span className="font-semibold">ALT 활성 — 레이저코드 삽입 차단 중.</span>
+                <span className="ml-1">보험 반려 대상 고객. 레이저 수가코드는 수납 항목에 추가할 수 없습니다.</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* T-20260620-foot-PMW-OUTSTANDING-PREFILL / MISU-PMW-CHART2 AC-1(B안): 미수금 자동 표시 배너 (읽기 전용)
             미수금 있는 고객 결제 미니창 진입 시 담당자가 즉시 인지하도록 자동 표면화.
             ★ 표시 전용 — payments 쓰기 경로/일마감 집계 불변. PKG-OUTSTANDING-BALANCE SSOT(loadCustomerOutstanding) 산출값 그대로.
@@ -3339,10 +3399,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                           className="w-full flex flex-col gap-0.5 px-3 py-2 text-xs text-left hover:bg-teal-50 border-b border-gray-50 last:border-0 transition-colors"
                           data-testid={`fee-set-item-${tpl.id}`}
                           onClick={() => {
+                            // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT 활성 고객 →
+                            //   세트 내 레이저 수가코드는 append 대상에서 제외(단일 클릭 차단과 동일 불변식).
+                            const applySvcs = effectiveAltStatus
+                              ? previewSvcs.filter((svc) => !isLaserService(svc))
+                              : previewSvcs;
+                            const blockedCount = previewSvcs.length - applySvcs.length;
                             // AC-1: 기존 항목 유지 + 세트 항목 append (중복 시 qty+1)
                             setSelectedItems((prev) => {
                               const next = [...prev];
-                              previewSvcs.forEach((svc) => {
+                              applySvcs.forEach((svc) => {
                                 const existing = next.find((i) => i.service.id === svc.id);
                                 if (existing) {
                                   existing.qty += 1;
@@ -3354,7 +3420,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                             });
                             setSaved(false);
                             setFeeSetOpen(false);
-                            toast.success(`'${tpl.set_name}' 세트 적용됨 (${previewSvcs.length}개)`);
+                            if (blockedCount > 0) {
+                              toast.error(
+                                `ALT 활성 고객 — 세트 내 레이저코드 ${blockedCount}건 제외 후 적용됨. (보험 반려 대상)`,
+                                { duration: 5000 },
+                              );
+                            } else {
+                              toast.success(`'${tpl.set_name}' 세트 적용됨 (${applySvcs.length}개)`);
+                            }
                           }}
                         >
                           <span className="font-semibold text-gray-800">{tpl.set_name}</span>
@@ -3757,9 +3830,30 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
             <div className="border-b shrink-0">
               <p className="text-[10px] font-semibold text-purple-700 px-2 pt-2 pb-1 flex items-center gap-1">
                 <span>패키지</span>
-                {activePackages.length > 0 && (
-                  <span className="ml-auto text-[9px] text-purple-500 font-normal">교차확인용</span>
-                )}
+                <span className="ml-auto flex items-center gap-1">
+                  {activePackages.length > 0 && (
+                    <span className="text-[9px] text-purple-500 font-normal">교차확인용</span>
+                  )}
+                  {/* T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY AC-7: ALT 대상자 배지 —
+                      패키지 항목 맨 우측(코디팀 인지용). origin T-20260522-foot-ALT-BADGE 대시보드 배지
+                      메탈릭 실버 패턴 그대로 재사용. 표시 조건 = ALT 활성 고객(effectiveAltStatus).
+                      비활성 시 미표시(AC-4 회귀범위). 레이저코드 차단과 별개의 시각 인지 요건. */}
+                  {effectiveAltStatus && (
+                    <span
+                      data-testid="pmw-pkg-alt-badge"
+                      className="text-[9px] px-1 py-px rounded font-bold tracking-wide"
+                      style={{
+                        background:
+                          'linear-gradient(135deg, #c8c8c8 0%, #e8e8e8 40%, #b0b0b0 60%, #d4d4d4 100%)',
+                        color: '#2a2a2a',
+                        border: '1px solid #a0a0a0',
+                        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)',
+                      }}
+                    >
+                      ALT
+                    </span>
+                  )}
+                </span>
               </p>
               {activePackages.length === 0 ? (
                 <p className="text-[10px] text-muted-foreground px-2 pb-2">활성 패키지 없음</p>
@@ -4068,6 +4162,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                   checkIn={checkIn}
                   onUpdated={() => onSaved?.()}
                   historyAtTop
+                  // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: PMW 내 서류 재발급 패널에도
+                  //   ALT 레이저 차단 전파(동일 불변식 완결 — 종전엔 미전달로 이 surface 차단 off).
+                  altStatus={effectiveAltStatus}
                 />
               </div>
             </div>

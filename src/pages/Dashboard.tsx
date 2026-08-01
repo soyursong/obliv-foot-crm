@@ -7951,6 +7951,10 @@ export default function Dashboard() {
       <PaymentMiniWindow
         key={`mini-${miniPayTarget?.id ?? 'none'}-${miniPayAttemptCounter}`}
         checkIn={miniPayTarget}
+        // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY AC-1/AC-6: ALT 활성 여부 주입.
+        //   SSOT = altHolderSet(대시보드 배지와 동일 소스, customers.alt_status=true 집합) — 신규 join 불필요,
+        //   2번차트→대시보드→결제미니창 읽기경로 도달(AC-6 데이터 토대). PMW 내부 self-source(custAltStatus)와 OR 결합돼 fail-safe.
+        altStatus={miniPayTarget?.customer_id ? altHolderSet.has(miniPayTarget.customer_id) : false}
         onClose={() => setMiniPayTarget(null)}
         onComplete={() => {
           setMiniPayTarget(null);
