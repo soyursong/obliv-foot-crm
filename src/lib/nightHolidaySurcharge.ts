@@ -15,6 +15,7 @@
  */
 
 import { formatAmount } from '@/lib/format';
+import { computeBillDetailRounding } from '@/lib/footBilling';
 
 /** 가산 요율 — 야간/공휴일 공통 30% (의원급 진찰료 표준, body canon 동일). */
 export const SURCHARGE_RATE = 0.3;
@@ -142,14 +143,27 @@ export function surchargeMark(kind: SurchargeKind | null, target: SurchargeKind)
  * @param base  진찰료 급여 총액(= 본인부담금 + 공단부담금).
  * @param copayment 진찰료 급여 본인부담금(비례 분할 기준).
  * @param kind  detectSurchargeKind 결과. null 이면 전부 0(가산 없음, 회귀 방지).
- * @returns amount=가산 총액(10원 미만 절사·FLOOR), copay=가산 본인부담분, covered=가산 공단부담분(amount-copay).
+ * @returns amount=가산 총액, copay=가산 본인부담분, covered=가산 공단부담분. **셋 다 10원 배수**(단일 절사 지점).
  *
- * ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, diagnose-first (a)) ──
+ * ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, v4 — copay revert 420/980) ──
  *   가산 산출값은 **10원 미만 절사(FLOOR)** — 국민건강보험법 시행령 별표2 제1항(요양급여비용총액 10원 미만 절사) 정합.
  *   종전 Math.round(반올림)은 5원 이상에서 절상(초과징수)되어 요양급여비용총액이 10원 배수를 벗어났다:
  *     18,840 × 0.3 = 5,652 → (round) 5,652 → 총액 24,492 [X] / (floor10) 5,650 → 총액 24,490 [O]
  *   CEIL·ROUND 복귀 금지(footBilling.ts CIT-2026-001/002 FLOOR canon 동일 계열). 절사는 항상 하향(초과징수 방지).
- *   copay/covered 분할은 절사된 amount 를 기준으로 비례 분할해 합(copay+covered)이 정확히 amount 와 일치한다.
+ *
+ *   ★ v4 정정(FIX-REQUEST v4, 이은상 팀장 필드권위 긴급정정, MSG-20260801-122530-ecjt / 122918-vtuh):
+ *     - 1차(13ff260b)는 amount 만 floor10, copay=round(amount×ratio) → copay·covered 원단위 잔존(418/982).
+ *     - v3(f3bc8974)는 copay=floor10(amount×ratio)=410 산출 → **공단 과대계상(NHIS 과대청구) + double-rounding
+ *       위반**(절사된 amount 를 ratio 로 재분할 = footBilling.ts:822 금지 경계). 법정증빙 컴플라이언스 위반으로 폐기.
+ *     - v4(canon): copay 를 **진찰료 본인부담 base×RATE 직접 floor10** 으로 산출(원 base 기준, amount 재분할 금지).
+ *       covered = amount − copay 로 잔차 흡수 → copay+covered == amount 불변식 구조적 보장.
+ *         amount  = floor10(base×RATE)                 → floor10(4,693×0.3)=1,400
+ *         copay   = floor10(copayment×RATE)            → floor10(1,400×0.3)=420  (v3 의 410 아님)
+ *         covered = amount − copay                     → 980  (= floor10(3,293×0.3))
+ *       필드 TARGET(420/980)이 formula 보다 우선(§13.1.A reporter-explicit, 이은상 팀장 F-4741 독립검산).
+ *   이 함수가 4종 서류(세부산정내역/영수증 신·구/보험청구서) 공유 SSOT(applyNightHolidaySurcharge)의 유일 산출점 →
+ *     여기서 전부 10원 배수로 확정하면 가산 행 표시값·계 행 fold 값이 동일 절사면에 정렬되어 계 행 == 행별 합(AC-6).
+ *   double-rounding 경계(footBilling.ts:822) 준수 — 가산 절사가 본인부담 aggregate floor100(=1,800) 에 무영향.
  */
 export function computeSurcharge(
   base: number,
@@ -158,10 +172,13 @@ export function computeSurcharge(
 ): { amount: number; copay: number; covered: number } {
   if (!kind || base <= 0) return { amount: 0, copay: 0, covered: 0 };
   // 10원 미만 절사(FLOOR) — 별표2 제1항. round(초과징수)→floor 정정. CEIL/ROUND 복귀 금지.
+  // 단일 절사 지점: amount·copay 각각 floor10, covered=amount−copay 로 잔차 흡수 → 세 값 모두 10원 배수.
   const amount = Math.floor((base * SURCHARGE_RATE) / 10) * 10;
-  const ratio = copayment > 0 ? Math.min(1, copayment / base) : 0;
-  const copay = Math.round(amount * ratio);
-  const covered = Math.max(0, amount - copay);
+  // v4(copay-revert): copay 는 **진찰료 본인부담 base×RATE 를 직접 floor10** — 절사된 amount 를 ratio 로 재분할하는
+  //   double-rounding(footBilling.ts:822 금지 경계) 을 피한다. 절사된 amount×ratio 재계산 시 공단 과대계상(410) 발생.
+  const rawCopay = copayment > 0 ? Math.min(copayment, base) * SURCHARGE_RATE : 0;
+  const copay = Math.min(amount, Math.floor(rawCopay / 10) * 10); // floor10(본인부담×RATE) → 필드 TARGET 420
+  const covered = Math.max(0, amount - copay); // 잔차 흡수 → copay+covered==amount 구조보장, covered 도 10원 배수(980)
   return { amount, copay, covered };
 }
 
@@ -279,11 +296,18 @@ export function applyNightHolidaySurcharge(
       //   비-10원배수)을 detail_total 에 더해 세부내역서 합계의 10원 절사가 깨졌다("갑자기 안 됨"). → 가산 fold 후
       //   계(detail_subtotal)를 다시 10원 절사해 별표2 제1항(문서 grain 10원 미만 절사) 정합을 회복하고,
       //   계 + 끝처리조정 = 합계 불변식을 유지(detail_rounding recompute). 수동편집(overriddenKeys) 시 종전 bump 유지.
+      //
+      //   ★ AC-9 (SSOT 우회 정정 — 이은상 팀장 확정 2026-08-01, MSG-30gw): 종전 인라인 floor 복제
+      //     (Math.floor(detSub/10)*10 / detFloored−detSub)를 제거하고 f1802047(T-20260719-foot-MEDCALC-
+      //     DETAIL-LAYOUT-FIX)의 **단일 산식 SSOT computeBillDetailRounding(가산 fold 후 payable) 호출로 통일**한다.
+      //     복제본이 존재하면 가산 유무에 따라 detail_rounding 산출 주체가 (SSOT vs 인라인 복제)로 재분기하여
+      //     f1802047 "4경로 단일 산식" AC 가 깨졌다. → 산출 주체를 computeBillDetailRounding 하나로 수렴(4경로 복원).
+      //     값은 동형(roundedTotal=floor10, adjustment=roundedTotal−payable) — 산출 지점만 SSOT 로 통일(무회귀).
       if (!overriddenKeys.has('detail_total') && !overriddenKeys.has('detail_rounding')) {
-        const detSub = parseAmt(base.detail_subtotal);
-        const detFloored = Math.floor(detSub / 10) * 10;
-        base.detail_total = formatAmount(detFloored);
-        base.detail_rounding = formatAmount(detFloored - detSub);
+        const detSub = parseAmt(base.detail_subtotal); // 가산 본인분(sc.copay) fold 후 payable(계 행, 절사 전)
+        const { adjustment, roundedTotal } = computeBillDetailRounding(detSub);
+        base.detail_total = formatAmount(roundedTotal);
+        base.detail_rounding = formatAmount(adjustment);
       } else {
         bump('detail_total', sc.copay);
       }
