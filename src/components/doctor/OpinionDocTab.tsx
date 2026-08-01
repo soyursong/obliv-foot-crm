@@ -55,6 +55,19 @@ import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindCont
 // T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE (AC-2): 실장 요청 메모(staff_memo) 편집 저장 훅.
 //   함수 레벨 참조(런타임)만 하는 순환 경계 — opinionRequest ↔ OpinionDocTab 모듈 최상위 상호참조 없음(안전).
 import { useUpdateStaffMemo, parseAdminOverrides, type AdminFieldOverrides } from '@/lib/opinionRequest';
+// T-20260731-foot-DOCPRINT-REPRINT-SPEC (item1/2, 안A B안): 소견서·진단서 재출력(발행이력)에 [행정정보 수정] 버튼 신설.
+//   재출력=발행 고정본 다시보기+출력(신규 입력 팝업 X), 행정필드(발급요청일자·발급일·상병코드·담당의)만 정정,
+//   의사 소견·진료 내용은 read-only(published 불변). 신규 편집기 금지 — 치료테이블/2번차트가 쓰는 공용 편집기
+//   (DocAdminEditDialog)·useUpdateOpinionAdminFields·admin_overrides 재사용(단일 소스, 중복 구현 0, NO-DDL).
+//   ★admin_overrides 는 발행본(status='published')이 아니라 그 발행을 만든 서류작성 큐 요청행
+//     (status='voided'+resolved_reason='published') field_data 에 저장 → 발행완료 요청행을 매칭해 편집 대상으로 전달.
+//     매칭 안 되는 발행분(요청 큐 경유 아닌 직접 발행)은 오버레이 저장소가 없어 버튼 비노출(오편집 차단).
+import {
+  useAllPublishedOpinionRequests,
+  type OpinionRequestRow,
+  type PublishedOpinionDoc,
+} from '@/lib/opinionRequest';
+import DocAdminEditDialog from '@/components/doctor/DocAdminEditDialog';
 // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: 발행본↔요청행 오버레이 매칭 순수 헬퍼 재사용
 //   (데스크 출력 경로 medDocPrintGate 와 동일 helper → 매칭 규칙 drift 방지).
 import { resolveAdminOverrideForDoc, type AdminOverrideCandidate } from '@/lib/medDocPrintGate';
@@ -66,7 +79,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, FileText, FileDown, Search, ClipboardList, Printer } from 'lucide-react';
+import { Loader2, FileText, FileDown, Search, ClipboardList, Printer, Pencil } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // 템플릿 옵션 — F0BAETELCTF 미러 (Phase 1 하드코드 기본값, Phase 2 설정 UI 로 이관 예정 AC-8).
@@ -515,6 +528,35 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
     },
     staleTime: 10_000,
   });
+}
+
+// ---------------------------------------------------------------------------
+// T-20260731-foot-DOCPRINT-REPRINT-SPEC (item1/2, 안A B안) — 발행본 1행 ↔ 발행완료 요청행 원자 매칭(순수).
+//   재출력(발행이력) [행정정보 수정] 편집 대상 = 그 발행을 만든 서류작성 큐 요청행(admin_overrides 저장소).
+//   매칭 규칙 = matchPublishedOpinionDoc(요청행→발행본)의 역방향 동형: check_in_id+doc_type 우선 →
+//     customer_id+doc_type 폴백 → 동일키 복수 시 발행시각 최근접 1건. 이 환자(customer) 스코프로 교차노출 배제.
+//   매칭 실패 = 요청 큐 경유 아닌 직접 발행분(오버레이 저장소 없음) → null(편집 버튼 비노출, 오편집 차단).
+//   ★순수 함수(컴포넌트 밖 export) — E2E spec 이 직접 단언(파생 로직 drift 방지, repo 컨벤션).
+export function matchPublishedRowToAdminReq(
+  row: Pick<PublishedOpinionRow, 'check_in_id' | 'doc_type' | 'issued_at'>,
+  custId: string | null,
+  reqRows: OpinionRequestRow[],
+): OpinionRequestRow | null {
+  if (!custId) return null;
+  const pool0 = reqRows.filter((rq) => rq.customerId === custId && rq.docType === row.doc_type);
+  const byCheckIn = row.check_in_id ? pool0.filter((rq) => rq.checkInId === row.check_in_id) : [];
+  const pool = byCheckIn.length > 0 ? byCheckIn : pool0;
+  if (pool.length === 0) return null;
+  if (pool.length === 1) return pool[0];
+  const target = Date.parse(row.issued_at);
+  if (Number.isNaN(target)) return pool[0];
+  return pool
+    .slice()
+    .sort(
+      (a, b) =>
+        Math.abs(Date.parse(a.resolvedAt || a.createdAt) - target) -
+        Math.abs(Date.parse(b.resolvedAt || b.createdAt) - target),
+    )[0];
 }
 
 export interface PublishOpinionInput {
@@ -1166,6 +1208,46 @@ export function OpinionEditorDialog({
     if (!ok) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   };
 
+  // ── T-20260731-foot-DOCPRINT-REPRINT-SPEC (item1/2, 안A B안): 재출력(발행이력) [행정정보 수정] 연동 ──
+  //   발행 고정본(published)은 read-only(의료법§22)로 유지하되, 서류에 출력되는 행정필드(발급요청일자·발급일·
+  //   상병코드·담당의)만 공용 편집기(DocAdminEditDialog)로 정정. 신규 입력 팝업/편집기 금지 — 치료테이블·2번차트와
+  //   동일 편집기·동일 mutation(useUpdateOpinionAdminFields)·동일 오버레이(admin_overrides) 재사용(단일 소스).
+  const qc = useQueryClient();
+  // 오버레이 저장소(발행완료 서류작성 큐 요청행, admin_overrides 포함) — 치료테이블과 동일 all-time 훅(react-query dedup).
+  const { data: adminReqRows = [] } = useAllPublishedOpinionRequests(clinicId);
+  const [adminEditTarget, setAdminEditTarget] = useState<OpinionRequestRow | null>(null);
+  const [adminEditViewDoc, setAdminEditViewDoc] = useState<PublishedOpinionDoc | null>(null);
+
+  // 발행본 1행 ↔ 발행완료 요청행 원자 매칭(오버레이 저장 대상). check_in_id+doc_type 우선 → customer+doc_type 폴백
+  //   (matchPublishedOpinionDoc 의 역방향 — 동일 규칙 재현으로 drift 방지). 이 환자(customer_id) 스코프로 교차노출 배제.
+  //   매칭 실패 = 요청 큐 경유가 아닌 직접 발행분(오버레이 저장소 없음) → 편집 버튼 비노출(오편집 차단).
+  const findAdminReqForRow = (row: PublishedOpinionRow): OpinionRequestRow | null =>
+    matchPublishedRowToAdminReq(row, visitor?.customer_id ?? null, adminReqRows);
+
+  // 발행본 스냅샷(PublishedOpinionRow) → 편집기 seed 용 PublishedOpinionDoc(발급일·담당의 seed 소스).
+  const buildViewDocFromRow = (row: PublishedOpinionRow): PublishedOpinionDoc => ({
+    id: row.id,
+    customerId: visitor?.customer_id ?? null,
+    checkInId: row.check_in_id,
+    docType: row.doc_type,
+    finalText: row.body,
+    chartNo: row.chart_no,
+    doctorName: row.issued_by_name,
+    issuedAt: row.issued_at,
+    issuedByLicenseNo: row.issued_by_license_no,
+    issuedByDoctorId: row.issued_by_doctor_id,
+  });
+
+  const openAdminEdit = (row: PublishedOpinionRow) => {
+    const req = findAdminReqForRow(row);
+    if (!req) {
+      toast('이 서류는 행정정보 수정을 사용할 수 없습니다(요청 접수 없이 바로 발행된 서류).');
+      return;
+    }
+    setAdminEditTarget(req);
+    setAdminEditViewDoc(buildViewDocFromRow(row));
+  };
+
   // 발행 이력 테이블(우측 단 + 직원뷰 공용) — 각 행 [저장(PDF)] [인쇄] 모두 printOpinionDoc(브라우저 인쇄대화상자=PDF저장/인쇄) 경로.
   const historyPanel = (
     <div className="flex min-h-0 flex-col rounded-md border bg-muted/20" data-testid="opinion-published">
@@ -1198,7 +1280,22 @@ export function OpinionEditorDialog({
                     <span className="block max-w-[14rem] truncate" title={row.body}>{row.body.replace(/\n+/g, ' ')}</span>
                   </td>
                   <td className="px-1.5 py-1 whitespace-nowrap text-right">
-                    <span className="inline-flex gap-1">
+                    <span className="inline-flex flex-wrap justify-end gap-1">
+                      {/* T-20260731-foot-DOCPRINT-REPRINT-SPEC (item1/2): 재출력=발행 고정본 그대로(저장/인쇄) +
+                          [행정정보 수정]으로 행정필드만 정정(의사 소견·발행본 불변). 요청 큐 경유 발행분에만 노출
+                          (오버레이 저장소 존재 시). 신규 입력 팝업 없음 — 공용 편집기 재사용. */}
+                      {findAdminReqForRow(row) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+                          onClick={() => openAdminEdit(row)}
+                          data-testid="opinion-history-admin-edit-btn"
+                          title="발급요청일자·발급일·상병코드·담당의 등 행정정보만 수정합니다(의사 소견 내용은 수정 불가)."
+                        >
+                          <Pencil className="h-3 w-3" /> 행정정보 수정
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
@@ -1337,6 +1434,7 @@ export function OpinionEditorDialog({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={canPublish ? 'max-w-5xl' : 'max-w-2xl'} data-testid="opinion-dialog">
         {/* ① 헤더 1줄: 왼쪽 서류명(크고 볼드) · 오른쪽 환자이름(클릭→진료차트 drawer)·생년(만나이)·차트번호. ×는 Dialog 기본(우측). */}
@@ -1629,6 +1727,23 @@ export function OpinionEditorDialog({
         variant="full"
       />
     </Dialog>
+
+    {/* T-20260731-foot-DOCPRINT-REPRINT-SPEC (item1/2, 안A B안): 재출력(발행이력) [행정정보 수정] 공용 편집기.
+        치료테이블(DiagDocSection)·2번차트(OpinionDocHistorySection)와 '동일 편집기'(단일 소스) — 중복 구현 0.
+        편집 대상 = 발행완료 요청행 field_data.admin_overrides(published 불오염, 의료법§22 스냅샷 불변, NO-DDL).
+        저장 후 발행이력(usePublishedOpinions) + 오버레이 소스(useAllPublishedOpinionRequests) 즉시 무효화(재출력물 반영). */}
+    <DocAdminEditDialog
+      target={adminEditTarget}
+      viewDoc={adminEditViewDoc}
+      clinicId={clinicId}
+      onClose={() => { setAdminEditTarget(null); setAdminEditViewDoc(null); }}
+      onSaved={() => {
+        qc.invalidateQueries({ queryKey: ['opinion_published', clinicId] });
+        qc.invalidateQueries({ queryKey: ['opinion_request_published_all', clinicId] });
+      }}
+      testIdPrefix="opinion-editor-admin"
+    />
+    </>
   );
 }
 
