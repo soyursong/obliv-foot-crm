@@ -850,8 +850,15 @@ ${COMMON_STYLE}
     padding: 2px 4px;
     vertical-align: middle;
     font-size: 8.5pt;
-    text-align: center;
   }
+  /* T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-G1 [이은상 팀장 2026-07-31]:
+     세부산정내역서(.bill-wrap) 값 정렬 — 일반 값 좌측 / th 중앙 / 금액(.num-cell) 우측.
+     ⚠ .bill-wrap 하나로 한정(타 양식 .rx-wrap/.br-wrap/COMMON_STYLE 무접촉, f92dd989 회귀 전례).
+     ★ .bill-wrap td.num-cell(0,2,1)로 .bill-wrap td(0,1,1) 좌측을 이겨 금액 우측 보장(전역 .num-cell 무접촉).
+        '계·합계' 라벨/병합셀의 인라인 text-align:center 는 인라인 우선 → 무변화(의도된 중앙). */
+  .bill-wrap th { text-align: center; }
+  .bill-wrap td { text-align: left; }
+  .bill-wrap td.num-cell { text-align: right; }
   .bill-wrap .title-main {
     text-align: center;
     font-size: 15pt;
