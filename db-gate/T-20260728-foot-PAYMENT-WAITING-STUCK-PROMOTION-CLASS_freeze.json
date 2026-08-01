@@ -1,0 +1,151 @@
+{
+  "generated_at": "2026-08-01T18:04:51.663Z",
+  "kst_today": "2026-08-02",
+  "freeze": [
+    {
+      "check_in_id": "33f16b07-4ef2-49d1-9b45-5cee84ff378e",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-05-25T09:38:19.553645+00:00"
+    },
+    {
+      "check_in_id": "8f974a90-1d60-44ee-8e79-78b9fcec7373",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-17T08:48:27.891865+00:00"
+    },
+    {
+      "check_in_id": "2c76eea6-dd08-490a-be8f-c601bc5e416a",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-20T04:09:00+00:00"
+    },
+    {
+      "check_in_id": "01c58fa8-d476-4541-b64c-a84938cfe532",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-20T03:19:53.165891+00:00"
+    },
+    {
+      "check_in_id": "5f381bd7-957c-4b31-95d3-8ba04899babb",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-20T05:29:27.72286+00:00"
+    },
+    {
+      "check_in_id": "abe9d41f-d33c-418f-8db0-09e0e7994fc6",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-21T05:37:20.201039+00:00"
+    },
+    {
+      "check_in_id": "de57cfbb-bbf6-4ed9-8562-ff5044772522",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-23T06:14:14.542031+00:00"
+    },
+    {
+      "check_in_id": "535014e6-981d-4ac7-b92b-fe8b66e7e5b6",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-23T09:54:24.94851+00:00"
+    },
+    {
+      "check_in_id": "ddcbde38-005e-4335-95c5-6ddbdc54ab00",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-23T10:07:33.458714+00:00"
+    },
+    {
+      "check_in_id": "119cb71c-65a8-4acb-a80b-2bdf7690b843",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T02:10:00+00:00"
+    },
+    {
+      "check_in_id": "fdd5c165-8375-470e-9b9d-cad851de93a6",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T03:57:00+00:00"
+    },
+    {
+      "check_in_id": "59324dab-1017-45b9-b257-7b693017553e",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T04:01:00+00:00"
+    },
+    {
+      "check_in_id": "aed5b1de-2c48-4361-82b9-8a7ed9854d35",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T05:51:00+00:00"
+    },
+    {
+      "check_in_id": "fd071e95-b3eb-4ef2-81c1-6cc63ad49e37",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T07:22:00+00:00"
+    },
+    {
+      "check_in_id": "6b966a8c-6cde-4d47-837f-9367f15f3a13",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T07:17:00+00:00"
+    },
+    {
+      "check_in_id": "d85638b5-53f1-4548-99be-858b7b34175f",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T07:22:54.818264+00:00"
+    },
+    {
+      "check_in_id": "ea1b5720-0933-4685-aabc-e627533646e9",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T07:24:00+00:00"
+    },
+    {
+      "check_in_id": "c73f759b-1023-443d-892d-d59c155ba4f3",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T09:28:00+00:00"
+    },
+    {
+      "check_in_id": "b2c1590f-a2f0-4cb5-bba6-4ca2d26ef7ca",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-25T09:37:30.816276+00:00"
+    },
+    {
+      "check_in_id": "d346a002-f694-4081-9b28-9795509ee119",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-27T01:49:36.509375+00:00"
+    },
+    {
+      "check_in_id": "73367834-447a-4436-b0ba-f9f77f7b3ca7",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-27T11:38:27.993617+00:00"
+    },
+    {
+      "check_in_id": "ccec53c4-8c4d-4f5e-8567-43992da4c239",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-27T11:05:53.326383+00:00"
+    },
+    {
+      "check_in_id": "6b28344e-8463-46e5-bec4-587a1a56a89c",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-27T11:43:50.982064+00:00"
+    },
+    {
+      "check_in_id": "485cb066-ce31-4642-84cf-2f4c9544d1f7",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-28T04:07:34.018171+00:00"
+    },
+    {
+      "check_in_id": "e977cbb0-e209-4bbe-a593-f92837b6eb4d",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-28T01:51:19.615547+00:00"
+    },
+    {
+      "check_in_id": "a0daf444-c935-47d0-a102-bd2a4448a7f0",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-28T05:06:59.815663+00:00"
+    },
+    {
+      "check_in_id": "4a7adbdd-922e-49be-a081-3ca3d67f3715",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-28T05:48:35.976617+00:00"
+    },
+    {
+      "check_in_id": "8cc28de6-13cb-4090-a708-262515a969ae",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-28T11:39:15.476547+00:00"
+    },
+    {
+      "check_in_id": "eb1b58dd-108a-4b31-9278-f35e2439a7f9",
+      "expected_status": "payment_waiting",
+      "completed_at_corrected": "2026-07-30T12:22:29.460186+00:00"
+    }
+  ]
+}
