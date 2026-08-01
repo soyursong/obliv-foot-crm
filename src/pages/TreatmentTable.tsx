@@ -17,9 +17,10 @@
 //        (CustomerQuickMenu 재사용 — Dashboard/Reservations 동일 컴포넌트, 신규 메뉴 신설 0).
 //        부모가 ctx-menu/진료차트/문자 상태를 소유하고 양 섹션에 NameInteraction 핸들러 전달.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
+import { todaySeoulISODate } from '@/lib/format';
 import { ko } from 'date-fns/locale';
 import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2, FileText, Droplet } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -74,19 +75,41 @@ export interface NameInteraction {
   onContextMenu: (e: React.MouseEvent, c: NameCtxTarget) => void;
 }
 
-function todayStr() {
-  return format(new Date(), 'yyyy-MM-dd');
-}
-
 export default function TreatmentTable() {
   const [tab, setTab] = useState<SectionTab>('history');
   // C. 경과분석(progress) 부모 탭 하위 서브탭 상태 — 기본 'targets'(오늘 대상자).
   const [progressSub, setProgressSub] = useState<ProgressSubTab>('targets');
 
   // ── B. 탭 공통 단일 날짜선택기(권장 기본) — 부모 소유, 양 섹션 공유 ──
-  const today = todayStr();
+  // T-20260801-foot-TREATTABLE-PARENT-DATE-TZ-RECONCILE:
+  //   축1(tz 통일) — '오늘' 판정을 자식(ExamTargetsSection) 과 동일한 KST(seoulISODate 계열) 로 통일.
+  //   기존엔 부모만 date-fns format(new Date()) = 브라우저 local tz 라, 태블릿 OS tz 가 KST 가 아니면
+  //   부모·자식의 '오늘'이 하루 어긋날(off-by-one) 수 있었다. todaySeoulISODate() 로 단일화해 근원 제거.
+  const today = todaySeoulISODate();
   const [date, setDate] = useState(today);
   const isToday = date === today;
+
+  // T-20260801-foot-TREATTABLE-PARENT-DATE-TZ-RECONCILE:
+  //   축2(부모 date day-aware 갱신) — 부모 date state 의 마운트 동결(오버나이트 전탭 staleness) 해소.
+  //   (a) 60s 틱으로 재렌더를 보장해 KST 자정 롤오버를 부모가 스스로 감지(자식 refetchInterval 재렌더에 의존 X).
+  //   (b) 현재일(KST)이 실제로 바뀔 때(하루 1회)만 발화하며, '오늘'을 추종 중이던 경우(직전 date == 직전 today)
+  //       에만 date 를 새 오늘로 전진 → 사용자가 수동 선택한 과거 날짜(과거 조회)는 롤오버로 덮지 않는다.
+  //   자식(d9f96f54) day-aware self-heal 은 무접촉·무회귀([균검사] 당일 펼침 유지).
+  const [, forceDayTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceDayTick((t) => (t + 1) % 1_000_000), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const prevTodayRef = useRef(today);
+  useEffect(() => {
+    if (prevTodayRef.current !== today) {
+      const prevToday = prevTodayRef.current;
+      prevTodayRef.current = today;
+      // '오늘 추종' 컨텍스트에서만 전진 — 수동 과거선택(cur !== prevToday)은 보존.
+      setDate((cur) => (cur === prevToday ? today : cur));
+    }
+  }, [today]);
   const goPrev = () => setDate(format(subDays(new Date(date + 'T12:00:00'), 1), 'yyyy-MM-dd'));
   const goNext = () => {
     const next = format(addDays(new Date(date + 'T12:00:00'), 1), 'yyyy-MM-dd');
