@@ -1,0 +1,11 @@
+import { q } from './dryrun_lib.mjs';
+const out = {};
+out.col = await q(`SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='customers' AND column_name='designated_therapist_id';`);
+out.fn_role = await q(`SELECT proname, pg_get_function_result(oid) AS ret FROM pg_proc WHERE proname='current_user_role';`);
+out.trg_pre = await q(`SELECT tgname FROM pg_trigger WHERE tgname='trg_designated_therapist_writeguard';`);
+out.fn_pre  = await q(`SELECT proname FROM pg_proc WHERE proname='fn_designated_therapist_writeguard';`);
+out.txn = await q(`BEGIN; SELECT 42 AS x; ROLLBACK;`);
+out.roles = await q(`SELECT role, count(*)::int n, (array_agg(id::text ORDER BY id))[1] AS sample_id FROM user_profiles WHERE COALESCE(active,true)=true GROUP BY role ORDER BY role;`);
+out.cust = await q(`SELECT id, designated_therapist_id FROM customers ORDER BY created_at DESC LIMIT 1;`);
+out.staff = await q(`SELECT id, name FROM staff ORDER BY created_at LIMIT 3;`);
+console.log(JSON.stringify(out, null, 2));
