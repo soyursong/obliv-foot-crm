@@ -11,14 +11,13 @@ import { computeBillDetailRounding, floorOutpatientCopayment } from '../../src/l
  * E2E — T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix)
  * 야간·공휴일 30% 가산금 및 서류 총액의 10원 단위 절사(FLOOR) 미적용 → 절사 적용.
  *
- * RC(diagnose-first, v3 확정 — 이은상 팀장 = 필드 authority, FIX-REQUEST v3 MSG-5a4o):
+ * RC(diagnose-first, v4 확정 — 이은상 팀장 = 필드 authority, FIX-REQUEST v4 MSG-vtuh/ecjt):
  *   범위 = (a) 가산 라인 절사-지점 결함. (b) 서류총액 computeBillDetailRounding 회귀 아님(추적 불필요).
  *   1차(13ff260b)는 amount 만 floor10 하고 copay=round(amount×ratio)/covered=amount−copay 로 산출해
  *   copay·covered 가 **비-10원배수로 잔존**(418/982) → 가산 행 표시·계 행 fold 어긋나 불일치.
- *   v2(ba921932)는 copay 를 copayment×RATE floor10 로 유도 → 420/980. 그러나 필드 실측(F-4741, 김병완
- *       2026-08-01, 총괄 화면 확인)은 표시비율 기준 418→floor10 410/990 → v2 와 divergence(HOLD).
- *   v3(본 커밋): 절사된 amount 를 실 표시비율(ratio=copayment/base)로 분할 후 copay 에 floor10 적용,
- *       covered=amount−copay 로 잔차 흡수 → 총액·본인·공단 전부 10원 배수 + 필드 TARGET 1,400/410/990 정합.
+ *   v3(f3bc8974)는 copay=floor10(amount×ratio)=410 → 공단 과대계상(NHIS 과대청구)+double-rounding 위반 → 폐기(HOLD).
+ *   v4(본 커밋): copay=floor10(copayment×RATE) 로 원 base 에서 직접 산출(amount 재분할 금지),
+ *       covered=amount−copay 로 잔차 흡수 → 총액·본인·공단 전부 10원 배수 + 필드 TARGET 1,400/420/980 정합.
  *
  * 순수 함수 직접 import 로 결정론적 금액 검증(가산율 30% canon 불변).
  */
@@ -71,18 +70,18 @@ test.describe('AC-1/AC-2 — 가산 산출값 10원 단위 절사(FLOOR)', () =>
     }
   });
 
-  // ── v3 실사례(F-4741, 김병완 2026-08-01, 총괄 화면 확인 = 필드 TARGET authority): 1,400 / 410 / 990 ──
-  test('검증#1 실사례(필드 TARGET): 총액 1,400 / 본인 410 / 공단 990 — 세 값 10원 배수', () => {
-    // base×0.3=1,404→floor10 1,400. ratio=1,400/4,680≈0.2992. copay=floor10(1,400×0.2992)=floor10(418.8)=410.
-    // covered=1,400−410=990. (구 round=418, v2 divergent=420 — 필드 실측은 410/990.)
+  // ── v4 실사례(F-4741, 이은상 팀장 필드권위 정정 = 필드 TARGET authority): 1,400 / 420 / 980 ──
+  test('검증#1 실사례(필드 TARGET): 총액 1,400 / 본인 420 / 공단 980 — 세 값 10원 배수', () => {
+    // base×0.3=1,404→floor10 1,400. copay=floor10(copayment×RATE)=floor10(1,400×0.3)=floor10(420)=420.
+    // covered=1,400−420=980 (=floor10(3,280×0.3)). v3 divergent=410(공단 과대계상)·구 round=418.
     const sc = computeSurcharge(4680, 1400, detectSurchargeKind(HOLIDAY, false));
-    expect(sc.amount).toBe(1400); // 1,408(구 round) → 1,400(floor10)
-    expect(sc.copay).toBe(410); // ★ 필드 TARGET — floor10(amount×ratio). round(418)·v2(420) 아님
-    expect(sc.covered).toBe(990); // 1,400 − 410 (잔차 흡수, 끝자리 0)
+    expect(sc.amount).toBe(1400); // 1,404 → floor10 1,400
+    expect(sc.copay).toBe(420); // ★ 필드 TARGET — floor10(copayment×RATE). v3(410)·round(418) 아님
+    expect(sc.covered).toBe(980); // 1,400 − 420 (잔차 흡수, 끝자리 0)
     expect(sc.copay + sc.covered).toBe(sc.amount); // 불변식
-    // ★ v2(ba921932) divergence 회귀 가드: copay 가 420(copayment×RATE floor10)이면 안 됨.
-    expect(sc.copay).not.toBe(420);
-    expect(sc.covered).not.toBe(980);
+    // ★ v3(f3bc8974) 공단 과대계상 회귀 가드: copay 가 410(floor10(amount×ratio))이면 안 됨.
+    expect(sc.copay).not.toBe(410);
+    expect(sc.covered).not.toBe(990);
     // ★ 구 1차(round) 회귀 가드: 418(비-10원)이면 안 됨.
     expect(sc.copay).not.toBe(418);
   });
