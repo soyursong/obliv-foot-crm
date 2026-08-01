@@ -96,6 +96,8 @@ export interface AutoBindContext {
   } | null;
   /** T-20260522-foot-INS-DOC-PRINT: 건보 등급·부담률·산정특례 */
   insuranceInfo?: InsuranceBindInfo | null;
+  /** T-20260731-...-ALIGN-2ND AC-5⑦: 실통원일수(deriveVisitDays 결과). 미제공 시 '1' 폴백. */
+  visitDays?: string | null;
 }
 
 // ─── 헬퍼 함수 ───────────────────────────────────────────────────────────────
@@ -203,6 +205,37 @@ export function deriveBirthYYMMDDFromRrn(rrn: string | null | undefined): string
   const d = rrnDigits(rrn);
   if (!d) return null;
   return d.slice(0, 6);
+}
+
+/**
+ * T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-5⑦-a [이은상 팀장 2026-07-31]:
+ *   치료기간 [from, to] 내 실제 내원 일수(= 실통원일수). 같은 날 2회 이상 내원은 1일로 접는다.
+ *   ★순수함수(DB 접근 없음, 날짜 배열만) — 데이터 조회는 loadAutoBindContext 한 곳에서만 수행한다.
+ *   폴백 '1': 빈 배열·파싱 실패·범위 밖 전량 → '1'(현행 동작 유지). 🔒 공란 금지(TOTALDAYS-BLANK 재발방지).
+ *   {{visit_days}} 는 진료·통원확인서 '(치료 N 일간)' + 통원확인서 '실통원일수' 가 공유 → 자동 정합.
+ *   날짜는 'YYYY-MM-DD' 또는 ISO('YYYY-MM-DDTHH:mm...') 앞 10자를 일(day)로 정규화해 비교/중복접기.
+ */
+export function deriveVisitDays(
+  visitDates: Array<string | null | undefined>,
+  from: string | null | undefined,
+  to: string | null | undefined,
+): string {
+  const toDay = (s: string | null | undefined): string | null => {
+    if (!s) return null;
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+  };
+  const lo = toDay(from);
+  const hi = toDay(to);
+  const uniqueDays = new Set<string>();
+  for (const raw of visitDates ?? []) {
+    const day = toDay(raw);
+    if (!day) continue;
+    if (lo && day < lo) continue;   // 치료기간 하한 밖 제외
+    if (hi && day > hi) continue;   // 상한(발행 기준일) 밖 = 미래 방문 제외
+    uniqueDays.add(day);
+  }
+  return uniqueDays.size > 0 ? String(uniqueDays.size) : '1';
 }
 
 /**
@@ -369,8 +402,9 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     // T-20260526-foot-DOC-FORM-REVISE AC-C1: 주민번호 분리 (진료의뢰서 rrn_front/rrn_back)
     rrn_front: patientRrn.includes('-') ? patientRrn.split('-')[0] : patientRrn.slice(0, 6),
     rrn_back:  patientRrn.includes('-') ? (patientRrn.split('-')[1] ?? '') : patientRrn.slice(6),
-    // T-20260526-foot-DOC-FORM-REVISE AC#2: 치료기간 일수 (기본 1일, 외래 단일 방문)
-    visit_days: '1',
+    // T-20260526-foot-DOC-FORM-REVISE AC#2 → T-20260731-...-ALIGN-2ND AC-5⑦: 실통원일수.
+    //   loadAutoBindContext 가 check_ins 내원일로 산출(deriveVisitDays). 미제공 시 '1' 폴백(공란 금지).
+    visit_days: ctx.visitDays ?? '1',
     // T-20260526-foot-DOC-FORM-REVISE AC#5: 진료의뢰서 4필드 자동 바인딩
     referral_year:    format(new Date(), 'yyyy'),
     referral_month:   format(new Date(), 'MM'),
@@ -740,6 +774,27 @@ export async function loadAutoBindContext(
     };
   }
 
+  // T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-5⑦-a: 실통원일수 산출(신규 조회 1건).
+  //   check_ins(customer_id+clinic_id) 내원일 목록 → deriveVisitDays(중복일 접기·범위 필터·폴백 '1').
+  //   ⚠ 기존 check_ins 조회 2곳(treating_doctor_id 단일컬럼)은 재사용 불가 → 이 read-only 조회를 새로 둔다.
+  //   치료기간 = [최초 내원일, 이번 발행 기준 내원일]. 발행 기준일 이후(재출력 시점 이후) 방문은 상한으로 제외.
+  let visitDaysValue = '1';
+  if (checkIn.customer_id) {
+    const { data: visitRows } = await supabase
+      .from('check_ins')
+      .select('checked_in_at')
+      .eq('customer_id', checkIn.customer_id)
+      .eq('clinic_id', checkIn.clinic_id);
+    const dayStrings = (visitRows ?? [])
+      .map((r) => (r.checked_in_at ? format(new Date(r.checked_in_at as string), 'yyyy-MM-dd') : null))
+      .filter((d): d is string => !!d);
+    const thisVisitDay = checkIn.checked_in_at
+      ? format(new Date(checkIn.checked_in_at), 'yyyy-MM-dd')
+      : format(new Date(), 'yyyy-MM-dd');
+    const earliest = dayStrings.length ? dayStrings.reduce((a, b) => (a < b ? a : b)) : thisVisitDay;
+    visitDaysValue = deriveVisitDays(dayStrings, earliest, thisVisitDay);
+  }
+
   return buildAutoBindValues({
     customer,
     checkIn,
@@ -754,6 +809,7 @@ export async function loadAutoBindContext(
     clinicDoctor,
     diagCodes,
     insuranceInfo,
+    visitDays: visitDaysValue,
   });
 }
 

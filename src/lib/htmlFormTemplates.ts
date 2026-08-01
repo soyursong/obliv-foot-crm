@@ -626,8 +626,10 @@ ${TREAT_CONFIRM_DISEASE_BLOCK}
   <table style="margin-top:4px;">
     <tbody>
       <tr>
-        <td style="width:80px; background:#f8f8f8; vertical-align:top;">통원일자</td>
-        <td style="min-height:36px;">{{visit_date}}</td>
+        <!-- T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-5⑦: 라벨 통원일자→실통원일수,
+             값 {{visit_date}}→{{visit_days}}(deriveVisitDays 산출값, 실제 내원 건수). 하드코딩 '1' 아님. -->
+        <td style="width:80px; background:#f8f8f8; vertical-align:top;">실통원일수</td>
+        <td style="min-height:36px;">{{visit_days}}</td>
       </tr>
     </tbody>
   </table>
