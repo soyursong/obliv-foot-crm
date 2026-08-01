@@ -21,6 +21,15 @@ import {
   computeLockedUntil,
   REDPAY_PLANB_AUTO_RECORD_NOTICE,
 } from '@/lib/redpayPlanbTtl';
+import {
+  resolvePlanbEntryBranch,
+  type PatientPlanbContext,
+  type PlanbEntryBranch,
+} from '@/lib/planbEntryBranch';
+
+// §4-4(D절) 순수 판정 re-export — 소비측(팝업/훅)이 paymentPlanb 단일 진입점으로 사용.
+export { resolvePlanbEntryBranch };
+export type { PatientPlanbContext, PlanbEntryBranch };
 
 // ── 기능 플래그 ──────────────────────────────────────────────────────────────
 //   Vite 런타임(browser) import.meta.env + Node(process.env, 테스트) 이중 조회 —
@@ -116,6 +125,73 @@ export async function createPendingPayment(
     return { ok: false, reason: 'db_error', message: error.message };
   }
   return { ok: true, id: data.id as string };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// §4-4 (D절) 중복방지 — 클릭시 서버 재조회 (D-2) · 팝업 3분기 데이터소스 (D-3) · 배지 데이터 (D-5)
+//   T-20260730-foot-REDPAY-PLANB-V2-ADDENDUM-SPEC — 최필경 총괄 v2 지시서 §4-4(D절).
+//
+//   ★ D-2: [카드 수납예정등록] 클릭 순간 그 환자의 '현재 서버 상태'를 재조회한다.
+//     화면 렌더 상태(stale, 실장 A가 10분 전 열어둔 화면)로 판단하지 않는다 — CRM 은 브라우저이므로
+//     배지/렌더는 새로고침한 사람에게만 유효 → 중복방지 수단이 못 됨. 서버 재조회가 유일 판정근거.
+//   ★ D-3: 재조회 결과 → resolvePlanbEntryBranch(순수, planbEntryBranch.ts)로 3분기 라벨.
+//   ★ D-4(동시 클릭 경합): '같은 환자 open 선점 2건' 자체는 이미 DB partial UNIQUE index
+//     pending_payment_open_uq (clinic_id, customer_id) WHERE status='open' 가 원자 차단한다
+//     (createPendingPayment 가 23505 → duplicate_open 로 이미 포착). 본 재조회는 그 하드가드 앞단의
+//     '안내(경고+확인)' UX 이며 방지의 실주체가 아니다(재조회↔INSERT 사이 TOCTOU 는 index 가 닫음).
+//     → 신규 DDL 불요(no-DDL): 기존 index 가 D-4 요구(같은환자+대기중 2건 차단, 동시클릭 포함)의 상위집합.
+//   ★ D-5: '등록 담당자'는 pending_payment.created_by 재사용(신규 컬럼 불요, ADDITIVE 불요).
+//   ★ 배지 위치·팝업 형태(D-5·D-3 UI)는 총괄 색박스 스샷(F-4) 후 확정 — 본 모듈은 '데이터·로직'만 제공.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * D-2 서버 재조회 — [카드 수납예정등록] 클릭 순간 호출. 화면 stale 무시, 서버가 판정근거.
+ *   ① open 선점(clinic+customer) — 부분유니크로 ≤1건.
+ *   ② 이 방문(check_in_id)의 활성 수납(status='active') — 취소·삭제 제외(유령수납 배제, CHECK-IN 결제이력과 정합).
+ *   조회 실패는 throw — 호출측(팝업)이 '재조회 실패 → 등록 보류' fail-closed 로 처리(중복 위험 회피).
+ *   ★매출 무접점: payments 는 read-only(status='active' 조회만) — 본 함수는 어떤 write 도 하지 않음(§550 Model A).
+ */
+export async function fetchPatientPlanbContext(
+  clinicId: string,
+  customerId: string,
+  checkInId: string,
+): Promise<PatientPlanbContext> {
+  const [openRes, paidRes] = await Promise.all([
+    supabase
+      .from('pending_payment')
+      .select('id, expected_amount, created_by, created_at')
+      .eq('clinic_id', clinicId)
+      .eq('customer_id', customerId)
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('payments')
+      .select('amount, created_at, external_approval_no')
+      .eq('check_in_id', checkInId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false }),
+  ]);
+
+  if (openRes.error) throw openRes.error;
+  if (paidRes.error) throw paidRes.error;
+
+  const open = (openRes.data ?? [])[0] ?? null;
+  return {
+    openPending: open
+      ? {
+          id: open.id as string,
+          expected_amount: open.expected_amount as number,
+          created_by: (open.created_by as string | null) ?? null,
+          created_at: open.created_at as string,
+        }
+      : null,
+    paidPayments: (paidRes.data ?? []).map((p) => ({
+      amount: p.amount as number,
+      created_at: p.created_at as string,
+      external_approval_no: (p.external_approval_no as string | null) ?? null,
+    })),
+  };
 }
 
 // ── 선점 상태 조회 (폴링 데이터소스) ──────────────────────────────────────────
