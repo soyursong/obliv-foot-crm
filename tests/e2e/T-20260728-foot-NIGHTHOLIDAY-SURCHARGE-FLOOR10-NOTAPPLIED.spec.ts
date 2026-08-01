@@ -100,11 +100,22 @@ test.describe('AC-3 — 가산 스코프 격리 (진찰료 base 限, KOH 등 0�
   });
 });
 
-test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR) 정합', () => {
+// ══════════════════════════════════════════════════════════════════════════
+// (b) 세부내역서 합계 — 가산 additive bump (roll-forward, 회귀 정정)
+//
+// T-20260801-foot-BILLDETAIL-SURCHARGE-RECOMPUTE-REGRESSION (P0 hotfix, 이은상 팀장 확정 2026-08-01):
+//   13ff260b 가 applyNightHolidaySurcharge 의 bill_detail 분기에 detail_total/detail_rounding
+//   **재계산 블록**을 넣어, 서류 렌더 경로(DocumentPrintPanel: computeBillDetailRounding(payableB))와
+//   이중으로 detail_total 을 산출 → 세부내역서 계/합계가 어긋났다(F-4741 김병완, 공휴일 가산 건).
+//   정정: 재계산 블록 제거 + 종전 additive bump('detail_total', sc.copay) 복원.
+//   세부내역서 계/합계 floor10 의 단일 authority = 서류 렌더 경로 computeBillDetailRounding(AC-9 SSOT,
+//   무접촉). applyNightHolidaySurcharge 는 detail_total 을 가산 본인분만큼 additive fold 만 한다.
+//   ※ computeSurcharge(420/980)·copay 산식·AC-1/AC-2/AC-3 는 무접촉(a15eaab2 canon 유지).
+// ══════════════════════════════════════════════════════════════════════════
+test.describe('(b) 세부내역서 합계 — 가산 additive bump (재계산 블록 제거, roll-forward)', () => {
   const noop = () => ''; // buildDetailRow stub
 
-  test('bill_detail: 가산 본인분(10원 배수) fold 후 detail_total 10원 배수 + 계+조정=합계 불변식', () => {
-    // pre-surcharge: 본인부담 합계 10,000 (10원 배수). detail_subtotal/total=10,000, 조정 0.
+  test('bill_detail: detail_total = 종전값 + sc.copay (additive bump, 재계산 블록 없음)', () => {
     const base: Record<string, string> = {
       subtotal_copayment: '10,000',
       total_copayment: '10,000',
@@ -117,26 +128,19 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
       detail_rounding: '0',
       visit_date: '2026-01-01',
     };
-    // 진찰료-only 가산 base 주입: covered=18,840, copay=9,420(ratio 0.5).
-    // v3: sc.amount=5,650, sc.copay=floor10(5,650×0.5)=floor10(2,825)=2,820(★10원 배수), sc.covered=2,830.
-    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, {
-      covered: 18840,
-      copay: 9420,
-    });
+    const consult = { covered: 18840, copay: 9420 }; // ratio 0.5 → sc.copay=floor10(5,650×0.5)=2,820
+    const sc = computeSurcharge(consult.covered, consult.copay, detectSurchargeKind(HOLIDAY, false));
+    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, consult);
 
-    const detSub = num(base.detail_subtotal); // 10,000 + 2,820 = 12,820
-    const detTotal = num(base.detail_total);
-    const detRound = num(base.detail_rounding);
-
-    expect(detSub).toBe(12820); // 계(절사 전) = 가산 본인분(10원 배수) 포함 → 이미 10원 배수
-    expect(detTotal % 10).toBe(0); // ★ 합계 10원 배수
-    expect(detTotal).toBe(12820); // FLOOR10(12,820) = 12,820 (가산 copay 가 10원 배수라 재절사 no-op)
-    expect(detSub + detRound).toBe(detTotal); // 계 + 끝처리조정 = 합계 불변식
-    expect(detRound).toBe(0); // 가산 copay 가 이미 10원 배수 → 끝처리조정 0
+    // ★ 회귀 정정: detail_total 은 종전값 + 가산 본인분(additive bump). 함수 내 재플로어 없음.
+    expect(num(base.detail_total)).toBe(10000 + sc.copay); // 12,820
+    expect(num(base.detail_subtotal)).toBe(10000 + sc.copay); // 계도 동일 fold
+    // detail_rounding 은 함수가 건드리지 않음 → 종전값(서류 렌더 경로 SSOT 산출값) 유지.
+    expect(num(base.detail_rounding)).toBe(0);
   });
 
-  // ── v2 검증 #2: 계 행 == 행별 합 (가산 fold 값 == 가산 행 표시값, 절사면 정렬) ──
-  test('검증#2: 가산 fold(subtotal_fund/copayment) == computeSurcharge covered/copay (동일 10원 배수)', () => {
+  // ── 검증#2: 계 행 == 행별 합 (가산 fold 값 == 가산 행 표시값) ──
+  test('검증#2: 가산 fold(subtotal_fund/copayment) == computeSurcharge covered/copay', () => {
     const base: Record<string, string> = {
       subtotal_copayment: '3,000',
       total_copayment: '3,000',
@@ -157,13 +161,51 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
     expect(num(base.subtotal_fund)).toBe(7000 + sc.covered);
     expect(num(base.total_fund)).toBe(7000 + sc.covered);
     expect(num(base.subtotal_copayment)).toBe(3000 + sc.copay);
-    // 가산 행 표시값(covered/copay) 이 전부 10원 배수 → 행별 합·계 행 동일 절사면
+    expect(num(base.detail_total)).toBe(3000 + sc.copay); // 합계도 동일 additive
     expect(sc.covered % 10).toBe(0);
     expect(sc.copay % 10).toBe(0);
     expect(sc.copay + sc.covered).toBe(sc.amount);
   });
 
-  test('AC-5 무회귀: 평일 주간(kind=null) → detail_total 불변(가산·재절사 없음)', () => {
+  // ── ★ 회귀 재현 가드(F-4741 김병완, 공휴일 가산 건 2026-08-01): 계 행 == 행별 합 정합 ──
+  //   실사례 copay 420/980. 서류 렌더 경로가 payable 을 computeBillDetailRounding 로 산출하고,
+  //   그 위에 applyNightHolidaySurcharge 가 가산 본인분을 additive bump 하는 순서를 모사.
+  //   detail_subtotal(계) + detail_rounding(끝처리) == detail_total(합계) 불변식이 깨지지 않아야 한다.
+  test('회귀가드 F-4741: 서류 렌더 경로 SSOT 산출 후 additive bump → 계+조정=합계 불변식 유지', () => {
+    // 서류 렌더 경로(DocumentPrintPanel) 가 먼저 payable 3,280 을 SSOT 로 산출한 상태 모사.
+    const payableB = 3280;
+    const ssot = computeBillDetailRounding(payableB);
+    const base: Record<string, string> = {
+      subtotal_copayment: '3,280',
+      total_copayment: '3,280',
+      subtotal_fund: '0',
+      total_fund: '0',
+      subtotal_amount: '3,280',
+      total_amount: '3,280',
+      detail_subtotal: String(payableB), // 계 (render 경로 SSOT)
+      detail_rounding: String(ssot.adjustment), // 끝처리 (render 경로 SSOT)
+      detail_total: String(ssot.roundedTotal), // 합계 (render 경로 SSOT)
+      visit_date: '2026-01-01',
+    };
+    // 실사례 가산: 4,680 base, copay 1,400 → sc.amount 1,400 / copay 420 / covered 980.
+    const sc = computeSurcharge(4680, 1400, detectSurchargeKind(HOLIDAY, false));
+    expect(sc.amount).toBe(1400);
+    expect(sc.copay).toBe(420); // ★ a15eaab2 canon 무접촉 재확인
+    expect(sc.covered).toBe(980);
+
+    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, {
+      covered: 4680,
+      copay: 1400,
+    });
+
+    // additive bump 후: 계 == 종전계 + sc.copay, 합계 == 종전합계 + sc.copay.
+    expect(num(base.detail_subtotal)).toBe(payableB + sc.copay); // 3,700
+    expect(num(base.detail_total)).toBe(ssot.roundedTotal + sc.copay);
+    // ★ 계 + 끝처리조정 == 합계 불변식(회귀의 본질 = 이 등식이 깨지는 것).
+    expect(num(base.detail_subtotal) + num(base.detail_rounding)).toBe(num(base.detail_total));
+  });
+
+  test('AC-5 무회귀: 평일 주간(kind=null) → detail_total 불변(가산 없음)', () => {
     const base: Record<string, string> = {
       subtotal_copayment: '10,000',
       subtotal_fund: '0',
@@ -180,52 +222,16 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
     expect(num(base.detail_subtotal)).toBe(10000);
   });
 
-  // ── AC-9 (SSOT 우회 정정, 이은상 팀장 MSG-30gw): detail_rounding 산출 경로 = computeBillDetailRounding 단일 ──
-  //   인라인 floor 복제 제거 검증 — applyNightHolidaySurcharge 가 산출한 detail_total/detail_rounding 이
-  //   computeBillDetailRounding(가산 fold 후 payable) 결과와 **정확히 동형**(복제본 미경유). 비-10원 배수 payable 로
-  //   음수 조정(adjustment<0)이 실제로 계산되는 케이스를 써서 SSOT 단일 산식 경유를 assert.
-  test('AC-9: detail_total/rounding == computeBillDetailRounding(가산 fold 후 payable) 단일 산식', () => {
-    // pre-surcharge 계 = 3,003 (비-10원 배수: 비급여 우수리 잔존 모사). 가산 copay(10원 배수) fold 후에도 비-10원.
-    const base: Record<string, string> = {
-      subtotal_copayment: '3,003',
-      total_copayment: '3,003',
-      subtotal_fund: '0',
-      total_fund: '0',
-      subtotal_amount: '3,003',
-      total_amount: '3,003',
-      detail_subtotal: '3,003',
-      detail_total: '3,000',
-      detail_rounding: '-3',
-      visit_date: '2026-01-01',
-    };
-    const consult = { covered: 18840, copay: 9420 }; // ratio 0.5 → sc.copay=floor10(5,650×0.5)=2,820
-    const sc = computeSurcharge(consult.covered, consult.copay, detectSurchargeKind(HOLIDAY, false));
-    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, consult);
-
-    // 가산 fold 후 payable(계 행) = 3,003 + sc.copay
-    const payableAfterFold = 3003 + sc.copay;
-    expect(num(base.detail_subtotal)).toBe(payableAfterFold); // 5,823 (비-10원 배수)
-    // ★ 단일 산식 SSOT 경유: 헬퍼 산출값 == computeBillDetailRounding 직접 호출값 (복제본이면 어긋남)
-    const ssot = computeBillDetailRounding(payableAfterFold);
-    expect(num(base.detail_total)).toBe(ssot.roundedTotal); // 5,820 (FLOOR10)
-    expect(num(base.detail_rounding)).toBe(ssot.adjustment); // -3 (음수 끝처리 조정)
-    expect(ssot.adjustment).toBeLessThan(0); // 비-10원 배수 → 음수 조정 실계산 확인
-    // 계 + 끝처리조정 = 합계 불변식 (SSOT 정합)
-    expect(num(base.detail_subtotal) + num(base.detail_rounding)).toBe(num(base.detail_total));
-  });
-
-  // ── 안전 재검증(handoff): 본인부담 aggregate floor100 = 1,800 불변 (copay 410/418/420 동일 century bucket) ──
-  //   가산 행 copay 절사값이 410(v3)·418(구 round)·420(v2) 어느 것이든 aggregate 본인부담 floor100 은 1,800 불변
-  //   → 수납액(실 결제)에 영향 없음. double-rounding 경계(footBilling.ts:822) 준수 근거.
-  test('안전: 본인부담 aggregate floor100 = 1,800 불변 (가산 copay 410/418/420 무영향)', () => {
-    const preSurchargeCopayAggregate = 1400; // 가산 前 급여 본인부담 aggregate(예시)
+  // ── 안전 재검증: 본인부담 aggregate floor100 = 1,800 불변 (수납액 무영향) ──
+  test('안전: 본인부담 aggregate floor100 = 1,800 불변 (가산 copay 420 무영향)', () => {
+    const preSurchargeCopayAggregate = 1400;
     for (const gasanCopay of [410, 418, 420]) {
-      const agg = preSurchargeCopayAggregate + gasanCopay; // 1,810 / 1,818 / 1,820
-      expect(floorOutpatientCopayment(agg)).toBe(1800); // 세 값 모두 동일 century bucket → 1,800 불변
+      const agg = preSurchargeCopayAggregate + gasanCopay;
+      expect(floorOutpatientCopayment(agg)).toBe(1800);
     }
   });
 
-  test('수동편집(overriddenKeys) 시 detail_total/rounding 미재계산 (수동값 우선)', () => {
+  test('수동편집(overriddenKeys) 시 detail_total additive bump 스킵 (수동값 우선)', () => {
     const base: Record<string, string> = {
       subtotal_copayment: '10,000',
       subtotal_fund: '0',
@@ -238,8 +244,8 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
       covered: 18840,
       copay: 9420,
     });
-    // overridden → 재절사 스킵, 종전 bump 경로(수동값 우선). detail_total 은 재계산되지 않음.
-    // v3: sc.copay=floor10(5,650×0.5)=2,820 → 10,000 + 2,820 = 12,820.
+    // overridden → detail_total bump 스킵(수동값 우선). 계(detail_subtotal)는 fold 반영.
+    expect(num(base.detail_total)).toBe(10000); // 수동값 우선 → 불변
     expect(num(base.detail_subtotal)).toBe(12820); // 계는 fold 반영
   });
 });

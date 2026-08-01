@@ -20,7 +20,6 @@
  */
 
 import { formatAmount } from '@/lib/format';
-import { computeBillDetailRounding } from '@/lib/footBilling';
 
 /** 가산 요율 — 야간/공휴일 공통 30% (의원급 진찰료 표준, body canon 동일). */
 export const SURCHARGE_RATE = 0.3;
@@ -296,26 +295,14 @@ export function applyNightHolidaySurcharge(
       // 합계(총액 열) = 본인부담금 + 비급여(공단 제외, GONGDAN-HIDE-COPAY-ONLY B안) → 가산 본인분만.
       // 계(절사전, detail_subtotal)에 가산 본인분 반영.
       bump('detail_subtotal', sc.copay);
-      // ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, diagnose-first (b)) ──
-      //   RC: computeBillDetailRounding(floor10)이 가산 前 payableB 만 10원 절사한 뒤, 여기서 가산 본인분(sc.copay,
-      //   비-10원배수)을 detail_total 에 더해 세부내역서 합계의 10원 절사가 깨졌다("갑자기 안 됨"). → 가산 fold 후
-      //   계(detail_subtotal)를 다시 10원 절사해 별표2 제1항(문서 grain 10원 미만 절사) 정합을 회복하고,
-      //   계 + 끝처리조정 = 합계 불변식을 유지(detail_rounding recompute). 수동편집(overriddenKeys) 시 종전 bump 유지.
-      //
-      //   ★ AC-9 (SSOT 우회 정정 — 이은상 팀장 확정 2026-08-01, MSG-30gw): 종전 인라인 floor 복제
-      //     (Math.floor(detSub/10)*10 / detFloored−detSub)를 제거하고 f1802047(T-20260719-foot-MEDCALC-
-      //     DETAIL-LAYOUT-FIX)의 **단일 산식 SSOT computeBillDetailRounding(가산 fold 후 payable) 호출로 통일**한다.
-      //     복제본이 존재하면 가산 유무에 따라 detail_rounding 산출 주체가 (SSOT vs 인라인 복제)로 재분기하여
-      //     f1802047 "4경로 단일 산식" AC 가 깨졌다. → 산출 주체를 computeBillDetailRounding 하나로 수렴(4경로 복원).
-      //     값은 동형(roundedTotal=floor10, adjustment=roundedTotal−payable) — 산출 지점만 SSOT 로 통일(무회귀).
-      if (!overriddenKeys.has('detail_total') && !overriddenKeys.has('detail_rounding')) {
-        const detSub = parseAmt(base.detail_subtotal); // 가산 본인분(sc.copay) fold 후 payable(계 행, 절사 전)
-        const { adjustment, roundedTotal } = computeBillDetailRounding(detSub);
-        base.detail_total = formatAmount(roundedTotal);
-        base.detail_rounding = formatAmount(adjustment);
-      } else {
-        bump('detail_total', sc.copay);
-      }
+      // ── T-20260801-foot-BILLDETAIL-SURCHARGE-RECOMPUTE-REGRESSION (P0 roll-forward, 이은상 팀장 확정 2026-08-01) ──
+      //   RC: 13ff260b 가 이 분기에 detail_total/detail_rounding 재계산 블록을 추가한 뒤, 서류 렌더 경로
+      //     (DocumentPrintPanel: computeBillDetailRounding(payableB) 로 detail_subtotal/rounding/total 산출)와
+      //     이중으로 detail_total 을 산출 → 세부내역서 계/합계가 어긋났다(F-4741 김병완, 공휴일 가산 건).
+      //   정정: 재계산 블록 제거 + 종전 additive bump 복원. 세부내역서 계/합계 floor10 의 단일 authority 는
+      //     서류 렌더 경로의 computeBillDetailRounding(AC-9 SSOT, 무접촉) 하나이며, 여기서는 가산 본인분을
+      //     detail_total 에 additive fold 만 한다(§53 no-revert roll-forward).
+      bump('detail_total', sc.copay);
     }
   }
 }
