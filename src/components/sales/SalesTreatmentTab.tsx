@@ -2,15 +2,24 @@
  * T-20260515-foot-SALES-TAB-TREATMENT
  * 매출집계 탭3 — 시술 종류별 매출
  *
- * T-20260725-foot-SALES-TREATMENT-TAB-WHITELIST6
+ * T-20260725-foot-SALESTAB-TREATMENT-6BUCKET-WHITELIST
+ *   (선행: T-20260725-foot-SALES-TREATMENT-TAB-WHITELIST6 — 화이트리스트 6버킷 도입)
+ *   본 티켓: 버킷 분류 로직 이원화 제거 — resolveBucket 이 자체 키워드 판정을 재작성하지 않고
+ *   PaymentMiniWindow 의 분류 SSOT(isCosmeticService / prepaidSessionType)를 **직접 import 재사용**.
+ *   (결제창과 매출탭의 항목 귀속이 어긋나면 현장 혼란 → 단일 분류 소스로 일원화)
+ *
  *   화이트리스트 6개 버킷만 표기. 6개 이외(수액·처방약·상병 등)는 이 탭 통계에서 제외(숨김),
  *   전체 합계는 6개 버킷 합산.
  *   버킷(표시명·순서 고정):
  *     1) 비가열레이저  2) 가열레이저  3) 포돌로게(내성)
  *     4) Reborn(각질)  5) 풋화장품    6) 진찰료(기본/서류/검사비)
- *   버킷 매칭 = PaymentMiniWindow SSOT(PREPAID_KEYWORDS / isCosmeticService / FOOTCARE_CAT_LABELS)와 교차.
- *   ※ DB 실제값: Reborn 은 '리본'(RB001~003 / "리본 에센셜(각질)" 등)으로 저장됨 → '리본'|'각질' 매칭
- *      (영문 'Reborn' 매칭은 DB 0건 → 매칭 누락). 서류=제증명, 검사비=검사 category.
+ *   버킷 매칭 SSOT:
+ *     - 화장품 = isCosmeticService(category/label === '풋화장품')  [PaymentMiniWindow export 재사용]
+ *     - 레이저/포돌로게 = prepaidSessionType(코드우선 SZ035-30/35·BC1300MB08 + '비가열'>'가열' 순서 내장)
+ *                          [PaymentMiniWindow export 재사용] · 'iv'(수액)은 6버킷 밖 → 제외
+ *     - 진찰료 = category_label 기본/제증명/검사 (PMW 미분류 영역 → 로컬 판정 유지, 이원화 아님)
+ *     - Reborn = DB 실제값 '리본'(RB001~003 / "리본 에센셜(각질)" 등) / '각질' 계열
+ *                (영문 'Reborn' 매칭은 DB 0건 → 매칭 누락) · PMW 미분류 영역 → 로컬 판정 유지
  *   FE-only 표시 필터. no-DDL·no-schema. 원장 산식/날짜필터/시뮬 방어필터 무접촉.
  *
  * AC-1: services.name/category(_label) → 6개 버킷 매핑 후 버킷 단위 아코디언
@@ -33,6 +42,8 @@ import {
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
+// 버킷 분류 SSOT — 결제창(PaymentMiniWindow)과 동일 기준을 직접 재사용(이원화 방지).
+import { isCosmeticService, prepaidSessionType } from '@/components/PaymentMiniWindow';
 import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
@@ -45,6 +56,8 @@ interface CheckInService {
     category: string | null;
     /** services.category_label — 한글 대분류명. null이면 category 폴백 */
     category_label: string | null;
+    /** services.service_code — prepaidSessionType 코드우선 매칭(SZ035-30/35·BC1300MB08)용 */
+    service_code: string | null;
   } | null;
 }
 
@@ -68,7 +81,7 @@ interface Props {
 // ─── 화이트리스트 6개 버킷 (T-20260725-foot-SALES-TREATMENT-TAB-WHITELIST6) ───
 // 순서·표시명 고정. 이 6개만 표기하며 전체 합계도 이 6개 합산.
 
-type BucketId =
+export type BucketId =
   | 'unheated'
   | 'heated'
   | 'podologue'
@@ -76,7 +89,7 @@ type BucketId =
   | 'cosmetic'
   | 'consult';
 
-const BUCKETS: { id: BucketId; label: string }[] = [
+export const BUCKETS: { id: BucketId; label: string }[] = [
   { id: 'unheated', label: '비가열레이저' },
   { id: 'heated', label: '가열레이저' },
   { id: 'podologue', label: '포돌로게(내성)' },
@@ -92,33 +105,44 @@ const CONSULT_CATS = ['기본', '검사', '진료'];
 
 /**
  * 시술 1건을 6개 화이트리스트 버킷 중 하나로 매핑. 미해당(수액·처방약·상병 등) → null(제외).
- * PaymentMiniWindow SSOT 교차:
- *   - 화장품: isCosmeticService (category/label === '풋화장품') 우선 판정
- *     (예: '발각질크림'은 각질 명칭이나 category='풋화장품' → 화장품 버킷)
- *   - 레이저: PREPAID_KEYWORDS 순서 규약 — '비가열'을 '가열'보다 먼저 판정(비가열은 가열의 상위집합)
- *   - 포돌로게: '포돌로게'
- *   - Reborn: DB 실제값 '리본'(RB001~003) / '각질' 계열
+ * ★ 분류 이원화 방지: 화장품·레이저·포돌로게 판정은 PaymentMiniWindow 의 분류 SSOT를 직접 재사용한다.
+ *   - 화장품     : isCosmeticService(category/label === '풋화장품') 우선 판정
+ *                  (예: '발각질크림'은 각질 명칭이나 category='풋화장품' → 화장품 버킷)
+ *   - 레이저/포돌로게: prepaidSessionType — 코드우선(SZ035-30/35·BC1300MB08) + '비가열'>'가열' 순서 내장.
+ *                  반환 'iv'(수액)은 6버킷 밖 → 제외(null).
+ *   - 진찰료     : category_label 기본/제증명/검사 (PMW 미분류 영역 → 로컬 판정)
+ *   - Reborn     : DB 실제값 '리본'(RB001~003) / '각질' 계열 (PMW 미분류 영역 → 로컬 판정)
  */
-function resolveBucket(svc: CheckInService['services']): BucketId | null {
-  const name = svc?.name ?? '';
-  const cat = svc?.category ?? '';
-  const lab = svc?.category_label ?? '';
+export function resolveBucket(svc: CheckInService['services']): BucketId | null {
+  if (!svc) return null;
+  const name = svc.name ?? '';
+  const cat = svc.category ?? '';
+  const lab = svc.category_label ?? '';
 
-  // 1) 풋화장품 (category/label 기준 — 각질 명칭이어도 화장품 우선)
-  if (cat === '풋화장품' || lab === '풋화장품') return 'cosmetic';
+  // 1) 풋화장품 — PaymentMiniWindow SSOT 재사용 (각질 명칭이어도 화장품 우선)
+  if (isCosmeticService(svc)) return 'cosmetic';
 
   // 2) 진찰료(기본/서류=제증명/검사비=검사)
   if (CONSULT_LABELS.includes(lab) || CONSULT_CATS.includes(cat) || name.includes('진찰료')) {
     return 'consult';
   }
 
-  // 3) 풋케어 시술 — 이름 키워드 (비가열 → 가열 → 포돌로게 순서 SSOT)
-  if (name.includes('비가열')) return 'unheated';
-  if (name.includes('가열')) return 'heated';
-  if (name.includes('포돌로게')) return 'podologue';
+  // 3) 레이저/포돌로게 — PaymentMiniWindow SSOT 재사용 (코드우선 + 비가열>가열 순서 내장)
+  switch (prepaidSessionType(svc)) {
+    case 'unheated_laser':
+      return 'unheated';
+    case 'heated_laser':
+      return 'heated';
+    case 'podologue':
+      return 'podologue';
+    default:
+      break; // 'iv'(수액) | null → 아래 Reborn 판정으로
+  }
+
+  // 4) Reborn(각질) — DB 실제값 '리본'(RB001~003) / '각질' 계열
   if (name.includes('리본') || name.includes('각질')) return 'reborn';
 
-  // 4) 그 외(수액·처방약·상병 등) → 화이트리스트 제외
+  // 5) 그 외(수액·처방약·상병 등) → 화이트리스트 제외
   return null;
 }
 
@@ -151,7 +175,7 @@ export function SalesTreatmentTab({ filter }: Props) {
           check_ins(
             check_in_services(
               price,
-              services(name, category, category_label)
+              services(name, category, category_label, service_code)
             )
           )
         `)
