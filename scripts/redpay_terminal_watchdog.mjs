@@ -108,7 +108,16 @@ const SERVICE_ROLE_KEY = cfg("SUPABASE_SERVICE_ROLE_KEY");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
-const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "511-60-00988"); // merchant-grain(①) fetch scope (env=457 현행)
+// ── ★ Path C(T-20260728-foot-REDPAY-SILENT-PATH-HARDEN AC-2): merchant-grain(①) fetch bizno DEFAULT 단일점 봉인 ──
+//   [RC] 구 DEFAULT=511-60-00988. env(REDPAY_BUSINESS_NO) 유실 시 ① fetch 가 죽은 511 band 로 폴백
+//     → 7/23 flip 후 511=0건(2026-07-25 READ-ONLY probe 실증) → ①이 "미분류 merchant 0건 = 이상없음"으로
+//     조용해지는 FALSE-CLEAN 단일 취약점. 457=189건(라이브)인데 감시가 침묵.
+//   [정본] DEFAULT 를 라이브 band 457-23-00938 로 교정 → env 유실 시에도 457 폴백(FALSE-CLEAN 제거).
+//     ④ TID-grain 은 이미 REDPAY_RECON_BUSINESS_NOS(511∪457 union)로 커버 → 무접촉(중복구현 금지).
+//     ★ENVSHADOW-REGUNION-FIX(poller admission env union)와 경계 상이 — 본건은 watchdog ① fetch DEFAULT 만 교정.
+const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "457-23-00938"); // merchant-grain(①) fetch scope (라이브 band DEFAULT; env=457 현행)
+// 7/23 flip 으로 죽은 band(0건) — env/DEFAULT 가 이 값이면 ① merchant-grain 이 FALSE-CLEAN 될 수 있어 기동 시 경고.
+const REDPAY_DEAD_BIZNO_BANDS = new Set(["511-60-00988"]);
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
 const REDPAY_DOMAIN = (cfg("REDPAY_DOMAIN", "foot") || "foot").toLowerCase();
 
@@ -322,9 +331,10 @@ async function fetchAllUnfilteredMultiBizno(baseUrl, from, to, biznos) {
 const FOOT_NAME_TOKEN = cfg("REDPAY_WATCHDOG_FOOT_NAME_TOKEN", "풋");
 function classifyUnclassified(items, registryMerchants) {
   const byMerchant = new Map();
+  const unscopable = []; // ★ Path A(T-20260728-...-SILENT-PATH-HARDEN AC-1): merchant 부재 이상행 — 침묵 continue-drop 봉인
   for (const it of items) {
     const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
-    if (mid == null) continue;             // merchant 없는 이상행은 판정 제외(폴러가 별도 처리)
+    if (mid == null) { unscopable.push(it); continue; } // 기존 'silent continue-drop' → 격리 버킷 수집(main 에서 알람 표면화)
     if (registryMerchants.has(mid)) continue; // 명단에 있음 = 분류됨(정상)
     const name = (it.merchant?.name ?? "").toString();
     let g = byMerchant.get(mid);
@@ -341,7 +351,64 @@ function classifyUnclassified(items, registryMerchants) {
   return {
     foot: groups.filter((g) => g.is_foot),   // 긴급 슬랙
     other: groups.filter((g) => !g.is_foot), // 정보성 로그
+    unscopable,                              // merchant 부재 판정불가 행(Path A 격리+알람 대상)
   };
+}
+// ★ Path A(SILENT-PATH-HARDEN AC-1) 격리 dedup 안정키(순수). merchant 부재라 TID→trxid→합성 순.
+function quarantineKey(it) {
+  const tid = extractTid(it);
+  if (tid) return `tid:${tid}`;
+  const trxid = it.trxid != null ? String(it.trxid).trim() : "";
+  if (trxid) return `trx:${trxid}`;
+  return `syn:${(it.approved_at ?? "").toString().trim()}|${(it.amount ?? "").toString().trim()}`;
+}
+// 순수 선택자(self-test 대상) — merchant 부재 unscopable 행 중 미알림분만 dedup 키로 그룹핑.
+function selectUnscopableAlarms(items, alertedKeys) {
+  const byKey = new Map();
+  for (const it of items) {
+    const key = quarantineKey(it);
+    if (alertedKeys && alertedKeys[key]) continue; // dedup: 이미 알림함
+    let g = byKey.get(key);
+    if (!g) { g = { key, tid: extractTid(it) || null, trxid: it.trxid ?? null, amount: it.amount ?? null, count: 0 }; byKey.set(key, g); }
+    g.count += 1;
+  }
+  return [...byKey.values()];
+}
+// 실행부 — merchant 부재 unscopable 행을 격리 로그 + 요약 슬랙 1건(폭격 방지)으로 표면화. dedup(state.alerted_unscopable).
+//   best-effort — 워치독 본업(①~⑤ 대사) 무영향. state 는 호출부가 saveState 로 영속.
+function surfaceUnscopable(unscopableItems, state, label = "②-0") {
+  if (!unscopableItems || unscopableItems.length === 0) { log(`${label} merchant 부재 이상행 없음(Path A clean).`); return { quarantined: 0, suppressed: 0 }; }
+  if (!state.alerted_unscopable) state.alerted_unscopable = {};
+  // ★AC-1 evidence: 격리 자체는 항상 로그(알람 dedup 여부 무관 — 침묵 봉인).
+  for (const it of unscopableItems) {
+    log(`[UNSCOPABLE-QUARANTINE][${label}] merchant 부재 이상행 격리(판정 제외) key=${quarantineKey(it)} amount=${it.amount ?? "?"} — 수동대사 필요`);
+  }
+  const candidates = selectUnscopableAlarms(unscopableItems, state.alerted_unscopable);
+  const distinctKeys = new Set(unscopableItems.map((it) => quarantineKey(it)));
+  const suppressed = [...distinctKeys].filter((k) => state.alerted_unscopable[k]).length;
+  if (candidates.length === 0) { log(`${label} unscopable ${unscopableItems.length}건 전부 기알림(dedup 억제=${suppressed}).`); return { quarantined: 0, suppressed }; }
+
+  const total = candidates.reduce((s, c) => s + c.count, 0);
+  const distinct = candidates.length;
+  const sample = candidates.slice(0, 5)
+    .map((c) => `원거래번호: ${c.trxid ?? "(없음)"} / 금액: ${c.amount ?? "?"}`)
+    .join("\n• ");
+  // 현장 친화 언어(field_lang_dict §1): 개발용어 0.
+  const text =
+    `🚨 [레드페이 격리] 가맹점 정보가 비어 있어 어느 센터 거래인지 판별할 수 없는 결제가 감지되었습니다\n` +
+    `• 판별 불가 거래: ${distinct}종 / 총 ${total}건\n` +
+    `• ${sample}${distinct > 5 ? `\n• …외 ${distinct - 5}종 더` : ""}\n` +
+    `이 거래들은 판별 불가로 자동 반영(수집)에서 제외·격리했습니다. 매출/정산에서 누락되지 않도록 담당자가 원거래를 확인해 수동으로 반영해 주세요.`;
+  const ok = sendSlack(SLACK_CHANNEL, text);
+  let quarantined = 0;
+  if (ok || DRY_RUN) {
+    for (const c of candidates) {
+      state.alerted_unscopable[c.key] = { tid: c.tid, trxid: c.trxid, amount: c.amount, count: c.count, first_alerted_at: ts() };
+      quarantined++;
+    }
+    log(`${label} unscopable 격리 알람 발송 distinct=${distinct} total=${total} suppressed=${suppressed}`);
+  }
+  return { quarantined, suppressed };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -449,13 +516,14 @@ function compareTidSubtotals(redpayMap, dbMap) {
 // 5. dedup 상태 (로컬 JSON — DB 무변경). auto-release = registry 편입 시 제거.
 // ════════════════════════════════════════════════════════════════════════════
 function loadState() {
-  const fresh = () => ({ version: 3, alerted_merchants: {}, alerted_tids: {}, alerted_subtotals: {}, last_run_at: null, last_dormant_report_at: null });
+  const fresh = () => ({ version: 4, alerted_merchants: {}, alerted_tids: {}, alerted_subtotals: {}, alerted_unscopable: {}, last_run_at: null, last_dormant_report_at: null });
   if (!existsSync(STATE_PATH)) return fresh();
   try {
     const s = JSON.parse(readFileSync(STATE_PATH, "utf8"));
     if (!s.alerted_merchants) s.alerted_merchants = {};
     if (!s.alerted_tids) s.alerted_tids = {}; // v1→v2 마이그(TID-grain dedup 신설)
     if (!s.alerted_subtotals) s.alerted_subtotals = {}; // v2→v3 마이그(⑤ 소계 대조 dedup 신설, AC-2)
+    if (!s.alerted_unscopable) s.alerted_unscopable = {}; // v3→v4 마이그(Path A merchant 부재 격리 dedup, SILENT-PATH-HARDEN AC-1)
     return s;
   } catch (e) {
     warn(`상태파일 파싱 실패 → 초기화: ${e instanceof Error ? e.message : String(e)}`);
@@ -536,6 +604,13 @@ async function main() {
   if (!REDPAY_API_KEY || !REDPAY_BUSINESS_NO) { errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)})/BUSINESS_NO(${REDPAY_BUSINESS_NO}) 미설정 — 종료.`); process.exit(1); }
 
   const baseUrl = resolveRedpayEndpoint();
+  // ★ Path C(SILENT-PATH-HARDEN AC-2): ① merchant-grain fetch bizno 가 죽은 band(511, 7/23 flip 후 0건)면
+  //   FALSE-CLEAN 위험 → 기동 시 loud 경고(env stale-511 도 표면화. DEFAULT 교정으로 env 유실은 이미 457 폴백).
+  if (REDPAY_DEAD_BIZNO_BANDS.has(REDPAY_BUSINESS_NO)) {
+    warn(`[FALSE-CLEAN-GUARD] ① merchant-grain fetch bizno=${REDPAY_BUSINESS_NO} = 7/23 flip 후 죽은 band(0건 예상). ` +
+         `①이 '미분류 merchant 0건=이상없음'으로 조용해질 위험(FALSE-CLEAN). 라이브 band(457-23-00938) 확인 필요. ` +
+         `(④ TID-grain 은 union[${REDPAY_RECON_BUSINESS_NOS.join("∪")}]으로 커버.)`);
+  }
   log(`가동${DRY_RUN ? " [DRY-RUN]" : ""}: business_no=${REDPAY_BUSINESS_NO} query_days=${QUERY_DAYS} dormant_days=${DORMANT_DAYS} ` +
       `tid_recon_bizno=[${REDPAY_RECON_BUSINESS_NOS.join("∪")}] tid_query_days=${TID_QUERY_DAYS} ` +
       `slack_ch=${SLACK_CHANNEL} state=${STATE_PATH} url=${baseUrl}`);
@@ -575,7 +650,10 @@ async function main() {
   autoReleaseClassifiedTids(state, registry.membershipTids); // ④ TID membership 편입 시 해제
 
   // ── ② 미분류 단말 감지 → 분기 알림 ────────────────────────────────────────
-  const { foot, other } = classifyUnclassified(items, registry.merchants);
+  const { foot, other, unscopable } = classifyUnclassified(items, registry.merchants);
+
+  // ②-0 ★ Path A(SILENT-PATH-HARDEN AC-1): merchant 부재 이상행 격리+알람 (기존 침묵 continue-drop 봉인)
+  const unscopableRes = surfaceUnscopable(unscopable, state);
 
   // ②-a 타센터명 → 정보성 로그(저소음, 슬랙 아님)
   if (other.length > 0) {
@@ -642,6 +720,7 @@ async function main() {
   saveState(state);
   const subMismatch = subtotalRecon.skipped ? "skip" : (subtotalRecon.mismatches?.length ?? 0);
   log(`완료 elapsed_ms=${Date.now() - startMs} new_foot_alerts=${newFootAlerts} suppressed=${suppressed} ` +
+      `unscopable_quarantined=${unscopableRes.quarantined} unscopable_suppressed=${unscopableRes.suppressed} ` +
       `other=${other.length} dormant=${dormant.length} tid_new=${tidRecon.newTidAlerts} tid_suppressed=${tidRecon.suppressed} ` +
       `subtotal_mismatch=${subMismatch} subtotal_new=${subtotalRecon.newAlerts ?? "-"} subtotal_suppressed=${subtotalRecon.suppressed ?? "-"} ` +
       `masked_by_netting=${subtotalRecon.maskedByNetting ?? false}`);
@@ -653,6 +732,10 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
   log(`④ TID-grain 대사 시작: bizno=[${REDPAY_RECON_BUSINESS_NOS.join("∪")}] window=${TID_QUERY_DAYS}일 ` +
       `membership(tid∪superseded)=${registry.membershipTids.size}건`);
   const items = await fetchAllUnfilteredMultiBizno(baseUrl, from, now, REDPAY_RECON_BUSINESS_NOS);
+  // ★ Path A(SILENT-PATH-HARDEN AC-1): ④ union(511∪457) fetch 의 merchant 부재 이상행도 침묵 continue-drop
+  //   봉인. ①(457 단일)이 못 본 511-scope null 행 커버. dedup 상태(alerted_unscopable) 공유 → ①과 이중알람 방지.
+  const unscopable4 = items.filter((it) => it.merchant?.id == null);
+  surfaceUnscopable(unscopable4, state, "④-0");
   const flagged = detectUnclassifiedFootTids(items, registry.merchants, registry.membershipTids);
   log(`④ 대사 조회 ${items.length}건 → 기분류 foot merchant 의 명단-밖 신 TID ${flagged.length}종 감지`);
 
@@ -801,12 +884,35 @@ function runSelfTest() {
     { merchant: { id: "1777274050", name: "종로 도수치료(신규)" }, tid: "T50" },  // 미분류 타센터 → 정보성
     { merchant: { id: null, name: "이상행" }, tid: "TX" },                        // merchant 없음 → 제외
   ];
-  const { foot, other } = classifyUnclassified(items, registryMerchants);
+  const { foot, other, unscopable } = classifyUnclassified(items, registryMerchants);
   assert(foot.length === 1, `미분류 풋 단말 1종 감지 (실제=${foot.length})`);
   assert(foot[0].merchant_id === "1777289099", `풋 단말 merchant_id 정확`);
   assert(foot[0].trx_count === 2, `동일 단말 건수 누적 2 (실제=${foot[0].trx_count})`);
   assert(foot[0].is_foot === true, `'풋' 토큰으로 foot 분기`);
   assert(other.length === 1 && other[0].merchant_id === "1777274050", `타센터 미분류 1종 정보성 분기`);
+
+  // ── ★ Path A: merchant 부재 unscopable 격리 (SILENT-PATH-HARDEN AC-1 — 기존 침묵 continue-drop 봉인) ──
+  assert(unscopable.length === 1, `Path A: merchant 부재 이상행 1건 격리 버킷 수집(침묵 continue-drop 봉인, 실제=${unscopable.length})`);
+  assert(quarantineKey(unscopable[0]) === "tid:TX", `Path A: 격리 dedup 키 = tid(TX)`);
+  // selectUnscopableAlarms dedup + 건수 누적
+  const uMixed = [
+    { merchant: { id: null }, tid: "TX", amount: 8700000 },
+    { merchant: { id: null }, tid: "TX", amount: 8700000 },        // 동일 tid → 1종 count=2
+    { merchant: {}, tid: null, trxid: "RX1", amount: 5000 },        // tid 없음 → trxid 키
+    { merchant: {}, tid: null, approved_at: "2026-07-23T10:00:00Z", amount: 100 }, // 식별자 전무 → 합성키
+  ];
+  const uSel = selectUnscopableAlarms(uMixed, {});
+  const uByKey = Object.fromEntries(uSel.map((g) => [g.key, g]));
+  assert(uSel.length === 3, `Path A selectUnscopableAlarms: distinct 3종(TX dedup) (실제=${uSel.length})`);
+  assert(uByKey["tid:TX"].count === 2, `Path A: 동일 tid 건수 누적 2`);
+  assert(uByKey["trx:RX1"], `Path A: tid 부재 → trxid 키`);
+  assert(uByKey["syn:2026-07-23T10:00:00Z|100"], `Path A: 식별자 전무 → 합성키`);
+  const uSel2 = selectUnscopableAlarms(uMixed, { "tid:TX": { first_alerted_at: "x" } });
+  assert(!uSel2.some((g) => g.key === "tid:TX") && uSel2.length === 2, `Path A dedup: 기알림 tid 억제 (실제=${uSel2.length})`);
+
+  // ── ★ Path C: ① merchant-grain fetch bizno DEFAULT = 라이브 band(457), 죽은 band(511) 는 dead 목록 ──
+  assert(REDPAY_DEAD_BIZNO_BANDS.has("511-60-00988"), `Path C: 511 은 dead band 목록에 존재(FALSE-CLEAN 경고 대상)`);
+  assert(!REDPAY_DEAD_BIZNO_BANDS.has("457-23-00938"), `Path C: 457(라이브)은 dead band 아님`);
 
   // dedup + auto-release
   const state = { version: 1, alerted_merchants: {} };

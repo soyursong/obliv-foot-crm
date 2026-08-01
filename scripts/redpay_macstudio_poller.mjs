@@ -197,6 +197,23 @@ const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_sen
 const AUTOSEED_ENABLED = cfg("REDPAY_POLLER_AUTOSEED_ENABLED", "true") === "true"; // 킬스위치
 const AUTOSEED_CHANNEL = cfg("REDPAY_POLLER_AUTOSEED_CHANNEL", TID_ALARM_CHANNEL);
 
+// ════════════════════════════════════════════════════════════════════════════
+// 0d. Unscopable 거래 격리+알람 (T-20260728-foot-REDPAY-SILENT-PATH-HARDEN AC-1 — 침묵경로 A 봉인)
+// ────────────────────────────────────────────────────────────────────────────
+//   왜: 부모 audit(REVERSEMISS-COVERAGE-AUDIT §b2) — merchant·tid 가 모두 부재한 실거래는
+//     filterToFootScope 에서 dropped 로 '조용히' 사라졌다(적재·알람·뷰 4층 전부 침묵. 7/23 8.7M
+//     포함 5건 NULL 이 총괄 수동대사로만 포착). foot-scope 판정 자체가 불가한 거래를 silent-drop
+//     하면 매출/정산에서 흔적 없이 누락된다.
+//   무엇: merchant·tid 모두 식별 불가 = unscopable 거래를 drop 대신 (a)적재 제외(격리) + (b)슬랙 알람
+//     으로 표면화 → 사람이 원거래를 확인·수동대사할 수 있게. 신규 테이블/스키마 無(로그+알람 표면화, db_change=false).
+//   ★RC-RECONCILE(총괄 최필경): 폴러(조회 API)는 tid 항상 존재(457 7/1~28 tid-빈거래 0건 실측)
+//     → 이 경로는 폴러에선 사실상 무발화 안전망(회귀 0). NULL 실 진입점(웹훅 EF payload)의 quarantine 은
+//     WEBHOOK-ALLOWLIST-RUNTIME-ALIGN 과 조율(중복 구현 금지) — 본 폴러 가드는 그 경계 밖 방어층.
+//   dedup: 워치독과 공유하는 동일 상태파일(alerted_unscopable 버킷) — 폭격/유실 방지.
+//   fail-safe: 슬랙/상태파일 오류는 모두 비치명(적재 본업 무영향, best-effort).
+const UNSCOPABLE_ALARM_ENABLED = cfg("REDPAY_POLLER_UNSCOPABLE_ALARM_ENABLED", "true") === "true"; // 킬스위치
+const UNSCOPABLE_ALARM_CHANNEL = cfg("REDPAY_POLLER_UNSCOPABLE_ALARM_CHANNEL", TID_ALARM_CHANNEL);
+
 const ARGS = new Set(process.argv.slice(2));
 const SELF_TEST = ARGS.has("--self-test"); // 네트워크 無 순수로직 검증(AC-4 재현 테스트 = E2E ef_only 대체)
 // T-20260728-...-ENVSHADOW-RUNTIME-VALUECHECK: 런타임에 실제 로드한 허용목록 지문(count+SHA256)만 stdout 출력 후 종료.
@@ -572,10 +589,19 @@ function toRawTrxRow(clinicId, t) {
 //   보조 = TID belt-and-suspenders. merchant 값 부재(레거시/이상행) 시에만 TID 로 폴백(행 유실 방지).
 //   drift = 자도메인 merchant 인정인데 미등록 TID → 신규 단말 후보. silent include 금지(registry §6) → 알람.
 //   ⚠ tidWhitelist 가 비면(domain=body 도수, TID 미상) drift 판정 무의미 → 억제(merchant-only 스코핑).
+// ★ Path A(T-20260728-...-SILENT-PATH-HARDEN AC-1) unscopable 술어(self-test 대상, 화이트리스트 무관 순수함수).
+//   merchant·tid 가 모두 식별 불가 = 어느 도메인 거래인지 판정 자체가 불가 → silent-drop 금지(격리+알람).
+//   (merchant 있음=스코프 판정 가능 → 정상 keep/drop. tid 있음(등록/미등록 불문)=식별자 존재 → dropped/drift 경로.)
+function isUnscopableItem(it) {
+  const mid = it.merchant?.id != null ? String(it.merchant.id).trim() : "";
+  if (mid) return false;              // merchant 존재 → 스코프 판정 가능(unscopable 아님)
+  return extractTid(it) === "";       // merchant·tid 모두 부재 = unscopable
+}
 function filterToFootScope(items) {
   const kept = [];
   const dropped = [];
   const drift = [];
+  const unscopable = []; // Path A: merchant·tid 모두 부재 → foot-scope 판정 불가. dropped 로 침묵시키지 않고 격리+알람.
   const tidScopeActive = tidWhitelist.size > 0; // TID 보조필터/drift 판정 활성 여부
   for (const it of items) {
     const mid = it.merchant?.id != null ? String(it.merchant.id) : null;
@@ -587,11 +613,14 @@ function filterToFootScope(items) {
       kept.push(it);
       // drift = merchant 인정 + 미등록 TID. tid 스코프 비활성(도수) 시엔 판정 억제(전건 오탐 방지).
       if (tidScopeActive && merchantOk && !tidOk) drift.push(it);
+    } else if (isUnscopableItem(it)) {
+      // ★ Path A: merchant·tid 모두 부재 = 판정 불가 → dropped 로 조용히 버리지 않고 격리(비적재)+알람.
+      unscopable.push(it);
     } else {
-      dropped.push(it);
+      dropped.push(it); // merchant 존재(타도메인 정상 차단) 또는 tid 존재(식별자 있음) — 기존 침묵 drop 유지(회귀 0).
     }
   }
-  return { kept, dropped, drift };
+  return { kept, dropped, drift, unscopable };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -707,6 +736,83 @@ async function fireRealtimeTidAlarms(driftItems) {
     catch (e) { warn(`[TID-ALARM] dedup 상태 저장 실패(비치명 — 다음 사이클 재알람 가능): ${e instanceof Error ? e.message : String(e)}`); }
   }
   return { alerted, suppressed, skipped: 0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3b-2. Unscopable 거래 격리+알람 (T-20260728-...-SILENT-PATH-HARDEN AC-1 — 침묵경로 A 봉인)
+//    merchant·tid 모두 부재로 foot-scope 판정 불가한 거래를 적재에서 제외(격리)한 뒤 슬랙 1건으로 표면화.
+//    dedup 은 워치독과 공유하는 상태파일(alerted_unscopable 버킷). best-effort — 적재 본업 무영향.
+// ════════════════════════════════════════════════════════════════════════════
+// 격리 dedup 안정키(순수 — self-test 대상). 식별자 전무 거래라 trxid 우선, 없으면 승인시각+금액 합성.
+function quarantineKey(it) {
+  const trxid = it.trxid != null ? String(it.trxid).trim() : "";
+  if (trxid) return `trx:${trxid}`;
+  const at = (it.approved_at ?? it.data?.approved_at ?? "").toString().trim();
+  const amt = (it.amount ?? "").toString().trim();
+  return `syn:${at}|${amt}`;
+}
+// 순수 선택자(self-test 대상) — unscopable 거래 중 미알림분만 dedup 키로 그룹핑.
+function selectUnscopableAlarms(items, alertedKeys) {
+  const byKey = new Map();
+  for (const it of items) {
+    const key = quarantineKey(it);
+    if (alertedKeys && alertedKeys[key]) continue; // dedup: 이미 알림한 거래
+    let g = byKey.get(key);
+    if (!g) {
+      g = { key, trxid: it.trxid ?? null, amount: it.amount ?? null,
+            approved_at: it.approved_at ?? it.data?.approved_at ?? null, count: 0 };
+      byKey.set(key, g);
+    }
+    g.count += 1;
+  }
+  return [...byKey.values()];
+}
+// 격리 알람 실행부 — unscopable 누적본을 받아 요약 슬랙 1건(폭격 방지) + 격리 로그, dedup 반영.
+async function fireUnscopableQuarantineAlarm(unscopableItems) {
+  if (!UNSCOPABLE_ALARM_ENABLED) { log("[UNSCOPABLE] 킬스위치 OFF(REDPAY_POLLER_UNSCOPABLE_ALARM_ENABLED=false) — 스킵"); return { quarantined: 0, suppressed: 0, skipped: 0 }; }
+  if (!unscopableItems || unscopableItems.length === 0) return { quarantined: 0, suppressed: 0, skipped: 0 };
+
+  const state = loadAlarmStateSafe();
+  if (state == null) return { quarantined: 0, suppressed: 0, skipped: unscopableItems.length };
+  if (!state.alerted_unscopable) state.alerted_unscopable = {};
+
+  const candidates = selectUnscopableAlarms(unscopableItems, state.alerted_unscopable);
+  // 억제 카운트(로그용) = 이미 알림한 distinct 키 수
+  const distinctKeys = new Set(unscopableItems.map((it) => quarantineKey(it)));
+  const suppressed = [...distinctKeys].filter((k) => state.alerted_unscopable[k]).length;
+
+  // ★AC-1 evidence: 격리 자체는 항상 로그로 남긴다(알람 dedup 여부와 무관 — 침묵 봉인).
+  for (const it of unscopableItems) {
+    log(`[UNSCOPABLE-QUARANTINE] merchant·tid 부재 거래 격리(적재 제외) key=${quarantineKey(it)} amount=${it.amount ?? "?"} — 수동대사 필요`);
+  }
+  if (candidates.length === 0) return { quarantined: 0, suppressed, skipped: 0 };
+
+  const total = candidates.reduce((s, c) => s + c.count, 0);
+  const distinct = candidates.length;
+  const sample = candidates.slice(0, 5)
+    .map((c) => `원거래번호: ${c.trxid ?? "(없음)"} / 금액: ${c.amount ?? "?"}`)
+    .join("\n• ");
+  // 현장 친화 언어(field_lang_dict §1): 개발용어 0. TID/merchant → '가맹점·결제회선 정보'.
+  const text =
+    `🚨 [레드페이 격리] 가맹점·결제회선 정보가 모두 비어 있어 어느 센터 거래인지 판별할 수 없는 결제가 감지되었습니다\n` +
+    `• 판별 불가 거래: ${distinct}종 / 총 ${total}건\n` +
+    `• ${sample}${distinct > 5 ? `\n• …외 ${distinct - 5}종 더` : ""}\n` +
+    `이 거래들은 판별 불가로 자동 반영(수집)에서 제외·격리했습니다. 매출/정산에서 누락되지 않도록 담당자가 원거래를 확인해 수동으로 반영해 주세요.`;
+  const ok = sendSlack(UNSCOPABLE_ALARM_CHANNEL, text);
+  let quarantined = 0;
+  if (ok) {
+    for (const c of candidates) {
+      state.alerted_unscopable[c.key] = {
+        trxid: c.trxid, amount: c.amount, approved_at: c.approved_at, count: c.count,
+        first_alerted_at: ts(), source: "poller-unscopable",
+      };
+      quarantined++;
+    }
+    try { saveAlarmStateAtomic(state); }
+    catch (e) { warn(`[UNSCOPABLE] dedup 상태 저장 실패(비치명 — 다음 사이클 재알람 가능): ${e instanceof Error ? e.message : String(e)}`); }
+    log(`[UNSCOPABLE] 격리 거래 즉시 알람 발송 distinct=${distinct} total=${total} ch=${UNSCOPABLE_ALARM_CHANNEL}`);
+  }
+  return { quarantined, suppressed, skipped: 0 };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1093,7 +1199,9 @@ async function main() {
   let totalUpserted = 0;
   let totalErrors = 0;
   let totalDrift = 0;
+  let totalUnscopable = 0;
   const allDriftItems = []; // T-20260727-...-WATCHDOG-LATENCY-CLOSE: 즉시 알람 훅용 drift 누적(페이지 교차 dedup)
+  const allUnscopableItems = []; // T-20260728-...-SILENT-PATH-HARDEN AC-1: 격리+알람 표면화용 unscopable 누적
   let page = 1;
   while (true) {
     const { items, totalPage } = await fetchRedpayPage(fromDt, toDt, page, PAGE_SIZE);
@@ -1101,7 +1209,12 @@ async function main() {
     totalFetched += items.length;
 
     // 스크립트-레벨 타도메인 혼입 방지 필터 (merchant_id 1차 권위, EF guard.ts G4 미경유 대체 — AC-3).
-    const { kept, dropped, drift } = filterToFootScope(items);
+    const { kept, dropped, drift, unscopable } = filterToFootScope(items);
+    if (unscopable.length > 0) {
+      // ★ Path A(SILENT-PATH-HARDEN AC-1): merchant·tid 부재 = 판정 불가 → 적재 제외(격리) + 아래 알람 표면화.
+      totalUnscopable += unscopable.length;
+      allUnscopableItems.push(...unscopable);
+    }
     if (dropped.length > 0) {
       totalScopedOut += dropped.length;
       const sampleMerchants = [...new Set(dropped.map((d) => d.merchant?.id ?? "null"))].slice(0, 10);
@@ -1150,11 +1263,16 @@ async function main() {
   //   drift(=merchant 인정 + 미등록 TID) 누적본을 즉시 알람 → 인지창 ≤폴러주기(300s). dedup 은 워치독과 공유.
   const alarmRes = await fireRealtimeTidAlarms(allDriftItems);
 
+  // ── Unscopable 거래 격리+알람 (T-20260728-...-SILENT-PATH-HARDEN AC-1 — 침묵경로 A 봉인, best-effort) ──
+  //   merchant·tid 모두 부재로 판정 불가한 거래를 적재 제외(격리)한 뒤 슬랙으로 표면화(수동대사 유도).
+  const quarantineRes = await fireUnscopableQuarantineAlarm(allUnscopableItems);
+
   const elapsedMs = Date.now() - startMs;
   log(`완료 elapsed_ms=${elapsedMs} fetched=${totalFetched} scoped_out=${totalScopedOut} ` +
-      `drift=${totalDrift} upserted=${totalUpserted} errors=${totalErrors} ` +
+      `drift=${totalDrift} unscopable=${totalUnscopable} upserted=${totalUpserted} errors=${totalErrors} ` +
       `autoseed_seeded=${seedRes.seeded} autoseed_noop=${seedRes.noop} autoseed_failed=${seedRes.failed} ` +
-      `tid_alarm_new=${alarmRes.alerted} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped}`);
+      `tid_alarm_new=${alarmRes.alerted} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped} ` +
+      `unscopable_quarantined=${quarantineRes.quarantined} unscopable_suppressed=${quarantineRes.suppressed} unscopable_skipped=${quarantineRes.skipped}`);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1305,6 +1423,36 @@ function runSelfTest() {
     const g = selectAutoSeedCandidates(
       [{ merchant: { id: "1777289001" }, data: { tid: "1047999123" } }], rowByMerchant, wl);
     assert(g.length === 1 && g[0].tid === "1047999123", `autoseed: data.tid-only shape 포착(COALESCE)`);
+  }
+
+  // ── Path A: unscopable 격리+알람 self-test (T-20260728-...-SILENT-PATH-HARDEN AC-1) ──────────
+  {
+    // (a) isUnscopableItem — merchant·tid 모두 부재만 unscopable(격리 대상). 나머지는 정상 경로.
+    assert(isUnscopableItem({ merchant: {}, tid: null }) === true, `unscopable: merchant·tid 부재 → true(격리)`);
+    assert(isUnscopableItem({ merchant: { id: null }, tid: null, data: {} }) === true, `unscopable: merchant.id=null·tid부재 → true`);
+    assert(isUnscopableItem({ merchant: { id: "1777289001" }, tid: null }) === false, `unscopable: merchant 존재 → false(스코프 판정 가능)`);
+    assert(isUnscopableItem({ merchant: {}, tid: "1047999001" }) === false, `unscopable: tid 존재 → false(식별자 있음)`);
+    assert(isUnscopableItem({ merchant: {}, tid: null, data: { tid: "1047999002" } }) === false, `unscopable: data.tid 존재(COALESCE) → false`);
+
+    // (b) selectUnscopableAlarms — dedup 키 그룹핑 + 이미알림 억제
+    const uItems = [
+      { trxid: "TX1", amount: 8700000, merchant: {}, tid: null },
+      { trxid: "TX1", amount: 8700000, merchant: {}, tid: null }, // 동일 trxid → 건수 누적, 1종
+      { trxid: "TX2", amount: 10000, merchant: {}, tid: null },
+      { amount: 5000, approved_at: "2026-07-23T10:00:00Z", merchant: {}, tid: null }, // trxid 없음 → 합성키
+    ];
+    const selU = selectUnscopableAlarms(uItems, {});
+    const byKey = Object.fromEntries(selU.map((g) => [g.key, g]));
+    assert(selU.length === 3, `unscopable: distinct 키 3종(TX1 dedup) (실제=${selU.length})`);
+    assert(byKey["trx:TX1"] && byKey["trx:TX1"].count === 2, `unscopable: 동일 trxid 건수 누적 2`);
+    assert(byKey["syn:2026-07-23T10:00:00Z|5000"], `unscopable: trxid 부재 → 승인시각+금액 합성키`);
+
+    // (c) dedup: 이미 알림한 trxid 억제
+    const selU2 = selectUnscopableAlarms(uItems, { "trx:TX1": { first_alerted_at: "x" } });
+    assert(!selU2.some((g) => g.key === "trx:TX1") && selU2.length === 2, `unscopable dedup: 이미 알림한 trxid 억제 (실제=${selU2.length})`);
+
+    // (d) 빈 입력 안전
+    assert(selectUnscopableAlarms([], {}).length === 0, `unscopable: 빈 입력 → 0건`);
   }
 
   // ── 크로스도메인 적재 봉인 self-test (T-20260724-...-DOSU-CONTAM-FIX 파트A 실효화 §가드) ──────
