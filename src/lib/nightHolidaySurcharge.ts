@@ -142,14 +142,23 @@ export function surchargeMark(kind: SurchargeKind | null, target: SurchargeKind)
  * @param base  진찰료 급여 총액(= 본인부담금 + 공단부담금).
  * @param copayment 진찰료 급여 본인부담금(비례 분할 기준).
  * @param kind  detectSurchargeKind 결과. null 이면 전부 0(가산 없음, 회귀 방지).
- * @returns amount=가산 총액(10원 미만 절사·FLOOR), copay=가산 본인부담분, covered=가산 공단부담분(amount-copay).
+ * @returns amount=가산 총액, copay=가산 본인부담분, covered=가산 공단부담분. **셋 다 10원 배수**(단일 절사 지점).
  *
- * ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, diagnose-first (a)) ──
+ * ── T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix, v2 — 절사 지점 단일화) ──
  *   가산 산출값은 **10원 미만 절사(FLOOR)** — 국민건강보험법 시행령 별표2 제1항(요양급여비용총액 10원 미만 절사) 정합.
  *   종전 Math.round(반올림)은 5원 이상에서 절상(초과징수)되어 요양급여비용총액이 10원 배수를 벗어났다:
  *     18,840 × 0.3 = 5,652 → (round) 5,652 → 총액 24,492 [X] / (floor10) 5,650 → 총액 24,490 [O]
  *   CEIL·ROUND 복귀 금지(footBilling.ts CIT-2026-001/002 FLOOR canon 동일 계열). 절사는 항상 하향(초과징수 방지).
- *   copay/covered 분할은 절사된 amount 를 기준으로 비례 분할해 합(copay+covered)이 정확히 amount 와 일치한다.
+ *
+ *   ★ v2 정정(FIX-REQUEST, 이은상 팀장 RC 확정): 1차(13ff260b)는 amount 만 floor10 하고 copay=round(amount×ratio),
+ *     covered=amount−copay 로 산출해 **copay·covered 가 비-10원배수로 잔존**했다. 그 값이 세부내역서 가산 행에
+ *     그대로 표시(공단 988 등)되고 계 행에 fold 되어 (2차 결함) 행별 합 ≠ 계 행 3원 불일치가 났다.
+ *     → 절사 적용 "지점"을 하나로 통일: amount·copay 를 각각 **절사 前 base×RATE 기준** floor10 하고
+ *       covered = amount − copay 로 확정(항상 10원 배수). copay 는 절사된 amount 가 아니라 진찰료 본인부담
+ *       base(copayment)×RATE 를 floor10 하므로 본인부담분이 반올림 오차 없이 보존된다(예: 420 불변).
+ *       copay+covered == amount 불변식 유지(covered = amount − copay 라 구조적 보장).
+ *   이 함수가 4종 서류(세부산정내역/영수증 신·구/보험청구서) 공유 SSOT(applyNightHolidaySurcharge)의 유일 산출점 →
+ *     여기서 전부 10원 배수로 확정하면 가산 행 표시값·계 행 fold 값이 동일 절사면에 정렬되어 계 행 == 행별 합.
  */
 export function computeSurcharge(
   base: number,
@@ -158,10 +167,12 @@ export function computeSurcharge(
 ): { amount: number; copay: number; covered: number } {
   if (!kind || base <= 0) return { amount: 0, copay: 0, covered: 0 };
   // 10원 미만 절사(FLOOR) — 별표2 제1항. round(초과징수)→floor 정정. CEIL/ROUND 복귀 금지.
+  // 단일 절사 지점: amount·copay 를 각각 절사 前 base×RATE 기준으로 floor10 → covered=amount−copay 도 10원 배수.
   const amount = Math.floor((base * SURCHARGE_RATE) / 10) * 10;
-  const ratio = copayment > 0 ? Math.min(1, copayment / base) : 0;
-  const copay = Math.round(amount * ratio);
-  const covered = Math.max(0, amount - copay);
+  // copay 는 진찰료 본인부담 base(copayment)×RATE 를 floor10 — 절사된 amount×ratio 재계산(반올림 오차) 금지.
+  const rawCopay = copayment > 0 ? Math.min(copayment, base) * SURCHARGE_RATE : 0;
+  const copay = Math.min(amount, Math.floor(rawCopay / 10) * 10);
+  const covered = Math.max(0, amount - copay); // amount·copay 모두 10원 배수 → covered 도 10원 배수
   return { amount, copay, covered };
 }
 

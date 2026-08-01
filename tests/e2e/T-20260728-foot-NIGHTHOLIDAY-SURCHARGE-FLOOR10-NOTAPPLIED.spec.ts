@@ -10,11 +10,12 @@ import {
  * E2E — T-20260728-foot-NIGHTHOLIDAY-SURCHARGE-FLOOR10-NOTAPPLIED (P0 hotfix)
  * 야간·공휴일 30% 가산금 및 서류 총액의 10원 단위 절사(FLOOR) 미적용 → 절사 적용.
  *
- * RC(diagnose-first):
- *   (a) computeSurcharge 가 Math.round(base×0.3) 로 산출 → 가산 산출값에 10원 절사 부재.
- *       18,840 × 0.3 = 5,652 → (구) 5,652 → 총액 24,492 [X] / (수정) 5,650 → 총액 24,490 [O]
- *   (b) applyNightHolidaySurcharge 가 computeBillDetailRounding(floor10, 가산 前 base 만 절사) **이후**
- *       가산 본인분(sc.copay, 비-10원배수)을 detail_total(세부내역서 합계)에 fold → 합계 10원 절사 붕괴.
+ * RC(diagnose-first, v2 확정 — 이은상 팀장 MSG-20260801-104838-19iu):
+ *   범위 = (a) 가산 라인 절사-지점 결함. (b) 서류총액 computeBillDetailRounding 회귀 아님(추적 불필요).
+ *   1차(13ff260b)는 amount 만 floor10 하고 copay=round(amount×ratio)/covered=amount−copay 로 산출해
+ *   copay·covered 가 **비-10원배수로 잔존** → 가산 행 표시(공단 988 등)·계 행 fold 가 어긋나 3원 불일치.
+ *   v2: computeSurcharge 에서 amount·copay 를 각각 절사 前 base×RATE 기준 floor10, covered=amount−copay
+ *       → 총액·공단·본인 전부 10원 배수(단일 절사 지점). 본인부담 base(copayment)×RATE floor10 라 본인분 보존.
  *
  * 순수 함수 직접 import 로 결정론적 금액 검증(가산율 30% canon 불변).
  */
@@ -52,6 +53,29 @@ test.describe('AC-1/AC-2 — 가산 산출값 10원 단위 절사(FLOOR)', () =>
     expect(sc.copay + sc.covered).toBe(sc.amount);
     expect(sc.amount).toBe(5650);
   });
+
+  // ── v2 검증 #1: 가산 행 총액·공단·본인 끝자리 0 (단일 절사 지점) ──
+  test('검증#1: amount·copay·covered 전부 10원 배수(끝자리 0)', () => {
+    const cases: Array<[number, number]> = [
+      [18840, 5652], [18840, 9420], [4680, 1400], [12345, 4321], [33333, 10000],
+    ];
+    for (const [base, copay] of cases) {
+      const sc = computeSurcharge(base, copay, detectSurchargeKind(HOLIDAY, false));
+      expect(sc.amount % 10).toBe(0);
+      expect(sc.copay % 10).toBe(0); // ★ 공단 끝자리 0 의 전제(본인·공단 모두 10원 배수)
+      expect(sc.covered % 10).toBe(0); // ★ 가산 행 공단 끝자리 0
+      expect(sc.copay + sc.covered).toBe(sc.amount);
+    }
+  });
+
+  // ── v2 실사례 회귀(이은상 팀장 신고 수치): 1,408→1,400 / 988→980, 본인부담 420 불변 ──
+  test('검증#1 실사례: 총액 1,400 / 본인 420(불변) / 공단 980', () => {
+    // base×0.3≈1,404→floor 1,400. copayment×0.3=420→floor 420. covered=1,400−420=980.
+    const sc = computeSurcharge(4680, 1400, detectSurchargeKind(HOLIDAY, false));
+    expect(sc.amount).toBe(1400); // 1,408(구 round) → 1,400(floor10)
+    expect(sc.copay).toBe(420); // 본인부담 420 불변(별표2 정합)
+    expect(sc.covered).toBe(980); // 988(비-10원) → 980(끝자리 0)
+  });
 });
 
 test.describe('AC-3 — 가산 스코프 격리 (진찰료 base 限, KOH 등 0원)', () => {
@@ -67,10 +91,10 @@ test.describe('AC-3 — 가산 스코프 격리 (진찰료 base 限, KOH 등 0�
   });
 });
 
-test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR) 회복', () => {
+test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR) 정합', () => {
   const noop = () => ''; // buildDetailRow stub
 
-  test('bill_detail: 가산 본인분 fold 후 detail_total 이 10원 배수 + 계+조정=합계 불변식', () => {
+  test('bill_detail: 가산 본인분(10원 배수) fold 후 detail_total 10원 배수 + 계+조정=합계 불변식', () => {
     // pre-surcharge: 본인부담 합계 10,000 (10원 배수). detail_subtotal/total=10,000, 조정 0.
     const base: Record<string, string> = {
       subtotal_copayment: '10,000',
@@ -84,21 +108,50 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
       detail_rounding: '0',
       visit_date: '2026-01-01',
     };
-    // 진찰료-only 가산 base 주입: covered=18,840, copay=9,420(ratio 0.5) → sc.amount=5,650, sc.copay=2,825(비-10원).
+    // 진찰료-only 가산 base 주입: covered=18,840, copay=9,420(ratio 0.5).
+    // v2: sc.amount=5,650, sc.copay=floor10(9,420×0.3)=floor10(2,826)=2,820(★10원 배수), sc.covered=2,830.
     applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, {
       covered: 18840,
       copay: 9420,
     });
 
-    const detSub = num(base.detail_subtotal); // 10,000 + 2,825 = 12,825
+    const detSub = num(base.detail_subtotal); // 10,000 + 2,820 = 12,820
     const detTotal = num(base.detail_total);
     const detRound = num(base.detail_rounding);
 
-    expect(detSub).toBe(12825); // 계(절사 전) = 가산 본인분 포함
-    expect(detTotal % 10).toBe(0); // ★ 합계 10원 절사 회복 (구: 12,825 → 절사 붕괴)
-    expect(detTotal).toBe(12820); // FLOOR10(12,825)
+    expect(detSub).toBe(12820); // 계(절사 전) = 가산 본인분(10원 배수) 포함 → 이미 10원 배수
+    expect(detTotal % 10).toBe(0); // ★ 합계 10원 배수
+    expect(detTotal).toBe(12820); // FLOOR10(12,820) = 12,820 (가산 copay 가 10원 배수라 재절사 no-op)
     expect(detSub + detRound).toBe(detTotal); // 계 + 끝처리조정 = 합계 불변식
-    expect(detRound).toBe(-5);
+    expect(detRound).toBe(0); // 가산 copay 가 이미 10원 배수 → 끝처리조정 0
+  });
+
+  // ── v2 검증 #2: 계 행 == 행별 합 (가산 fold 값 == 가산 행 표시값, 절사면 정렬) ──
+  test('검증#2: 가산 fold(subtotal_fund/copayment) == computeSurcharge covered/copay (동일 10원 배수)', () => {
+    const base: Record<string, string> = {
+      subtotal_copayment: '3,000',
+      total_copayment: '3,000',
+      subtotal_fund: '7,000',
+      total_fund: '7,000',
+      subtotal_amount: '10,000',
+      total_amount: '10,000',
+      detail_subtotal: '3,000',
+      detail_total: '3,000',
+      detail_rounding: '0',
+      visit_date: '2026-01-01',
+    };
+    const consult = { covered: 18840, copay: 5652 }; // ratio 0.3
+    const sc = computeSurcharge(consult.covered, consult.copay, detectSurchargeKind(HOLIDAY, false));
+    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, consult);
+
+    // 계 행(subtotal_fund) 증가분 == 가산 행에 표시될 covered (동일 값 fold → 계 행 == 행별 합)
+    expect(num(base.subtotal_fund)).toBe(7000 + sc.covered);
+    expect(num(base.total_fund)).toBe(7000 + sc.covered);
+    expect(num(base.subtotal_copayment)).toBe(3000 + sc.copay);
+    // 가산 행 표시값(covered/copay) 이 전부 10원 배수 → 행별 합·계 행 동일 절사면
+    expect(sc.covered % 10).toBe(0);
+    expect(sc.copay % 10).toBe(0);
+    expect(sc.copay + sc.covered).toBe(sc.amount);
   });
 
   test('AC-5 무회귀: 평일 주간(kind=null) → detail_total 불변(가산·재절사 없음)', () => {
@@ -132,6 +185,7 @@ test.describe('(b) 세부내역서 합계 — 가산 fold 후 10원 절사(FLOOR
       copay: 9420,
     });
     // overridden → 재절사 스킵, 종전 bump 경로(수동값 우선). detail_total 은 재계산되지 않음.
-    expect(num(base.detail_subtotal)).toBe(12825); // 계는 fold 반영
+    // v2: sc.copay=floor10(9,420×0.3)=2,820 → 10,000 + 2,820 = 12,820.
+    expect(num(base.detail_subtotal)).toBe(12820); // 계는 fold 반영
   });
 });
