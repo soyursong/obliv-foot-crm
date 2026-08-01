@@ -10,6 +10,10 @@
 //   진단서=diagnosis(treatment_opinion 의견란). 본문은 발행 body 스냅샷 그대로(데스크 작성 불가).
 
 import { getHtmlTemplate, bindHtmlTemplate } from '@/lib/htmlFormTemplates';
+import { loadAutoBindContext, applyDiagCodesFromVisit } from '@/lib/autoBindContext';
+import { seoulISODate } from '@/lib/format';
+import type { CheckIn } from '@/lib/types';
+import type { AdminFieldOverrides } from '@/lib/opinionRequest';
 
 /** 발행본 출력 대상 양식 — 소견서 / 진단서 */
 export type OpinionPrintFormKey = 'diag_opinion' | 'diagnosis';
@@ -161,4 +165,84 @@ export function printOpinionDoc(data: OpinionPrintData): boolean {
   );
   win.document.close();
   return true;
+}
+
+// ─── T-20260729-foot-DOCPRINT-BTN-ADMININFO-REPRINT-LINK (AC-1/AC-4) ───
+//   발행완료 소견서·진단서를 '발행 고정본 그대로' 출력하는 공용 헬퍼. OpinionDocTab.handlePrint 의
+//   출력 배선(loadAutoBindContext 공용 바인더 + applyDiagCodesFromVisit 상병 재현 + printOpinionDoc)을
+//   그대로 재현한 단일 소스 — 치료테이블(DiagDocSection)·2번차트(OpinionDocHistorySection)의 [출력]
+//   버튼이 신규 출력 스택 중복 없이 이 함수 하나만 호출한다.
+//
+//   ★의료법§22 append-only: 발행본(medical narrative) 불변 — body 스냅샷 그대로 출력.
+//   ★행정정보 수정(admin_overrides) 반영: 담당의명·도장(doctor_id 앵커)·발급일은 정정값 우선 적용(null-safe).
+//     열람뷰(IssuedOpinionDocFormView)/데스크 출력(OpinionDocTab.handlePrint)과 동형 —
+//     이름만 정정하고 도장을 안 따라가면 '새 이름 ↔ 구 도장' 불일치(SEAL-DOCTOR-MATCH)라 doctorId 함께 앵커.
+//   ★상병(3칸)은 발행본 원 방문(checkInId)의 check_in_services 에서 재현(applyDiagCodesFromVisit) — 발행본 스냅샷 참조.
+export interface IssuedOpinionPrintInput {
+  clinicId: string | null;
+  /** 발행본 원 방문(check_ins.id) — 상병 재현·도장 결선 소스. 레거시 결측=null(자동바인딩 스킵). */
+  checkInId: string | null;
+  customerId: string | null;
+  patientName: string | null;
+  /** 발행본 스냅샷 전화(있으면 자동바인딩 폴백). */
+  patientPhone?: string | null;
+  chartNo: string | null;
+  /** 발행본 body(final_text) — 스냅샷 그대로 출력. */
+  body: string;
+  docType: 'opinion' | 'diagnosis';
+  /** 발행자명 스냅샷(불변). admin_overrides.doctorName 이 있으면 그 값이 우선. */
+  issuedByName: string;
+  issuedByLicenseNo: string | null;
+  /** 발행자 clinic_doctors.id 스냅샷 — 도장 결선 앵커. admin_overrides.doctorId 우선. */
+  issuedByDoctorId: string | null;
+  /** 발행 시각(ISO) — 발급일 표시 소스. admin_overrides.issueDate 가 있으면 그 값이 우선. */
+  issuedAt: string | null;
+  clinicHeader: { name: string | null; address: string | null; phone: string | null } | null;
+  /** 발행 후 원내 직원이 정정한 행정필드 오버레이(발급일·담당의). 없으면 발행본 스냅샷 그대로. */
+  adminOverrides?: AdminFieldOverrides | null;
+}
+
+export async function printIssuedOpinionDoc(input: IssuedOpinionPrintInput): Promise<boolean> {
+  // 행정정보 수정(오버레이) 우선 적용 — 담당의명·도장(doctor_id 앵커). null-safe(미정정 시 발행본 스냅샷 유지).
+  const effectiveDoctorName = input.adminOverrides?.doctorName || input.issuedByName;
+  const effectiveDoctorId = input.adminOverrides?.doctorId ?? input.issuedByDoctorId;
+
+  let autoValues: Record<string, string> | undefined;
+  if (input.clinicId && input.customerId && input.checkInId) {
+    try {
+      const checkIn = {
+        id: input.checkInId,
+        clinic_id: input.clinicId,
+        customer_id: input.customerId,
+        customer_name: input.patientName ?? '',
+        customer_phone: input.patientPhone ?? null,
+        checked_in_at: input.issuedAt ?? '',
+      } as CheckIn;
+      autoValues = await loadAutoBindContext(
+        checkIn,
+        effectiveDoctorName || undefined,
+        effectiveDoctorId ?? undefined,
+      );
+      // 상병(3칸) 재현 — 발행본 원 방문(checkInId)의 check_in_services 상병항목.
+      await applyDiagCodesFromVisit(autoValues, { id: input.checkInId, clinic_id: input.clinicId } as CheckIn);
+    } catch (e) {
+      // 폴백: autoValues 미주입(종전 기본 바인딩). 인쇄 자체는 계속.
+      console.warn('[DOCPRINT-BTN-ADMININFO-REPRINT-LINK] autoBind 로드 실패 — 기본 바인딩으로 폴백', e);
+    }
+  }
+
+  return printOpinionDoc({
+    body: input.body,
+    chartNo: input.chartNo,
+    patientName: input.patientName,
+    issuedByName: effectiveDoctorName,
+    issuedByLicenseNo: input.issuedByLicenseNo,
+    // 발급일 = 오버레이 정정값 우선, 없으면 발행 시각(KST date).
+    issueDate: input.adminOverrides?.issueDate || (input.issuedAt ? seoulISODate(input.issuedAt) : null),
+    clinicName: input.clinicHeader?.name ?? null,
+    clinicAddress: input.clinicHeader?.address ?? null,
+    clinicPhone: input.clinicHeader?.phone ?? null,
+    formKey: input.docType === 'diagnosis' ? 'diagnosis' : 'diag_opinion',
+    autoValues,
+  });
 }

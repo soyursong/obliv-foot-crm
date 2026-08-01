@@ -24,6 +24,7 @@
 //   ★교차노출 금지(회귀임계 b): 훅 2종 모두 customer_id 서버필터 → 타 환자 유입 구조적 배제.
 
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useCustomerDocRequestHistory,
   computeDocRequestSummary,
@@ -38,8 +39,13 @@ import {
 } from '@/lib/opinionRequest';
 // 발행본 미발견(레거시) 시 요청 저장본(selected_keys)으로 본문 재구성 폴백 — 작성창 합성기 재사용(기존 렌더러).
 import { composeOpinionDoc } from '@/lib/opinionDocCompose';
-import { OPINION_SECTIONS } from '@/components/doctor/OpinionDocTab';
+import { OPINION_SECTIONS, useClinicHeader } from '@/components/doctor/OpinionDocTab';
+// T-20260729-foot-DOCPRINT-BTN-ADMININFO-REPRINT-LINK (AC-3): 2번차트 재출력 동선에 [출력] + [행정정보 수정] 연동.
+//   발행 고정본 출력 공용 헬퍼 + 공용 편집기 재사용(치료테이블과 단일 소스, 중복 구현 금지).
+import { printIssuedOpinionDoc } from '@/lib/printOpinionDoc';
+import DocAdminEditDialog from '@/components/doctor/DocAdminEditDialog';
 import { seoulHHMM, formatDateTimeDots, chartNoDisplay } from '@/lib/format';
+import { toast } from '@/lib/toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,7 +56,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, FileText, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { Loader2, FileText, CheckCircle2, Clock, XCircle, Pencil, Printer } from 'lucide-react';
 
 // ─── 발급상태 배지 (DIAGDOC 3-state: 신청됨=미발행 / 발급완료=발행완료 / 취소) ──────────────
 //   ★라벨 리터럴('미발행'/'발행완료'/'취소')을 이 파일에 유지 = 기존 발행이력(대시보드·치료테이블) 표기 정합.
@@ -125,6 +131,49 @@ export default function OpinionDocHistorySection({ clinicId, customerId }: Props
   const openDocView = (rowId: string) => {
     const src = sourceById.get(rowId);
     if (src) setViewTarget(src);
+  };
+
+  // ── T-20260729-foot-DOCPRINT-BTN-ADMININFO-REPRINT-LINK (AC-3/AC-4): 재출력 동선 + 행정정보 수정 연동 ──
+  const qc = useQueryClient();
+  // 소견서 양식 렌더용 병원 헤더 — 치료테이블/진료대시보드와 동일 훅(react-query dedup → 신규 조회 0).
+  const { data: clinicHeader = null } = useClinicHeader(clinicId);
+  const [adminEditTarget, setAdminEditTarget] = useState<OpinionRequestRow | null>(null);
+  const [printingId, setPrintingId] = useState<string | null>(null);
+
+  const openEditAdmin = (target: OpinionRequestRow | null) => {
+    if (!target) { toast('편집할 서류 정보를 확인할 수 없습니다'); return; }
+    setAdminEditTarget(target);
+  };
+
+  // 출력 = 발행 고정본 그대로. 신규 출력 스택 금지(printIssuedOpinionDoc 공용 헬퍼 재사용).
+  //   행정정보 수정(adminOverrides)이 담당의·발급일을 정정했으면 재출력물에 반영(단일 동선, AC-4).
+  const handlePrintDoc = async (row: OpinionRequestRow | null) => {
+    if (!row) { toast('출력할 서류 정보를 확인할 수 없습니다'); return; }
+    const doc = matchPublishedOpinionDoc(row, publishedDocs);
+    const fallbackBody = viewBody?.trim() || '';
+    setPrintingId(row.id);
+    try {
+      const ok = await printIssuedOpinionDoc({
+        clinicId,
+        checkInId: doc?.checkInId ?? row.checkInId ?? null,
+        customerId: doc?.customerId ?? row.customerId ?? customerId ?? null,
+        patientName: row.patientName ?? null,
+        chartNo: doc?.chartNo ?? row.chartNo ?? null,
+        body: (doc?.finalText || fallbackBody).trim(),
+        docType: row.docType,
+        issuedByName: row.adminOverrides?.doctorName || doc?.doctorName || '',
+        issuedByLicenseNo: doc?.issuedByLicenseNo ?? null,
+        issuedByDoctorId: doc?.issuedByDoctorId ?? null,
+        issuedAt: doc?.issuedAt ?? row.resolvedAt ?? null,
+        clinicHeader,
+        adminOverrides: row.adminOverrides ?? null,
+      });
+      if (!ok) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
+    } catch (e) {
+      toast.error(`출력에 실패했습니다. ${(e as Error)?.message ?? ''}`);
+    } finally {
+      setPrintingId(null);
+    }
   };
 
   return (
@@ -273,7 +322,35 @@ export default function OpinionDocHistorySection({ clinicId, customerId }: Props
           >
             {viewBody.trim() ? viewBody : '표시할 서류 내용이 없습니다.'}
           </div>
-          <DialogFooter>
+          {/* 문서 뷰 하단 액션 — [행정정보 수정] · [출력] · [닫기] (T-20260729-foot-DOCPRINT-BTN-ADMININFO-REPRINT-LINK).
+              2번차트 재출력 동선에서도 행정정보 수정 진입 + 발행 고정본 출력을 단일 동선으로 연동(AC-3/AC-4).
+              발행본(medical 본문)·발행 파이프라인 무접촉 — 행정필드(발급요청일자/발급일/상병코드·담당의)만 정정. */}
+          <DialogFooter className="flex-row justify-between gap-2 sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                className="gap-1.5"
+                disabled={!viewTarget}
+                onClick={() => openEditAdmin(viewTarget)}
+                data-testid="opinion-history-doc-view-edit-admin-btn"
+              >
+                <Pencil className="h-4 w-4" />
+                행정정보 수정
+              </Button>
+              <Button
+                className="gap-1.5 bg-teal-600 text-white hover:bg-teal-700"
+                disabled={!viewTarget || printingId === viewTarget?.id}
+                onClick={() => void handlePrintDoc(viewTarget)}
+                data-testid="opinion-history-doc-view-print-btn"
+              >
+                {printingId === viewTarget?.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Printer className="h-4 w-4" />
+                )}
+                출력
+              </Button>
+            </div>
             <Button
               variant="outline"
               onClick={() => setViewTarget(null)}
@@ -284,6 +361,18 @@ export default function OpinionDocHistorySection({ clinicId, customerId }: Props
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 서류 행정필드 전용 편집기(공용 컴포넌트, 치료테이블·2번차트 공유).
+          저장 후 customer-scoped 발행이력 소스 invalidate(오버레이 즉시 반영, AC-4).
+          (useUpdateOpinionAdminFields onSuccess 가 이미 opinion_request_customer_history 를 무효화하므로 onSaved 는 방어적 재무효화.) */}
+      <DocAdminEditDialog
+        target={adminEditTarget}
+        viewDoc={adminEditTarget ? matchPublishedOpinionDoc(adminEditTarget, publishedDocs) : null}
+        clinicId={clinicId}
+        onClose={() => setAdminEditTarget(null)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['opinion_request_customer_history', clinicId] })}
+        testIdPrefix="opinion-history-admin"
+      />
     </div>
   );
 }

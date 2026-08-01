@@ -505,6 +505,9 @@ export function buildCustomerDocRequestRows(
       createdAt: String(r['created_at'] ?? ''),
       requestDate: String(fd['request_date'] ?? ''),
       resolvedAt: fd['resolved_at'] ? String(fd['resolved_at']) : undefined,
+      // T-20260729-foot-DOCPRINT-BTN-ADMININFO-REPRINT-LINK (AC-4): 2번차트 [행정정보 수정] seed·재출력 반영을 위해
+      //   발행완료 행의 admin_overrides 오버레이를 함께 실어준다(치료테이블 mapPublishedRequestRow 와 정합).
+      adminOverrides: parseAdminOverrides(fd),
       publishStatus,
       issueStatus,
     });
