@@ -8,6 +8,11 @@
  *   body Chart2InsuranceCalcPanel 구현을 **동일 시그니처·동일 로직**으로 그대로 이식(dev-body 확정값 미러).
  *   가산율 30%, 겹침=공휴일 우선 단일 가산, 야간 기준 18시 이후 = body canon 동일(총괄 확정 4파라미터).
  *
+ *   ★ 미러 범위 한정(오경보 방지, MSG-20260801 dev-body 교차점검): body 미러는 위 **판정 4파라미터에 한정**한다.
+ *     절사 grain(floor10)은 body 미러 대상이 아니다 — foot 고유 canon(footBilling CIT-2026-001/002 FLOOR,
+ *     T-20260728 foot 단독 추가)이 소유하며 각 도메인 billing canon 이 독립 소유한다. body 가산 단일지점은
+ *     Math.round(1원 grain)이라 foot floor10 과 grain 자체가 다르다. '절사까지 body 미러'로 읽지 말 것.
+ *
  * body(persist 경로: service_charges origin='auto_calc' + surcharge_kind)와 달리 foot 은
  * **DB 무접촉 FE-only(db_change=false)** — 출력 시점(new Date())에 판정·계산해 금액란에 표시만 한다.
  * 급여 본인부담 분자 이중계상 없음(★가드): 가산은 print 표시 전용이라 Revenue Insurance Split
