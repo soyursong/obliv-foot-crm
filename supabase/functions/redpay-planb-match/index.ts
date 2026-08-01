@@ -56,6 +56,14 @@ const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
 
+// ── T-20260730-foot-REDPAY-PLANB-GOLIVE-0805-SCHEDULE-LOCK — auto-create(경로A) 활성 게이트 ──
+//   AC-5(BLOCKING): auto-create(feed→payment INSERT)는 CAT-origin absorb-guard 없이 활성 금지.
+//   guard 는 single RPC record_planb_card_payment 안에 by-construction 1벌(K5 co-set) → EF 는 그 RPC 만 호출.
+//   본 플래그 OFF(default) = 기존 Model A(pending 전이만·payments write 0) 회귀-안전. golive 시 flag ON.
+//   ★flag ON 은 RPC(absorb-guard 포함) 배포와 동일배포·원자착지 전제(HARD co-set). RPC 미배포 상태 ON 금지.
+const AUTOCREATE_ENABLED =
+  (Deno.env.get("REDPAY_PLANB_AUTOCREATE_ENABLED") ?? "false").toLowerCase() === "true";
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
@@ -91,7 +99,8 @@ async function expirePass(nowIso: string): Promise<number> {
 // ── ② MATCH 패스 — 유효 open + 보관창 내 expired 선점을 승인 raw 의 occurred_at 유효창으로 매칭 ──
 async function matchPass(
   nowIso: string,
-): Promise<{ matched: number; skippedAmbiguous: number; retentionCandidates: number }> {
+): Promise<{ matched: number; skippedAmbiguous: number; retentionCandidates: number;
+             autoCreated: number; autoAbsorbed: number; autoSkipped: number }> {
   // MATCH 후보 선점 (정정2 파라미터 2분리):
   //   status ∈ {open, expired}  — 유효 open + 만료 후 보관창 내 expired.
   //   expires_at > (now - RETENTION_MS)  — 유효 open(expires_at>now) + 만료 후 1h 이내 expired 를 함께 포함.
@@ -100,13 +109,17 @@ async function matchPass(
   const cutoffIso = retentionCutoffIso(nowIso, RETENTION_MS);
   const { data: opensRaw, error: e1 } = await supabase
     .from("pending_payment")
-    .select("id, clinic_id, expected_amount, created_at, expires_at, status")
+    // customer_id/check_in_id = auto-create(경로A) RPC 귀속 필드(순수 매칭 로직 미사용, GOLIVE-0805).
+    .select("id, clinic_id, expected_amount, created_at, expires_at, status, customer_id, check_in_id")
     .in("status", ["open", "expired"])
     .gt("expires_at", cutoffIso);
   if (e1) throw e1;
   const pendings = (opensRaw ?? []) as PendingRow[];
   const retentionCandidates = pendings.filter((p) => p.status === "expired").length;
-  if (pendings.length === 0) return { matched: 0, skippedAmbiguous: 0, retentionCandidates };
+  if (pendings.length === 0) {
+    return { matched: 0, skippedAmbiguous: 0, retentionCandidates,
+             autoCreated: 0, autoAbsorbed: 0, autoSkipped: 0 };
+  }
 
   // (clinic_id, expected_amount) 그룹핑 — 2건+ 는 모호(자동매칭 제외). match.ts 순수 로직.
   const groups = groupPendingByAmount(pendings);
@@ -133,6 +146,9 @@ async function matchPass(
 
   let matched = 0;
   let skippedAmbiguous = 0;
+  let autoCreated = 0;   // auto-create RPC → 신규 payment 기록(action=created)
+  let autoAbsorbed = 0;  // absorb-guard → 기존 CAT payment 흡수(action=absorbed, INSERT skip)
+  let autoSkipped = 0;   // tier4_manual / cross_tenant_reject / already_claimed / error(관측)
 
   for (const [, list] of groups) {
     if (list.length > 1) { skippedAmbiguous += list.length; continue; } // 모호 그룹 스킵
@@ -158,9 +174,44 @@ async function matchPass(
       console.log(
         `${LOG}[MATCH] 선점 ${p.id}(${p.status}) ← raw ${raw.id} (amount=${p.expected_amount}, occurred_at=${raw.approved_at}) matched.`,
       );
+
+      // ── auto-create(경로A) — single RPC record_planb_card_payment 로 결제기록(golive, flag-gated) ──
+      //   K5 co-set: absorb-guard(CAT-origin 흡수)·raw-row 원자 claim 멱등·shape-parity 전부 RPC 내부 1벌.
+      //   flag OFF(default) 시 이 블록 skip = 기존 Model A(pending 전이만) 회귀-안전. golive 시 flag ON.
+      if (AUTOCREATE_ENABLED) {
+        if (!p.check_in_id || !p.customer_id) {
+          autoSkipped += 1;
+          console.error(`${LOG}[AUTOCREATE] 귀속 결손(pending=${p.id}, check_in_id=${p.check_in_id}, customer_id=${p.customer_id}) → skip(수동폴백).`);
+        } else {
+          try {
+            const { data: rpcRes, error: rpcErr } = await supabase.rpc("record_planb_card_payment", {
+              p_clinic_id: p.clinic_id,
+              p_raw_txid: raw.id,
+              p_attribution: "checkin",
+              p_customer_id: p.customer_id,
+              p_check_in_id: p.check_in_id,
+              p_amount: p.expected_amount,
+              p_source: "auto",
+            });
+            if (rpcErr) {
+              autoSkipped += 1;
+              console.error(`${LOG}[AUTOCREATE] RPC 오류(pending=${p.id}): ${rpcErr.message}`);
+            } else {
+              const action = (rpcRes as { action?: string } | null)?.action ?? "unknown";
+              if (action === "created" || action === "created_package") autoCreated += 1;
+              else if (action === "absorbed") autoAbsorbed += 1;
+              else autoSkipped += 1; // tier4_manual / cross_tenant_reject / already_claimed / error
+              console.log(`${LOG}[AUTOCREATE] pending ${p.id} → ${JSON.stringify(rpcRes)}`);
+            }
+          } catch (e) {
+            autoSkipped += 1;
+            console.error(`${LOG}[AUTOCREATE] RPC 예외(pending=${p.id}): ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }
     }
   }
-  return { matched, skippedAmbiguous, retentionCandidates };
+  return { matched, skippedAmbiguous, retentionCandidates, autoCreated, autoAbsorbed, autoSkipped };
 }
 
 // ── ③ AUTO-CANCEL 패스 — 보관창(1h) 초과 미매칭 선점 → cancelled ──────────────────
@@ -209,7 +260,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     // ★패스 순서 = expire → match → autoCancel. match-before-cancel 구조 강제(별도 cron 금지, OPT3 #4).
     const expired = await expirePass(nowIso);
-    const { matched, skippedAmbiguous, retentionCandidates } = await matchPass(nowIso);
+    const { matched, skippedAmbiguous, retentionCandidates, autoCreated, autoAbsorbed, autoSkipped } =
+      await matchPass(nowIso);
     const autoCancelled = await autoCancelPass(nowIso);
     return json(200, {
       ok: true,
@@ -219,6 +271,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       skipped_ambiguous: skippedAmbiguous,
       retention_candidates: retentionCandidates, // 보관창(만료 후 1h) 내 expired 선점 수(관측).
       auto_cancelled: autoCancelled,             // 보관창 초과 → cancelled 전이 수(OPT3 #4, 관측).
+      // ── auto-create(경로A, GOLIVE-0805) 관측 — flag OFF 시 전부 0 ──
+      autocreate_enabled: AUTOCREATE_ENABLED,
+      auto_created: autoCreated,                 // 신규 payment 기록(single RPC action=created).
+      auto_absorbed: autoAbsorbed,               // absorb-guard 흡수(기존 CAT payment, INSERT skip).
+      auto_skipped: autoSkipped,                 // tier4_manual/cross_tenant/already_claimed/error.
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

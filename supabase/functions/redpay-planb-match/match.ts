@@ -31,6 +31,9 @@ export interface PendingRow {
   created_at: string; // ISO
   expires_at: string; // ISO (app-set = created_at + 5분)
   status: string;     // open | matched | expired | failed | cancelled
+  // T-20260730-...-SINGLE-RPC-GOLIVE: auto-create(경로A) RPC 호출용 귀속 필드(순수 매칭 로직 미사용).
+  customer_id?: string | null;
+  check_in_id?: string | null;
 }
 
 export interface RawRow {
