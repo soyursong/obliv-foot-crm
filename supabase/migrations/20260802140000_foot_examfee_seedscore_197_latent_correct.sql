@@ -24,7 +24,9 @@
 --
 -- ── data_correction_backfill_sop 준수 ────────────────────────────────────
 --   ① 대상셋 freeze: 대상 service id·사전값(197.07)을 TEMP 에 먼저 고정 → 그 집합에만 UPDATE.
---   ② 버그경로 지문: hira_code IS NULL(정식명 행) + hira_score = 197.07(÷CF 역산 산물) + active.
+--   ② 버그경로 지문: hira_code IS NULL(정식명 행) + hira_score = 197.07(÷CF 역산 산물) + active
+--        + name LIKE '%초진진찰료%'. ★prod 실측(2026-08-02)상 LIVE 정식명 행의 hira_category = NULL
+--        → hira_category='consultation' 조건 제외(그 조건은 죽은 AA154 stub 153.36 에만 해당).
 --      ★AA154-coded 153.36 죽은 stub(active=false)은 predicate 상 자동 제외(무접촉).
 --   ③ 판정근거 스냅샷: 사전값(197.07)·정본(197.12)·row 지문을 _backup 에 동일 txn 적재(롤백원천).
 --   ④ rows-affected 검증: freeze count == 실제 UPDATE ROW_COUNT. 불일치 시 RAISE(전체 롤백).
@@ -69,8 +71,11 @@ BEGIN
   WHERE s.hira_code IS NULL              -- 정식명 행(AA154-coded 153.36 stub 제외)
     AND s.hira_score = 197.07            -- ÷CF 역산 아티팩트(버그경로 지문)
     AND s.active = true
-    AND s.hira_category = 'consultation' -- 진찰료(초진/재진 축)
-    AND s.name LIKE '%초진진찰료%';       -- 초진(재진 139.85 격리)
+    -- ★prod 실측(2026-08-02, service Management API): LIVE 정식명 행
+    --   de611ed5 '초진진찰료-의원'(197.07/price 18,840)의 hira_category = NULL 로 저장됨.
+    --   원 predicate 의 hira_category='consultation' 은 죽은 AA154 stub(153.36, active=false)
+    --   에만 해당 → LIVE 197.07 행을 오배제(freeze=0 abort). 실측 반영해 hira_category 조건 제거.
+    AND s.name LIKE '%초진진찰료%';       -- 초진 정식명(공휴일=score NULL·inactive·재진 자동격리; 197.07 = 유일 1행)
 
   SELECT count(*) INTO v_freeze_cnt FROM _seedscore_target;
 

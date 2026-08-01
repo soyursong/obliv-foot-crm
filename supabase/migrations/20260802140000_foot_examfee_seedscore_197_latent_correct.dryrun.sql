@@ -23,7 +23,7 @@ BEGIN
   WHERE s.hira_code IS NULL
     AND s.hira_score = 197.07
     AND s.active = true
-    AND s.hira_category = 'consultation'
+    -- ★prod 실측(2026-08-02): LIVE 정식명 행 hira_category=NULL → consultation 조건 제외(forward .sql 정합)
     AND s.name LIKE '%초진진찰료%';
 
   SELECT count(*) INTO v_freeze_cnt FROM _seedscore_target_dry;
