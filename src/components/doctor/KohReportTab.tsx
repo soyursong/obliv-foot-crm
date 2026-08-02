@@ -529,6 +529,7 @@ function usePublishedKoh(clinicId: string | null) {
         .from('form_submissions')
         .select('id, field_data, created_at')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('template_id', tpl.id)
         .eq('status', 'published');
       if (error) throw error;

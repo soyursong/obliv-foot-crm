@@ -227,6 +227,7 @@ export function useOpinionRequestQueue(clinicId: string | null) {
         .from('form_submissions')
         .select('id, customer_id, check_in_id, field_data, created_at')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('status', 'draft')
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -312,6 +313,7 @@ export function usePublishedOpinionRequests(clinicId: string | null) {
         .from('form_submissions')
         .select('id, customer_id, check_in_id, field_data, created_at')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('status', 'voided')
         .gte('created_at', `${lookbackStart}T00:00:00+09:00`)
         .order('created_at', { ascending: false });
@@ -357,6 +359,7 @@ export function useAllPublishedOpinionRequests(clinicId: string | null) {
         .from('form_submissions')
         .select('id, customer_id, check_in_id, field_data, created_at')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('status', 'voided')
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -543,6 +546,7 @@ export function useCustomerDocRequestHistory(clinicId: string | null, customerId
         .from('form_submissions')
         .select('id, customer_id, check_in_id, field_data, created_at, status')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('customer_id', customerId)
         .in('status', ['draft', 'voided'])
         .order('created_at', { ascending: false });
@@ -575,6 +579,7 @@ export function useCustomerOpinionRequests(clinicId: string | null, customerId: 
         .from('form_submissions')
         .select('id, customer_id, check_in_id, field_data, created_at, status')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('customer_id', customerId)
         .in('status', ['draft', 'voided'])
         .order('created_at', { ascending: false });
@@ -626,6 +631,7 @@ export function usePublishedOpinionDocs(
         .from('form_submissions')
         .select('id, customer_id, check_in_id, field_data, created_at')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('template_id', templateId)
         .eq('status', 'published')
         .in('customer_id', ids)

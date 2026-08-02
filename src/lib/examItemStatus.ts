@@ -66,6 +66,7 @@ export function useExamItemStatuses(clinicId: string | null | undefined, formKey
         .from('form_submissions')
         .select('id, customer_id, field_data')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .contains('field_data', { form_key: formKey });
       if (error) {
         if (/form_submissions|relation|42P01|42703/.test(error.message ?? '')) return map;

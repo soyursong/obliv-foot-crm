@@ -3267,7 +3267,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         supabase.from('checklists').select('id, completed_at, checklist_data').eq('customer_id', customerId)
           .not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(10),
         supabase.from('form_submissions').select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
-          .eq('customer_id', customerId).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
+          .eq('customer_id', customerId).eq('is_deleted', false).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
         // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 (clinic 스코프 — RLS도 동일 강제)
         supabase.from('health_q_results').select('id, form_type, form_data, submitted_at, created_at')
           .eq('customer_id', customerId).eq('clinic_id', clinicId).order('submitted_at', { ascending: false }).limit(10),
@@ -3486,6 +3486,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       .from('form_submissions')
       .select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
       .eq('customer_id', customerId)
+      .eq('is_deleted', false)
       .order('printed_at', { ascending: false, nullsFirst: false })
       .limit(30);
     setSubmissionEntries(

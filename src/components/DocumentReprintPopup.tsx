@@ -87,7 +87,7 @@ export function DocumentReprintPopup({ customerId, customerName, onClose }: Prop
         // 발행 서류 — check_in 단위 귀속
         supabase.from('form_submissions')
           .select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
-          .eq('customer_id', customerId).order('printed_at', { ascending: false, nullsFirst: false }).limit(200),
+          .eq('customer_id', customerId).eq('is_deleted', false).order('printed_at', { ascending: false, nullsFirst: false }).limit(200),
       ]);
 
       const cust = custRes.data as { name: string | null; chart_number: string | number | null; alt_status: boolean | null } | null;

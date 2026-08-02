@@ -240,6 +240,7 @@ function usePublishedKohMap(clinicId: string | null | undefined) {
         .from('form_submissions')
         .select('id, field_data')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .eq('template_id', tpl.id)
         .eq('status', 'published');
       if (error) throw error;
