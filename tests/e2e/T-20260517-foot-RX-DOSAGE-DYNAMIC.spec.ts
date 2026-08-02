@@ -25,8 +25,8 @@ test.describe('AC-1: buildRxItemsHtml 동적 바인딩', () => {
   test('unit_dose 미입력(undefined) → 빈 문자열로 렌더링됨 (fallback은 호출자 책임)', () => {
     // buildRxItemsHtml 자체는 undefined → '' 처리
     const html = buildRxItemsHtml([{ name: '테스트약' }]);
-    // 빈 td가 8행 존재해야 함
-    expect((html.match(/<tr/g) ?? []).length).toBe(8);
+    // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 빈 td가 10행 존재해야 함(8→10)
+    expect((html.match(/<tr/g) ?? []).length).toBe(10);
     // 필드가 비어있으면 '' 로 렌더링 (하드코딩 1 없어야 함)
     // name 셀에는 테스트약, 나머지 dosage 셀은 빈 값
     expect(html).toContain('>테스트약<');
@@ -57,11 +57,12 @@ test.describe('AC-1: buildRxItemsHtml 동적 바인딩', () => {
     expect(html).toContain('>10<');
   });
 
-  test('최소 8행 보장 — 약 2개 입력 시 나머지 6행 빈 행으로 패딩', () => {
+  test('최소 10행 보장 — 약 2개 입력 시 나머지 8행 빈 행으로 패딩', () => {
+    // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 최소행 8→10.
     const html = buildRxItemsHtml([
       { name: '약A', unit_dose: '1', daily_freq: '1', total_days: '7' },
       { name: '약B', unit_dose: '1', daily_freq: '1', total_days: '7' },
     ]);
-    expect((html.match(/<tr/g) ?? []).length).toBe(8);
+    expect((html.match(/<tr/g) ?? []).length).toBe(10);
   });
 });

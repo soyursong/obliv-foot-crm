@@ -60,7 +60,7 @@ function rxFilter(items: Item[]): Item[] {
 }
 
 // 행별 데이터 셀(용량/횟수/투약일수) 추출: name 다음 3개 <td>.
-//   buildRxItemsHtml 은 8행으로 pad(빈 행 name='') → 실제 약품행(name 비지 않음)만 카운트.
+//   buildRxItemsHtml 은 10행으로 pad(빈 행 name='', T-20260730-…-FORMAT-UNIFY 8→10) → 실제 약품행(name 비지 않음)만 카운트.
 function doseCells(html: string): Array<{ unit_dose: string; daily_freq: string; total_days: string }> {
   const rows: Array<{ unit_dose: string; daily_freq: string; total_days: string }> = [];
   const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;

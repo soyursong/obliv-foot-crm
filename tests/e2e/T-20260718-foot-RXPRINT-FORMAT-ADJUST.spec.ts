@@ -196,11 +196,12 @@ test('AC4 무회귀: 용량/횟수/투약일수 값 보존, 구분자는 약품�
   expect(html).not.toContain('>|<');
 });
 
-test('AC4 무회귀: 8행 고정 유지 + 빈 행에 파이프/대괄호 잔재 없음', () => {
+test('AC4 무회귀: 10행 고정 유지 + 빈 행에 파이프/대괄호 잔재 없음', () => {
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 최소행 8→10.
   const html = buildRxItemsHtml([{ name: '약A', code: 'AAA' }]);
-  expect((html.match(/<tr/g) ?? []).length).toBe(8);
+  expect((html.match(/<tr/g) ?? []).length).toBe(10);
   expect(html).not.toContain('[');
   // 빈 행 name 셀은 완전 공란 → '|' 잔재 없음
   const names = nameCells(html);
-  expect(names.filter((n) => n === '').length).toBe(7);
+  expect(names.filter((n) => n === '').length).toBe(9);
 });

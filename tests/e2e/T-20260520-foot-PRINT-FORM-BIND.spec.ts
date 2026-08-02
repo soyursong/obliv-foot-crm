@@ -190,16 +190,17 @@ test.describe('AC-7 — 행 HTML 생성 함수', () => {
     expect(html).toContain('진료 항목 없음');
   });
 
-  test('buildRxItemsHtml — 항목 1개 + 빈 행 7개 = 8행', () => {
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 최소행 8→10.
+  test('buildRxItemsHtml — 항목 1개 + 빈 행 9개 = 10행', () => {
     const html = buildRxItemsHtml([{ name: '타이레놀', unit_dose: '500mg' }]);
     const rowCount = (html.match(/<tr/g) ?? []).length;
-    expect(rowCount).toBe(8);
+    expect(rowCount).toBe(10);
   });
 
-  test('buildRxItemsHtml — 빈 배열 시 8행 빈 행', () => {
+  test('buildRxItemsHtml — 빈 배열 시 10행 빈 행', () => {
     const html = buildRxItemsHtml([]);
     const rowCount = (html.match(/<tr/g) ?? []).length;
-    expect(rowCount).toBe(8);
+    expect(rowCount).toBe(10);
   });
 });
 

@@ -113,18 +113,18 @@ test('AC4 무회귀: 용량/횟수/투약일수 값은 그대로 표기(코드 p
   expect(html).not.toContain('>AAA<');
 });
 
-test('AC4 무회귀: 빈 filler 행(8행 고정)에 코드/파이프 잔재 없음', () => {
+test('AC4 무회귀: 빈 filler 행(10행 고정)에 코드/파이프 잔재 없음', () => {
   const html = buildRxItemsHtml([{ name: '약A', code: 'AAA' }]);
-  // TOTAL_ROWS=8 유지: 8개 행
-  expect((html.match(/<tr/g) ?? []).length).toBe(8);
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: TOTAL_ROWS=8→10: 10개 행
+  expect((html.match(/<tr/g) ?? []).length).toBe(10);
   // 빈 행에 대괄호·파이프 등 잔재 없음
   expect(html).not.toContain('[');
   const names = nameCells(html);
-  expect(names.filter((n) => n === '').length).toBe(7);
+  expect(names.filter((n) => n === '').length).toBe(9);
 });
 
-test('AC4 무회귀: 처방약 0건 → 빈 8행, 코드 아티팩트 없음', () => {
+test('AC4 무회귀: 처방약 0건 → 빈 10행, 코드 아티팩트 없음', () => {
   const html = buildRxItemsHtml([]);
-  expect((html.match(/<tr/g) ?? []).length).toBe(8);
+  expect((html.match(/<tr/g) ?? []).length).toBe(10);
   expect(html).not.toContain('[');
 });

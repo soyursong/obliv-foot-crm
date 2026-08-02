@@ -43,10 +43,11 @@ test.describe('AC-1 처방전 레이아웃 (§2-A, 헤더 B안 override)', () =>
     expect(RX).not.toContain('1일<br>투약량');
   });
 
-  test('처방의약품 표 컬럼 폭 존재 (AC-8: 투약량·횟수·일수 협폭 / 용법 광폭)', () => {
-    // 협폭 3열 48px + 용법 광폭 190px. 명칭은 잔여 최광폭(width 미지정).
-    expect(RX).toContain('width:48px;');
-    expect(RX).toContain('width:190px;');
+  test('처방의약품 표 컬럼 폭 = 피부 A4 실측 colgroup 337/80/80/80/143 (T-20260730-…-FORMAT-UNIFY)', () => {
+    // 구 AC-8(협폭 48px·광폭 190px)은 피부 A4 표준서식 colgroup(337/80/80/80/143=유효폭 720)으로 대체.
+    expect(RX).toContain('width:337px;'); // 명칭 컬럼
+    expect(RX).toContain('width:80px;');  // 투약량·횟수·일수 협폭
+    expect(RX).toContain('width:143px;'); // 용법 컬럼
   });
 
   test('헤더 B안: 환자정보블록 유지 · 조합기호 라인 미적용 (AC-1 override)', () => {
@@ -130,8 +131,8 @@ test.describe('라벨 (b) 값-라벨 의미 정합 (미결2 근거)', () => {
 
   test('빈 처방은 고정 높이 빈 행 유지 (엣지: 오류 없이 레이아웃 보존)', () => {
     const html = buildRxItemsHtml([]);
-    // 8행 고정 표(빈 행 padding).
-    expect((html.match(/<tr /g) ?? []).length).toBe(8);
+    // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 10행 고정 표(빈 행 padding, 8→10).
+    expect((html.match(/<tr /g) ?? []).length).toBe(10);
   });
 });
 

@@ -111,11 +111,12 @@ test('AC4: 값은 리터럴 폴백만 — days·회차 파생 계산 없음(옵�
   expect(mapDosage({}).total_days).not.toBe('3');
 });
 
-test('AC4 무회귀: 빈 filler 행 8행 고정, total_days 칸에 자동값 잔재 없음', () => {
+test('AC4 무회귀: 빈 filler 행 10행 고정, total_days 칸에 자동값 잔재 없음', () => {
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 최소행 8→10.
   const html = buildRxItemsHtml([{ name: '약A', code: 'A1', ...mapDosage(undefined) }]);
-  expect((html.match(/<tr/g) ?? []).length).toBe(8);
+  expect((html.match(/<tr/g) ?? []).length).toBe(10);
   const rows = doseCells(html);
-  // 채워진 1행만 '1', 나머지 filler 7행은 공란(빈 행에는 강제 '1' 주입 안 함)
+  // 채워진 1행만 '1', 나머지 filler 9행은 공란(빈 행에는 강제 '1' 주입 안 함)
   expect(rows[0].total_days).toBe('1');
   expect(rows.slice(1).every((r) => r.total_days === '')).toBe(true);
 });

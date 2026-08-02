@@ -89,8 +89,10 @@ test.describe('AC-② 성명/주민번호 하단 빈 여백 제거', () => {
     const markup = stripComments(html);
     // rx_standard 서식표에서 연속 빈 셀 2개 → E-mail 행 패턴이 사라졌는지 (rowspan 흡수)
     expect(markup).not.toMatch(/<td>\s*<\/td>\s*<td>\s*<\/td>\s*<td[^>]*>E-mail/);
-    // rx_standard 내 바(bare) 빈 셀 자체가 없음(⑥ 조제시 참고사항은 rowspan/colspan 셀)
-    expect(markup).not.toMatch(/<td>\s*<\/td>/);
+    // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 환자정보(③)~E-mail 구간에 바 빈 셀 없음(AC-② 유지).
+    //   단 ⑥ 주사제 섹션의 기입용 빈 5행(bare td)은 피부 A4 표준서식 정합으로 신설된 정당 filler → 구간 스코프로 한정.
+    const patientArea = markup.slice(0, markup.indexOf('처&nbsp;방&nbsp;의&nbsp;약&nbsp;품'));
+    expect(patientArea).not.toMatch(/<td>\s*<\/td>/);
   });
 });
 
@@ -129,22 +131,27 @@ test.describe('AC-③ 질병분류기호(diag_code) 바인딩', () => {
   });
 });
 
-// ─── AC-④: 조제시 참고사항 좌측 확장 ───
+// ─── AC-④: 주사제 섹션 (T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY 로 재정의) ───
+// 구 AC-④(주사제 처방내역 폭 200px / 조제시참고사항 라벨 90px, 비율 정합)는 피부 A4 표준서식 통일로 대체됨.
+// 신 계약: 주사제 섹션 헤더 배경 #b3b2b2 + 조제시 참고사항 헤더 + 기입용 최소 5행.
 
-test.describe('AC-④ 조제시 참고사항 좌측 확장(비율 정합)', () => {
-  test('주사제 처방내역 셀 폭 200px 로 축소 (구 310px)', () => {
+test.describe('AC-④(재정의) 주사제 섹션 = 피부 A4 표준서식(#b3b2b2 헤더 + 최소 5행)', () => {
+  test('주사제 처방내역 헤더 배경 #b3b2b2 + 라벨 존치', () => {
     const html = getHtmlTemplate('rx_standard')!;
-    expect(html).toContain('width:200px;');
-    // 구 310px 폭은 주사제 처방내역 셀에서 제거됨
-    const markup = stripComments(html);
-    expect(markup).not.toMatch(/width:310px;[^]*주사제/);
-  });
-
-  test('조제시 참고사항 라벨 폭 90px 로 확장 (구 70px) + 라벨 존치', () => {
-    const html = getHtmlTemplate('rx_standard')!;
+    expect(html).toContain('주사제');
     expect(html).toContain('조제시');
     expect(html).toContain('참고사항');
-    expect(html).toMatch(/width:90px;[^>]*>조제시/);
+    // 주사제 처방내역 헤더 셀 배경 = 피부 A4 실측 #b3b2b2
+    expect(html).toMatch(/background:#b3b2b2;[^>]*>[\s\S]*?주사제&nbsp;처방내역/);
+  });
+
+  test('주사제 섹션 기입용 빈 행 최소 5행 (colgroup 337/80/80/80/143 정합)', () => {
+    const html = getHtmlTemplate('rx_standard')!;
+    // 주사제 테이블 이후 blob 에서 height:24px 기입행 ≥5
+    const injIdx = html.indexOf('주사제&nbsp;처방내역');
+    const after = html.slice(injIdx);
+    const fillerRows = (after.match(/<tr style="height:24px;">/g) ?? []).length;
+    expect(fillerRows).toBeGreaterThanOrEqual(5);
   });
 });
 

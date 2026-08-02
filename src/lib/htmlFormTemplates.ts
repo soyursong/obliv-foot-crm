@@ -1457,9 +1457,13 @@ const RX_STANDARD_HTML = `
     font-size: 9pt;
     color: #000;
     background: #fff;
-    padding: 6mm 8mm;
-    width: 190mm;
-    min-height: 267mm;
+    /* T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 피부 A4 표준서식 실측 정합.
+       724×1053px(box-sizing:border-box) + 외곽선 2px → 유효폭 720(=724-2*2).
+       무패딩(내부 표가 720 full-width, 피부 처방전 colgroup 337/80/80/80/143=720 정합). */
+    padding: 0;
+    width: 724px;
+    min-height: 1053px;
+    border: 2px solid #000;
   }
   .rx-wrap table { width: 100%; border-collapse: collapse; }
   .rx-wrap td, .rx-wrap th {
@@ -1468,12 +1472,14 @@ const RX_STANDARD_HTML = `
     vertical-align: middle;
     font-size: 8.5pt;
   }
-  .rx-wrap th { background: #f0f0f0; font-weight: bold; text-align: center; white-space: nowrap; }
+  /* T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 의약품표 헤더색 = 피부 A4 실측 #B3B2B2. */
+  .rx-wrap th { background: #B3B2B2; font-weight: bold; text-align: center; white-space: nowrap; }
   .rx-title {
     text-align: center;
-    font-size: 22pt;
+    /* T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 타이틀 크기/자간 = 피부 A4 실측(fontSize 24 / letterSpacing 20). */
+    font-size: 24px;
     font-weight: bold;
-    letter-spacing: 14px;
+    letter-spacing: 20px;
     padding: 6px 0 4px;
   }
   /* 라벨 셀 한줄 정렬 */
@@ -1485,7 +1491,11 @@ const RX_STANDARD_HTML = `
        래퍼 @page(margin:12mm 10mm)를 덮어써 처방전만 shrink-to-fit 쏠림 재발 → 제거(@page=인쇄창 래퍼 단일 소유). */
     /* T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 상단 +68px 하향 → 콘텐츠박스 273mm→255mm.
        AC-6: 상단 30→23mm(2줄↑) 재조정 → 콘텐츠박스 255mm→262mm(=297-23-12), 하단 12mm 클립가드 유지. */
-    .rx-wrap { width: 190mm; min-height: 262mm; padding: 5mm 8mm; margin: 0 auto; }
+    /* T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 인쇄 경로는 A4 물리 인쇄가능영역(190mm 콘텐츠박스)에
+       맞춰 배치(724px=191.56mm 는 .page 190mm 박스 초과 → 중앙정렬 파이프라인과 충돌). 서식 요소
+       (외곽선 2px·의약품표 colgroup·헤더색·타이틀·보험순서)는 미리보기와 동일 유지 → 3경로 서식 정합.
+       무패딩(내부 표 720px full-width, 미리보기와 동일 구조). 외부 인쇄 파이프라인 .page/@page 무접촉. */
+    .rx-wrap { width: 190mm; min-height: 262mm; padding: 0; margin: 0 auto; border: 2px solid #000; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rx-wrap td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; }
   }
@@ -1515,9 +1525,12 @@ const RX_STANDARD_HTML = `
   </div>
 
   <!-- ② 보험 구분 -->
-  <div style="border:1px solid #000; padding:2px 6px; font-size:8pt; display:flex; justify-content:space-between; margin-bottom:-1px;">
-    <span>[&bull;]의료보험&nbsp;&nbsp;[&nbsp;]의료보호&nbsp;&nbsp;[&nbsp;]산재보험&nbsp;&nbsp;[&nbsp;]자동차보험&nbsp;&nbsp;[&nbsp;]기타</span>
-    <span>요양기관기호&nbsp;:&nbsp;&nbsp;{{clinic_code}}</span>
+  <!-- T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 보험체크 순서/명칭 = 피부 A4 실측
+       (건강보험·의료급여·산재·자동차·기타). 요양기관기호는 white-space:nowrap + flex-shrink:0 로
+       8자리 미절단(잘림·줄바꿈 없이 전체 표시), 좌측 보험 span 은 min-width:0 으로 잔여폭 흡수. -->
+  <div style="border:1px solid #000; padding:2px 6px; font-size:8pt; display:flex; justify-content:space-between; align-items:center; margin-bottom:-1px;">
+    <span style="min-width:0;">[&bull;]건강보험&nbsp;&nbsp;[&nbsp;]의료급여&nbsp;&nbsp;[&nbsp;]산재보험&nbsp;&nbsp;[&nbsp;]자동차보험&nbsp;&nbsp;[&nbsp;]기타</span>
+    <span style="white-space:nowrap; flex-shrink:0; padding-left:13px;">요양기관기호&nbsp;:&nbsp;&nbsp;{{clinic_code}}</span>
   </div>
 
   <!-- ③ 환자 + 의료기관 -->
@@ -1561,7 +1574,10 @@ const RX_STANDARD_HTML = `
     <tbody>
       <tr>
         <td rowspan="4" style="width:55px; background:#f8f8f8; text-align:center; font-size:8pt;">질병분류기호</td>
-        <td style="width:90px;">{{diag_code_1}}</td>
+        <!-- T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 피부 10칸 글자분해 미적용 → foot 코드+명칭 유지.
+             질병분류기호 칸을 코드 셀 + 명칭 셀(diag_name)로 분리(명칭 셀만 신규). diag_name_N 은 이미 바인딩됨. -->
+        <td style="width:62px;">{{diag_code_1}}</td>
+        <td style="width:150px;">{{diag_name_1}}</td>
         <td rowspan="4" style="width:65px; background:#f8f8f8; text-align:center; font-size:8pt;">처&nbsp;방<br>의료인의<br>성&nbsp;&nbsp;&nbsp;&nbsp;명</td>
         <!-- T-20260601-foot-DOC-PRINT-8FIX AC-1: 도장 우하단 고정 제거 → 처방의료인 성명 근방 직인 -->
         <!-- T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: 처방의료인 성명 = 처방전 전용 {{prescriber_name}}(실 의료인·사람).
@@ -1573,6 +1589,7 @@ const RX_STANDARD_HTML = `
       </tr>
       <tr>
         <td>{{diag_code_2}}</td>
+        <td>{{diag_name_2}}</td>
         <td style="background:#f8f8f8; text-align:center;">면&nbsp;허&nbsp;번&nbsp;호</td>
         <!-- T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: §12①4 처방의료인 면허번호 = 처방전 전용 {{prescriber_license_no}}
              (성명 {{prescriber_name}}과 동일 clinicDoctor 사람 기준 → 이름↔면허 정합, 기관명 폴백 오염 차단). -->
@@ -1580,10 +1597,12 @@ const RX_STANDARD_HTML = `
       </tr>
       <tr style="{{diag_row_3_style}}">
         <td>{{diag_code_3}}</td>
+        <td>{{diag_name_3}}</td>
         <td colspan="2"></td>
       </tr>
       <tr style="{{diag_row_4_style}}">
         <td>{{diag_code_4}}</td>
+        <td>{{diag_name_4}}</td>
         <td colspan="2"></td>
       </tr>
     </tbody>
@@ -1593,14 +1612,18 @@ const RX_STANDARD_HTML = `
   <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-8: 참조양식(IMG_8777) 처방의약품 표 컬럼 폭 정합 —
        명칭(최광폭 잔여)/투약량·횟수·일수(협폭)/용법(광폭≈30%). 직전 용법 110px 는 참조 대비 과협소였음.
        라벨 문구(1회 투약량/1일투여 횟수/총투약 일수)는 표준처방전 표기라 미변경(참조 문구차는 planner 확인 대상). -->
+  <!-- T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 의약품표 컬럼폭 = 피부 A4 실측 colgroup 337/80/80/80/143 (합 720=유효폭). -->
   <table style="margin-top:4px;">
+    <colgroup>
+      <col style="width:337px;" /><col style="width:80px;" /><col style="width:80px;" /><col style="width:80px;" /><col style="width:143px;" />
+    </colgroup>
     <thead>
       <tr>
         <th>처&nbsp;방&nbsp;의&nbsp;약&nbsp;품&nbsp;의&nbsp;명&nbsp;칭</th>
-        <th style="width:48px;">1회<br>투약량</th>
-        <th style="width:48px;">1일투여<br>횟&nbsp;&nbsp;&nbsp;수</th>
-        <th style="width:48px;">총투약<br>일&nbsp;&nbsp;&nbsp;수</th>
-        <th style="width:190px;">용&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;법</th>
+        <th>1회<br>투약량</th>
+        <th>1일투여<br>횟&nbsp;&nbsp;&nbsp;수</th>
+        <th>총투약<br>일&nbsp;&nbsp;&nbsp;수</th>
+        <th>용&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;법</th>
       </tr>
     </thead>
     <tbody>
@@ -1609,21 +1632,25 @@ const RX_STANDARD_HTML = `
   </table>
 
   <!-- ⑥ 주사제 처방내역 -->
+  <!-- T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 피부 A4 실측 정합 — 주사제 섹션 헤더 #b3b2b2 + 최소 5행.
+       (약품행 자동분리(주사제 라우팅)는 이번 범위 제외 → 빈 5행 유지.) 상단 ⑤ 의약품표와 동일 colgroup(337/80/80/80/143)
+       으로 컬럼 경계 정렬. 조제시 참고사항 헤더는 최우측 143px 컬럼, 그 아래 5행 우측 셀이 기입란. -->
   <table style="border-top:none;">
+    <colgroup>
+      <col style="width:337px;" /><col style="width:80px;" /><col style="width:80px;" /><col style="width:80px;" /><col style="width:143px;" />
+    </colgroup>
     <tbody>
       <tr>
-        <!-- T-20260719-foot-RXPRINT-LAYOUT-4FIX AC-④: 조제시 참고사항 블록 좌측 확장(비율 정합, 총괄 피드백).
-             주사제 처방내역 셀 폭 310px→200px 축소 → 조제시 참고사항(라벨 90px + 기입란)이 좌측으로 확장되어
-             우측 편중된 비율 개선. 외곽 표 폭·상하 표(⑤·⑦) 정렬 무변경(내부 열폭 재분배만). -->
-        <td colspan="2" style="font-size:8.5pt; width:200px;">
+        <td colspan="4" style="background:#b3b2b2; font-weight:bold; text-align:center; font-size:8.5pt;">
           주사제&nbsp;처방내역&nbsp;&nbsp;(&nbsp;원내조제&nbsp;[&nbsp;&nbsp;&nbsp;]&nbsp;,&nbsp;원외조제&nbsp;[&nbsp;&nbsp;&nbsp;]&nbsp;)
         </td>
-        <td rowspan="2" style="background:#f8f8f8; text-align:center; width:90px; font-size:8pt;">조제시<br>참고사항</td>
-        <td rowspan="2"></td>
+        <td style="background:#b3b2b2; text-align:center; font-weight:bold; font-size:8pt;">조제시&nbsp;참고사항</td>
       </tr>
-      <tr>
-        <td colspan="2" style="height:36px;"></td>
-      </tr>
+      <tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td></tr>
     </tbody>
   </table>
 
@@ -2810,9 +2837,10 @@ export function isHtmlTemplate(formKey: string): boolean {
 /**
  * rx_standard용 처방 의약품 행 HTML 생성.
  * `rx_items_html` 변수에 주입할 `<tr>...</tr>` 뭉치 반환.
- * 최소 8행 보장 (빈 행 포함).
+ * 최소 10행 보장 (빈 행 포함).
  *
  * @see T-20260515-foot-FORM-ONELINE-RX
+ * @see T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY — 피부 A4 실측 정합: 일반행 최소 8→10.
  */
 export function buildRxItemsHtml(
   items: Array<{
@@ -2827,7 +2855,8 @@ export function buildRxItemsHtml(
     method?: string;
   }>,
 ): string {
-  const TOTAL_ROWS = 8;
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 피부 A4 실측 정합 — 의약품표 일반행 최소 10행.
+  const TOTAL_ROWS = 10;
   const rows = items.map((item) => ({
     // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 약품명 앞 코드 prefix 구분자 '코드 | 약품명'(파이프).
     //   (구 T-20260718-foot-RXPRINT-DRUGCODE-PREFIX 의 '[코드] 약품명' 대괄호에서 파이프로 변경.)

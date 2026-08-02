@@ -359,7 +359,7 @@ test.describe('§5 — HTML 13종 양식 렌더링 일관성 (AC-3)', () => {
     console.log('[AC-3] bill_detail: items_html 행 렌더 OK');
   });
 
-  test('rx_standard: rx_items_html 처방 행 렌더링 (최소 8행 보장)', async ({ page }) => {
+  test('rx_standard: rx_items_html 처방 행 렌더링 (최소 10행 보장, T-20260730-…-FORMAT-UNIFY 8→10)', async ({ page }) => {
     const tpl = getHtmlTemplate('rx_standard');
     const rxHtml = buildRxItemsHtml([
       { name: '타이레놀', unit_dose: '1', daily_freq: '3', total_days: '5' },
@@ -389,21 +389,22 @@ test.describe('§6 — 행 빌더 regression (AC-3)', () => {
     expect(html).toContain('15,000');
   });
 
-  test('buildRxItemsHtml: 최소 8행 보장 (빈 행 패딩)', () => {
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 최소행 8→10.
+  test('buildRxItemsHtml: 최소 10행 보장 (빈 행 패딩)', () => {
     const html = buildRxItemsHtml([
       { name: '타이레놀', unit_dose: '1', daily_freq: '3', total_days: '5' },
     ]);
     // <tr> 또는 <tr style="..."> 형태 모두 매칭
     const rowCount = (html.match(/<tr[\s>]/g) ?? []).length;
-    expect(rowCount).toBeGreaterThanOrEqual(8);
+    expect(rowCount).toBeGreaterThanOrEqual(10);
     expect(html).toContain('타이레놀');
   });
 
-  test('buildRxItemsHtml: 빈 배열도 최소 8행', () => {
+  test('buildRxItemsHtml: 빈 배열도 최소 10행', () => {
     const html = buildRxItemsHtml([]);
     // <tr> 또는 <tr style="..."> 형태 모두 매칭
     const rowCount = (html.match(/<tr[\s>]/g) ?? []).length;
-    expect(rowCount).toBeGreaterThanOrEqual(8);
+    expect(rowCount).toBeGreaterThanOrEqual(10);
   });
 });
 

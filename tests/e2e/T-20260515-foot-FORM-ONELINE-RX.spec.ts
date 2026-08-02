@@ -10,7 +10,7 @@
  * 시나리오 1: 한줄 정렬 확인 — 진단서 (diagnosis)
  * 시나리오 2: 9종 전체 양식 확인 (getHtmlTemplate 커버리지)
  * 시나리오 3: 처방전 HTML/CSS 출력 확인
- * 시나리오 4: 엣지 케이스 — 빈 rx_items 8행 보장
+ * 시나리오 4: 엣지 케이스 — 빈 rx_items 10행 보장 (T-20260730-…-FORMAT-UNIFY: 8→10)
  *
  * @see T-20260515-foot-FORM-ONELINE-RX
  */
@@ -120,24 +120,25 @@ test.describe('파트 B: 처방전(rx_standard) HTML/CSS 신규 (AC-2)', () => {
 // ─── 시나리오 4: buildRxItemsHtml 함수 ───
 
 test.describe('buildRxItemsHtml 함수 검증 (AC-2)', () => {
-  test('빈 items → 8행 빈 행 생성 (최소 행 보장)', () => {
+  // T-20260730-foot-RX-STANDARD-DERM-FORMAT-UNIFY: 피부 A4 실측 정합으로 최소행 8→10.
+  test('빈 items → 10행 빈 행 생성 (최소 행 보장)', () => {
     const html = buildRxItemsHtml([]);
     const rowCount = (html.match(/<tr/g) ?? []).length;
-    expect(rowCount).toBe(8);
+    expect(rowCount).toBe(10);
   });
 
-  test('items 1건 → 1건 + 7 빈행 = 8행 총합', () => {
+  test('items 1건 → 1건 + 9 빈행 = 10행 총합', () => {
     const html = buildRxItemsHtml([{ name: '비보주블리아외용액(외용)', unit_dose: '1', daily_freq: '1', total_days: '7' }]);
     const rowCount = (html.match(/<tr/g) ?? []).length;
-    expect(rowCount).toBe(8);
+    expect(rowCount).toBe(10);
     expect(html).toContain('비보주블리아외용액(외용)');
   });
 
-  test('items 9건 → 9행 (최소 행보다 많으면 그대로)', () => {
-    const items = Array.from({ length: 9 }, (_, i) => ({ name: `약품${i + 1}` }));
+  test('items 12건 → 12행 (최소 행보다 많으면 그대로)', () => {
+    const items = Array.from({ length: 12 }, (_, i) => ({ name: `약품${i + 1}` }));
     const html = buildRxItemsHtml(items);
     const rowCount = (html.match(/<tr/g) ?? []).length;
-    expect(rowCount).toBe(9);
+    expect(rowCount).toBe(12);
   });
 
   test('5개 컬럼(명칭/투약량/횟수/일수/용법) 구조 확인', () => {
