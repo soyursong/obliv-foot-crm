@@ -90,9 +90,15 @@ test.describe('결함③ 연번호(visit_no) 발번 배선 — PMW 발번 미배
   });
 
   test('인쇄 경로가 form_key별 발번 visit_no 를 enriched 에 주입 (저장본=인쇄본 동일번호)', () => {
-    // 양경로에서 visitNoByTemplateId.get(t.id) → enriched.visit_no 주입
+    // T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): 기존 기대값 2(=인쇄+[출력및수납] 평행 2경로 각 주입).
+    //   T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ(9b9977db)가 요건④로 [출력 및 수납](handleDocAndSettle) 진입점을
+    //   제거하고 [출력](handleDocPrint) 단일경로로 통일 → 주입 지점이 2→1로 정상 감소(발번 배선 소실 아님).
+    //   핵심 불변식(발번된 visit_no 를 인쇄 enriched 에 주입해 저장본=인쇄본 동일번호 보장)은 단일경로에서 그대로
+    //   유지되므로, 주입 존재(≥1) + enriched.visit_no 배선을 함께 가드한다.
     const injects = occurrences(PMW_SRC, 'visitNoByTemplateId.get(t.id)');
-    expect(injects, 'visit_no 주입이 양경로에 없음').toBeGreaterThanOrEqual(2);
+    expect(injects, 'visit_no 발번 주입 배선 소실').toBeGreaterThanOrEqual(1);
+    // 발번 visit_no → 인쇄 enriched.visit_no 주입(저장본=인쇄본 동일번호) 배선 존치
+    expect(PMW_SRC, 'enriched.visit_no 주입 배선 누락').toMatch(/enriched\.visit_no\s*=/);
   });
 
   test('처방전 행 clobber 방지: visit_no + issue_no 단일 update 누적', () => {

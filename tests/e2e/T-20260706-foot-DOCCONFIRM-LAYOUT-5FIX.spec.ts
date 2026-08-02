@@ -51,12 +51,17 @@ const CONFIRM_DOCS = [
 test.describe('시나리오1 AC-①: 상단 섹션 좌우 50:50 정렬', () => {
   for (const [name, tpl] of CONFIRM_DOCS) {
     test(`${name} 상단 표 table-layout:fixed + 라벨15%/값35% 좌우 대칭`, () => {
-      // 병록번호 라벨 15% + record_no 값 35% + 연령 라벨 15% + age 값 35% = 50:50
+      // 병록번호 라벨 15% + record_no 값 35% + (row1 우반부 라벨 15% + 값 35%) = 50:50
       const topBlock = tpl.slice(0, tpl.indexOf('{{patient_rrn}}'));
       expect(topBlock, `${name} 상단표 table-layout:fixed 누락`).toContain('table-layout:fixed');
       expect(topBlock).toContain('style="width:15%; background:#f8f8f8;">병 록 번 호');
       expect(topBlock).toContain('style="width:35%;">{{record_no}}');
-      expect(topBlock).toContain('style="width:15%; background:#f8f8f8;">연 령');
+      // T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): 우반부 라벨 고정('연 령')이 낡음.
+      //   T-20260731-foot-DOCFORM-URGENT-6FIX AC-5⑤(롤모델 정합)로 통원확인서는 행1우측=성별/행2우측=연령으로 위치가
+      //   교환됨(진료확인서는 행1우측=연령 유지). 두 서류 모두 row1 우반부 라벨이 width:15%(좌우 대칭)인 불변식은 유지 →
+      //   서류별 실제 row1 우반부 라벨로 일반화해 50:50 레이아웃을 가드(레이아웃 회귀 아님).
+      const row1RightLabel = name === '진료확인서' ? '연 령' : '성별';
+      expect(topBlock, `${name} row1 우반부 라벨 width:15% 대칭 누락`).toContain(`style="width:15%; background:#f8f8f8;">${row1RightLabel}`);
       // 구 고정폭(140px value / 70px label)은 상단 섹션에서 제거
       expect(topBlock).not.toContain('style="width:140px;">{{record_no}}');
     });
@@ -78,16 +83,30 @@ test.describe('시나리오2 AC-②: 환자 성명 옆 막음칸(빈 셀) 제거
 });
 
 // ── 시나리오 3 AC-③: 용도 입력칸 내용맞춤 ──────────────────────────────────
+// T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): 용도칸 정본이 후속 티켓으로 두 서류가 갈렸다.
+//   · 진료확인서(TREAT): T-20260729-foot-DOC-LAYOUT-FIX ③ 로 용도표 width:auto→100%+table-layout:fixed,
+//     라벨폭 60px→80px(위 통원일자칸과 통일), 값셀 min-width:320px 제거. → 현행 정본으로 갱신.
+//   · 통원확인서(VISIT): T-20260731-foot-DOCFORM-URGENT-6FIX AC-5⑧(팀장 2026-07-31, 롤모델 정합)로 용도 행을
+//     인쇄물에서 제거(미렌더). {{purpose}} 토큰·발급 UI·저장 경로는 무접촉 — 인쇄물에만 미표시. → '미렌더' 가드.
+//   (구 60px/width:auto/min-width:320px 기대는 위 두 변경으로 낡음 — 레이아웃 회귀 아님)
+const stripHtmlComments = (t: string) => t.replace(/<!--[\s\S]*?-->/g, '');
+
 test.describe('시나리오3 AC-③: 용도 입력칸 너비 내용맞춤', () => {
-  for (const [name, tpl] of CONFIRM_DOCS) {
-    test(`${name} 용도 표 width:auto + 라벨60px·값 min-width:320px`, () => {
-      expect(tpl, `${name} 용도표 width:auto 미적용`).toMatch(
-        /width:auto;">\s*<tbody>[\s\S]*?용&nbsp;&nbsp;도/,
-      );
-      expect(tpl).toContain('style="width:60px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도');
-      expect(tpl).toContain('style="min-width:320px;">{{purpose}}');
-    });
-  }
+  test('진료확인서 용도 표 width:100%;table-layout:fixed + 라벨80px·값 {{purpose}}', () => {
+    const active = stripHtmlComments(TREAT_CONFIRM);
+    expect(active, '진료확인서 용도표 width:100%;table-layout:fixed 미적용').toMatch(
+      /width:100%; table-layout:fixed;">\s*<tbody>[\s\S]*?용&nbsp;&nbsp;도/,
+    );
+    expect(active).toContain('style="width:80px; background:#f8f8f8; text-align:center;">용&nbsp;&nbsp;도');
+    expect(active).toContain('<td>{{purpose}}</td>');
+  });
+
+  test('통원확인서 용도 행은 인쇄물 미렌더(URGENT-6FIX AC-5⑧)', () => {
+    // 주석(복원용 스니펫)에는 용도 마크업이 남아있으므로 HTML 주석을 제거한 '활성 렌더 본문'에서만 검증
+    const active = stripHtmlComments(VISIT_CONFIRM);
+    expect(active, '통원확인서 용도 라벨이 인쇄물에 잔존(제거 정본 위배)').not.toContain('용&nbsp;&nbsp;도');
+    expect(active, '통원확인서 {{purpose}} 활성 렌더 잔존').not.toContain('{{purpose}}');
+  });
 });
 
 // ── 시나리오 4 AC-④: 상기인 텍스트칸 높이 3배 ─────────────────────────────

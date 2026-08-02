@@ -97,7 +97,11 @@ test.describe('AC-2: 고객정보 HTML 플레이스홀더 전건', () => {
     { key: 'visit_confirm', fields: ['patient_name', 'patient_rrn', 'record_no', 'doctor_license_no'] },
     { key: 'diag_opinion',  fields: ['patient_name', 'patient_rrn', 'record_no', 'doctor_license_no'] },
     // rx_standard: 처방의료인 축 분리(T-20260718-DOCPRINT-RX-DOCTOR-BIND) → doctor_license_no 대신 prescriber_license_no
-    { key: 'rx_standard',   fields: ['patient_name', 'record_no', 'prescriber_license_no'] },
+    // T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): record_no(차트번호) 제거.
+    //   T-20260719-foot-RXPRINT-LAYOUT-4FIX(bf585178) '고객정보 과다노출 블록 삭제'로 처방전에서 차트번호 노출을
+    //   의도적으로 제거함(프라이버시). 처방전 정본은 환자명+처방의료인 면허만 바인딩(회귀 아님). record_no 는 여전히
+    //   diagnosis/treat_confirm/visit_confirm/diag_opinion 서류엔 존재 → 그 항목들은 그대로 검증.
+    { key: 'rx_standard',   fields: ['patient_name', 'prescriber_license_no'] },
   ];
 
   for (const { key, fields } of FORMS_NEEDING_PATIENT_INFO) {
@@ -137,12 +141,15 @@ test.describe('AC-2: 고객정보 바인딩 렌더', () => {
     expect(body).toContain('99999');             // 면허번호
   });
 
-  test('rx_standard — record_no/prescriber_license_no 렌더', async ({ page }) => {
+  test('rx_standard — patient_name/prescriber_license_no 렌더', async ({ page }) => {
     const tpl = getHtmlTemplate('rx_standard')!;
     const bound = bindHtmlTemplate(tpl, FULL_BIND_VALUES);
     await page.setContent(`<html><body>${bound}</body></html>`);
     const body = await page.locator('body').textContent() ?? '';
-    expect(body).toContain('F-0042');
+    // T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): record_no(F-0042) 단언 제거 —
+    //   T-20260719-foot-RXPRINT-LAYOUT-4FIX(bf585178)에서 처방전 고객정보 과다노출 블록 삭제로 차트번호 미노출이 정본.
+    //   환자명·처방의료인 면허 바인딩은 존치 검증.
+    expect(body).toContain('홍길동');  // 환자명 = patient_name (처방전 존치)
     expect(body).toContain('99999');  // 처방의료인 면허 = prescriber_license_no (RX-DOCTOR-BIND 후 doctor_* 아님)
   });
 });
