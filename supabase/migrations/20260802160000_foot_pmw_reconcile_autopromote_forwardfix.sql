@@ -24,9 +24,20 @@
 --                                        (status 미변경 → 트리거 두 분기 미발화 → 앵커 보존).
 --                                        f3aba00b 2-step 선례 계승. (b) 트리거 조건분기 = NO(공유트리거 fork).
 --
--- 승격 대상 술어(DA Q3 확정): status='payment_waiting' ∩ checkin일<today(KST) ∩ 동일 check_in 의
+-- ★ GO 조건 6(관측성 — DA REAFFIRM 신설, CONSULT-REPLY MSG-20260802-110350-7yit):
+--   04:15 cron 이 promoted_count(0 포함) nightly 로깅 → dormancy 가시·감사가능(dead↔dormant 운영 구분).
+--   구현 = promote_reconciled_payment_waiting() 종료 직전 RAISE LOG(promoted/skipped/ran_at). 매 실행 발화.
+--   promoted=0 = primary path 정상(승격불요) = dormant 안전망 정상. count>0 = window 재발 → supervisor/planner 인지.
+--   (신규 컬럼·테이블·enum 0 — 서버로그 RAISE LOG 만. 술어·write-path 무변.)
+--
+-- 승격 대상 술어(DA Q3 확정 · DA REAFFIRM LITERAL 유지 — settled 재해석 반려 Q-A=NO/Q-B=NO):
+--   status='payment_waiting' ∩ checkin일<today(KST) ∩ 동일 check_in 의
 --   reconciled payment 보유(reconciled_at IS NOT NULL ∩ payment_type='payment' ∩ amount>0).
 --   미수/취소/노쇼(payment 무·미reconciled·refund) = 배제(가짜완료 날조 금지, STUCK-PROMOTION-CLASS 계승).
+--   ※ reconciled=완료증거(외부결제 피드매칭 확인)=비가역 done 승격을 정당화하는 load-bearing 불변식.
+--     settled(수납정착) 완화 = 11~64d stale orphan 을 silent false-completion → 반려(DA H1 92/92·H2 orphan).
+--   ※ '0건 매칭' ≠ dead: reconciled⇒done 불변식 92/92 무결의 방증(reconcile 되면 이미 done → PMW∩reconciled=0
+--     은 구조적). cron 은 primary path 정상일 때 0회 발화하는 dormant 안전망(재발 자동포착 belt-and-suspenders).
 --
 -- 매출/원장 중립(DA Q4): status + completed_at(guarded) 만 write. payments/service_charges/매출 split 무접점.
 --   customers.visit_type 미접점(직교축 — done 파생 recency 가 자동정합, 여기서 write 안 함).
@@ -154,6 +165,11 @@ BEGIN
     v_ids := array_append(v_ids, r.id);
   END LOOP;
 
+  -- ★ GO 조건 6(관측성): promoted_count(0 포함) 매 실행 nightly 로깅 → dormancy 가시·감사가능.
+  --   promoted=0 = dormant 정상(primary path 무결). promoted>0 = window 재발 신호 → supervisor/planner 인지.
+  RAISE LOG 'foot-pmw-autopromote: promoted=% skipped=% clinic=% ran_at=%',
+    v_promoted, v_skipped, COALESCE(p_clinic_id::text, 'ALL'), now();
+
   RETURN jsonb_build_object(
     'promoted', v_promoted,
     'skipped',  v_skipped,
@@ -193,3 +209,5 @@ SELECT cron.schedule(
 -- [ ] 수동 1틱    : SELECT public.promote_reconciled_payment_waiting();  -- {promoted,skipped,ids}
 -- [ ] 앵커검증    : 승격행 completed_at == reconciled payment accounting_date(KST 자정), NOT now()/배치시각
 -- [ ] 멱등검증    : 2회 연속 실행 → 2회차 promoted=0 (전량 idempotent skip)
+-- [ ] 관측성(조건6): 수동 1틱 후 postgres 서버로그에 'foot-pmw-autopromote: promoted=% skipped=% ...' 발화 확인
+--                   (promoted=0 도 로깅 → dormant 가시. count>0 시 supervisor/planner 인지 트리거)
