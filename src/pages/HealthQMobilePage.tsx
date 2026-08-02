@@ -74,10 +74,19 @@ const SYMPTOM_OPTIONS = [
 ];
 
 // ── 2번 발 건강 관련 경험 (4문) — 현장 확정 ────────────────────────────────────
-// Q1 문제성 발톱 치료: 없음 / 있음 → 치료방법
-const NAIL_TREATMENT_HISTORY_OPTIONS = ['없음', '있음'];
+// Q1 문제성 발톱 치료: 있음 / 없음 → 치료방법
+// T-20260731-foot-FOOTHEALTH-SURVEY-TREATEXP-LAYOUT-LABEL (1):
+//   '있음'을 좌측에 배치([있음 | 없음]). 저장값('있음'/'없음') 불변, 렌더 순서만 스왑.
+const NAIL_TREATMENT_HISTORY_OPTIONS = ['있음', '없음'];
 // 치료방법 (OQ3 — 선택방식 현장확정 전 다중선택 가정)
-const NAIL_TREATMENT_METHOD_OPTIONS = ['먹는 약', '바르는 약', '레이저'];
+// T-20260731-foot-FOOTHEALTH-SURVEY-TREATEXP-LAYOUT-LABEL (2):
+//   현장 표현으로 표시 라벨 정정 + 순서(처방→레이저→바르는약). ⚠ value는 기존 저장값
+//   그대로 유지(데이터 계약 불변) — 화면 표시 label만 교체. EN은 EN_LABELS[value]로 그대로.
+const NAIL_TREATMENT_METHOD_OPTIONS: { value: string; label: string }[] = [
+  { value: '먹는 약',  label: '병.의원 약 처방(먹는 약)' },
+  { value: '레이저',   label: '병.의원 레이저 치료' },
+  { value: '바르는 약', label: '약국 또는 온라인 바르는 약' },
+];
 // Q2 증상 시작 시점
 const SYMPTOM_ONSET_OPTIONS = ['6개월 이내', '1~3년', '3~5년', '10년 이상'];
 // Q3 가족력
@@ -887,12 +896,12 @@ export default function HealthQMobilePage() {
                 <p className="text-xs font-medium" style={{ color: C.mutedText }}>{tt('치료 방법 (해당 항목 선택)', 'Treatment method (select all that apply)')}</p>
                 <div className="flex flex-wrap gap-2">
                   {NAIL_TREATMENT_METHOD_OPTIONS.map((opt) => (
-                    <BigBtn key={opt}
-                      active={d.nail_treatment_methods.includes(opt)}
-                      onClick={() => set('nail_treatment_methods', toggle(d.nail_treatment_methods, opt))}
+                    <BigBtn key={opt.value}
+                      active={d.nail_treatment_methods.includes(opt.value)}
+                      onClick={() => set('nail_treatment_methods', toggle(d.nail_treatment_methods, opt.value))}
                       color="teal"
                     >
-                      {optL(opt)}
+                      {tt(opt.label, EN_LABELS[opt.value] ?? opt.value)}
                     </BigBtn>
                   ))}
                 </div>
