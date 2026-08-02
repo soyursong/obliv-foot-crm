@@ -31,9 +31,16 @@
 --   (0-row + error=null 성공오판 차단). manual op / 해제 / 재확정 각 단계 검증.
 --
 -- 멱등: CREATE TABLE IF NOT EXISTS · CREATE OR REPLACE FUNCTION. 재실행 안전.
--- rollback: 20260802160000_foot_closing_confirmed_edit.rollback.sql
--- dryrun : 20260802160000_foot_closing_confirmed_edit.dryrun.sql (no-persistence sentinel)
+-- rollback: 20260802160001_foot_closing_confirmed_edit.rollback.sql
+-- dryrun : 20260802160001_foot_closing_confirmed_edit.dryrun.sql (no-persistence sentinel)
 -- author: dev-foot / 2026-08-02
+--
+-- version-renumber(T-20260802-foot-DAYCLOSE-VERSION-COLLISION-RENUMBER, 2026-08-02):
+--   20260802160000 → 20260802160001. 사유 = ledger version `20260802160000` 교차점유 disentangle.
+--   PMW 마이그(20260802160000_foot_pmw_reconcile_autopromote_forwardfix)가 이 version 을 정당점유
+--   (DA da_decision_..._migledger_reconcile §7 · MSG-20260802-115534-r93z) → DAYCLOSE 측 distinct version 분리.
+--   objects(closing_edit_log·closing_confirmed_edit) 는 이미 prod-LIVE(supervisor 2026-08-02 11:16 apply) →
+--   본 renumbered version 은 forward-doc(record-only) 로 ledger 등재 · prod 재-apply 금지(멱등이나 혼동회피).
 
 BEGIN;
 

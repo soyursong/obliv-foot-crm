@@ -1,5 +1,5 @@
 -- ROLLBACK — T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK
---   20260802160000_foot_closing_confirmed_edit.sql 원복(ADDITIVE 역순 drop).
+--   20260802160001_foot_closing_confirmed_edit.sql 원복(ADDITIVE 역순 drop).
 --   author: dev-foot / 2026-08-02
 --
 -- ⚠ 감사로그(closing_edit_log) 보존 정책:
