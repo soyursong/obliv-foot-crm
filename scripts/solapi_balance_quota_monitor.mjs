@@ -44,6 +44,17 @@
  *     (7) 발송 실패율 급등 경보: 당일(KST) notification_logs failed 건수가 임계(기본 100건/일) 초과 시 경보.
  *         잔액·한도와 독립적으로 '조용한 대량 실패'를 포착. env SOLAPI_FAIL_SPIKE_COUNT (기본 100).
  *
+ * ── T-20260730-foot-SOLAPI-AUTORECHARGE-DOUBLECHECK-RETUNE (본 티켓) — (B) 결제/캐시 API 직접 더블체크 ──
+ *   CEO "결제 API 받아와서 잔액 부분 더블 체크. 충전 안되거나 문제 발생 시 '문자 실패 급등'처럼 위험 알림 똑같이".
+ *     A. ② 프록시 임계 재정합: 실제 자동충전 설정(잔액<1만원→10만원 충전, 양지점)에 트리거·min₩=1만원 정합
+ *        (D-1에서 반영 완료 — 구 추정값 종로15만/송도5만 폐기로 autoRecharge ON 정상대역 오탐 제거).
+ *     B. cash/payment 내역 API(/cash/v1/history) 직접 폴링 → 자동충전 트랜잭션 실제 성공 여부 확인.
+ *        balance 회복(프록시) + cash-log(직접) 2단 교차검증: 잔액 미회복 + 충전 성공 기록 부재 = 확정 실패.
+ *        (솔라피가 결제실패 이벤트를 직접 노출하지 않으면 '충전기록 부재 + 잔액 미회복' 폴백 판정.
+ *         조회 불가 시 프록시 단독 폴백 — cash 더블체크는 비치명 additive, 프록시 경보를 억제하지 않음.)
+ *     C. 실패 알림 형식 = parent ③ '문자 실패 급등'과 동일 톤(🚨 헤더 + 불릿). '현재 잔액/트리거/예상충전',
+ *        '최근 자동충전 성공 기록 없음/잔액 미회복(연속 N회)' 명시. 충전기록 有+잔액低 시엔 [확인 필요]로 톤 완화.
+ *
  * ── db_change=false 설계 판정 (DA CONSULT 게이트 미발동) ──────────────────────────────
  *   경보 dedup 상태는 DB 테이블이 아니라 macstudio 로컬 JSON 상태파일로 충분(단일 노드 상주 잡).
  *   잔액 조회 = 솔라피 API read-only, 한도 감지 = notification_logs read-only. 신규 컬럼/테이블/enum 0.
@@ -159,6 +170,18 @@ const DEFAULT_RECHARGE_TRIGGER_WON = { "74967aea": 10000, "b4dc0de5": 10000 };
 function minWonFor(shortId) { return cfgNum(`SOLAPI_BALANCE_MIN_WON_${shortId}`, DEFAULT_MIN_WON[shortId] ?? 0); }
 function rechargeTriggerFor(shortId) { return cfgNum(`SOLAPI_RECHARGE_TRIGGER_WON_${shortId}`, DEFAULT_RECHARGE_TRIGGER_WON[shortId] ?? 0); }
 
+// ── (B) T-20260730-SOLAPI-AUTORECHARGE-DOUBLECHECK-RETUNE — 결제/캐시 API 직접 더블체크 ─────
+//   CEO "결제 API 받아와서 잔액 부분 더블 체크": balance 프록시(잔액 미회복)에 더해, 솔라피
+//   cash 내역 API(/cash/v1/history)를 직접 폴링해 '충전 트랜잭션이 실제 성공 기록됐는지'를 교차검증.
+//   SOLAPI_RECHARGE_TOPUP_WON_<short> : 예상 자동충전액(원). 팀장 콘솔 = 양 지점 10만원. 알림 문안·
+//     충전기록 매칭(양수 amount ≥ topup×0.5)에 사용.
+//   SOLAPI_CASH_HISTORY_LOOKBACK_HOURS : 충전 성공 기록을 탐색할 조회창(기본 6h). 이 창 안에 성공
+//     충전이 없고 잔액도 트리거 아래면 = 확정 실패(2단 교차검증). 창은 grace 유예(2h)보다 넉넉히 잡음.
+const DEFAULT_TOPUP_WON = { "74967aea": 100000, "b4dc0de5": 100000 };
+function topupWonFor(shortId) { return cfgNum(`SOLAPI_RECHARGE_TOPUP_WON_${shortId}`, DEFAULT_TOPUP_WON[shortId] ?? 100000); }
+const CASH_HISTORY_LOOKBACK_MS = Math.max(1, cfgNum("SOLAPI_CASH_HISTORY_LOOKBACK_HOURS", 6)) * 3600 * 1000;
+const CASH_HISTORY_LIMIT = Math.max(10, cfgNum("SOLAPI_CASH_HISTORY_LIMIT", 50));
+
 // 일일한도 초과 판정 토큰(솔라피/CRM 거부 메시지 문자열 — 부분일치, 확장 가능).
 const QUOTA_FAIL_TOKENS = (cfg("SOLAPI_QUOTA_FAIL_TOKENS",
   "일일 발송량 초과,일일발송량 초과,일일 전송량 초과,일일 발송한도,일일한도 초과,발송량 초과,전송한도 초과,일일 전송 한도")
@@ -238,6 +261,20 @@ async function fetchSolapiBalance(apiKey, apiSecret) {
   return json; // { balance, deposit, autoRecharge, accountId, lowBalanceAlert:{notificationBalance,...}, ... }
 }
 
+// ── (B) 솔라피 캐시(충전·차감) 내역 조회 (/cash/v1/history, HMAC-SHA256) — READ-ONLY ─────────
+//   충전 트랜잭션의 실제 성공 기록 유무를 직접 확인하기 위한 결제/캐시 API. balance 프록시와 교차검증.
+//   솔라피가 응답 스키마를 소폭 달리 노출할 수 있어(cashHistoryList/history/list, dateCreated/createdAt)
+//   호출부(classifyRechargeHistory)에서 유연 파싱. 조회 실패는 비치명(프록시 단독 폴백 판정).
+async function fetchSolapiCashHistory(apiKey, apiSecret, limit = CASH_HISTORY_LIMIT) {
+  const res = await fetch(`https://api.solapi.com/cash/v1/history?limit=${encodeURIComponent(limit)}`, {
+    method: "GET",
+    headers: { Authorization: solapiAuthHeader(apiKey, apiSecret), "Content-Type": "application/json" },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status !== 200) throw new Error(`solapi cash history ${res.status}: ${JSON.stringify(json).slice(0, 200)}`);
+  return json; // { cashHistoryList:[{ amount, balance, type, title, dateCreated, ... }], ... } (스키마 유연)
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 4. 순수 판정 로직 (self-test 대상 — 네트워크 무관)
 // ════════════════════════════════════════════════════════════════════════════
@@ -295,6 +332,42 @@ function evaluateAutoRechargeFailure(info) {
   if (!on) return { applicable: false, breached: false, balance, trigger };
   if (trigger == null || !Number.isFinite(trigger) || trigger <= 0) return { applicable: true, breached: false, balance, trigger };
   return { applicable: true, breached: balance < trigger, balance, trigger };
+}
+
+// 4c-3. (B) 결제/캐시 내역 직접 더블체크 — 충전 성공 기록 유무 판정 (self-test 대상, 네트워크 무관).
+//   historyList : 솔라피 cash history 응답(배열 또는 {cashHistoryList|history|list:[...]} — 유연 파싱).
+//   sinceMs     : 관측 시작 시각(ms). 이 시점 이후의 충전만 유효(직전 정상충전 오인 방지).
+//   topupWon    : 예상 자동충전액(원). 양수 금액이 topup×0.5 이상이면 충전으로 인정(타입 미노출 폴백).
+//   반환 { chargeFound, lastCharge:{amountWon, atMs, at}|null, entriesSeen }.
+//   판정 원칙: 충전(양수 amount + CHARGE/RECHARGE/AUTO/충전 타입 or 예상충전액 근접)만 인정,
+//             차감(음수·발송과금)은 제외. 시각 파싱 불가 시 보수적으로 창 안에 포함(미탐 방지).
+function classifyRechargeHistory(historyList, sinceMs, topupWon) {
+  const list = Array.isArray(historyList) ? historyList
+    : (historyList && Array.isArray(historyList.cashHistoryList)) ? historyList.cashHistoryList
+    : (historyList && Array.isArray(historyList.history)) ? historyList.history
+    : (historyList && Array.isArray(historyList.list)) ? historyList.list
+    : [];
+  let chargeFound = false;
+  let lastCharge = null;
+  for (const h of list) {
+    if (!h || typeof h !== "object") continue;
+    const amount = Number(h.amount ?? h.cash ?? h.point ?? h.value ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) continue; // 차감(음수/0)은 충전 아님
+    const typeStr = String(h.type ?? h.title ?? h.reason ?? h.description ?? "").toUpperCase();
+    const createdRaw = h.dateCreated ?? h.datecreated ?? h.created_at ?? h.createdAt ?? h.date ?? null;
+    const atMs = createdRaw ? Date.parse(createdRaw) : NaN;
+    const looksCharge =
+      /CHARGE|RECHARGE|AUTO|DEPOSIT|충전|입금/i.test(typeStr) ||
+      (Number.isFinite(topupWon) && topupWon > 0 && amount >= topupWon * 0.5);
+    if (!looksCharge) continue;
+    // 관측창 필터 — 시각이 있고 창 이전이면 제외. 시각 파싱 불가 시 포함(보수적 폴백).
+    if (Number.isFinite(atMs) && Number.isFinite(sinceMs) && atMs < sinceMs) continue;
+    chargeFound = true;
+    if (!lastCharge || (Number.isFinite(atMs) && atMs > (lastCharge.atMs ?? -Infinity))) {
+      lastCharge = { amountWon: amount, atMs: Number.isFinite(atMs) ? atMs : null, at: createdRaw };
+    }
+  }
+  return { chargeFound, lastCharge, entriesSeen: list.length };
 }
 
 // 4d. 일일한도 초과 응답 집계 — notification_logs failed 행 중 토큰 부분일치를 지점별 그룹.
@@ -399,9 +472,10 @@ async function main() {
   let balAlerts = 0, balSuppressed = 0, balRecovered = 0, balErrors = 0;
   for (const c of clinics) {
     let bal;
+    let apiKey = null, apiSecret = null; // (B) 자동충전 실패 시 cash 내역 더블체크에 재사용 → 루프 스코프로 hoist
     try {
-      const apiKey = await getVaultSecret(c.key_vault);
-      const apiSecret = await getVaultSecret(c.secret_vault);
+      apiKey = await getVaultSecret(c.key_vault);
+      apiSecret = await getVaultSecret(c.secret_vault);
       if (!apiKey || !apiSecret) { warn(`[${c.clinic_name}] Vault 시크릿 누락(key=${mask(apiKey)} secret=${mask(apiSecret)}) — 스킵.`); balErrors++; continue; }
       bal = await fetchSolapiBalance(apiKey, apiSecret);
     } catch (e) {
@@ -414,6 +488,7 @@ async function main() {
     const baseline = cfg(`SOLAPI_BALANCE_BASELINE_${shortId}`, "");
     const minWon = minWonFor(shortId);
     const rechargeTrigger = rechargeTriggerFor(shortId);
+    const rechargeTopup = topupWonFor(shortId); // (B) 예상 자동충전액(양지점 10만) — 문안·충전기록 매칭
     const info = {
       balance: bal.balance,
       notificationBalance: bal.lowBalanceAlert && bal.lowBalanceAlert.notificationBalance,
@@ -425,7 +500,10 @@ async function main() {
     log(`  [${c.clinic_name}] 잔액=${won(ev.balance)}원 예치금=${won(bal.deposit ?? 0)}원 발송가능=${ev.remaining}건 ` +
         `autoRecharge=${bal.autoRecharge ?? "?"} min₩=${won(minWon)} breached=${ev.breached}`);
 
-    // ── (6) 자동충전 실패 프록시 감지 (autoRecharge=1 + 잔액 < 트리거, 연속 grace 관측 후 확정) ──
+    // ── (6)+(B) 자동충전 실패 감지 — balance 프록시 + cash 내역 직접 더블체크 2단 교차검증 ──────
+    //   프록시(autoRecharge=1 + 잔액<트리거, 연속 grace 관측) 확정 시점에 결제/캐시 API(/cash/v1/history)를
+    //   직접 조회해 '충전 성공 트랜잭션 기록'이 실제 있는지 확인. 잔액 미회복 + 충전기록 부재 = 확정 실패.
+    //   충전기록이 있으면(=충전은 됐으나 곧 소진) 문구를 낮춰 발송, 조회 불가면 프록시 단독 폴백.
     {
       const rc = evaluateAutoRechargeFailure({ balance: bal.balance, autoRecharge: bal.autoRecharge, rechargeTrigger });
       const rcEntry = state.autorecharge[c.clinic_id] || { consec: 0, last_alerted_ms: 0 };
@@ -434,13 +512,39 @@ async function main() {
         log(`  [${c.clinic_name}] 자동충전 ON인데 잔액 ${won(rc.balance)}원 < 트리거 ${won(rc.trigger)}원 (연속 ${rcEntry.consec}/${RECHARGE_FAIL_GRACE_POLLS})`);
         if (rcEntry.consec >= RECHARGE_FAIL_GRACE_POLLS && shouldAlert(rcEntry, nowMs, REALERT_MS)) {
           const isRealert = Boolean(rcEntry.last_alerted_ms);
+
+          // (B) 결제/캐시 API 직접 더블체크 — 충전 성공 기록 유무 교차검증 (비치명: 실패 시 프록시 단독).
+          const lookbackH = Math.round(CASH_HISTORY_LOOKBACK_MS / 3600000);
+          let cashLine, cashMode;
+          try {
+            const hist = await fetchSolapiCashHistory(apiKey, apiSecret);
+            const rh = classifyRechargeHistory(hist, nowMs - CASH_HISTORY_LOOKBACK_MS, rechargeTopup);
+            if (rh.chargeFound) {
+              cashMode = "charge_found";
+              cashLine = `최근 ${lookbackH}시간 내 자동충전 성공 기록은 있으나(${won(rh.lastCharge?.amountWon ?? 0)}원) 잔액이 여전히 트리거 아래입니다 — 발송량 급증 소진 가능성`;
+            } else {
+              cashMode = "no_charge";
+              cashLine = `최근 ${lookbackH}시간 내 자동충전 성공 기록 없음 / 잔액 미회복 (연속 ${rcEntry.consec}회 감지)`;
+            }
+            log(`  [${c.clinic_name}] cash 더블체크: mode=${cashMode} entries=${rh.entriesSeen} lastCharge=${rh.lastCharge ? won(rh.lastCharge.amountWon) + "원" : "-"}`);
+          } catch (e) {
+            cashMode = "unavailable";
+            cashLine = `충전내역 확인 불가로 잔액 기준으로만 판정 / 잔액 미회복 (연속 ${rcEntry.consec}회 감지)`;
+            warn(`[${c.clinic_name}] cash 내역 조회 실패(비치명, 프록시 단독): ${e instanceof Error ? e.message : String(e)}`);
+          }
+
+          // (C) '문자 실패 급등'과 동일 톤·형식(🚨 헤더 + 불릿) — CEO "똑같이".
+          const headline = (cashMode === "charge_found")
+            ? `🚨 [자동충전 확인 필요] ${c.clinic_name} 솔라피 자동충전 직후에도 잔액이 낮습니다`
+            : `🚨 [자동충전 실패] ${c.clinic_name} 솔라피 자동충전이 실패했습니다`;
           const text =
-            `🚨 [자동충전 실패 의심] ${c.clinic_name} 문자(SMS) 자동충전이 동작하지 않는 것으로 보입니다${isRealert ? " (계속 미회복 — 재알림)" : ""}\n` +
-            `• 자동충전은 켜져 있으나, 잔액 ${won(rc.balance)}원이 자동충전 기준선 ${won(rc.trigger)}원 아래로 내려간 채 ${RECHARGE_FAIL_GRACE_POLLS}회 연속 회복되지 않았습니다.\n` +
+            `${headline}${isRealert ? " (계속 미회복 — 재알림)" : ""}\n` +
+            `• 현재 잔액 ${won(rc.balance)}원 (자동충전 트리거 ${won(rc.trigger)}원 · 예상 충전 ${won(rechargeTopup)}원)\n` +
+            `• ${cashLine}\n` +
             `• 흔한 원인: 등록 카드 만료 · 카드 한도 초과 · 결제 실패 · 월 상한 도달.\n` +
             `솔라피 콘솔에서 자동충전/결제수단(법인카드) 상태를 확인해 주세요. 방치하면 잔액 소진 시 문자가 전면 중단됩니다.`;
           const ok = sendSlack(SLACK_CHANNEL, text);
-          if (ok || DRY_RUN) { rcEntry.last_alerted_ms = nowMs; rcEntry.last_alerted_at = ts(); balAlerts++; }
+          if (ok || DRY_RUN) { rcEntry.last_alerted_ms = nowMs; rcEntry.last_alerted_at = ts(); rcEntry.last_cash_mode = cashMode; balAlerts++; }
         }
         state.autorecharge[c.clinic_id] = rcEntry;
       } else {
@@ -702,6 +806,51 @@ function runSelfTest() {
   assert(minWonHit.breached && minWonHit.reasons.some((r) => r.includes("설정 임계")), `[D-1] 송도 잔액 8천 < min₩ 1만 → 경보`);
   const minWonOk = evaluateBalance({ balance: 300000, minWon: minWonFor("b4dc0de5") }, opt);
   assert(!minWonOk.breached, `[D-1] 송도 잔액 30만 ≥ min₩ 1만(정상대역) → 경보 없음(오탐 제거)`);
+
+  // ── (B) T-20260730 결제/캐시 API 직접 더블체크 — classifyRechargeHistory (AC-2) ──────────────
+  const NOW = 1_800_000_000_000; // 고정 기준시각(ms)
+  const H = 3600 * 1000;
+  const since = NOW - 6 * H;
+  // B-1: 창 안에 자동충전 성공 기록 있음 → chargeFound=true (충전은 됐으나 잔액 낮음 케이스)
+  const bFound = classifyRechargeHistory(
+    { cashHistoryList: [
+      { amount: 100000, type: "CHARGE", dateCreated: new Date(NOW - 1 * H).toISOString() },
+      { amount: -45, type: "DEDUCTION", dateCreated: new Date(NOW - 0.5 * H).toISOString() },
+    ] }, since, 100000);
+  assert(bFound.chargeFound && bFound.lastCharge?.amountWon === 100000, `[B] 창 내 10만원 충전 기록 → chargeFound(차감 -45는 제외)`);
+  // B-2: 충전 기록 전혀 없음(차감만) → chargeFound=false = 확정 실패 신호
+  const bNone = classifyRechargeHistory(
+    { cashHistoryList: [
+      { amount: -45, type: "DEDUCTION", dateCreated: new Date(NOW - 1 * H).toISOString() },
+      { amount: -45, type: "발송과금", dateCreated: new Date(NOW - 2 * H).toISOString() },
+    ] }, since, 100000);
+  assert(!bNone.chargeFound, `[B] 차감만 있고 충전 기록 없음 → chargeFound=false(=확정 실패 신호)`);
+  // B-3: 충전 기록이 조회창 이전(오래됨) → 제외(직전 정상충전 오인 방지)
+  const bOld = classifyRechargeHistory(
+    { cashHistoryList: [ { amount: 100000, type: "CHARGE", dateCreated: new Date(NOW - 30 * H).toISOString() } ] },
+    since, 100000);
+  assert(!bOld.chargeFound, `[B] 30시간 전 충전은 창(6h) 밖 → chargeFound=false`);
+  // B-4: 타입 미노출이어도 예상충전액 근접 양수(≥topup×0.5)면 충전 인정(폴백)
+  const bAmt = classifyRechargeHistory(
+    [ { amount: 100000, dateCreated: new Date(NOW - 1 * H).toISOString() } ], since, 100000);
+  assert(bAmt.chargeFound, `[B] 타입 미노출 + 양수 10만(≥5만) → 충전 인정(폴백 판정)`);
+  // B-5: 소액 양수(발송 환불 등, topup×0.5 미만)는 충전으로 오인 안 함
+  const bSmall = classifyRechargeHistory(
+    [ { amount: 500, dateCreated: new Date(NOW - 1 * H).toISOString() } ], since, 100000);
+  assert(!bSmall.chargeFound, `[B] 소액 500원 양수(5만 미만·타입無) → 충전 아님(오인 방지)`);
+  // B-6: 스키마 유연성 — history/list 키, createdAt 필드도 파싱
+  const bAlt = classifyRechargeHistory(
+    { history: [ { amount: 100000, title: "자동충전", createdAt: new Date(NOW - 1 * H).toISOString() } ] }, since, 100000);
+  assert(bAlt.chargeFound, `[B] history 키 + createdAt + '자동충전' 타이틀 → 파싱·인정(스키마 유연)`);
+  // B-7: 시각 파싱 불가 시 보수적 포함(미탐 방지)
+  const bNoDate = classifyRechargeHistory(
+    { cashHistoryList: [ { amount: 100000, type: "CHARGE" } ] }, since, 100000);
+  assert(bNoDate.chargeFound, `[B] 시각 필드 부재 → 보수적 포함(미탐 방지)`);
+  // B-8: 빈/비정상 입력 방어
+  assert(classifyRechargeHistory(null, since, 100000).chargeFound === false, `[B] null 입력 방어 → chargeFound=false`);
+  assert(classifyRechargeHistory({}, since, 100000).entriesSeen === 0, `[B] 빈 객체 → entriesSeen=0`);
+  // (B) 기본 예상충전액 정합 — 양 지점 10만원(팀장 콘솔 top-up)
+  assert(topupWonFor("74967aea") === 100000 && topupWonFor("b4dc0de5") === 100000, `[B] 양 지점 예상충전액 기본값 = 10만원(콘솔 정합)`);
 
   // (7) 발송 실패 급등 — 당일 failed 건수 > 임계
   const failRows = [
