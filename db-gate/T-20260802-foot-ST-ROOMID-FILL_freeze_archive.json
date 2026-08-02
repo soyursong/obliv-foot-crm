@@ -1,0 +1,113 @@
+{
+  "ticket": "T-20260802-foot-ST-ROOMID-FILL",
+  "clinic": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+  "window": "all-time",
+  "captured_at_utc": "2026-08-02T08:45:40.903Z",
+  "freeze_count": 19,
+  "total_room_null": 58,
+  "residual_null": 39,
+  "older_than_60d": 0,
+  "within_60d": 19,
+  "dist": {
+    "consultation": 8,
+    "preconditioning": 8,
+    "laser": 3
+  },
+  "rows": [
+    {
+      "st_id": "3755ffb8-24b4-40d6-8acd-d3a9c8420a7b",
+      "to_status": "consultation",
+      "assigned_room": "상담실3"
+    },
+    {
+      "st_id": "f122b329-21c9-468f-a347-73e1210e011a",
+      "to_status": "consultation",
+      "assigned_room": "상담실5"
+    },
+    {
+      "st_id": "0953512c-bbcc-4452-b090-457f2ba36bf7",
+      "to_status": "consultation",
+      "assigned_room": "상담실1"
+    },
+    {
+      "st_id": "1bbdde32-0a75-4fe2-88c8-549cced847f1",
+      "to_status": "preconditioning",
+      "assigned_room": "C8"
+    },
+    {
+      "st_id": "11b5fdc4-ce66-4ea7-adbc-25adc7576d22",
+      "to_status": "consultation",
+      "assigned_room": "상담실4"
+    },
+    {
+      "st_id": "b935641d-3b6d-481b-bee2-c9a807f34df8",
+      "to_status": "preconditioning",
+      "assigned_room": "C7"
+    },
+    {
+      "st_id": "fb012996-c87b-4754-b9fd-f170977a7d41",
+      "to_status": "consultation",
+      "assigned_room": "상담실1"
+    },
+    {
+      "st_id": "527dbc8a-a83e-4819-92cd-17518073ecb2",
+      "to_status": "laser",
+      "assigned_room": "L8"
+    },
+    {
+      "st_id": "119e8b17-7ec0-4782-ae37-aa3e29451f62",
+      "to_status": "preconditioning",
+      "assigned_room": "C9"
+    },
+    {
+      "st_id": "1522260f-95f9-41b5-a70e-ab10a96445d3",
+      "to_status": "preconditioning",
+      "assigned_room": "C9"
+    },
+    {
+      "st_id": "78b2ef33-cb48-491b-a6cd-3ec8e9a5a094",
+      "to_status": "laser",
+      "assigned_room": "L8"
+    },
+    {
+      "st_id": "4c040312-9e6b-44de-ab39-62b49c2037c1",
+      "to_status": "preconditioning",
+      "assigned_room": "C1"
+    },
+    {
+      "st_id": "cf34dfc1-1144-49bf-ad35-d30832540bf1",
+      "to_status": "preconditioning",
+      "assigned_room": "C1"
+    },
+    {
+      "st_id": "cde13ddc-88e9-4fd4-a9c9-115129361c06",
+      "to_status": "preconditioning",
+      "assigned_room": "C10"
+    },
+    {
+      "st_id": "2744548d-1616-4b34-a418-704b98551051",
+      "to_status": "laser",
+      "assigned_room": "L8"
+    },
+    {
+      "st_id": "7fa63f88-9b52-491d-88be-c3e9393fa7c6",
+      "to_status": "consultation",
+      "assigned_room": "상담실3"
+    },
+    {
+      "st_id": "b0cf66ff-2b56-4427-b928-b29d417aef9d",
+      "to_status": "consultation",
+      "assigned_room": "상담실1"
+    },
+    {
+      "st_id": "0c648850-9c03-4ea5-b109-a97ac2043c16",
+      "to_status": "consultation",
+      "assigned_room": "상담실3"
+    },
+    {
+      "st_id": "01c3d54d-2969-4e27-969c-5fe8f95a9e99",
+      "to_status": "preconditioning",
+      "assigned_room": "C1"
+    }
+  ]
+}
