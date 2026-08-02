@@ -22,7 +22,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { isStaffUnlockRole } from '@/lib/permissions';
+import { isStaffUnlockRole, canEditConfirmedClosing } from '@/lib/permissions';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
@@ -172,6 +172,19 @@ interface ManualPaymentRow {
   created_at: string;
 }
 
+/** T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후 수정 이력 행(closing_edit_log) */
+interface ClosingEditLogRow {
+  id: string;
+  edited_by: string | null;
+  edited_at: string;
+  op_kind: string;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  revision_after: number;
+  editor?: { name: string | null } | null;
+}
+
 /** 결제내역 탭에서 표시되는 통합 행 */
 interface EnrichedRow {
   sort_key: string;
@@ -262,6 +275,10 @@ export default function Closing() {
   //   (변수명 isAdminOrManager 유지 — 마감 쓰기 게이트 의미. canRefund 는 旣 3역할 포함이라 이 set 의 부분집합.)
   const { profile } = useAuth();
   const isAdminOrManager = isStaffUnlockRole(profile?.role);
+  // T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정(closed) 후 '해제 없이 수정' 권한(admin/manager/director + payment).
+  const canEditConfirmed = canEditConfirmedClosing(profile);
+  // 확정 편집 모드 — 켜지면 확정 상태에서 재오픈 클릭 없이 실제정산/메모/수기수납 수정 가능(저장 시 RPC 원자 재확정).
+  const [confirmedEditMode, setConfirmedEditMode] = useState(false);
   // T-20260525-foot-ROLE-PERM-CUSTOM AC-4 → 6MENU ②: 환불 처리도 동일 6역할 set(기존 admin/manager/consultant/coordinator/therapist 포함, +director).
   const canRefund = isAdminOrManager;
 
@@ -652,6 +669,24 @@ export default function Closing() {
     },
   });
 
+  // ── T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후 수정 이력(closing_edit_log) ──
+  //   who/when/field/old→new/revision_after — 일마감 화면에서 바로 노출(김다인 confirm: 화면 즉시노출).
+  const { data: editLog = [] } = useQuery<ClosingEditLogRow[]>({
+    queryKey: ['closing-edit-log', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('closing_edit_log')
+        .select('id, edited_by, edited_at, op_kind, field, old_value, new_value, revision_after, editor:user_profiles!closing_edit_log_edited_by_fkey(name)')
+        .eq('clinic_id', clinic!.id)
+        .eq('close_date', date)
+        .order('edited_at', { ascending: false });
+      // 테이블 미배포(마이그 pre-apply) 시 조용히 빈 배열(화면 비차단).
+      if (error) return [];
+      return (data ?? []) as unknown as ClosingEditLogRow[];
+    },
+  });
+
   // ── 기존 마감 데이터로 폼 초기화 ────────────────────────────
   useEffect(() => {
     if (existing) {
@@ -665,6 +700,8 @@ export default function Closing() {
       setActualTransfer(0);
       setMemo('');
     }
+    // T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 날짜/마감 전환 시 확정 편집 모드 종료(잔여 상태 차단).
+    setConfirmedEditMode(false);
   }, [existing, date]);
 
   // ── Realtime: 결제·패키지결제·수기 변경 시 즉시 새로고침 ────
@@ -1161,6 +1198,61 @@ export default function Closing() {
     refresh();
   };
 
+  // ── T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후 '해제 없이 수정' 원자 저장 ──
+  //   저장 = closing_confirmed_edit RPC(unlock→edit→re-confirm revision+1 + 감사로그). raw mutate 아님(DA [4-d]).
+  //   manualOp(있으면) = 수기수납 단일행 편집/삭제/추가를 같은 트랜잭션에서 적용. audit = 필드단위 변경내역.
+  const saveConfirmedEdit = async (
+    manualOp: Record<string, unknown> | null,
+    audit: { field: string; old_value: string | null; new_value: string | null }[],
+  ): Promise<boolean> => {
+    if (!clinic || !existing) return false;
+    const { data, error } = await supabase.rpc('closing_confirmed_edit', {
+      p_clinic_id: clinic.id,
+      p_close_date: date,
+      p_actual_card: actualCard,
+      p_actual_cash: actualCash,
+      p_actual_transfer: actualTransfer,
+      p_memo: memo || null,
+      p_manual_op: manualOp,
+      p_audit: audit,
+    });
+    if (error) { toast.error(`수정 저장 실패: ${error.message}`); return false; }
+    const rev = (data as { revision?: number } | null)?.revision;
+    toast.success(`수정 저장됨 — 자동 재확정${typeof rev === 'number' ? ` (버전 ${rev})` : ''}·이력 기록`);
+    setConfirmedEditMode(false);
+    refresh();
+    refreshPayments();
+    qc.invalidateQueries({ queryKey: ['closing-edit-log', clinic.id, date] });
+    return true;
+  };
+
+  // 실제정산(실수령)/메모 변경 저장 — 변경필드만 audit 로 기록.
+  const saveConfirmedReconcile = async () => {
+    if (!existing) return;
+    const audit: { field: string; old_value: string | null; new_value: string | null }[] = [];
+    if (actualCard !== (existing.actual_card_total ?? 0))
+      audit.push({ field: '카드 실수령', old_value: String(existing.actual_card_total ?? 0), new_value: String(actualCard) });
+    if (actualCash !== (existing.actual_cash_total ?? 0))
+      audit.push({ field: '현금 실수령', old_value: String(existing.actual_cash_total ?? 0), new_value: String(actualCash) });
+    if (actualTransfer !== (existing.actual_transfer_total ?? 0))
+      audit.push({ field: '이체 실수령', old_value: String(existing.actual_transfer_total ?? 0), new_value: String(actualTransfer) });
+    if ((memo || '') !== (existing.memo ?? ''))
+      audit.push({ field: '메모', old_value: existing.memo ?? '', new_value: memo || '' });
+    if (audit.length === 0) { toast.error('변경된 내용이 없습니다'); return; }
+    await saveConfirmedEdit(null, audit);
+  };
+
+  // 확정 편집 모드 취소 — 폼을 확정 시점 값으로 되돌리고 모드 종료.
+  const cancelConfirmedEdit = () => {
+    if (existing) {
+      setActualCard(existing.actual_card_total ?? 0);
+      setActualCash(existing.actual_cash_total ?? 0);
+      setActualTransfer(existing.actual_transfer_total ?? 0);
+      setMemo(existing.memo ?? '');
+    }
+    setConfirmedEditMode(false);
+  };
+
   // ── CSV 내보내기 (총 합계 탭) ─────────────────────────────
   // T-20260519-foot-PKG-REVENUE-SPLIT: grossTotal은 패키지차감(membership) 제외
   // T-20260525-foot-CLOSING-CALC-BUG: GROSS 표시 + 환불 별도 행 → 행합계 = NET(grossTotal) ✓
@@ -1396,8 +1488,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
   const handlePrint = () => window.print();
 
   // ── 수기 삭제 ─────────────────────────────────────────────
-  const deleteManual = async (id: string) => {
+  const deleteManual = async (id: string, raw?: ManualPaymentRow) => {
     if (!window.confirm('수기 결제내역을 삭제하시겠습니까?')) return;
+    // T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 편집 모드에서는 원자 재확정 경로(soft-void + 감사).
+    if (isClosed && confirmedEditMode) {
+      await saveConfirmedEdit(
+        { kind: 'void', id },
+        [{
+          field: '수기수납 삭제',
+          old_value: raw ? `${raw.customer_name} ${formatAmount(raw.amount)} ${METHOD_KO[raw.method] ?? raw.method}` : id,
+          new_value: null,
+        }],
+      );
+      return;
+    }
     const { error } = await supabase.from('closing_manual_payments').delete().eq('id', id);
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     toast.success('삭제됨');
@@ -1454,12 +1558,39 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             </Button>
             {/* T-20260520-foot-RBAC-MENU-EXPAND: 임시저장·마감 확정·재오픈 = admin/manager 전용 */}
             {isAdminOrManager && (isClosed ? (
-              <Button variant="outline" onClick={() => {
-                if (!window.confirm('마감을 재오픈하시겠습니까?')) return;
-                reopen();
-              }}>
-                <Unlock className="mr-1 h-4 w-4" /> 재오픈
-              </Button>
+              <>
+                {/* T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 해제(재오픈) 없이 바로 수정 진입 */}
+                {canEditConfirmed && !confirmedEditMode && (
+                  <Button
+                    variant="outline"
+                    data-testid="confirmed-edit-enter"
+                    onClick={() => setConfirmedEditMode(true)}
+                    title="재오픈(해제) 없이 바로 수정 — 저장 시 자동 재확정·이력 기록"
+                  >
+                    <Pencil className="mr-1 h-4 w-4" /> 확정 상태에서 수정
+                  </Button>
+                )}
+                {confirmedEditMode && (
+                  <>
+                    <Button variant="outline" data-testid="confirmed-edit-cancel" onClick={cancelConfirmedEdit}>
+                      취소
+                    </Button>
+                    <Button
+                      data-testid="confirmed-edit-save"
+                      onClick={saveConfirmedReconcile}
+                      title="실제정산/메모 변경 저장 — 자동 재확정(이력 기록)"
+                    >
+                      <Save className="mr-1 h-4 w-4" /> 수정 저장
+                    </Button>
+                  </>
+                )}
+                <Button variant="outline" onClick={() => {
+                  if (!window.confirm('마감을 재오픈하시겠습니까?')) return;
+                  reopen();
+                }}>
+                  <Unlock className="mr-1 h-4 w-4" /> 재오픈
+                </Button>
+              </>
             ) : (
               <>
                 <Button variant="outline" onClick={() => saveDraft(false)} title="수정 가능한 임시저장">
@@ -1476,6 +1607,17 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <div className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
               <span className="font-medium text-foreground">임시저장</span>은 수정 가능한 중간 저장이고,
               <span className="font-medium text-foreground"> 마감 확정</span>은 잠금 처리되어 재오픈 전까지 수정할 수 없습니다.
+            </div>
+          )}
+
+          {/* T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 편집 모드 안내 배너 */}
+          {isClosed && confirmedEditMode && (
+            <div
+              data-testid="confirmed-edit-banner"
+              className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md px-3 py-2"
+            >
+              <span className="font-semibold">확정 상태에서 수정 중</span> — 실제 정산·메모·수기 수납을 바로 고칠 수 있습니다.
+              저장하면 <span className="font-medium">자동으로 다시 확정</span>되고 <span className="font-medium">수정 이력</span>(누가·언제·무엇)이 기록됩니다.
             </div>
           )}
 
@@ -1753,9 +1895,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <ReconRow label="카드" system={totals.totalCard} actual={actualCard} diff={cardDiff} onChange={setActualCard} disabled={isClosed} />
-                <ReconRow label="현금" system={totals.totalCash} actual={actualCash} diff={cashDiff} onChange={setActualCash} disabled={isClosed} />
-                <ReconRow label="이체" system={totals.totalTransfer} actual={actualTransfer} diff={transferDiff} onChange={setActualTransfer} disabled={isClosed} />
+                <ReconRow label="카드" system={totals.totalCard} actual={actualCard} diff={cardDiff} onChange={setActualCard} disabled={isClosed && !confirmedEditMode} />
+                <ReconRow label="현금" system={totals.totalCash} actual={actualCash} diff={cashDiff} onChange={setActualCash} disabled={isClosed && !confirmedEditMode} />
+                <ReconRow label="이체" system={totals.totalTransfer} actual={actualTransfer} diff={transferDiff} onChange={setActualTransfer} disabled={isClosed && !confirmedEditMode} />
               </div>
               <div className="mt-3 flex items-center justify-between rounded-md bg-muted px-4 py-2 text-sm">
                 <span className="font-medium">총 차이</span>
@@ -1776,11 +1918,52 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 value={memo}
                 onChange={e => setMemo(e.target.value)}
                 placeholder="특이사항"
-                disabled={isClosed}
+                disabled={isClosed && !confirmedEditMode}
                 rows={3}
               />
             </CardContent>
           </Card>
+
+          {/* T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후 수정 이력(화면 즉시노출) */}
+          {editLog.length > 0 && (
+            <Card data-testid="closing-edit-log-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">확정 후 수정 이력 ({editLog.length}건)</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/60">
+                      <tr className="border-b text-xs text-muted-foreground">
+                        <th className="py-2 px-3 text-left font-medium w-36">일시</th>
+                        <th className="py-2 px-2 text-left font-medium w-24">수정자</th>
+                        <th className="py-2 px-2 text-left font-medium">항목</th>
+                        <th className="py-2 px-2 text-left font-medium">변경 전 → 후</th>
+                        <th className="py-2 px-2 text-center font-medium w-16">버전</th>
+                      </tr>
+                    </thead>
+                    <tbody data-testid="closing-edit-log-rows">
+                      {editLog.map(l => (
+                        <tr key={l.id} className="border-b">
+                          <td className="py-1.5 px-3 tabular-nums text-xs text-muted-foreground">
+                            {format(new Date(l.edited_at), 'yyyy-MM-dd HH:mm')}
+                          </td>
+                          <td className="py-1.5 px-2 text-xs">{l.editor?.name ?? '—'}</td>
+                          <td className="py-1.5 px-2 text-xs">{l.field}</td>
+                          <td className="py-1.5 px-2 text-xs">
+                            {l.old_value != null && l.old_value !== '' ? l.old_value : '—'}
+                            <span className="mx-1 text-muted-foreground">→</span>
+                            {l.new_value != null && l.new_value !== '' ? l.new_value : '—'}
+                          </td>
+                          <td className="py-1.5 px-2 text-center tabular-nums text-xs">{l.revision_after}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ════════════════════════ 탭 2: 결제내역 ════════════════════════ */}
@@ -1855,7 +2038,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             </div>
             <div className="flex gap-2">
               {/* T-20260520-foot-RBAC-MENU-EXPAND: 수기 추가 = admin/manager 전용 */}
-              {isAdminOrManager && (
+              {/* T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 후에는 '확정 편집' 모드에서만(원자 재확정+감사) */}
+              {isAdminOrManager && (!isClosed || confirmedEditMode) && (
                 <Button variant="outline" size="sm" onClick={() => { setManualEditTarget(null); setShowManualDialog(true); }}>
                   <Plus className="mr-1 h-4 w-4" /> 수기 추가
                 </Button>
@@ -2055,8 +2239,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                                 <RotateCcw className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            {/* 수기 수정/삭제 버튼 */}
-                            {r.source === 'manual' && r.manual_id && r.manual_raw && isAdminOrManager && (
+                            {/* 수기 수정/삭제 버튼 — 확정 후에는 '확정 편집' 모드에서만(원자 재확정+감사) */}
+                            {r.source === 'manual' && r.manual_id && r.manual_raw && isAdminOrManager && (!isClosed || confirmedEditMode) && (
                               <>
                                 <button
                                   onClick={() => { setManualEditTarget(r.manual_raw!); setShowManualDialog(true); }}
@@ -2066,7 +2250,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                                   <Pencil className="h-3.5 w-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => deleteManual(r.manual_id!)}
+                                  onClick={() => deleteManual(r.manual_id!, r.manual_raw)}
                                   className="text-muted-foreground hover:text-destructive transition-colors p-1"
                                   title="삭제"
                                 >
@@ -2241,6 +2425,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           closeDate={date}
           staffList={staffList}
           editTarget={manualEditTarget}
+          /* T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 편집 모드면 저장을 원자 재확정 RPC로 라우팅 */
+          confirmedEdit={isClosed && confirmedEditMode}
+          onConfirmedSave={saveConfirmedEdit}
           onClose={() => { setShowManualDialog(false); setManualEditTarget(null); }}
           onSaved={() => {
             setShowManualDialog(false);
@@ -2299,11 +2486,17 @@ interface ManualEntryDialogProps {
   staffList: Staff[];
   /** 수정 모드용 — null이면 신규 추가 모드 */
   editTarget: ManualPaymentRow | null;
+  /** T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정(closed) 편집 모드 — 저장을 원자 재확정 RPC로 라우팅 */
+  confirmedEdit?: boolean;
+  onConfirmedSave?: (
+    manualOp: Record<string, unknown> | null,
+    audit: { field: string; old_value: string | null; new_value: string | null }[],
+  ) => Promise<boolean>;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose, onSaved }: ManualEntryDialogProps) {
+function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, confirmedEdit = false, onConfirmedSave, onClose, onSaved }: ManualEntryDialogProps) {
   const isEdit = editTarget !== null;
   const [payTime, setPayTime] = useState(editTarget?.pay_time ?? format(new Date(), 'HH:mm'));
   const [chartNumber, setChartNumber] = useState(editTarget?.chart_number ?? '');
@@ -2390,6 +2583,49 @@ function ManualEntryDialog({ clinicId, closeDate, staffList, editTarget, onClose
     if (!customerName.trim()) { toast.error('성함을 입력하세요'); return; }
     const amt = parseAmt(amount);
     if (!amt || amt <= 0) { toast.error('결제금액을 입력하세요'); return; }
+
+    // ── T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK: 확정 편집 모드 = 단일행 원자 재확정 RPC 라우팅 ──
+    //   확정(closed) 후 수기수납 편집/추가는 unlock→edit→re-confirm(revision+1)+감사를 한 트랜잭션으로.
+    //   분할/정본귀속은 확정편집에서 비대상(단일 closing_manual_payments 행 leg1만).
+    if (confirmedEdit && onConfirmedSave) {
+      const methodKo = (m: string) =>
+        (({ card: '카드', cash: '현금', transfer: '이체' }) as Record<string, string>)[m] ?? m;
+      const fields = {
+        pay_time: payTime || null,
+        chart_number: chartNumber || null,
+        customer_name: customerName.trim(),
+        lead_source: leadSource || null,
+        visit_type: visitType || null,
+        staff_name: staffName || null,
+        amount: amt,
+        method,
+        memo: memo || null,
+      };
+      setSaving(true);
+      let ok = false;
+      if (isEdit && editTarget) {
+        ok = await onConfirmedSave(
+          { kind: 'update', id: editTarget.id, fields },
+          [{
+            field: '수기수납 수정',
+            old_value: `${editTarget.customer_name} ${editTarget.amount.toLocaleString('ko-KR')} ${methodKo(editTarget.method)}`,
+            new_value: `${customerName.trim()} ${amt.toLocaleString('ko-KR')} ${methodKo(method)}`,
+          }],
+        );
+      } else {
+        ok = await onConfirmedSave(
+          { kind: 'insert', fields },
+          [{
+            field: '수기수납 추가',
+            old_value: null,
+            new_value: `${customerName.trim()} ${amt.toLocaleString('ko-KR')} ${methodKo(method)}`,
+          }],
+        );
+      }
+      setSaving(false);
+      if (ok) onSaved();
+      return;
+    }
 
     // ── T-20260720-foot-DAYCLOSE-MANUALPAY-SPLITPAY-SYNC: 분할결제 splits 구성 ──
     //   행1 = 기본 금액/수단, 행2+ = extraLegs(금액>0만). 단일 행 시 [행1] → 기존 동선 동치.

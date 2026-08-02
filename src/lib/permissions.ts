@@ -413,6 +413,32 @@ export function canViewPhraseManagement(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK — 일마감 확정(closed) 후 '해제 없이 수정' 권한.
+//   현장 확정(김다인, MSG-8f6s): 수정 권한 = payment(수납) 권한 보유자 + admin/manager 역할. 전 직원 X.
+//   ★payment(수납) 권한 = 일마감/수납 접근(closing) — admin/manager/director 전원 보유(PERM_MATRIX.closing).
+//   ★admin/manager 역할 게이트 + director(대표원장) escape: has_ops_authority 컬럼 미적재(DDL_DIFF_HOLD)라
+//     canEditClinicMgmt/canViewPhraseManagement 와 동일 role 기반 stopgap 적용(prod director=대표원장 1명).
+//   ★BE(closing_confirmed_edit RPC) 게이트 = user_profiles.role IN (admin,manager,director) 와 1:1 정합(FE=BE).
+export const CONFIRMED_CLOSING_EDIT_ROLES: UserRole[] = ['admin', 'manager', 'director'];
+
+/**
+ * 일마감 확정 후 '해제 없이 수정' 가능 여부(payment 권한 + admin/manager/director).
+ *   subject(프로필) 또는 role 문자열 허용. null/unknown 안전 기본값 false(fail-closed).
+ *   ★서버(RPC)에서 재검증되므로 FE 게이트는 노출/활성 제어용(이중 방어).
+ */
+export function canEditConfirmedClosing(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  if (!s) return false;
+  if (s.has_ops_authority === true) return true;
+  const role = s.role;
+  if (!role) return false;
+  return CONFIRMED_CLOSING_EDIT_ROLES.includes(role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260726-foot-TREATTABLE-TESTITEM-ACTIONS-3BTN — 검사 접수 항목 행 액션(보류/신청취소/재검사) 권한.
 //   확정 스펙(2026-07-26 김주연 총괄, Q2): '권한 A 사용자만' 버튼 노출·동작. 권한 A = 최상위/관리자 tier.
 //   foot CRM 에 'A' role 매핑 부재 → 관리 tier(admin/manager/director=원장)로 매핑(field-soak 확인, 재-block 아님).
