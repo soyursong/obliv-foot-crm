@@ -95,6 +95,10 @@ const HealthQMobilePage = lazyWithRetry(() => import('@/pages/HealthQMobilePage'
 const PaymentPlanb = lazyWithRetry(() => import('@/pages/PaymentPlanb'));
 // T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER: recovery 딥링크 → 새 비밀번호 설정 화면
 const ResetPassword = lazyWithRetry(() => import('@/pages/ResetPassword'));
+// T-20260802-foot-ATTENDANCE-QR-PORT: 직원 QR 출퇴근 — 키오스크(회전QR) + 셀프 punch(기기바인딩/폰OTP).
+//   키오스크=관리자 로그인 or ?k=<kiosk_token> 전용링크. punch=비로그인(직원 폰). 고객 셀프체크인과 별개.
+const AttendanceKioskGate = lazyWithRetry(() => import('@/pages/AttendanceKioskGate'));
+const AttendancePunch = lazyWithRetry(() => import('@/pages/AttendancePunch'));
 // ClinicCalendar 풀페이지는 T-20260510-foot-CALENDAR-NOTICE AC v3에 따라 우측 사이드바로 대체됨.
 // 직접 URL 접근 시 대시보드로 리다이렉트.
 
@@ -256,6 +260,12 @@ function App() {
               {/* T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 고객 자가작성 (anon, 토큰 기반)
                   ThemeBrown 미적용 — 자체 teal-emerald 테마 inline style 사용 */}
               <Route path="/health-q/:token" element={<HealthQMobilePage />} />
+
+              {/* T-20260802-foot-ATTENDANCE-QR-PORT: 직원 QR 출퇴근 (고객 셀프체크인과 별개 기능).
+                  정적 /attendance/punch 를 /attendance/kiosk/:slug 보다 먼저 선언.
+                  punch = 비로그인(직원 폰). kiosk = 관리자 로그인 or ?k=<kiosk_token> 전용링크(Gate 분기). */}
+              <Route path="/attendance/punch" element={<AttendancePunch />} />
+              <Route path="/attendance/kiosk/:slug" element={<AttendanceKioskGate />} />
 
               <Route
                 path="/admin"
