@@ -72,7 +72,7 @@ import { formatDateTimeDots } from '@/lib/format';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
-  CheckSquare, Square, Move, Check, Printer,
+  CheckSquare, Square, Move, Check, Printer, ImagePlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
@@ -84,6 +84,9 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 // T-20260529-foot-HEALTH-Q-MOBILE: 발건강질문지 모바일 자가작성 결과 패널
 import { HealthQResultsPanel } from '@/components/HealthQResultsPanel';
+// T-20260731-foot-PENCHART-PHOTO-ATTACH (B안·AC0: 작성 중 첨부): 펜차트 사진 첨부 패널(Storage-only, DB row 0)
+//   + stem 결속 헬퍼(첨부 prefix / 파일명→stem). save/handleDelete cascade 에서도 동일 규칙 재사용.
+import { PenChartAttachPanel, penChartAttachPrefix, stemFromChartName } from '@/components/PenChartAttachPanel';
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: SignaturePad UI 제거 (하단 서명란 불필요)
 
 // ─── 상용구 데이터 ───
@@ -486,6 +489,19 @@ const isRefundConsentKey = (k: string) => k === 'refund_consent';
 
 /** T-20260522-foot-PENCHART-HIRES-FORM: 개인정보+체크리스트 양식 (배경 PNG 있음, 서명 불필요) */
 const isPersonalChecklistKey = (k: string) => k.startsWith('personal_checklist_');
+
+/**
+ * T-20260731-foot-PENCHART-PHOTO-ATTACH: 저장 파일명 prefix(양식 종류 판별).
+ *   handleDrawSave(저장 파일명 발번)와 stem-pre-binding(작성창 진입 시 선발번) 양쪽이
+ *   **동일 규칙**으로 stem 을 만들어야 첨부 prefix({stem})와 저장 PNG stem 이 일치(결속)한다.
+ *   pen_chart(및 기타 미분류) = prefix 없음('') → stem = `{ts}_{rand}`.
+ */
+const filePrefixForFormKey = (formKey?: string): string => {
+  if (formKey && isHealthQFormKey(formKey)) return `hq_${formKey === 'health_questionnaire_senior' ? 'sr_' : ''}`;
+  if (formKey && isRefundConsentKey(formKey)) return 'rc_';
+  if (formKey && isPersonalChecklistKey(formKey)) return `pc_${formKey === 'personal_checklist_senior' ? 'sr_' : ''}`;
+  return '';
+};
 
 /** 양식에 따른 캔버스 높이 반환 */
 const getCanvasHeightForForm = (formKey: string | undefined): number => {
@@ -984,6 +1000,15 @@ export function PenChartTab({
   const [phraseTemplatesLoaded, setPhraseTemplatesLoaded] = useState(false);
   const [showPhrasePanel, setShowPhrasePanel] = useState(false);
   const [phraseCategory, setPhraseCategory] = useState<string>('charting');
+
+  // ── T-20260731-foot-PENCHART-PHOTO-ATTACH (B안·AC0: 작성 중 첨부) ──────────
+  //   작성창(draw 모드) 진입 시 stem 을 선(先)발번(stem-pre-binding)해 첨부 파일 prefix 와
+  //   저장 PNG 파일명 stem 을 **동일값**으로 결속한다. 구 A안(저장 시점 stem 확정 → 저장 후에만 첨부)
+  //   제약을 해소하여, 저장 전(작성 중)에도 첨부가 특정 펜차트에 collision-safe 로 묶인다.
+  //   신규 = handleSelectTemplate 에서 발번 / 수정 = openEditInline 에서 기존 파일 stem 결속.
+  const [draftStem, setDraftStem] = useState<string | null>(null);
+  const draftStemRef = useRef<string | null>(null); // handleDrawSave closure-stale 방지(editingChartRef 규약과 동일)
+  const [showAttachPanel, setShowAttachPanel] = useState(false); // 첨부 floating 패널 토글(상용구 패널 패턴)
   // T-20260612-foot-PENCHART-PHRASE-INSERT-PINGPONG5 AC-1.B: 마지막으로 삽입(클릭)한 상용구 1건만 ✓ 마킹.
   //   [RC] 기존 패널은 모든 행의 ✓ 버튼을 상시 teal-500(초록 채움)으로 렌더 → 현장이 "전체 ✓(전부 선택됨)"로
   //   오인. 단일선택 어포던스가 전역처럼 보이는 회귀. → 클릭한 1건만 green ✓, 나머지는 중립(outline + Plus).
@@ -1149,6 +1174,7 @@ export function PenChartTab({
   highlightAlphaRef.current = highlightAlpha; // #3: 형광펜 농도 → native handler 동기화
   phraseFontSizeRef.current  = phraseFontSize; // A-3: 상용구 삽입 폰트 크기 지속(placeBoilerplateAt 참조)
   editingChartRef.current   = editingChart;   // T-20260622-foot-PENCHART-EDITBTN: 저장 시 최신 수정대상 보장
+  draftStemRef.current      = draftStem;      // T-20260731-foot-PENCHART-PHOTO-ATTACH: 저장 시 선발번 stem 결속
   // T-20260610-foot-PENCHART-6FIX-REFIX A: 매 렌더 동기화 → flushTextInput(stable)이 최신 입력값 읽음
   textInputPosRef.current   = textInputPos;
   textInputValueRef.current = textInputValue;
@@ -3027,21 +3053,18 @@ export function PenChartTab({
       const res = await fetch(dataUrl);
       const blob = await res.blob();
 
-      let prefix = '';
-      if (activeDrawTemplate && isHealthQFormKey(activeDrawTemplate.form_key)) {
-        prefix = `hq_${activeDrawTemplate.form_key === 'health_questionnaire_senior' ? 'sr_' : ''}`;
-      } else if (activeDrawTemplate && isRefundConsentKey(activeDrawTemplate.form_key)) {
-        prefix = 'rc_';
-      } else if (activeDrawTemplate && isPersonalChecklistKey(activeDrawTemplate.form_key)) {
-        // T-20260522-foot-PENCHART-HIRES-FORM: pc_sr_ = senior, pc_ = general
-        prefix = `pc_${activeDrawTemplate.form_key === 'personal_checklist_senior' ? 'sr_' : ''}`;
-      }
+      // T-20260731-foot-PENCHART-PHOTO-ATTACH: prefix 산출을 helper 로 단일화(stem-pre-binding 과 규칙 공유).
+      const prefix = filePrefixForFormKey(activeDrawTemplate?.form_key);
       // T-20260622-foot-PENCHART-EDITBTN AC-1: 수정 모드면 기존 파일명 그대로 덮어쓰기(신규 행 0).
       //   neutral path/fileName + upsert:true → 저장소 동일 객체 갱신. 신규면 종전대로 새 파일.
       const editTarget = editingChartRef.current;
+      // T-20260731-foot-PENCHART-PHOTO-ATTACH (B안·AC0): 신규는 작성창 진입 시 선(先)발번한 draftStem 을
+      //   그대로 파일명으로 사용 → 작성 중 첨부한 사진(prefix={stem})과 저장 PNG 의 stem 이 일치(결속).
+      //   draftStem 부재(구경로/방어) 시에만 즉석 발번 — 하위호환.
+      const newStem = draftStemRef.current ?? `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const fileName = editTarget
         ? editTarget.name
-        : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
+        : `${newStem}.png`;
       const path = `${storagePath}/${fileName}`;
       // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 신규분 cacheControl 부여(브라우저/CDN 캐시 창).
       const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/png', upsert: !!editTarget, ...PHOTO_UPLOAD_OPTS });
@@ -3097,6 +3120,8 @@ export function PenChartTab({
       setTextInputValue('');
       setActiveDrawTemplate(null);
       setEditingChart(null); // T-20260622-foot-PENCHART-EDITBTN: 수정 세션 종료
+      setDraftStem(null);        // T-20260731-foot-PENCHART-PHOTO-ATTACH: 저장 완료 → 선발번 stem 세션 종료
+      setShowAttachPanel(false); // 첨부 패널 닫기(다음 작성 세션에 stale 노출 방지)
       setMode('list');
 
       // T-20260528-foot-PENCHART-POPUP: 팝업 모드 — 저장 후 부모 창 갱신 + 팝업 닫기
@@ -3132,12 +3157,33 @@ export function PenChartTab({
     }
   };
 
+  // ── T-20260731-foot-PENCHART-PHOTO-ATTACH AC6: 첨부 prefix app-side cascade 정리 ──────────
+  //   펜차트 PNG 삭제 시 stem 결속 첨부(customer/{id}/pen-chart-attach/{stem}/*)도 함께 제거 → orphan~0.
+  //   best-effort(첨부 정리 실패해도 PNG 삭제 자체는 성립) · list 상한 100(첨부 장수 무제한이나 실무상 충분).
+  const cleanupAttachPrefix = async (chartName: string) => {
+    try {
+      const stem = stemFromChartName(chartName);
+      if (!stem) return;
+      const attachPrefix = penChartAttachPrefix(customerId, stem);
+      const { data: files } = await supabase.storage.from('photos').list(attachPrefix, { limit: 100 });
+      const objs = (files ?? []).filter((f) => f.name && !f.name.endsWith('/') && f.id);
+      if (objs.length === 0) return;
+      const { error: rmErr } = await supabase.storage
+        .from('photos')
+        .remove(objs.map((f) => `${attachPrefix}/${f.name}`));
+      if (rmErr) console.warn('[PENCHART-ATTACH] cascade remove 실패(비치명):', rmErr.message);
+    } catch (e) {
+      console.warn('[PENCHART-ATTACH] cascade cleanup 예외(비치명):', e);
+    }
+  };
+
   // ── 삭제 ─────────────────────────────────────────────────────────────
   const handleDelete = async (chart: SavedChart) => {
     if (!window.confirm(`"${chart.name}" 을 삭제하시겠습니까?`)) return;
     const path = `${storagePath}/${chart.name}`;
     const { error } = await supabase.storage.from('photos').remove([path]);
-    if (error) toast.error(`삭제 실패: ${error.message}`);
+    if (error) { toast.error(`삭제 실패: ${error.message}`); }
+    else { await cleanupAttachPrefix(chart.name); } // AC6: PNG 삭제 성공 시에만 첨부 prefix 동반 정리
     if (selectedChart?.name === chart.name) setSelectedChart(null);
     await loadSavedCharts();
   };
@@ -3182,6 +3228,10 @@ export function PenChartTab({
     }
     setSelectedChart(null);
     setEditingChart(chart);
+    // T-20260731-foot-PENCHART-PHOTO-ATTACH (B안): 수정 진입 = 기존 파일 stem 에 결속 →
+    //   첨부 패널이 이 펜차트의 기존 첨부(customer/{id}/pen-chart-attach/{stem}/*)를 재조회·추가.
+    setDraftStem(stemFromChartName(chart.name));
+    setShowAttachPanel(false);
     setActiveDrawTemplate(tpl);
     setMode('draw');
   };
@@ -3317,6 +3367,10 @@ export function PenChartTab({
 
   // ── 양식 선택 ─────────────────────────────────────────────────────────
   const handleSelectTemplate = (tpl: Template) => {
+    // T-20260731-foot-PENCHART-PHOTO-ATTACH (B안·AC0): 신규 작성창 진입 시 stem 선(先)발번 →
+    //   작성 중 첨부 사진(prefix={stem})과 저장 PNG 파일명 stem 을 동일값으로 결속(handleDrawSave 참조).
+    setDraftStem(`${filePrefixForFormKey(tpl.form_key)}${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+    setShowAttachPanel(false);
     setActiveDrawTemplate(tpl);
     setMode('draw');
   };
@@ -3803,6 +3857,37 @@ export function PenChartTab({
             )}
           </div>
 
+          {/* ── T-20260731-foot-PENCHART-PHOTO-ATTACH (B안·AC0: 작성 중 첨부) ──────────
+              펜차트 양식에서만 노출(현장 요청 표면). 작성창 진입 시 선발번한 draftStem 에 결속 →
+              저장 전(작성 중)에도 사진을 이 펜차트에 첨부. 상용구 패널과 동일한 floating 패턴(z-50). */}
+          {activeDrawTemplate?.form_key === 'pen_chart' && draftStem && (
+            <div className="relative">
+              <button
+                onClick={() => { setShowAttachPanel((v) => !v); setShowPhrasePanel(false); }}
+                className={cn(
+                  'flex items-center gap-1 px-2 py-1 rounded text-xs border transition',
+                  showAttachPanel
+                    ? 'bg-teal-100 border-teal-400 text-teal-700'
+                    : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50',
+                )}
+                title="사진 첨부"
+                data-testid="penchart-draw-attach-toggle"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+                <span>사진 첨부</span>
+              </button>
+
+              {showAttachPanel && (
+                <div
+                  className="absolute top-8 left-0 z-50 w-72 rounded-lg border bg-white shadow-lg p-2"
+                  data-testid="penchart-draw-attach-overlay"
+                >
+                  <PenChartAttachPanel customerId={customerId} stem={draftStem} />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 상용구 배치 안내 */}
           {isBoilerplatePlacing && (
             <div className="flex items-center gap-1 px-2 py-1 rounded bg-teal-50 border border-teal-300 text-[11px] text-teal-700">
@@ -3911,6 +3996,8 @@ export function PenChartTab({
                 if (hasDrawing && !window.confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) return;
                 setActiveDrawTemplate(null);
                 setEditingChart(null); // T-20260622-foot-PENCHART-EDITBTN: 수정 취소 시 세션 종료
+                setDraftStem(null);        // T-20260731-foot-PENCHART-PHOTO-ATTACH: 취소 → 선발번 stem 세션 종료
+                setShowAttachPanel(false);
                 // T-20260528-foot-PENCHART-NEWWIN: 팝업 모드에서 취소 → 창 닫기
                 if (popupMode) { window.close(); return; }
                 setMode('list');
