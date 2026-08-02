@@ -45,10 +45,12 @@ import { elapsedMinutes } from '@/lib/elapsed';
 import { STATUS_KO } from '@/lib/status';
 import { toast } from '@/lib/toast';
 import type { CheckIn, CheckInStatus, Staff, AssignmentAction, AssignmentRole } from '@/lib/types';
+import type { ConsultCountBucket } from '@/lib/autoAssign';
 import {
   deriveConsultAxis,
   deriveTherapyAxis,
   isReturningAxis,
+  effectiveConsultBucket,
   tossAssignment,
   pullAssignment,
   manualAssign,
@@ -830,8 +832,11 @@ export default function Assignments() {
     }
     // 배정(초진)/배정(재진) — check_ins 정본(자동+수동 공통, 1건당 1회 / 역할별 분리)
     //   day/month 각 구간에 checked_in_at 기준으로 명단 push(구간에 함께 속하면 둘 다 push).
-    const bumpAssign = (st: StaffStat, isReturning: boolean, ms: number, item: AssignDrillItem) => {
-      const key = isReturning ? 'returning' : 'assigned';
+    // T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN §COALESCE: 3-state 분류.
+    //   'sameday'(당일재상담) = 초진/재진 3축 전부 제외(어느 카운터에도 push 안 함, 축① 직접참조).
+    const bumpAssign = (st: StaffStat, bucket: ConsultCountBucket, ms: number, item: AssignDrillItem) => {
+      if (bucket === 'sameday') return; // 당일재상담: 배정(초진)·배정(재진) 전부 제외.
+      const key = bucket === 'returning' ? 'returning' : 'assigned';
       if (inMonth(ms)) st.month[key].push(item);
       if (inDay(ms)) st.day[key].push(item);
     };
@@ -848,13 +853,25 @@ export default function Assignments() {
       if (ci.consultant_id) {
         const s = staff.find((x) => x.id === ci.consultant_id);
         if (s && s.role === 'consultant') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'consult') === 'returning', ms, itemFromCi(ci));
+          // 상담축: COALESCE(수동 assignment_consult_type, recency deriveConsultAxis) → 3-state effective.
+          bumpAssign(
+            ensure(s),
+            effectiveConsultBucket(ci.assignment_consult_type, monthAxisOf(ci, 'consult')),
+            ms,
+            itemFromCi(ci),
+          );
         }
       }
       if (ci.therapist_id) {
         const s = staff.find((x) => x.id === ci.therapist_id);
         if (s && s.role === 'therapist') {
-          bumpAssign(ensure(s), monthAxisOf(ci, 'therapy') === 'returning', ms, itemFromCi(ci));
+          // 치료축: deriveTherapyAxis(returning 반환 경로 無)·assignment_consult_type(상담축 개념) 무관 → 기존 균등 유지.
+          bumpAssign(
+            ensure(s),
+            monthAxisOf(ci, 'therapy') === 'returning' ? 'returning' : 'assigned',
+            ms,
+            itemFromCi(ci),
+          );
         }
       }
     }

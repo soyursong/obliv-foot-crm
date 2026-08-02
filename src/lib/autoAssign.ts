@@ -146,6 +146,39 @@ export function isReturningAxis(axis: string | null | undefined): boolean {
   return axis === 'returning';
 }
 
+// ── 배정 카운터 effective 분류 (COALESCE 합성, read-path 전용) ─────────────────────
+// T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN §COALESCE
+//   (DA da_decision_foot_assign_consulttype_dropdown_20260726 §ADDENDUM 2026-08-03, Option B GO / Option A REJECT):
+//     effective := COALESCE(assignment_consult_type, recencyAxis→초진/재진 정규화)
+//   ▸ assignment_consult_type = 수동 assertion(NULL=미오버라이드) 우선.
+//   ▸ NULL 이면 기존 deriveConsultAxis recency 축을 초진/재진으로 정규화(returning→재진, 그 외→초진).
+//   ▸ 저장층 재병합 금지(A안 REJECT 사유): 두 축은 각자 컬럼에 독립 병존, view/read-path 에서 COALESCE 로만 합성.
+//     write-time stamp/backfill 절대 금지. DB default=NULL 불변.
+//   ▸ recency SSOT = deriveConsultAxis 단일 소비(재파생 0). canonical persisted 값만 읽는다.
+//   ▸ totality 검증(HARD-a): deriveConsultAxis 는 total(내원이력 無→'워크인' 폴백, null 반환 경로 無) →
+//     2-arg COALESCE 로 전향 NULL 전멸(count-complete). 잔차 '미분류' silent-fold 없음.
+export type ConsultCountBucket = 'assigned' | 'returning' | 'sameday';
+
+/**
+ * 배정 카운터(배정 초진/재진)용 effective 상담성격 분류.
+ * @param manual       check_ins.assignment_consult_type (수동 assertion, NULL=미오버라이드)
+ * @param recencyAxis  deriveConsultAxis 결과(canonical recency 축, 재파생 금지)
+ * @returns 'assigned'  = 배정(초진) 균등 대상    (effective==='초진')
+ *          'returning' = 배정(재진)             (effective ∈ {'재진','대리상담'})
+ *          'sameday'   = 당일재상담(3축 전부 제외) (assignment_consult_type==='당일재상담', 축① 직접참조·COALESCE 대상 아님)
+ */
+export function effectiveConsultBucket(
+  manual: '초진' | '재진' | '당일재상담' | '대리상담' | null | undefined,
+  recencyAxis: string,
+): ConsultCountBucket {
+  // 당일재상담 = 수동전용값(recency 파생 불가) → COALESCE 대상 아님, 초진/재진/목표 3축 전부 제외.
+  if (manual === '당일재상담') return 'sameday';
+  // effective := COALESCE(수동, recency 정규화). recency: returning→'재진', 그 외→'초진'.
+  const effective = manual ?? (isReturningAxis(recencyAxis) ? '재진' : '초진');
+  if (effective === '재진' || effective === '대리상담') return 'returning';
+  return 'assigned'; // '초진'
+}
+
 /** 치료 축 라벨: 본치료(main) / 포돌로게(podologue) / 체험(trial). best-effort 스냅샷. */
 export function deriveTherapyAxis(ci: {
   treatment_kind?: string | null;
