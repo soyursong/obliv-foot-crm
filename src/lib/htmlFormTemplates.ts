@@ -2443,11 +2443,18 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <td class="fvmr-sec-label">방문 목적</td>
+        <!-- T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 방문목적 = 발건강 설문지
+             '발 관련 증상' 목록(FOOT_SYMPTOM_OPTIONS)과 문구·순서 100% 일치. -->
         <td style="text-align:left;">
-          <span class="cb-item"><span class="cbx">{{vp_ingrown}}</span>내성발톱</span>
-          <span class="cb-item"><span class="cbx">{{vp_fungal}}</span>무좀발톱</span>
-          <span class="cb-item"><span class="cbx">{{vp_thick}}</span>두꺼운 발톱</span>
-          <span class="cb-item"><span class="cbx">{{vp_deformed}}</span>변형발톱</span>
+          <span class="cb-item"><span class="cbx">{{vp_discolor}}</span>발톱 변색 및 변형</span>
+          <span class="cb-item"><span class="cbx">{{vp_ingrown}}</span>내성발톱(파고드는 발톱)</span>
+          <span class="cb-item"><span class="cbx">{{vp_toepain}}</span>발가락 통증</span>
+          <span class="cb-item"><span class="cbx">{{vp_odor}}</span>발냄새</span>
+          <span class="cb-item"><span class="cbx">{{vp_dryness}}</span>발건조 및 각질</span>
+          <span class="cb-item"><span class="cbx">{{vp_sweat}}</span>발 땀 많음</span>
+          <span class="cb-item"><span class="cbx">{{vp_itch}}</span>가려움증</span>
+          <span class="cb-item"><span class="cbx">{{vp_brittle}}</span>발톱 끝 부서짐</span>
+          <span class="cb-item"><span class="cbx">{{vp_bumpy}}</span>울퉁불퉁한 발톱</span>
           <span class="cb-item"><span class="cbx">{{vp_other}}</span>기타: {{vp_other_text}}</span>
         </td>
       </tr>

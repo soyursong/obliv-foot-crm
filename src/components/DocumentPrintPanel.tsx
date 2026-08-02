@@ -66,6 +66,7 @@ import { supabase } from '@/lib/supabase';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
+import { FOOT_SYMPTOM_OPTIONS } from '@/lib/footHealthSymptoms';
 import { isLaserService } from '@/lib/laserService';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
 import { buildDocSerial, docSerialPrefix, buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
@@ -179,19 +180,33 @@ const FVMR_PROCEDURE_CATEGORIES = ['기본', '검사', '풋케어', '수액'] as
 const fvmrEffectiveCategory = (s: { category_label: string | null; category: string | null }): string =>
   (s.category_label ?? s.category ?? '').trim();
 interface FvmrCheckGroup { label: string; options: Array<{ key: string; label: string }> }
+// T-20260731-foot-FIRSTVISIT-VISITPURPOSE-SYMPTOMS: 방문목적 = 발건강 설문지 '발 관련 증상'
+//   목록(FOOT_SYMPTOM_OPTIONS SSOT)과 문구·순서 100% 일치(AC-1/AC-5). 기존 부분목록
+//   (내성발톱/무좀발톱/두꺼운발톱/변형발톱)을 설문지 전체 목록으로 확장.
+//   각 증상 = 인쇄 바인딩 키를 index-정렬로 부여(순서 고정). 마지막 '기타' = 기존 vp_other
+//   (+ vp_other_text 기입칸, P3 배포분 재사용 → 중복 생성 없음). SSOT 배열이 바뀌어도 라벨은
+//   자동 추종하되 키 순서는 아래 배열과 index-정렬을 유지해야 함(길이·순서 동기 필수).
+const FVMR_VISIT_PURPOSE_KEYS = [
+  'vp_discolor',  // 발톱 변색 및 변형
+  'vp_ingrown',   // 내성발톱(파고드는 발톱)  — 기존 키 유지(선택값 승계)
+  'vp_toepain',   // 발가락 통증
+  'vp_odor',      // 발냄새
+  'vp_dryness',   // 발건조 및 각질
+  'vp_sweat',     // 발 땀 많음
+  'vp_itch',      // 가려움증
+  'vp_brittle',   // 발톱 끝 부서짐
+  'vp_bumpy',     // 울퉁불퉁한 발톱
+  'vp_other',     // 기타(기입칸 vp_other_text = P3 배포분 재사용)
+] as const;
+const FVMR_VISIT_PURPOSE_OPTIONS: Array<{ key: string; label: string }> =
+  FOOT_SYMPTOM_OPTIONS.map((label, i) => ({ key: FVMR_VISIT_PURPOSE_KEYS[i], label }));
 // T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 항목② 관리부위·발가락·초진촬영기록 체크그룹 제거.
 //   항목④ '초기 관리 내용' 체크박스 → '시술 및 처방' 드롭다운(아래 전용 블록)으로 대체하며 체크그룹에서 제거.
 //   잔존 체크그룹 = 방문 목적 / 통증 여부 / 보행 불편.
 const FIRST_VISIT_MGMT_CHECK_GROUPS: readonly FvmrCheckGroup[] = [
   {
     label: '방문 목적',
-    options: [
-      { key: 'vp_ingrown', label: '내성발톱' },
-      { key: 'vp_fungal', label: '무좀발톱' },
-      { key: 'vp_thick', label: '두꺼운 발톱' },
-      { key: 'vp_deformed', label: '변형발톱' },
-      { key: 'vp_other', label: '기타' },
-    ],
+    options: FVMR_VISIT_PURPOSE_OPTIONS,
   },
   {
     label: '통증 여부',
