@@ -1,0 +1,21 @@
+{
+  "ticket": "T-20260727-foot-VISITTYPE-JMH-INITIAL-FIX",
+  "patient": "정명희 (chart F-4270, customer_id 299b6535-e1f1-420a-bbc2-8f552a4e7487)",
+  "disposition": "NO-OP — 대상 2행이 이미 visit_type='new'. SOP Guard#2(dry-run 재확인)에서 착수 중단. 강제 write 미수행(WHERE visit_type='returning' 매칭 0행).",
+  "probed_kst": "2026-08-02",
+  "targets": [
+    { "table": "check_ins",    "id": "1c2117de-b091-4227-b8a5-a167c1d865b7", "visit_type_current": "new", "expected_by_ticket": "returning", "status": "done" },
+    { "table": "reservations", "id": "eb7e5047-9cb5-4bac-80bc-f313d9db67aa", "visit_type_current": "new", "expected_by_ticket": "returning", "status": "checked_in" }
+  ],
+  "rows_affected": 0,
+  "ac_verdict": {
+    "AC1_target_rows_new": "MET (이미 new — write 불요)",
+    "AC2_stats_consistency": "MET (배정통계 초진/재진 카운트는 stored visit_type 기준. 대상 2행이 new이므로 정명희=초진으로 집계. 잔여 returning 1행씩은 실제 후속 재방문분으로 정상)",
+    "AC3_no_side_effects": "MET (write 0건 — 타 환자·타 행 무변동)"
+  },
+  "note": "responder가 07-27 대조 시 'returning'으로 판정했으나, 07-27~08-02 사이 이미 정정됨(자매 티켓 T-20260727-foot-ASSIGN-REVISIT-OVERCOUNT-RECLASS: 'visit_type 이미 stored new + 2A 코드가 표시 교정'). 본 티켓 목표상태(new)는 이미 충족.",
+  "rollback_sql_if_ever_applied": [
+    "UPDATE public.check_ins    SET visit_type='returning' WHERE id='1c2117de-b091-4227-b8a5-a167c1d865b7' AND visit_type='new';",
+    "UPDATE public.reservations SET visit_type='returning' WHERE id='eb7e5047-9cb5-4bac-80bc-f313d9db67aa' AND visit_type='new';"
+  ]
+}
