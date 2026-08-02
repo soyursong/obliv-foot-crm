@@ -223,6 +223,7 @@ function useBloodReceptions(clinicId: string | null | undefined) {
         .from('form_submissions')
         .select('id, customer_id, field_data')
         .eq('clinic_id', clinicId)
+        .eq('is_deleted', false)
         .contains('field_data', { form_key: FORM_KEY });
       if (error) {
         if (/form_submissions|relation|42P01|42703/.test(error.message ?? '')) return map;
