@@ -47,7 +47,8 @@ DROP INDEX IF EXISTS public.idx_fsal_submission_id;
 DROP INDEX IF EXISTS public.idx_fsal_clinic_date;
 DROP TABLE IF EXISTS public.form_submissions_audit_log;
 
--- 단계 1 역: partial index + soft-delete 4컬럼 제거 (데이터 존재 시 소실 — 롤백 승인 전제)
+-- 단계 1 역: partial index + soft-delete 컬럼 제거 (데이터 존재 시 소실 — 롤백 승인 전제)
+--   ⚠ is_deleted 는 GENERATED(deleted_at 의존) → deleted_at 보다 먼저 DROP(좌→우 평가로 순서 보장, CASCADE 불요).
 DROP INDEX IF EXISTS public.idx_form_submissions_active;
 ALTER TABLE public.form_submissions
   DROP COLUMN IF EXISTS is_deleted,

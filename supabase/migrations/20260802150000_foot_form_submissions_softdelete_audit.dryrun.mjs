@@ -1,8 +1,8 @@
 /**
  * DRY-RUN (No-Persistence): T-20260728-foot-FORMSUB-DURABILITY-IMPROVE (트랙 A)
- *   20260802150000_foot_form_submissions_softdelete_audit.sql
- *   (form_submissions soft-delete 4컬럼 + partial index + form_submissions_audit_log 신규
- *    + body_audit 트리거 + immutable guard hard-DELETE 전면차단 확대 + RESTRICTIVE 가시성)
+ *   20260802150000_foot_form_submissions_softdelete_audit.sql (정본 093002: deleted_at authority + is_deleted GENERATED)
+ *   (form_submissions soft-delete 3컬럼(deleted_at/by/reason) + is_deleted GENERATED + partial index(deleted_at IS NULL)
+ *    + form_submissions_audit_log 신규(FK RESTRICT) + body_audit 트리거 + immutable guard hard-DELETE 전면차단 + RESTRICTIVE 가시성)
  *
  * canonical 러너 scripts/dryrun_lib.mjs(migration_dryrun_no_persistence_standard.md v1.0) 위임:
  *   ① txn-control strip(top-level BEGIN/COMMIT 제거 — sentinel-bypass 차단)
@@ -44,5 +44,5 @@ runDryrun({
     policyAbsent('form_submissions', 'fs_deleted_rows_director_only'),
     procAbsent('form_submissions_body_audit'),
   ],
-  passNote: '(soft-delete 4컬럼 + form_submissions_audit_log 신규 + body_audit 트리거 + RESTRICTIVE 가시성 무영속 검증)',
+  passNote: '(deleted_at authority 3컬럼 + is_deleted GENERATED + form_submissions_audit_log(FK RESTRICT) + body_audit 트리거 + RESTRICTIVE(deleted_at) 무영속 검증)',
 }).catch((e) => { console.error(e); process.exit(1); });
