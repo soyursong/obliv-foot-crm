@@ -74,13 +74,21 @@ test.describe('RECEIPT-REPNAME-SEAL — 세부내역서 대표자=박영진 + �
     expect(BIND_SRC).toMatch(/doctor_seal_html:[\s\S]*?ctx\.clinicDoctor\?\.seal_image_url\s*\|\|\s*getStampUrl\(\)/);
   });
 
-  // ── 문지은 HELD 해제(reconcile): T-20260716-foot-DOCFEE-NONPAY-SEAL AC2 슬롯키드 최종 규칙 ──
-  test('reconcile: shouldForceInstitutionSeal 가드에서 is_default 강제 제거(문지은 개인직인 release)', () => {
+  // ── 문지은 개인직인 release(reconcile): 슬롯키드 + AC-B 도장-우회 체인 폐기 정합 ──
+  test('reconcile: 도장-우회 판정 체인 소거 — 문지은 포함 지정 진료의 개인직인, 폴백도 개인직인', () => {
     // 현장 owner [A] 2026-07-16T13:52 확정 — 문지은 원장 서명란=개인직인, 박영진 대표자란=법인 인감.
-    //   단일 owner reconcile: HELD 해제 → is_default 강제 제거, 미지정 폴백만 법인 인감 강제.
-    expect(BIND_SRC).toMatch(/export function shouldForceInstitutionSeal\(/);
-    expect(BIND_SRC).toMatch(/return sealFallbackToInstitution;/);
-    expect(BIND_SRC).not.toMatch(/return sealFallbackToInstitution\s*\|\|\s*isDefaultDoctor === true;/);
+    //   ⚠ SUPERSEDED(T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-B3, 이은상 팀장
+    //   2026-07-31, df9ed521): 구 판정함수 shouldForceInstitutionSeal / sealFallbackToInstitution /
+    //   forceInstitutionSeal 도장-우회 체인이 전면 삭제됨. 07-16 '문지은 개인직인 release' 의도는 이제
+    //   미지정 폴백까지 확장돼 '전 경로 개인직인'으로 완결(도장을 법인 인감으로 강제하는 경로 소멸).
+    //   삭제된 함수 대신 정적 소스 가드로 정합 검증.
+    expect(BIND_SRC, 'shouldForceInstitutionSeal 함수 선언 잔존(AC-B3 미정리)').not.toMatch(/function\s+shouldForceInstitutionSeal/);
+    expect(BIND_SRC, 'sealFallbackToInstitution let 선언 잔존').not.toMatch(/let\s+sealFallbackToInstitution/);
+    expect(BIND_SRC, 'forceInstitutionSeal const 잔존').not.toMatch(/const\s+forceInstitutionSeal/);
+    // 미지정 폴백 seal 비움 강제·이름 기관명 덮어쓰기도 제거(폴백=대표원장 개인명·개인직인 유지).
+    expect(BIND_SRC, 'seal_image_url=null 강제 잔존').not.toMatch(/seal_image_url:\s*null/);
+    // ★대표자란 법인 인감(별도 토큰 institution_seal_html=getStampUrl)은 독립 경로 → 유지(본 티켓 축, 무회귀).
+    expect(BIND_SRC).toMatch(/institution_seal_html/);
   });
 
   // ── FALLBACK 템플릿 field_map 정합 ──

@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { buildAutoBindValues, shouldForceInstitutionSeal } from '../../src/lib/autoBindContext';
+import { buildAutoBindValues } from '../../src/lib/autoBindContext';
 import type { CheckIn } from '../../src/lib/types';
 
 const ROOT = process.cwd();
@@ -47,12 +47,22 @@ const build = (doctor: string, sealPath: string | null) =>
   });
 
 test.describe('DOCFEE-NONPAY-SEAL — 슬롯키드 직인(대표자란=법인 / 원장 서명란=개인직인)', () => {
-  // ── AC2-1: shouldForceInstitutionSeal — is_default 강제 제거(문지은도 개인직인) ──
-  test('AC2-1: 문지은(is_default) 지정도 forceInstitutionSeal=false — 미지정 폴백만 강제', () => {
-    expect(shouldForceInstitutionSeal(true, false)).toBe(false);   // 문지은 지정 → 개인직인
-    expect(shouldForceInstitutionSeal(false, false)).toBe(false);  // 3원장 지정 → 개인직인
-    expect(shouldForceInstitutionSeal(true, true)).toBe(true);     // 미지정 폴백 → 법인(is_default 무관)
-    expect(shouldForceInstitutionSeal(false, true)).toBe(true);
+  // ── AC2-1[갱신]: 도장-우회 체인 제거 정합 — 지정·미지정 모두 개인직인 ──
+  //   ⚠ SUPERSEDED(T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND AC-B3, 이은상 팀장 2026-07-31):
+  //   구 판정함수 shouldForceInstitutionSeal / sealFallbackToInstitution / forceInstitutionSeal 도장-우회
+  //   체인이 전면 삭제됨(df9ed521). 07-16 AC2 의도('문지은 is_default 강제 제거 → 개인직인')는 이제 미지정
+  //   폴백까지 확장돼 '전 경로 개인직인'으로 완결. 삭제된 함수 대신 정적 소스 가드로 정합 검증(런타임 import 불가).
+  const BIND_SRC = fs.readFileSync(path.join(ROOT, 'src/lib/autoBindContext.ts'), 'utf8');
+  test('AC2-1[갱신]: shouldForceInstitutionSeal/seal-null 강제 체인 소거 — 지정·미지정 모두 개인직인', () => {
+    // 판정함수·플래그·seal 비움 강제가 코드에서 사라졌다(AC-B3, is_default 강제뿐 아니라 폴백 우회까지 제거).
+    expect(BIND_SRC, 'shouldForceInstitutionSeal 함수 선언 잔존(AC-B3 미정리)').not.toMatch(/function\s+shouldForceInstitutionSeal/);
+    expect(BIND_SRC, 'sealFallbackToInstitution let 선언 잔존').not.toMatch(/let\s+sealFallbackToInstitution/);
+    expect(BIND_SRC, 'forceInstitutionSeal const 잔존').not.toMatch(/const\s+forceInstitutionSeal/);
+    expect(BIND_SRC, '미지정 폴백 seal_image_url=null 강제(법인인감 우회) 잔존').not.toMatch(/seal_image_url:\s*null/);
+    // 미지정 폴백 이름란→기관명 덮어쓰기도 제거(폴백=대표원장 개인명 유지).
+    expect(BIND_SRC, '폴백 기관명 덮어쓰기 잔존').not.toMatch(/if\s*\(institutionName\)\s*doctorName\s*=\s*institutionName/);
+    // 대표자란 법인 인감(별도 토큰)은 독립 경로 → 유지(무회귀).
+    expect(BIND_SRC, 'institution_seal_html(getStampUrl) 축 무접촉이어야 함').toMatch(/institution_seal_html/);
   });
 
   // ── AC2-2: 문지은 원장 서명란 = 개인직인(7/15 clean asset) ──
