@@ -197,7 +197,9 @@ test.describe('§2 — FALLBACK_TEMPLATES 단일 소스 구조 (AC-4)', () => {
     // 새 양식 추가 시 이 숫자를 업데이트할 것
     // T-20260710-foot-KOHRESULT-DOC-PRINT-ENABLE: koh_result(html) 추가 → 16→17 (DOCLIST_ORDER_10 SSOT 정합).
     // T-20260714-foot-DOCFEE-BODYCENTER-REDESIGN: bill_receipt_new(신양식) fallback 추가 → 17→18.
-    expect(FALLBACK_TEMPLATES.length).toBe(18);
+    // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD(2e2f9f2b): first_visit_mgmt_record(초진 관리기록지) 신규 추가 → 18→19.
+    //   (T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE: stale count 정정 — 신규서류 편입 반영, 회귀 아님)
+    expect(FALLBACK_TEMPLATES.length).toBe(19);
   });
 
   test('각 FALLBACK 템플릿에 form_key / name_ko / category 필드 존재', () => {

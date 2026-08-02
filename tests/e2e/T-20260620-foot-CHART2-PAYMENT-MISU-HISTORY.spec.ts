@@ -71,7 +71,13 @@ test.describe('T-20260620-foot-CHART2-PAYMENT-MISU-HISTORY — 수납내역 탭 
   test('S3-a (CRITICAL): RESTRUCTURE feePayments/directPkgPayments/뷰어 로직 불변', () => {
     const s = src();
     // RESTRUCTURE 진료비 필터 보존
-    expect(s).toContain("const feePayments = payments.filter((p) => !(p.memo ?? '').startsWith('영수증 업로드'));");
+    // T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): 기존 단일-표현식 arrow 매칭이 낡음.
+    //   T-20260715-foot-CHART-SUSU-EXPPAY-INCLUDE(ee81b359)가 체험(회수1·단건) 영수증결제를 진료비 목록에 포함하는
+    //   additive 예외를 넣어 filter 를 블록형으로 확장 → exact string 만 변동, "영수증 업로드 접두 배제" 핵심 불변식은
+    //   보존(회귀 아님). 배제 술어 + 회수1 예외 존치를 함께 가드한다.
+    expect(s).toContain('const feePayments = payments.filter((p) =>');
+    expect(s).toContain("startsWith('영수증 업로드')");           // 영수증 업로드 접두 배제 술어 존치
+    expect(s).toContain("startsWith('영수증 업로드(회수1')");      // 체험(회수1) 포함 예외(EXPPAY-INCLUDE) 존치
     expect(s).toContain("const directPkgPayments = pkgPayments.filter((p) => p.memo !== '영수증 업로드');");
     // 영수증 read-only 뷰어 보존
     expect(s).toMatch(/prefix="receipt"[\s\S]{0,200}readOnly/);

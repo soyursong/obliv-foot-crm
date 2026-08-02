@@ -641,8 +641,11 @@ ${TREAT_CONFIRM_DISEASE_BLOCK}
 
   <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ④: "상기인은~확인함" 텍스트칸 세로 높이 3배(≈36px→108px).
        min-height:108px + flex 상하중앙 정렬(기존 text-align:center 유지). -->
+  <!-- T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(real-bug 정정): 통원확인서(VISIT_CONFIRM)는 "통원중임(통원하였음)"이 정본.
+       3949940f(T-20260731-DOCFORM-URGENT-6FIX A5⑨)가 TREAT 전용 "진료중임" 문구를 양 템플릿에 오적용 → VISIT 회귀.
+       f92dd989(T-20260729-DOC-LAYOUT-FIX)에서 명시 정정했던 "통원중임"으로 복원(진료확인서 문구와 직교 유지). -->
   <div class="confirm-text" style="margin-top:6px; min-height:108px; display:flex; align-items:center; justify-content:center;">
-    상기인은 위와 같이 진료중임(진료하였음)을 확인함.
+    상기인은 위와 같이 통원중임(통원하였음)을 확인함.
   </div>
 
   <!-- T-20260706-foot-DOCCONFIRM-LAYOUT-5FIX ⑤: 하단 발행일~주소및명칭 섹션 좌우 50:50.

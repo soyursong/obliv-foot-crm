@@ -131,8 +131,13 @@ test.describe('S2: 2장 출력·QR 자동삽입 유지 (무파괴, AC-3)', () =>
 
   test('AC-3: PATH-4 — rx_standard 2장(약국+환자) 출력 호출부 유지', () => {
     const src = fs.readFileSync(PAY_MINI_SRC, 'utf-8');
-    expect((src.match(/buildHtmlPageDiv\([^)]*'약국보관용'\)/g) || []).length).toBeGreaterThanOrEqual(2);
-    expect((src.match(/buildHtmlPageDiv\([^)]*'환자보관용'\)/g) || []).length).toBeGreaterThanOrEqual(2);
+    // T-20260730-foot-UNIT-PREEXIST-RED-TRIAGE(stale 정정): 기존 기대값 2(=인쇄경로+[출력및수납]경로 평행 2경로).
+    //   T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ(9b9977db)가 요건④로 [출력 및 수납](handleDocAndSettle) 진입점을
+    //   제거하고 [출력](handleDocPrint) 단일경로로 통일 → 각 보관용 라벨 호출이 2회→1회로 정상 감소(회귀 아님).
+    //   2장 출력 기능(약국보관용+환자보관용 각 1장)은 rx_standard 분기(p1/p2 return)에 온전히 실재하므로
+    //   "두 라벨 모두 존재(각 ≥1)"로 2장 출력 실재를 가드한다.
+    expect((src.match(/buildHtmlPageDiv\([^)]*'약국보관용'\)/g) || []).length, '약국보관용 출력 호출 소실').toBeGreaterThanOrEqual(1);
+    expect((src.match(/buildHtmlPageDiv\([^)]*'환자보관용'\)/g) || []).length, '환자보관용 출력 호출 소실').toBeGreaterThanOrEqual(1);
   });
 
   test('AC-3: 8FIX QR 자동삽입 회귀 보호 — {{rx_qr_html}} + api.qrserver 유지', () => {
