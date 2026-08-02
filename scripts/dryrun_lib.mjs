@@ -47,10 +47,10 @@
  * usage (module):
  *   import { runDryrun, regclassAbsent, policyAbsent } from './dryrun_lib.mjs'
  */
-import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { basename, join, resolve, relative } from 'node:path';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const REF = process.env.FOOT_SUPABASE_REF || 'rxlomoozakkjesdqjtvd';
 
@@ -351,13 +351,178 @@ export async function runDryrun(opts = {}) {
   return done(true, 0);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// B2 — apply-runner preflight guard (재발벡터 B2, T-20260802-foot-PMW-OOB-APPLY-
+//      INGRESS-FORENSIC). supervisor 사전승인 (MSG-20260802-115032-k3xo):
+//      "순수 클라이언트-측 가드·semantic 무변 → dev-foot 자율 구현 승인.
+//       V1(커밋 미대조 apply) 최우선 차단책."
+//
+// ── 이 가드가 막는 hazard (V1: 커밋 미대조 apply) ─────────────────────────────
+// apply 러너는 워킹트리의 *.up.sql 파일을 그대로 prod 에 실적용한다. 승인(deploy
+// gate)은 **특정 커밋의 blob** 을 대상으로 이뤄지는데, 러너가 읽는 워킹트리 파일이
+// (a) 커밋 이후 로컬 수정됐거나 (b) 애초에 커밋되지 않은 내용이면, 실제 prod 에
+// 착지하는 SQL 이 승인 대상과 divergence 한다 → OOB(out-of-band) 적용. B2 는 apply
+// 직전 두 불변식을 강제한다:
+//   INV-B2-1 blob 일치: `git hash-object <up.sql>`(워킹트리 실제 바이트) ==
+//            승인커밋:같은경로 의 blob oid. 불일치 → abort(BLOB_MISMATCH).
+//   INV-B2-2 워킹트리 clean: `git status --porcelain -- <up.sql>` 비어있어야 함
+//            (스테이징/미커밋 변경/untracked 금지). dirty → abort(PATH_DIRTY).
+// 옵션 strictTree=true 는 레포 전체 워킹트리 clean 까지 요구한다.
+//
+// fail-closed: 승인커밋 미지정(param/APPLY_APPROVED_COMMIT 부재), 경로 레포-밖,
+// 승인커밋에 파일 부재 → 전부 abort. "검증 불가 == 통과" 를 절대 허용하지 않는다
+// (이 러너가 dryrun sentinel-bypass 에서 배운 교훈과 동형).
+//
+// semantic 무변: DB 로 아무 것도 보내지 않는 순수 로컬 git 검증. cross-CRM
+// ledger/DDL 무접점 → CONSULT 불요 (supervisor 판정).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function git(argv, cwd) {
+  return execFileSync('git', argv, { cwd, encoding: 'utf8' }).trim();
+}
+
+/** repo top-level (realpath). throws if not a git work tree. */
+export function repoRoot(cwd = process.cwd()) {
+  return git(['rev-parse', '--show-toplevel'], cwd);
+}
+
+/** sha1 blob-oid of the WORKING-TREE bytes of `filePath` (what apply would read now). */
+export function workingBlobHash(filePath, cwd = process.cwd()) {
+  return git(['hash-object', '--', filePath], cwd);
+}
+
+/** blob-oid recorded for repo-relative `relPath` at `commit` (the APPROVED content). */
+export function committedBlobHash(commit, relPath, cwd = process.cwd()) {
+  // `<commit>:<path>` resolves to the blob oid stored in that commit's tree.
+  return git(['rev-parse', '--verify', `${commit}:${relPath}`], cwd);
+}
+
+/** true when `filePath` has ANY pending change (staged / unstaged / untracked). */
+export function pathDirty(filePath, cwd = process.cwd()) {
+  return git(['status', '--porcelain', '--', filePath], cwd).length > 0;
+}
+
+/**
+ * Verify a migration up.sql is EXACTLY the approved-committed content before apply.
+ *
+ * opts:
+ *   upPath          path to the up.sql the runner is about to apply (required)
+ *   approvedCommit  git ref/sha the deploy gate approved (param or APPLY_APPROVED_COMMIT)
+ *   cwd             working dir for git (default process.cwd())
+ *   strictTree      also require the WHOLE work tree clean (default false)
+ *
+ * Returns { ok, code, message, checks[], upPath, approvedCommit }. Never throws
+ * for a *policy* failure (returns ok:false); use assertApplyPreflight() to throw.
+ */
+export function applyPreflight(opts = {}) {
+  const { upPath, cwd = process.cwd(), strictTree = false } = opts;
+  const approvedCommit = opts.approvedCommit || process.env.APPLY_APPROVED_COMMIT;
+  const result = { ok: false, code: null, message: '', checks: [], upPath, approvedCommit };
+  const fail = (code, message) => { result.code = code; result.message = message; return result; };
+
+  if (!upPath) return fail('APPLY_PREFLIGHT_NO_PATH', 'upPath is required');
+  if (!approvedCommit) {
+    return fail('APPLY_PREFLIGHT_NO_APPROVED_COMMIT',
+      'approved commit reference missing (opts.approvedCommit or APPLY_APPROVED_COMMIT). ' +
+      'fail-closed: cannot verify apply == approved blob.');
+  }
+
+  let root;
+  try { root = realpathSync(repoRoot(cwd)); }
+  catch (e) { return fail('APPLY_PREFLIGHT_NOT_A_GIT_REPO', String(e.message || e)); }
+
+  // canonicalize both sides so a symlinked cwd (e.g. /var → /private/var on macOS)
+  // does not spuriously read as "outside repo". Fall back to the resolved path if
+  // the file is missing (hash-object below then hard-fails, which is the right abort).
+  let abs;
+  try { abs = realpathSync(resolve(cwd, upPath)); }
+  catch { abs = resolve(cwd, upPath); }
+  const rel = relative(root, abs);
+  if (rel.startsWith('..') || rel === '') {
+    return fail('APPLY_PREFLIGHT_PATH_OUTSIDE_REPO', `${upPath} is outside git repo ${root}`);
+  }
+
+  // INV-B2-1: working-tree blob == approved-commit blob
+  let workBlob, approvedBlob;
+  try { workBlob = workingBlobHash(abs, cwd); }
+  catch (e) { return fail('APPLY_PREFLIGHT_HASH_OBJECT_FAILED', String(e.message || e)); }
+  try { approvedBlob = committedBlobHash(approvedCommit, rel, cwd); }
+  catch (e) {
+    return fail('APPLY_PREFLIGHT_PATH_ABSENT_AT_COMMIT',
+      `${rel} not found in approved commit ${approvedCommit} (file not part of approved deploy?): ${String(e.message || e)}`);
+  }
+  const blobMatch = workBlob === approvedBlob;
+  result.checks.push({ check: 'blob_match', ok: blobMatch, path: rel, commit: approvedCommit, workingBlob: workBlob, approvedBlob });
+  if (!blobMatch) {
+    return fail('APPLY_PREFLIGHT_BLOB_MISMATCH',
+      `working-tree ${rel} (blob ${workBlob}) != approved commit ${approvedCommit} blob ${approvedBlob}. ` +
+      'V1 uncommitted-apply BLOCKED — apply ONLY the approved committed content ' +
+      `(git checkout ${approvedCommit} -- ${rel}).`);
+  }
+
+  // INV-B2-2: the file must have no pending change
+  const dirty = pathDirty(abs, cwd);
+  result.checks.push({ check: 'path_clean', ok: !dirty, path: rel });
+  if (dirty) {
+    return fail('APPLY_PREFLIGHT_PATH_DIRTY',
+      `${rel} has uncommitted changes (git status --porcelain non-empty) — apply refused.`);
+  }
+
+  // optional: whole work tree clean
+  if (strictTree) {
+    const treeOut = git(['status', '--porcelain'], cwd);
+    const clean = treeOut.length === 0;
+    result.checks.push({ check: 'tree_clean', ok: clean, dirtyEntries: clean ? [] : treeOut.split('\n') });
+    if (!clean) {
+      return fail('APPLY_PREFLIGHT_TREE_DIRTY',
+        `working tree dirty (strictTree): ${treeOut.split('\n').length} pending entries.`);
+    }
+  }
+
+  result.ok = true;
+  result.code = 'APPLY_PREFLIGHT_PASS';
+  result.message = `apply preflight PASS — ${rel} == approved commit ${approvedCommit} blob ${approvedBlob}, work tree clean`;
+  return result;
+}
+
+/** applyPreflight() but throws on failure (attaches .preflight). Returns result on PASS. */
+export function assertApplyPreflight(opts = {}) {
+  const r = applyPreflight(opts);
+  if (!r.ok) {
+    const err = new Error(`[${r.code}] ${r.message}`);
+    err.preflight = r;
+    throw err;
+  }
+  return r;
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const args = process.argv.slice(2);
+
+  // B2 preflight subcommand:
+  //   node scripts/dryrun_lib.mjs --preflight <up.sql> --commit <sha> [--strict-tree]
+  if (args.includes('--preflight')) {
+    const upPath = args[args.indexOf('--preflight') + 1];
+    const ci = args.indexOf('--commit');
+    const approvedCommit = ci !== -1 ? args[ci + 1] : undefined;
+    const strictTree = args.includes('--strict-tree');
+    if (!upPath || upPath.startsWith('--')) {
+      console.error('usage: node scripts/dryrun_lib.mjs --preflight <up.sql> --commit <sha> [--strict-tree]');
+      process.exit(64);
+    }
+    const r = applyPreflight({ upPath, approvedCommit, strictTree });
+    for (const c of r.checks) console.log(`   [${c.check}] ${c.ok ? 'ok' : 'FAIL'}${c.workingBlob ? ` work=${c.workingBlob} approved=${c.approvedBlob}` : ''}`);
+    if (r.ok) { console.log(`== APPLY-PREFLIGHT PASS == ${r.message}`); process.exit(0); }
+    console.log(`== APPLY-PREFLIGHT ABORT == [${r.code}] ${r.message}`);
+    process.exit(1);
+  }
+
   const upPath = args.find((a) => !a.startsWith('--'));
   if (!upPath) {
     console.error('usage: node scripts/dryrun_lib.mjs <path-to-up.sql> [--absent "label=SQL" ...]');
+    console.error('   or: node scripts/dryrun_lib.mjs --preflight <up.sql> --commit <sha> [--strict-tree]');
     process.exit(64);
   }
   const assertAbsent = [];
