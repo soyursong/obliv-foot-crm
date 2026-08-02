@@ -503,6 +503,9 @@ export interface CheckIn {
   created_at: string;
   /** T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 유입경로 이벤트값(워크인=예약없는 접수 발급앵커). */
   inflow_channel?: string | null;
+  /** T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 배정 시 실장 수동 선택 '상담 성격'(초진/재진/당일재상담/대리상담).
+   *  NULL=미분류(pre-feature/auto-assign 미오버라이드). App default=초진(신규 배정 pre-select). 운영 카운터축 전용. */
+  assignment_consult_type?: '초진' | '재진' | '당일재상담' | '대리상담' | null;
   /** 진료정보 — T-20260430-foot-TREATMENT-LABEL */
   consultation_done: boolean;
   treatment_kind: string | null;

@@ -78,6 +78,11 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+// ── T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 배정 '상담 성격' 4종 옵션(SSOT) ──────────────
+//   DB CHECK(chk_check_ins_assignment_consult_type)와 1:1 parity. 기본 pre-select = 초진(App default, DB default는 NULL).
+const ASSIGN_CONSULT_TYPE_OPTIONS = ['초진', '재진', '당일재상담', '대리상담'] as const;
+type AssignConsultType = (typeof ASSIGN_CONSULT_TYPE_OPTIONS)[number];
+
 // ── 상태 → 활성 축(role) 매핑 ───────────────────────────────────────────────────
 const CONSULT_FLOW: CheckInStatus[] = ['consult_waiting', 'consultation', 'exam_waiting', 'examination'];
 const THERAPY_FLOW: CheckInStatus[] = [
@@ -1507,6 +1512,39 @@ export default function Assignments() {
     }
   };
 
+  // ── T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 배정 '상담 성격' 수동 선택 write path ──────────
+  //   담당(배정 실장) 옆 드롭다운(4종) 선택 → check_ins.assignment_consult_type 저장(전향적 수동 assertion SSOT).
+  //   DA(da_decision_foot_assign_consulttype_dropdown_20260726): 단일 enum 1컬럼, default NULL(백필 금지), App default=초진.
+  //   ⚠ 카운터(배정 초진/재진·일일목표) 소비는 본 티켓 scoped hold(DA 파생view co-sign 대기, planner MSG-20260803-071839-ata7).
+  //     → 여기선 '값 저장'만. staffStats/monthAxisOf(카운터축) 무접촉 — 현행 자동 365-recency 유지.
+  //   write 타깃 = check_ins.assignment_consult_type(per-visit) 만. 매출귀속(consultant_id/assigned_staff_id) 무접점(RED LINE).
+  const doSetConsultType = async (
+    ci: CheckIn,
+    value: '초진' | '재진' | '당일재상담' | '대리상담',
+  ) => {
+    if (!clinic || busy) return;
+    if (value === (ci.assignment_consult_type ?? null)) return; // no-op(동일값)
+    setBusy(true);
+    // rows-affected 가드(cross_crm_write_rowcheck_standard): RLS/스코프 불일치 시 0-row+error=null 사일런트 유실 차단.
+    const { data, error } = await supabase
+      .from('check_ins')
+      .update({ assignment_consult_type: value })
+      .eq('id', ci.id)
+      .eq('clinic_id', clinic.id)
+      .select('id');
+    setBusy(false);
+    if (error) {
+      toast.error(error.message ?? '상담 성격 저장 실패');
+      return;
+    }
+    if (!data || data.length === 0) {
+      toast.error('상담 성격 저장 실패 — 권한 또는 대상 없음(0건).');
+      return;
+    }
+    toast.success(`상담 성격 → ${value}`);
+    void load();
+  };
+
   // T-20260725-foot-ASSIGNHIST-DELETE-ALLROWS-R2B: 배분 이력 row 삭제(soft-hide) 실행.
   //   확인 다이얼로그(distDeleteTarget) '확인' → softHideCheckIn(check_ins.deleted_at 세팅, hard-DELETE 금지).
   //   권한 = admin/manager/원장(canEditDistribution) + 서버 RLS 이중. rows-affected 가드는 helper 내부.
@@ -1955,6 +1993,11 @@ export default function Assignments() {
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">고객</th>
                   <th className="px-2 py-2 text-left font-medium">담당</th>
+                  {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: '상담 성격' 열 — 담당 옆, 상담 탭 한정
+                      (초진/재진/당일재상담/대리상담 배정유형 = 상담축 개념. 치료 탭 무의미) */}
+                  {activeTab === 'consult' && (
+                    <th className="px-2 py-2 text-left font-medium">상담 성격</th>
+                  )}
                   <th className="px-2 py-2 text-left font-medium">방식</th>
                   <th className="px-2 py-2 text-right font-medium">시각</th>
                   {/* T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: 발송(확정) 열 — 상담 탭 한정(치료 탭 무의미) */}
@@ -1971,7 +2014,7 @@ export default function Assignments() {
                 {todayDistribution.length === 0 && (
                   <tr>
                     <td
-                      colSpan={4 + (activeTab === 'consult' ? 1 : 0) + (canEditDistribution ? 1 : 0)}
+                      colSpan={4 + (activeTab === 'consult' ? 2 : 0) + (canEditDistribution ? 1 : 0)}
                       className="px-3 py-6 text-center text-muted-foreground"
                     >
                       오늘 배분된 건이 없습니다.
@@ -2039,6 +2082,29 @@ export default function Assignments() {
                         staffName(r.staffId)
                       )}
                     </td>
+                    {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: '상담 성격' 드롭다운(담당 옆, 상담 탭 한정).
+                        4종 선택 → check_ins.assignment_consult_type write(doSetConsultType). 기본 pre-select=초진(App default).
+                        DB 저장값 NULL(미분류/auto-assign 미오버라이드)이면 화면상 [초진]으로 표시(default), 명시 선택 시에만 write.
+                        ⚠ 카운터 소비는 scoped hold(DA 파생view co-sign 대기) — 여기선 값 저장만, 누적 카운트축 무접촉. */}
+                    {activeTab === 'consult' && (
+                      <td className="px-2 py-2">
+                        <select
+                          data-testid={`dist-consulttype-select-${r.id}`}
+                          className="rounded border bg-background px-1.5 py-1 text-xs"
+                          value={r.checkIn.assignment_consult_type ?? '초진'}
+                          disabled={busy}
+                          onChange={(e) =>
+                            void doSetConsultType(r.checkIn, e.target.value as AssignConsultType)
+                          }
+                        >
+                          {ASSIGN_CONSULT_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
                     <td className="px-2 py-2">
                       <Badge
                         variant={r.method === '자동' ? 'teal' : r.method === '—' ? 'outline' : 'secondary'}

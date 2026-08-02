@@ -1,0 +1,12 @@
+
+=== T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN migrate (DRY-RUN) ===
+
+── PRE ──  col=0  chk_4=0  ledger=0
+
+  ✅ tx(fwd→fwd멱등→rbk) 무오류 실행 후 ROLLBACK
+  ✅ POST-PROBE 컬럼 무영속 (0→0)
+  ✅ POST-PROBE CHECK 무영속 (0→0)
+  ✅ POST-PROBE ledger 무영속 (0→0)
+
+✅ DRY-RUN ALL-PASS (fwd+멱등+rbk 왕복, prod 무영속 실증)
+
