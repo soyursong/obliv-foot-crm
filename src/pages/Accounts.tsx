@@ -311,8 +311,8 @@ export default function Accounts() {
       staff_id: inviteStaffId || null,
     });
     await stampAuthActionOutcome(supabase, auditId, rpcErr ? 'failed' : 'succeeded');
-    setInviteBusy(false);
     if (rpcErr) {
+      setInviteBusy(false);
       // auth.users에 고아 레코드가 남았을 수 있음 (UUID: data.user.id)
       // → Supabase 대시보드 Authentication > Users에서 해당 이메일 삭제 후 재등록 필요
       const isNotFound = rpcErr.message?.includes('not found');
@@ -323,7 +323,38 @@ export default function Accounts() {
       );
       return;
     }
-    toast.success(`${email} 등록 완료 (즉시 승인)`);
+
+    // 3) 이메일 자동확인 하드닝 — T-20260731-foot-STAFF-REGISTER-EMAILCONFIRM-GAP-SCAN
+    //   RC(ESKI/김지윤/기은서 등 반복): signUp 으로 만든 계정은 auth.users.email_confirmed_at=NULL
+    //   → admin_register_user 가 user_profiles.approved=true 만 세팅할 뿐 auth 레벨 email 확인은
+    //     하지 않아 GoTrue 가 "Email not confirmed" 로 로그인 거부 → 현장엔 "비밀번호가 틀렸습니다"로 표출.
+    //   해법: 등록 직후 기존 idempotent RPC admin_approve_and_confirm_user 로 email_confirmed_at 강제.
+    //     (해당 RPC = approved=true 재확정 + 미확인 계정만 email_confirmed_at=now() + id↔email 재검증
+    //      + rows-affected 검증. 신규 스키마/컬럼 0 = DB 변경 없음.)
+    //   confirm 실패해도 계정 자체는 등록됨 → 로그인만 막힘. 이 경우 fail-loud 로 승인 버튼 재시도 안내.
+    const { data: confirmData, error: confirmErr } = await supabase.rpc('admin_approve_and_confirm_user', {
+      target_user_id: data.user.id,
+    });
+    setInviteBusy(false);
+    if (confirmErr) {
+      toast.error(
+        `계정은 등록됐지만 이메일 자동확인에 실패했어요: ${confirmErr.message}. ` +
+        `계정 관리 목록에서 해당 직원의 '승인' 버튼을 눌러 로그인 활성화를 완료하세요.`,
+      );
+      fetchUsers();
+      return;
+    }
+    const emailConfirmedNow = (confirmData as { email_confirmed_now?: boolean } | null)?.email_confirmed_now;
+    const emailAlready = (confirmData as { already_confirmed?: boolean } | null)?.already_confirmed;
+    if (!emailConfirmedNow && !emailAlready) {
+      // 방어적: RPC 는 성공했으나 확인 상태가 명확히 서지 않은 이례 케이스 → 로그인 가능성 미보장 경고.
+      toast.error(
+        `${email} 등록됐지만 이메일 확인 상태가 확실치 않아요. 로그인 안 되면 '승인' 버튼을 눌러 다시 시도하세요.`,
+      );
+      fetchUsers();
+      return;
+    }
+    toast.success(`${email} 등록 완료 (즉시 승인 · 이메일 자동확인 → 바로 로그인 가능)`);
     setInviteOpen(false);
     setInviteEmail('');
     setInvitePw('');
