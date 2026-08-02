@@ -148,11 +148,23 @@ test('AC-5: RLS — clinic_isolation SELECT/INSERT + own UPDATE/DELETE', () => {
 
 // ── AC-6: 빌드 성공 ──────────────────────────────────────────────
 
-test('AC-6: dist/ 빌드 산출물 — CustomerChartPage chunk 존재', () => {
-  expect(fs.existsSync(DIST_PATH)).toBe(true);
-  const indexHtml = path.join(DIST_PATH, 'index.html');
-  expect(fs.existsSync(indexHtml)).toBe(true);
-  const assets = fs.readdirSync(path.join(DIST_PATH, 'assets'));
-  const chartChunk = assets.some((f) => f.startsWith('CustomerChartPage'));
-  expect(chartChunk).toBe(true);
+test('AC-6: 빌드 코드분할 — CustomerChartPage lazy chunk 보장 (build-independent 소스 가드)', () => {
+  // ★[T-20260802-foot-UNIT-PREEXIST-RED5-TRIAGE] 환경(build-dep) 판정 → 정정.
+  //   원 AC-6 는 dist/ 사전빌드 산출물(chunk 파일) 존재를 단언했으나 unit 프로젝트는 빌드를 선행하지 않아
+  //   clean 실행 시 dist/ 부재 → 빌드 선행 여부에 의존하는 비결정 RED(실 회귀 아님).
+  //   CustomerChartPage 별도 chunk 를 '유발하는' 원인 = App.tsx 의 lazy 동적 import → 그 소스 계약을
+  //   build-independent 로 가드(항상 결정론). dist/ 가 있으면(CI 빌드 후) 실 chunk 존재도 부가 검증.
+  const appSrc = fs.readFileSync(path.resolve(__dirname, '../../src/App.tsx'), 'utf-8');
+  expect(
+    /CustomerChartPage\s*=\s*lazy\w*\(\s*\(\)\s*=>\s*import\(\s*['"]@\/pages\/CustomerChartPage['"]\s*\)/.test(appSrc),
+    'App.tsx CustomerChartPage 동적 import(코드분할) 계약 누락',
+  ).toBe(true);
+
+  // 빌드 산출물 존재 시(npm run build / CI ci:push 선행) 실 chunk 도 추가 검증 — coverage 유지
+  if (fs.existsSync(DIST_PATH) && fs.existsSync(path.join(DIST_PATH, 'assets'))) {
+    expect(fs.existsSync(path.join(DIST_PATH, 'index.html'))).toBe(true);
+    const assets = fs.readdirSync(path.join(DIST_PATH, 'assets'));
+    const chartChunk = assets.some((f) => f.startsWith('CustomerChartPage'));
+    expect(chartChunk, 'dist chunk CustomerChartPage 누락').toBe(true);
+  }
 });

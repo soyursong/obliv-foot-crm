@@ -84,22 +84,39 @@ test.describe('결함①: 치료기간 부터=까지 (고아토큰 제거)', () 
 });
 
 // ── 결함④ 레이아웃 ────────────────────────────────────────────────────────
-test.describe('결함④: 레이아웃 (빈 입원행 제거 · 라벨 정합)', () => {
+// ★SUPERSEDED (2026-07-31) → 현행 정본으로 재정합 [T-20260802-foot-UNIT-PREEXIST-RED5-TRIAGE]
+//   본 describe 의 원 결함④ 기대값(빈 입원행 제거 · 치료기간 rowspan 해제 · 실통원일수→통원일자)은
+//   후행 법무팀/총괄 확정 결정으로 명시적으로 번복됨. stale-spec 판정 → 임의완화가 아니라
+//   현행 정본(법무팀 2026-07-31 확정) 회귀 가드로 정정. 근거(git 검증):
+//     • 입원 행 + 치료기간 rowspan="2" 복원 ← T-20260731-foot-DOCFORM-URGENT-6FIX
+//       (커밋 3949940f, 법무팀·이은상 팀장 확정 "입원 행 복원, 값 영구공란").
+//       bd4b0088(본 결함④ 최초구현) 제거분을 원본 8셀로 되돌림.
+//     • 통원확인서 라벨 통원일자→실통원일수 복원 ← T-20260731-foot-DOCFORM-SEALFALLBACK-VISITDAYS-ALIGN-2ND
+//       (커밋 fa527027, A5⑦ deploy-ready·supervisor QA GO 2026-08-02, 실 내원건수 산출).
+//   ①discharge_date→visit_date 교체(결함①)는 URGENT-6FIX A2 로 유지됨 → 결함① 테스트 불변.
+test.describe('결함④(SUPERSEDED→현행정본): 레이아웃 (입원행·rowspan·라벨 = 법무팀 2026-07-31 확정)', () => {
   for (const [name, tpl] of CONFIRM_DOCS) {
-    test(`${name} 치료기간 표에 빈 '입원' 행 미노출 + rowspan 해제`, () => {
+    test(`${name} 치료기간 표 입원 행 + rowspan="2" 존재 (URGENT-6FIX 복원)`, () => {
       const start = tpl.indexOf('치료<br>기간');
+      expect(start, `${name} 치료기간 블록 미발견`).toBeGreaterThanOrEqual(0);
       const block = tpl.slice(start, start + 800);
-      // 외래만 남고 입원 행 제거
-      expect(block, `${name} 빈 입원 행 잔존`).not.toContain('>입원</td>');
-      // 치료기간 셀 rowspan 해제(단일행)
-      expect(block, `${name} 치료기간 rowspan 미해제`).not.toContain('rowspan="2"');
-    });
-
-    test(`${name} '실통원일수 일괄입력' 라벨 → '통원일자'로 정합`, () => {
-      expect(tpl, `${name} 구 라벨(실통원일수 일괄입력) 잔존`).not.toContain('실통원일수');
-      expect(tpl, `${name} 통원일자 라벨 누락`).toContain('>통원일자</td>');
+      // 법무팀 확정: 외래+입원 2행 유지(입원 값 영구공란) — '빈 입원행 제거' 결정은 번복됨
+      expect(block, `${name} 입원 행 누락(URGENT-6FIX 복원 후 상시 존재)`).toContain('>입원</td>');
+      // 치료기간 셀 rowspan="2"(외래·입원 2행 세로중앙) 복원 — rowspan 속성은 셀 여는 태그(텍스트 이전)에 위치
+      expect(
+        /rowspan="2"[^>]*>치료<br>기간/.test(tpl),
+        `${name} 치료기간 셀 rowspan="2" 누락(URGENT-6FIX 복원)`,
+      ).toBe(true);
     });
   }
+
+  test('진료확인서 통원일자 라벨 유지 (TREAT_CONFIRM 은 실통원일수 미도입)', () => {
+    expect(TREAT_CONFIRM, '진료확인서 통원일자 라벨 누락').toContain('>통원일자</td>');
+  });
+
+  test('통원확인서 실통원일수 라벨 (SEALFALLBACK A5⑦ 복원 — 통원일자 라벨 번복)', () => {
+    expect(VISIT_CONFIRM, '통원확인서 실통원일수 라벨 누락').toContain('>실통원일수</td>');
+  });
 });
 
 // ── 결함② 용도 선택 발급동선 승격 ─────────────────────────────────────────
@@ -136,16 +153,23 @@ test.describe('결함③ 가드: 연번호/용도 템플릿 토큰 보존 (PMW �
 
 // ── 회귀 가드: 실제 렌더 4키 ──────────────────────────────────────────────
 test.describe('회귀: 실제 렌더 4키(treat_confirm·code·nocode·visit_confirm)', () => {
-  test('4키 렌더 정상 + 고아토큰·빈입원행·구라벨 미반영', () => {
+  // ★SUPERSEDED (2026-07-31) → 현행 정본 반영 [T-20260802-foot-UNIT-PREEXIST-RED5-TRIAGE]
+  //   원 회귀 기대값(빈입원행 미노출·실통원일수 미반영)은 결함④와 동일하게 URGENT-6FIX/SEALFALLBACK 로 번복됨.
+  //   현행 정본 = 확인서 입원 행 상시 존재 + 통원확인서 실통원일수 라벨. 결함②(purpose 소진)는 불변 유지.
+  test('4키 렌더 정상 + purpose 소진 + 현행 정본 레이아웃(입원행·실통원일수 복원 반영)', () => {
     for (const key of ['treat_confirm', 'treat_confirm_code', 'treat_confirm_nocode', 'visit_confirm']) {
       const html = bindHtmlTemplate(getHtmlTemplate(key)!, {});
-      // bind 후 placeholder 소진 → discharge_date 잔여 없음(진단서 아님)
       expect(html, `${key} 렌더 실패`).toContain('치료');
-      expect(html, `${key} 구 라벨 잔존`).not.toContain('실통원일수');
-      expect(html, `${key} 빈 입원 행 잔존`).not.toContain('>입원</td>');
-      // purpose 미지정 시 공란 렌더(고아 아님) — placeholder 소진 확인
+      // 결함② 유지: purpose 미지정 시 placeholder 소진(공란 렌더, 고아 아님)
       expect(html, `${key} purpose placeholder 잔존`).not.toContain('{{purpose}}');
+      // URGENT-6FIX 복원: 확인서 입원 행 상시 존재(값 공란)
+      expect(html, `${key} 입원 행 누락(법무팀 복원 후 상시 존재)`).toContain('>입원</td>');
     }
+    // SEALFALLBACK A5⑦ 복원: 통원확인서 실통원일수 라벨(진료확인서는 통원일자 유지)
+    const visitHtml = bindHtmlTemplate(getHtmlTemplate('visit_confirm')!, {});
+    expect(visitHtml, '통원확인서 실통원일수 라벨 누락').toContain('실통원일수');
+    const treatHtml = bindHtmlTemplate(getHtmlTemplate('treat_confirm')!, {});
+    expect(treatHtml, '진료확인서 통원일자 라벨 누락').toContain('통원일자');
   });
 
   test('진료확인서 code/nocode 상병 분기 회귀 0 (4결함과 직교)', () => {
