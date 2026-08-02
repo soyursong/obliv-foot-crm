@@ -15,7 +15,19 @@
  *         (카운트다운을 멈추고 묵시적 강제 새로고침으로 데이터를 날리지 않음.)
  *   - AC-4: "지금 새로고침" 버튼으로 즉시 실행도 가능(동일 dirty-guard 적용).
  *
- * 무패키지: setInterval + location.reload + dirty-guard 레지스트리만 사용.
+ * ── T-20260713 B안(유휴 무음 자동 최신화) 증분 (총괄 김주연 컨펌 2026-08-02) ──
+ *   기존 blocked-자가복구 가드의 EFFICACY-GAP: '종일 dirty/바쁜 세션 탭'은 카운트다운이
+ *   1회 발화한 뒤 blocked 로 굳거나 사용자가 배너를 무시하면 구 in-memory 번들로 계속 남아
+ *   PAYMINI false-FAIL 을 유발했다. 처방 = 상시 유휴(idle) 감지 무음 최신화(primary):
+ *     - AC-B1: 무입력 N초(getIdleSilentMs) 지속 + not-dirty(완전 clean) + tab focus/visible
+ *              → 배너 없이 조용히 location.reload(사용자 클릭 불요).
+ *     - AC-B2: 폼 입력/저장 진행/dirty guard 활성(flushable·blocking 중 하나라도) → 절대
+ *              무음 reload 안 됨(유실 0). dirty 해제 후 다시 유휴 진입 시 재적재.
+ *     - AC-B3: idle-silent 는 무음(신규 배너 없음). 기존 배너/카운트다운/blocked-recovery
+ *              폴백은 그대로 유지(회귀 0) — primary=idle-silent, fallback=배너 경로.
+ *     - AC-B4: 판정~실행 사이 재검사(collectDirty·focus·visible)로 작업 중 강제 reload 오탐 0.
+ *
+ * 무패키지: setInterval + location.reload + dirty-guard 레지스트리 + 입력 이벤트 리스너만 사용.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -56,6 +68,32 @@ function getRecoveryPollMs(): number {
   if (typeof window !== 'undefined') {
     const override = (window as unknown as { __updateRecoveryPollMs?: number }).__updateRecoveryPollMs;
     if (typeof override === 'number' && override >= 100 && override <= 60000) return override;
+  }
+  return 5000;
+}
+
+/**
+ * (B안) 무음 자동 최신화 유휴 임계(ms). 사용자 입력이 이 시간 이상 없고 + not-dirty +
+ * focus/visible 이면 배너 없이 조용히 재적재한다. 기본 45초(총괄 제안 30~60초 범위 중앙 —
+ * 진료·수납 사이 자연 idle gap 은 잡되, 잠깐 멈춤엔 발화 않는 균형). E2E는 window.
+ * __updateIdleSilentMs 로 짧게 덮어써 결정적으로 검증한다(프로덕션 동작 무영향).
+ */
+function getIdleSilentMs(): number {
+  if (typeof window !== 'undefined') {
+    const override = (window as unknown as { __updateIdleSilentMs?: number }).__updateIdleSilentMs;
+    if (typeof override === 'number' && override >= 100 && override <= 600000) return override;
+  }
+  return 45000;
+}
+
+/**
+ * (B안) 유휴 도달 여부 재평가 주기(ms). 기본 5초 — 임계 도달 후 최대 이 주기 내에 착지.
+ * E2E는 window.__updateIdleCheckMs 로 짧게 덮어쓴다(프로덕션 동작 무영향).
+ */
+function getIdleCheckMs(): number {
+  if (typeof window !== 'undefined') {
+    const override = (window as unknown as { __updateIdleCheckMs?: number }).__updateIdleCheckMs;
+    if (typeof override === 'number' && override >= 50 && override <= 60000) return override;
   }
   return 5000;
 }
@@ -158,6 +196,51 @@ export default function UpdateBanner() {
       window.removeEventListener('focus', onActive);
     };
   }, [updateAvailable, phase, attemptReload]);
+
+  // ── T-20260713 B안 — 유휴(idle) 무음 자동 최신화 (primary) ────────────────────
+  //
+  // EFFICACY-GAP: 카운트다운은 update 감지 후 1회만 발화한다. 그 순간 dirty(blocked)였거나
+  //   사용자가 배너를 무시하면 세션이 종일 구 번들로 남아 PAYMINI false-FAIL 을 냈다.
+  // 처방: updateAvailable 인 동안 상시 유휴를 감시한다. 사용자 입력이 getIdleSilentMs 이상
+  //   없고(=진료·수납 사이 자연 idle gap) + 세션이 완전 clean(flushable·blocking 모두 0)
+  //   + 탭이 focus/visible 이면, 배너 없이 조용히 재적재한다. 이 셋 중 하나라도 어긋나면
+  //   발화하지 않는다 → 작업 중(입력·미저장)엔 절대 개입 않고(유실 0), 사용자가 잠시 자리를
+  //   비운(또는 화면을 멈춘) 안전한 순간에만 스스로 최신 번들로 착지한다. 무패키지.
+  //   ※ 기존 배너/카운트다운/blocked-recovery 는 그대로(회귀 0) — dirty 로 idle-silent 가
+  //     보류되는 동안의 fallback 경로로 계속 동작한다.
+  useEffect(() => {
+    if (!updateAvailable) return;
+    const idleMs = getIdleSilentMs();
+    let lastActivity = Date.now();
+    const bump = () => {
+      lastActivity = Date.now();
+    };
+    // 실제 조작으로 간주할 입력만 idle 타이머를 리셋한다(마우스 이동 등 수동적 신호 제외
+    // → 화면을 멈춘 진짜 유휴에서 착지). capture=true 로 폼 내부에서 stopPropagation 돼도 포착.
+    const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'wheel', 'input'] as const;
+    activityEvents.forEach((e) =>
+      window.addEventListener(e, bump, { passive: true, capture: true }),
+    );
+
+    const trySilentReload = () => {
+      if (Date.now() - lastActivity < idleMs) return; // 아직 유휴 아님
+      // ── 착지 직전 재검사(AC-B4 오탐 0): 판정~실행 사이 dirty/blur 진입 시 중단 ──
+      const { flushable, blocking } = collectDirty();
+      if (flushable.length > 0 || blocking.length > 0) return; // 미저장 있으면 미개입(유실 0)
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+      // 무음 최신화 — 신규 배너 없이 조용히 재적재.
+      window.location.reload();
+    };
+
+    const id = window.setInterval(trySilentReload, getIdleCheckMs());
+    return () => {
+      window.clearInterval(id);
+      activityEvents.forEach((e) =>
+        window.removeEventListener(e, bump, { capture: true } as EventListenerOptions),
+      );
+    };
+  }, [updateAvailable]);
 
   if (!updateAvailable) return null;
 
