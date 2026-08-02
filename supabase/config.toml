@@ -68,6 +68,15 @@ verify_jwt = false
 [functions.attendance-sync]
 verify_jwt = false
 
+# T-20260802-foot-ATTENDANCE-QR-PORT (선결 게이트 · 설계 §4-5):
+#   attendance-otp 는 직원 폰(비로그인)에서 셀프 punch(action=send/verify/enroll_*/punch_device)를
+#   받는 공개 EF 다. 게이트웨이 기본 verify_jwt=true 면 EF 코드 도달 前 401 → 비로그인 punch 전량 거부
+#   (scalp2 cron paused verify_jwt 401 공회전 동일 함정). verify_jwt=false 로 게이트웨이 JWT 검사를
+#   끄고, 인증은 EF 코드 내부(qr_token=kiosk_token Vault 대조 OR admin JWT / punch=QR 토큰 신선도 +
+#   OTP·device_token hash 대조)로 강제한다. staff.phone SELECT·OTP·punch write 는 service_role 단일창구.
+[functions.attendance-otp]
+verify_jwt = false
+
 # T-20260718-foot-CLOSING-HERALD-PORT-GOLDEN (shadow apply):
 #   closing-confirmed-publisher 는 pg_cron worker(process_closing_confirmed_outbox → net.http_post)가
 #   X-Internal-Cron 헤더(=vault internal_cron_secret)만 실어 호출한다(Supabase JWT 아님). 게이트웨이
