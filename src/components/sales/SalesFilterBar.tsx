@@ -1,7 +1,7 @@
 /**
  * T-20260515-foot-SALES-COMMON-DB
  * 매출집계 공통 글로벌 필터 바
- * - DateRangePicker (기간 선택: 오늘/이번주/이번달/직접입력)
+ * - DateRangePicker (기간 선택: 오늘/이번주/이번달/지난달/직접입력)
  * - 환자명·차트번호 검색바
  * - 엑셀 다운로드 버튼 (외부 onExport 콜백)
  */
@@ -11,7 +11,7 @@ import { Download, Search, CalendarDays, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 
 export interface SalesDateRange {
   from: string;   // YYYY-MM-DD
@@ -31,7 +31,8 @@ interface Props {
   className?: string;
 }
 
-type Preset = 'today' | 'week' | 'month' | 'custom';
+// T-20260804-foot-SALESSTAT-DATEFILTER-PRESETS: 'lastMonth'(지난달, 직전 달 1일~말일) 프리셋 추가.
+type Preset = 'today' | 'week' | 'month' | 'lastMonth' | 'custom';
 
 const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
@@ -47,6 +48,12 @@ function getPresetRange(preset: Preset): SalesDateRange | null {
   if (preset === 'month') {
     return { from: fmt(startOfMonth(now)), to: fmt(endOfMonth(now)) };
   }
+  if (preset === 'lastMonth') {
+    // 직전 달 1일 ~ 직전 달 말일. subMonths+startOf/endOfMonth가
+    // 연초 경계(1월→전년12월)·말일(28/29/30/31·윤년)을 자동 계산.
+    const lm = subMonths(now, 1);
+    return { from: fmt(startOfMonth(lm)), to: fmt(endOfMonth(lm)) };
+  }
   return null;
 }
 
@@ -59,6 +66,8 @@ function detectPreset(range: SalesDateRange): Preset {
   )
     return 'week';
   if (range.from === fmt(startOfMonth(now)) && range.to === fmt(endOfMonth(now))) return 'month';
+  const lm = subMonths(now, 1);
+  if (range.from === fmt(startOfMonth(lm)) && range.to === fmt(endOfMonth(lm))) return 'lastMonth';
   return 'custom';
 }
 
@@ -66,6 +75,7 @@ const PRESETS: { key: Preset; label: string }[] = [
   { key: 'today', label: '오늘' },
   { key: 'week', label: '이번주' },
   { key: 'month', label: '이번달' },
+  { key: 'lastMonth', label: '지난달' },
   { key: 'custom', label: '직접입력' },
 ];
 
@@ -195,8 +205,15 @@ export function SalesFilterBar({ value, onChange, onExport, exporting, className
   );
 }
 
-/** 기본 필터 상태 (오늘) */
+/**
+ * 기본 필터 상태.
+ * T-20260804-foot-SALESSTAT-DATEFILTER-PRESETS: 진입 기본값 = '이번 달'(1일~말일).
+ * (구 기본값 '오늘' → '이번 달' 교체. AC3.)
+ */
 export function defaultSalesFilter(): SalesFilterState {
-  const today = fmt(new Date());
-  return { dateRange: { from: today, to: today }, searchQuery: '' };
+  const now = new Date();
+  return {
+    dateRange: { from: fmt(startOfMonth(now)), to: fmt(endOfMonth(now)) },
+    searchQuery: '',
+  };
 }

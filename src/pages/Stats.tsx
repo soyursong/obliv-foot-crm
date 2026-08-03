@@ -49,6 +49,8 @@ const PRESETS: { key: StatsRangePreset; label: string }[] = [
   { key: 'today', label: '오늘' },
   { key: 'week',  label: '이번 주' },
   { key: 'month', label: '이번 달' },
+  // T-20260804-foot-SALESSTAT-DATEFILTER-PRESETS: '지난 달'(직전 달 1일~말일) 프리셋.
+  { key: 'lastMonth', label: '지난 달' },
   { key: 'custom', label: '사용자 지정' },
 ];
 
