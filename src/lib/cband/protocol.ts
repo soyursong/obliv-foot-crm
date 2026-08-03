@@ -7,11 +7,14 @@
  *   **순수 함수** 계층. 프론트엔드(react·supabase·import.meta) 의존 0 → Deno unit 으로 결정론 커버.
  *   WS 송수신(부수효과)·수납 write(DB)는 상위 계층(catClient.ts / cbandPaymentFlow.ts)이 소비.
  *
- * ── 전문 조립 4대 규칙 (위반 시 실결제 실패, 티켓 §전문조립) ──────────────────
+ * ── 전문 조립 5대 규칙 (위반 시 실결제 실패, 티켓 §전문조립) ──────────────────
+ *   0. ★봉투(T-20260804-CBAND-DATATYPE-HEADER-ENVELOPE): {"header":{…DATA_TYPE:"JSON"…},"body":{…}} 로 emit.
+ *      데몬은 header 의 DATA_TYPE(전문형태)를 먼저 읽어 전문 종류를 판정 → header 누락 시 "DATA_TYPE 값이 없습니다" 거부.
+ *      (응답은 flat — 봉투 아님. 요청측만 봉투. safeParse/normalize 는 flat 파싱 유지.)
  *   1. 콜론 뒤 공백 금지 — JSON.stringify 기본값 그대로(indent 미지정). 기본출력은 이미 공백無.
- *   2. MSG_TRACE 12자리 숫자, 중복 금지 — makeTrace() 가 12자리 보장 + 세션내 dedup.
- *   3. TAMT 9자리 zero-pad — pad9(amount).
- *   4. CAT_PORT 2자리 zero-pad — COM3 → "03".
+ *   2. MSG_TRACE 12자리 숫자, 중복 금지 — makeTrace() 가 12자리 보장 + 세션내 dedup. (★header 에 실림)
+ *   3. TAMT 9자리 zero-pad — pad9(amount). (body)
+ *   4. CAT_PORT 2자리 zero-pad — COM3 → "03". (body)
  *
  * ── 실측 vs 공식문서 차이 (티켓 §6, 반드시 실측 우선) ─────────────────────────
  *   1. TID 비우면 실제 거부 → buildMsg 가 TID 공백을 throw 로 강제(채울 것).
@@ -179,20 +182,75 @@ export function isValidTrace(t: string | null | undefined): t is string {
   return typeof t === 'string' && /^\d{12}$/.test(t);
 }
 
-// ── buildMsg — 요청 전문 조립 (규칙 1~4 강제) ────────────────────────────────
+// ── ★ 전문 봉투(header/body) 상수 — T-20260804-foot-CBAND-DATATYPE-HEADER-ENVELOPE-MISSING ─
+//
+//   데몬 오류 "DATA_TYPE 전문형태 값이 없습니다" = CRM 이 header 봉투를 통째로 안 보냄(현장 케이스 ②).
+//   실 원인: 종전 buildMsg 는 flat 필드만 emit → 데몬이 전문 종류(DATA_TYPE)를 header 에서 못 찾아 즉시 거부.
+//   → 데몬이 기대하는 {"header":{…DATA_TYPE:"JSON"…},"body":{…거래필드…}} 봉투로 조립한다.
+//
+//   ★header 필드값 = 추측 아님, 두 authoritative 예시로 확정:
+//     (a) 현장 "정상 전문 예시"(T-20260804 티켓 §배경):
+//         {"LENGTH":"0590","MSG_VERSION":"0002","TCODE":"S0","MSG_TRACE":"235112000001","DATA_TYPE":"JSON"}
+//     (b) DAEMON-PARSE-ROBUST 티켓 §1 재확인: {"header":{"LENGTH":"0591","MSG_VERSION":"0002","TC…}}
+//   ★body = 거래필드(TRANTYPE 로 승인/취소 구분). 7/31 실승인 20필드 body 에 TRANTYPE·MSG_TRACE 부재 →
+//     MSG_TRACE 는 header 로 이동(canonical), TRANTYPE 은 body 유지(응답도 flat TRANTYPE echo·discriminator).
+//   ★응답은 flat(예: {"ERRCODE":"0000","TRANTYPE":"0210",…}) — 봉투 아님 → safeParse/normalize 불변(요청측만 봉투).
+
+/** header.DATA_TYPE — 전문형태(데몬이 header 에서 먼저 읽는 값). 항상 "JSON"(FIX-C). */
+export const CBAND_DATA_TYPE = 'JSON' as const;
+/** header.MSG_VERSION — 현장 정상 전문 예시 + PARSE-ROBUST 예시 공통 확정값. */
+export const CBAND_MSG_VERSION = '0002' as const;
+/** header.TCODE — 현장 정상 전문 예시 확정값("S0"). CAT 결제요청 전문형태 코드(승인/취소 구분은 body.TRANTYPE). */
+export const CBAND_TCODE = 'S0' as const;
+
+/**
+ * UTF-8 바이트 길이 — header.LENGTH 산출용. TextEncoder 우선(브라우저·Node), 미지원 시 수동 폴백.
+ * ASCII(코드·숫자) 위주라 대개 문자수와 동일하나, 정확성을 위해 UTF-8 바이트로 계산.
+ */
+export function utf8ByteLength(s: string): number {
+  const g = globalThis as unknown as { TextEncoder?: new () => { encode(x: string): { length: number } } };
+  if (typeof g.TextEncoder === 'function') return new g.TextEncoder().encode(s).length;
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++; } // surrogate pair(4바이트)
+    else n += 3;
+  }
+  return n;
+}
+
+/**
+ * header.LENGTH — ★body(데이터부) JSON 문자열의 UTF-8 바이트수 4자리 zero-pad(FIX-B, 현장 예시 "0590").
+ *   LENGTH 는 header 안에 들어가므로 '전체 전문' 길이일 수 없다(순환) → 데이터부(body) 길이(비순환).
+ *   현장 예시 590~591 크기도 20필드 body 규모와 정합(header 포함 아님).
+ */
+export function bodyLength(bodyStr: string): string {
+  return String(utf8ByteLength(bodyStr)).padStart(4, '0');
+}
+
+// ── buildMsg — 요청 전문 조립 (규칙 1~4 + 봉투 강제) ─────────────────────────
 
 /**
  * 코밴 CAT 요청 전문(JSON 문자열)을 조립한다.
+ *   · ★봉투(T-20260804): {"header":{…DATA_TYPE:"JSON"…},"body":{…거래필드…}} 로 emit(데몬 header 요구 충족).
  *   · 규칙#1 콜론 뒤 공백 금지 → JSON.stringify 기본출력(indent 미지정)으로 보장.
- *   · 규칙#2 MSG_TRACE 12자리 숫자 → isValidTrace 강제.
+ *   · 규칙#2 MSG_TRACE 12자리 숫자 → isValidTrace 강제(★header 로 이동).
  *   · 규칙#3 TAMT 9자리 zero-pad → pad9.
  *   · 규칙#4 CAT_PORT 2자리 zero-pad → pad2Port.
  *   · 실측#1 TID 비우면 거부 → 공백 TID throw.
- *   · 실측#2 취소는 TRANTYPE=0430 + 원거래 AUTHNO 동봉.
- * @returns { message: JSON 문자열, fields: 조립된 필드객체 }
- * @throws  규칙/실측 위반 시(실결제 실패 방지 — 조립 단계에서 차단).
+ *   · 실측#2 취소는 TRANTYPE=0430 + 원거래 AUTHNO 동봉(body).
+ * @returns { message: 봉투 JSON 문자열, fields: body 거래필드(하위호환 alias), header, body, envelope }
+ * @throws  규칙/실측/봉투 위반 시(실결제 실패 방지 — 조립 단계에서 차단).
  */
-export function buildMsg(params: BuildMsgParams): { message: string; fields: Record<string, string> } {
+export function buildMsg(params: BuildMsgParams): {
+  message: string;
+  fields: Record<string, string>;
+  header: Record<string, string>;
+  body: Record<string, string>;
+  envelope: { header: Record<string, string>; body: Record<string, string> };
+} {
   const { tranType, tid, merno, amount, catPort, msgTrace, originalAuthNo, originalAuthDate } = params;
 
   // 실측#1: TID 비우면 실제 거부 → 강제 채움.
@@ -213,30 +271,48 @@ export function buildMsg(params: BuildMsgParams): { message: string; fields: Rec
     throw new Error('취소(0430) 전문에는 원거래 승인번호(AUTHNO)가 필요합니다.');
   }
 
-  const fields: Record<string, string> = {
-    TRANTYPE: tranType,
+  // ── body(데이터부) = 실 거래필드. MSG_TRACE 는 header 로 이동(7/31 실승인 20필드 body 부재 정합). ──
+  const body: Record<string, string> = {
+    TRANTYPE: tranType,            // ★body 유지: 응답도 flat TRANTYPE echo·승인/취소 discriminator
     TID: tid.trim(),
     CAT_PORT: pad2Port(catPort),   // 규칙#4
     TAMT: pad9(amount),            // 규칙#3
-    MSG_TRACE: msgTrace,           // 규칙#2
   };
   // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청에 주입하지 않는다(7/31 실승인 20필드 부재).
   //   값이 명시적으로 있을 때만 계승해 실어 보내고, 빈값(정상)은 전문에서 제외한다.
   if (merno && merno.trim()) {
-    fields.MERNO = merno.trim();
+    body.MERNO = merno.trim();
   }
   if (tranType === TRANTYPE_CANCEL) {
-    fields.AUTHNO = (originalAuthNo as string).trim();     // 실측#2: 원거래 동일 AUTHNO
-    if (originalAuthDate && originalAuthDate.trim()) fields.AUTHDATE = originalAuthDate.trim();
+    body.AUTHNO = (originalAuthNo as string).trim();     // 실측#2: 원거래 동일 AUTHNO
+    if (originalAuthDate && originalAuthDate.trim()) body.AUTHDATE = originalAuthDate.trim();
   }
 
+  // ── header(머리말) — 데몬이 먼저 읽는 전문형태(DATA_TYPE). 필드값은 현장 정상 전문 예시로 확정(§상수). ──
+  //   순서는 현장 예시(LENGTH·MSG_VERSION·TCODE·MSG_TRACE·DATA_TYPE)에 맞춤(literal 매칭 데몬 대비).
+  const bodyStr = JSON.stringify(body);           // 규칙#1: space 인자 미지정(콜론 뒤 공백 0)
+  const header: Record<string, string> = {
+    LENGTH: bodyLength(bodyStr),                   // FIX-B: body 바이트수 4자리 zero-pad
+    MSG_VERSION: CBAND_MSG_VERSION,
+    TCODE: CBAND_TCODE,
+    MSG_TRACE: msgTrace,                           // 규칙#2(★header 로 이동)
+    DATA_TYPE: CBAND_DATA_TYPE,                     // FIX-C: 항상 "JSON"
+  };
+
+  // ── 봉투 조립 ──
+  const envelope = { header, body };
   // 규칙#1: 콜론 뒤 공백 금지 = JSON.stringify 기본출력(space 인자 미지정).
-  const message = JSON.stringify(fields);
-  // 방어: 혹시라도 콜론 뒤 공백이 섞이면 조립 차단(회귀 가드).
+  const message = JSON.stringify(envelope);
+  // 방어(회귀 가드): 콜론 뒤 공백 시 조립 차단(현장 케이스 ④⑤ 불가).
   if (/:\s/.test(message)) {
     throw new Error('전문에 콜론 뒤 공백이 포함됨(규칙#1 위반).');
   }
-  return { message, fields };
+  // ★FIX-C 방어: DATA_TYPE 항상 존재·비어있지 않음(현장 케이스 ②③ 불가 — 데몬 "DATA_TYPE 값이 없습니다" 재발 차단).
+  if (!header.DATA_TYPE || !header.DATA_TYPE.trim()) {
+    throw new Error('header.DATA_TYPE(전문형태) 가 비어 있습니다 — 데몬이 전문을 거부합니다.');
+  }
+  // fields = body alias(하위호환: 기존 테스트/소비자가 fields.TID/TAMT/MERNO 참조).
+  return { message, fields: body, header, body, envelope };
 }
 
 // ── safeParse — 응답 전문 안전 파싱 (실측#3: FILLER offset·미지필드 관대) ─────

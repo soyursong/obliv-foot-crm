@@ -147,20 +147,26 @@ test.describe('전문 조립 4대 규칙', () => {
     }
   });
 
-  test('규칙#1 콜론 뒤 공백 금지 + 승인 전문 필드 정합', () => {
+  test('규칙#1 콜론 뒤 공백 금지 + 승인 전문 필드 정합 (★봉투 header/body)', () => {
     const trace = makeTrace();
-    const { message, fields } = buildMsg({
+    const { message, fields, header, envelope } = buildMsg({
       tranType: TRANTYPE_APPROVE, tid: BASE.tid, merno: BASE.merno,
       amount: 1001, catPort: 'COM3', msgTrace: trace,
     });
-    expect(message).not.toMatch(/:\s/);          // 콜론 뒤 공백 0
-    expect(message).toBe(JSON.stringify(fields)); // 기본 stringify(공백無)
+    expect(message).not.toMatch(/:\s/);              // 콜론 뒤 공백 0
+    expect(message).toBe(JSON.stringify(envelope));  // ★봉투 stringify(공백無)
+    // body(데이터부) — fields 는 body alias(하위호환).
     expect(fields.TAMT).toBe('000001001');
     expect(fields.CAT_PORT).toBe('03');
     expect(fields.TRANTYPE).toBe('0210');
     expect(fields.TID).toBe(BASE.tid);
     expect(fields.MERNO).toBe(BASE.merno);
-    expect(fields.MSG_TRACE).toBe(trace);
+    expect(fields.MSG_TRACE).toBeUndefined();        // ★MSG_TRACE 는 body 아닌 header
+    // header(머리말) — DATA_TYPE·MSG_VERSION·TCODE·MSG_TRACE.
+    expect(header.DATA_TYPE).toBe('JSON');
+    expect(header.MSG_VERSION).toBe('0002');
+    expect(header.TCODE).toBe('S0');
+    expect(header.MSG_TRACE).toBe(trace);            // ★MSG_TRACE header 로 이동
   });
 
   test('실측#1 TID 비우면 조립 거부(throw)', () => {
