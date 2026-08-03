@@ -4,7 +4,7 @@ domain: foot
 priority: P2
 status: deploy-ready
 qa_result: pass
-deploy_commit: 68236a305481
+deploy_commit: 173276de1b7a
 author: dev-foot
 created: 2026-08-03
 db_change: true
