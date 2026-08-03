@@ -31,7 +31,21 @@ auth.users 전량 62건 로드. 예비군(email_confirmed_at NULL & user_profile
 - **인증 컨텍스트 주의**: RPC 는 `is_admin_or_manager()`(=`auth.uid()` 의존) 가드 → service_role 헤드리스 호출은 42501 거부. admin/manager 세션(`ADMIN_EMAIL`/`ADMIN_PASSWORD` env, off-git)으로 인증 후 호출.
 - 실 apply 는 **supervisor dry-run 판정(freeze_dryrun.json VERDICT=PASS) 확인 후**에만 실행.
 
+## APPLY 실행 결과 (2026-08-03 15:05 KST — supervisor GO MSG-20260803-150125-ua2l 후)
+supervisor dry-run 게이트 **GO**(apply 실행 dev-foot 책임) 확인 후 `apply.mjs` 실행(admin 세션=TEST_ADMIN role=admin·foot Supabase, off-git 주입). 실행 직전 fresh freeze dry-run 재확인=drift 0(freeze 여전히 2 uid, coordinator 자동배제).
+
+| # | email(마스킹) | role | id..tail | before_confirmed | after_confirmed | profile_rows | email_confirmed_now |
+|---|------|------|------|------|------|------|------|
+| 1 | jh***@me*** | manager | ..e785f1 | null | **2026-08-03T06:04:59.971188Z** | **1** | **true** |
+| 2 | ch***@gm*** | staff | ..f6ca8d | null | **2026-08-03T06:05:00.151864Z** | **1** | **true** |
+
+- per-uid idempotent RPC `admin_approve_and_confirm_user(uid)` 각 1건씩 호출(blanket UPDATE 미채택). RPC 내장 id↔email 재검증 + user_profiles.approved=true + auth.users.email_confirmed_at NULL→now() 통과.
+- **rows-affected 가드**: 각 uid `profile_rows==1` 확인(0-row+error=null 성공 오인 차단·cross_crm_write_rowcheck_standard). `email_confirmed_now=true` = 실제 보정(멱등 재실행 아님).
+- **재스캔 3→1**: 잔존 예비군(email_confirmed_at NULL) = coordinator `ma***@ob***`(approved=false, 미승인·비활성) 1건뿐. `freeze_remaining=0`.
+- **asserts 4/4 PASS**: each_profile_rows_1 / each_confirmed / after_all_confirmed / rescan_3_to_1_coordinator_only.
+- evidence(off-git, gitignore): `scripts/_evidence/T-20260802-foot-STAFF-EMAILCONFIRM-BACKFILL_apply.json`.
+
 ## AC 매핑
-- [대기] jh·ch 각 email_confirm 보정 + rows-affected=1 로그 + id↔email 재검증 스냅샷 → apply 단계.
-- [대기] 보정 후 이메일+비번 로그인 정상 진입('비밀번호가 틀렸습니다' 미표출) → apply 후 필드/로그인 테스트.
-- [dry-run 확인] 예비군 재스캔 email_confirmed=false 잔존 = coordinator 미승인 1건뿐(3→1) → apply STEP6 재확인.
+- [x] jh·ch 각 email_confirm 보정 + rows-affected=1 로그 + id↔email 재검증 스냅샷 → **apply 완료**(profile_rows=1×2, after_confirmed 세팅).
+- [x] 예비군 재스캔 email_confirmed=false 잔존 = coordinator 미승인 1건뿐(3→1) → **재스캔 확인**(freeze_remaining=0).
+- [~] 보정 후 이메일+비번 로그인 정상 진입('비밀번호가 틀렸습니다' 미표출) → **기술적 근거 확보**(after_email_confirmed_at != null = GoTrue "email not confirmed" 차단 해소; GoTrue 차단 술어가 곧 email_confirmed_at IS NULL). **실비번 로그인 실검증은 현장/responder 몫**(dev는 대상 계정 비번 미보유, supervisor GATE-REPLY 명시).
