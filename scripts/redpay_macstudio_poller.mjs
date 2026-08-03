@@ -41,6 +41,7 @@ import { execFileSync } from "node:child_process";
 import { whitelistFingerprint, formatFingerprintLog } from "./lib/redpay_wl_fingerprint.mjs";
 import {
   partitionByRegistry, buildDigestText, buildEscalationText, selectLongUnprocessed,
+  buildInstallVerifyDigestLine,
 } from "./lib/redpay_unreg_digest_lib.mjs";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -869,18 +870,36 @@ async function dispatchUnregDigest() {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   });
 
-  // 3) 미등록 0건 → no-send(빈 digest 금지) + 오늘 발송 마킹(재시도 폭주 방지).
-  if (stillUnreg.length === 0) {
+  // ── T-20260803 INSTALLVERIFY: 설치검증 추정(net0) 최근 24h 건수 — 아침요약 'N건' 한 줄 append ──
+  //   판정 SSOT = 서버뷰 v_redpay_installverify_pairs(4조건 ALL). best-effort(실패 시 0, digest 무영향).
+  //   신규 알림 채널 신설 금지 — 기존 digest 발송 1건에 한 줄만 추가.
+  let ivCount = 0;
+  try {
+    const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const ivRows = await restGet(`v_redpay_installverify_pairs?select=approval_row_id&approval_at=gte.${sinceIso}`);
+    ivCount = Array.isArray(ivRows) ? ivRows.length : 0;
+  } catch (e) {
+    warn(`[UNREG-DIGEST] 설치검증 추정 count 조회 실패(무해 — 요약줄 생략): ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const ivLine = buildInstallVerifyDigestLine(ivCount);
+
+  // 3) 미등록 0건 & 설치검증 추정 0건 → no-send(빈 digest 금지) + 오늘 발송 마킹(재시도 폭주 방지).
+  if (stillUnreg.length === 0 && !ivLine) {
     state.last_unreg_digest_date = todayKST;
     try { saveAlarmStateAtomic(state); } catch { /* 비치명 */ }
-    log(`[UNREG-DIGEST] 미등록 회선 0건 → digest 미발송(정상). resolved_this_run=${resolvedIds.length}.`);
-    return { sent: false, reason: "zero_unregistered", resolved: resolvedIds.length };
+    log(`[UNREG-DIGEST] 미등록 0건 · 설치검증 추정 0건 → digest 미발송(정상). resolved_this_run=${resolvedIds.length}.`);
+    return { sent: false, reason: "zero_unregistered", resolved: resolvedIds.length, installverify: 0 };
   }
 
-  // 요약 1건 발송(AC4 포맷) — 검증된 발송경로(slack_send.sh → 현장 채널).
-  const digestText = buildDigestText(stillUnreg, nowKST);
+  // 요약 1건 발송(AC4 포맷 + 설치검증 추정 N건 한 줄) — 검증된 발송경로(slack_send.sh → 현장 채널).
+  let digestText = buildDigestText(stillUnreg, nowKST);
+  if (ivLine) {
+    digestText = digestText
+      ? `${digestText}\n\n${ivLine}`
+      : `📋 [레드페이 아침 요약 · 풋센터] ${nowKST}\n\n${ivLine}`;
+  }
   const sent = sendSlack(TID_ALARM_CHANNEL, digestText);
-  if (sent) {
+  if (sent && stillUnreg.length > 0) {
     try {
       await restPatch(
         `redpay_unregistered_line_seen?id=in.(${stillUnreg.map((r) => r.id).join(",")})`,
@@ -903,8 +922,8 @@ async function dispatchUnregDigest() {
     try { saveAlarmStateAtomic(state); }
     catch (e) { warn(`[UNREG-DIGEST] last_unreg_digest_date 저장 실패(비치명 — 다음 사이클 재발송 가능): ${e instanceof Error ? e.message : String(e)}`); }
   }
-  log(`[UNREG-DIGEST] digest 발송 sent=${sent} 미등록=${stillUnreg.length} 전이resolved=${resolvedIds.length} 장기미처리=${longRows.length} escalation_sent=${escalationSent} ch=${TID_ALARM_CHANNEL}`);
-  return { sent, unregistered: stillUnreg.length, resolved: resolvedIds.length, long_unprocessed: longRows.length, escalation_sent: escalationSent };
+  log(`[UNREG-DIGEST] digest 발송 sent=${sent} 미등록=${stillUnreg.length} 설치검증추정=${ivCount} 전이resolved=${resolvedIds.length} 장기미처리=${longRows.length} escalation_sent=${escalationSent} ch=${TID_ALARM_CHANNEL}`);
+  return { sent, unregistered: stillUnreg.length, installverify: ivCount, resolved: resolvedIds.length, long_unprocessed: longRows.length, escalation_sent: escalationSent };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1694,6 +1713,14 @@ function runSelfTest() {
     const etext = buildEscalationText(longRows, "2026-08-03 09:00", nowMs);
     assert(etext.includes("장기 미처리") && etext.includes("회선 1047999088"), `digest AC7: 에스컬레이션 문안 정확`);
     assert(buildEscalationText([], "x", nowMs) === "", `digest AC7: 장기 0건 → 빈 문자열(발송 억제)`);
+  }
+
+  // ── T-20260803 INSTALLVERIFY: 설치검증 추정 N건 요약줄(아침요약 프레임 재사용) self-test ──
+  {
+    const line = buildInstallVerifyDigestLine(3);
+    assert(line.includes("설치검증 추정 3건"), `installverify: N건 요약줄 문안 정확 (실제=${line})`);
+    assert(buildInstallVerifyDigestLine(0) === "", `installverify: 0건 → 빈 문자열(요약줄 생략)`);
+    assert(buildInstallVerifyDigestLine(-1) === "", `installverify: 음수 → 빈 문자열(방어)`);
   }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);

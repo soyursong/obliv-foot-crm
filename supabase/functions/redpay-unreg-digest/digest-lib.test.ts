@@ -5,6 +5,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildDigestText,
   buildEscalationText,
+  buildInstallVerifyDigestLine,
   daysSince,
   dedupKey,
   formatDigestRow,
@@ -134,4 +135,14 @@ Deno.test("buildEscalationText: 장기 미처리 ≥1 → 에스컬레이션 헤
   assertEquals(lines[0], "🚨 *[레드페이 장기 미처리 에스컬레이션 · 풋센터]* 2026-08-06 09:00");
   assertEquals(lines[1].includes("3일 이상"), true);
   assertEquals(lines[3], "• 가맹점 1777289007 / 회선 1047538243 (첫 감지 8/1, 5일 경과, 누적 9건)");
+});
+
+// ── T-20260803 INSTALLVERIFY: 설치검증 추정 N건 요약줄(아침요약 프레임 재사용) ──────────────
+Deno.test("buildInstallVerifyDigestLine: N>0 → '설치검증 추정 N건' 한 줄", () => {
+  const line = buildInstallVerifyDigestLine(3);
+  assertEquals(line.includes("설치검증 추정 3건"), true);
+});
+Deno.test("buildInstallVerifyDigestLine: 0/음수 → 빈 문자열(요약줄 생략)", () => {
+  assertEquals(buildInstallVerifyDigestLine(0), "");
+  assertEquals(buildInstallVerifyDigestLine(-1), "");
 });

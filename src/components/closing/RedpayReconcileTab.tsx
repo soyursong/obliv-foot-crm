@@ -11,15 +11,22 @@
 // AC-6: API키 미발급/테스트모드에서도 뷰/RPC/UI 정상 렌더(기수집분/빈 목록).
 // AC-7: get_redpay_feed_freshness()로 적재 freshness 노출 —
 //       "거래 없음"(폴러 정상·raw 0) vs "적재 死"(폴러 stale) 현장 구분.
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { formatAmount } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import {
+  type InstallVerifyEvidence,
+  isInstallVerifyPresumed,
+  countInstallVerifyPresumed,
+  describeEvidence,
+} from '@/lib/redpayInstallVerify';
 import {
   fetchUnassignedInflowMetric,
   formatInflowRate,
@@ -52,6 +59,9 @@ interface ReconRow {
   crm_method: string | null;
   crm_created_at: string | null;
   recon_status: ReconStatus;
+  // T-20260803 INSTALLVERIFY — 서버뷰 파생 분류(설치검증 추정). FE 재판정 금지, 소비만.
+  install_verify_presumed?: boolean | null;
+  install_verify_evidence?: InstallVerifyEvidence | null;
 }
 
 interface Freshness {
@@ -168,6 +178,24 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
   const matchedCount = sorted.filter(r => RECON_META[r.recon_status]?.matched).length;
   const mismatchCount = sorted.length - matchedCount;
 
+  // ── 설치검증 추정 분류 (T-20260803 INSTALLVERIFY) ─────────────────────────────
+  //   서버뷰(v_redpay_installverify_pairs) 4조건 판정 소비 + 세션 override(되돌림) 반영.
+  //   ① 필터 숨기기/펼치기 ② "N건" 요약 ③ 사유 펼치기 ④ '설치검증 아님' 되돌림(비파괴).
+  const [hideInstallVerify, setHideInstallVerify] = useState(false);
+  const [overridden, setOverridden] = useState<Set<string>>(new Set());
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const installVerifyCount = countInstallVerifyPresumed(sorted, overridden);
+  // 표시 목록: 필터 ON 이면 설치검증 추정 건 접기. 원본 데이터 무접촉(재노출 가능).
+  const visible = hideInstallVerify
+    ? sorted.filter((r) => !isInstallVerifyPresumed(r, overridden))
+    : sorted;
+  const revertInstallVerify = (rowId: string) =>
+    setOverridden((prev) => {
+      const next = new Set(prev);
+      next.add(rowId);
+      return next;
+    });
+
   // ── freshness 판정 (거래 없음 vs 적재 死 vs 활성화 전) ──────────
   const now = Date.now();
   const lastPoll = freshness?.last_incremental_to ? new Date(freshness.last_incremental_to).getTime() : null;
@@ -215,6 +243,31 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
           <div className="tabular-nums font-semibold text-lg text-amber-700">{mismatchCount}건</div>
         </div>
       </div>
+
+      {/* 설치검증 추정 요약 (T-20260803 INSTALLVERIFY) — 아침요약 'N건' 프레임과 동일 단위.
+          개별 확인요청 대신 'N건'으로만 표시. 필터로 접기/펼치기(언제든 재노출). */}
+      {installVerifyCount > 0 && (
+        <div
+          data-testid="installverify-summary"
+          className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm flex items-center justify-between gap-2"
+        >
+          <div className="text-teal-800">
+            <span className="font-medium">설치검증 추정 {installVerifyCount}건</span>
+            <span className="text-xs text-teal-600 ml-2">
+              (승인 즉시 취소·순액 0원 소액 = 설치·단말 검증으로 추정 — 개별 확인요청을 이 요약으로 대체)
+            </span>
+          </div>
+          <Button
+            data-testid="installverify-filter-toggle"
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-teal-300 text-teal-700 hover:bg-teal-100"
+            onClick={() => setHideInstallVerify((v) => !v)}
+          >
+            {hideInstallVerify ? '설치검증 추정 펼치기' : '설치검증 추정 숨기기'}
+          </Button>
+        </div>
+      )}
 
       {/* 미배정 결제함 유입률 (T-20260729 UNASSIGNED-INFLOW-METRIC) — read-only 운영지표 */}
       <Card>
@@ -302,14 +355,26 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
                     </td>
                   </tr>
                 )}
-                {sorted.map((r) => {
+                {!isLoading && sorted.length > 0 && visible.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                      설치검증 추정 {installVerifyCount}건이 접혀 있습니다.
+                      <div className="text-xs mt-1 opacity-70">위 “설치검증 추정 펼치기”로 다시 볼 수 있어요.</div>
+                    </td>
+                  </tr>
+                )}
+                {visible.map((r) => {
                   const meta = RECON_META[r.recon_status];
+                  const presumed = isInstallVerifyPresumed(r, overridden);
+                  const evLines = presumed ? describeEvidence(r.install_verify_evidence) : [];
+                  const isOpen = expandedRow === r.row_id;
                   return (
                     <tr
                       key={r.row_id}
+                      data-testid={presumed ? 'installverify-row' : undefined}
                       className={cn(
                         'border-b transition-colors',
-                        !meta?.matched && 'bg-amber-50/40',
+                        presumed ? 'bg-teal-50/50' : !meta?.matched && 'bg-amber-50/40',
                       )}
                     >
                       <td className="py-2 px-3 tabular-nums text-xs">
@@ -329,9 +394,41 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
                         {r.crm_amount != null ? formatAmount(r.crm_amount) : '-'}
                       </td>
                       <td className="py-2 px-2 text-center">
-                        <Badge variant="outline" className={cn('text-xs', meta?.cls)}>
-                          {meta?.label ?? r.recon_status}
-                        </Badge>
+                        {presumed ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              type="button"
+                              data-testid="installverify-badge"
+                              onClick={() => setExpandedRow(isOpen ? null : r.row_id)}
+                              className="inline-flex items-center gap-0.5"
+                              title="분류 사유 보기"
+                            >
+                              <Badge variant="outline" className="text-xs bg-teal-100 text-teal-700 border-teal-300">
+                                설치검증 추정
+                              </Badge>
+                              {isOpen ? <ChevronDown className="h-3 w-3 text-teal-600" /> : <ChevronRight className="h-3 w-3 text-teal-600" />}
+                            </button>
+                            {isOpen && (
+                              <div data-testid="installverify-evidence" className="text-[11px] text-left text-teal-800 bg-white/70 border border-teal-200 rounded p-2 mt-1 max-w-[240px] space-y-0.5">
+                                <div className="font-medium">분류 사유(4가지 모두 충족)</div>
+                                {evLines.map((line, i) => <div key={i}>{line}</div>)}
+                                <Button
+                                  data-testid="installverify-revert"
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-1 h-6 text-[11px] border-slate-300"
+                                  onClick={() => revertInstallVerify(r.row_id)}
+                                >
+                                  설치검증 아님 (되돌리기)
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className={cn('text-xs', meta?.cls)}>
+                            {meta?.label ?? r.recon_status}
+                          </Badge>
+                        )}
                       </td>
                     </tr>
                   );

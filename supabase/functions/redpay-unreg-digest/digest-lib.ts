@@ -80,6 +80,16 @@ export function selectLongUnprocessed(stillUnreg: UnregRow[], nowMs: number): Un
   return stillUnreg.filter((r) => daysSince(r.first_seen_at, nowMs) >= LONG_UNPROC_DAYS);
 }
 
+// ── T-20260803-foot-REDPAY-INSTALLVERIFY-NET0-AUTOCLASSIFY (아침요약 N건 프레임 재사용) ──────
+//   설치검증 추정(승인+즉시취소 net0 소액) 건을 아침요약에 개별 확인요청 대신 'N건' 한 줄로만 표시.
+//   ★ 신규 알림 채널 신설 금지(AC-0) — 기존 미등록 회선 digest 와 동일 발송 1건에 한 줄 append.
+//   0건이면 "" (발송/append 억제). 판정 SSOT = 서버뷰 v_redpay_installverify_pairs(4조건 ALL).
+/** 설치검증 추정 요약 한 줄. n<=0 → "". */
+export function buildInstallVerifyDigestLine(n: number): string {
+  if (!n || n <= 0) return "";
+  return `🧪 설치검증 추정 ${n}건 — 승인 즉시 취소된 순액 0원 소액(설치·단말 검증 추정). 개별 확인요청 대신 요약 표기(대사 화면에서 필터로 펼쳐볼 수 있음).`;
+}
+
 /**
  * AC7 에스컬레이션 본문 — 일일 요약과 별개(장기 방치 경고). 0건이면 빈 문자열(발송 억제).
  *   digest 가 하루 1회 → 회선당 1회/일 상한이 자연 충족(별도 카운터 불요).

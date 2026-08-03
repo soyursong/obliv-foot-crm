@@ -68,6 +68,14 @@ export function selectLongUnprocessed(stillUnreg, nowMs) {
   return stillUnreg.filter((r) => daysSince(r.first_seen_at, nowMs) >= LONG_UNPROC_DAYS);
 }
 
+// ── T-20260803-foot-REDPAY-INSTALLVERIFY-NET0-AUTOCLASSIFY (아침요약 N건 프레임 재사용) ──────
+//   digest-lib.ts 와 동일 SSOT(문안·시그니처 일치). 설치검증 추정 건을 개별 확인요청 대신 'N건' 한 줄.
+//   신규 알림 채널 신설 금지 — 기존 digest 발송 1건에 한 줄 append. n<=0 → "".
+export function buildInstallVerifyDigestLine(n) {
+  if (!n || n <= 0) return "";
+  return `🧪 설치검증 추정 ${n}건 — 승인 즉시 취소된 순액 0원 소액(설치·단말 검증 추정). 개별 확인요청 대신 요약 표기(대사 화면에서 필터로 펼쳐볼 수 있음).`;
+}
+
 /** AC7 에스컬레이션 본문(장기 방치 경고, 일일 요약과 별개). 0건이면 "". */
 export function buildEscalationText(longRows, nowKST, nowMs) {
   if (longRows.length === 0) return "";
