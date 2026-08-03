@@ -13,6 +13,8 @@
 //   3) 남은 미등록 회선 ≥1 → Slack 요약 1건 발송(AC5: 하나라도 있으면 반드시 발송).
 //      0건 → no-send(빈 digest 금지). 발송 행은 last_digest_at 갱신.
 //   각 행: `가맹점 <merchant_id> / 회선 <tid> (첫 감지 M/D, 누적 N건)`.
+//   4) AC7: 첫 감지 ≥3일 & 여전히 미등록 회선 → 일일 요약과 별개 '장기 미처리 에스컬레이션' 1건
+//      (digest 1회/일 → 회선당 1회/일 상한 자연 충족).
 //
 // ── 격리(AC5 무영향) ───────────────────────────────────────────────────────────
 //   본 EF 는 redpay_unregistered_line_seen(신규) + redpay_terminal_registry(read-only) 만 접촉.
@@ -27,7 +29,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   buildDigestText,
+  buildEscalationText,
   partitionByRegistry,
+  selectLongUnprocessed,
   type UnregRow,
 } from "./digest-lib.ts";
 
@@ -161,13 +165,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (uErr) console.warn(`${LOG} last_digest_at 갱신 실패(무해): ${uErr.message}`);
   }
 
+  // AC7(MSG-76a9): 3일+ 장기 미처리 회선 → 일일 요약과 별개 에스컬레이션 1건.
+  //   digest 가 하루 1회(cron) → 회선당 1회/일 상한 자연 충족. 미등록(stillUnreg) 부분집합만 대상.
+  const nowMs = Date.now();
+  const longRows = selectLongUnprocessed(stillUnreg, nowMs);
+  let escalationSent = false;
+  if (longRows.length > 0) {
+    const escText = buildEscalationText(longRows, nowKST, nowMs);
+    escalationSent = await sendSlackMessage(REDPAY_ALERT_CHANNEL, escText, REDPAY_SLACK_BOT_TOKEN);
+    console.log(`${LOG} AC7 장기 미처리 ${longRows.length}건 에스컬레이션 slack_sent=${escalationSent}.`);
+  }
+
   console.log(
-    `${LOG} digest 처리 — 미등록 ${stillUnreg.length}건, 전이 resolved ${resolvedIds.length}건, slack_sent=${sent}.`,
+    `${LOG} digest 처리 — 미등록 ${stillUnreg.length}건, 전이 resolved ${resolvedIds.length}건, `
+      + `장기미처리 ${longRows.length}건, slack_sent=${sent}, escalation_sent=${escalationSent}.`,
   );
   return json(200, {
     ok: true,
     sent,
     unregistered: stillUnreg.length,
     resolved: resolvedIds.length,
+    long_unprocessed: longRows.length,
+    escalation_sent: escalationSent,
   });
 });

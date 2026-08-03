@@ -4,9 +4,13 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildDigestText,
+  buildEscalationText,
+  daysSince,
   dedupKey,
   formatDigestRow,
+  LONG_UNPROC_DAYS,
   partitionByRegistry,
+  selectLongUnprocessed,
   type UnregRow,
 } from "./digest-lib.ts";
 
@@ -101,4 +105,33 @@ Deno.test("buildDigestText: 미등록 ≥1 → 헤더 + 회선당 1행(같은 �
   // 회선 행 2개(입력 2개 = 출력 2개, 중복 없음).
   const rowLines = lines.filter((l) => l.startsWith("• 가맹점"));
   assertEquals(rowLines.length, 2);
+});
+
+// ── AC7: 3일+ 장기 미처리 별도 에스컬레이션 ─────────────────────────────────────
+const NOW = new Date("2026-08-06T00:00:00Z").getTime(); // 08-06 09:00 KST 기준
+Deno.test("daysSince: 절대 경과일(floor)", () => {
+  assertEquals(daysSince("2026-08-03T00:00:00Z", NOW), 3);
+  assertEquals(daysSince("2026-08-05T23:00:00Z", NOW), 0);
+  assertEquals(daysSince("2026-08-01T00:00:00Z", NOW), 5);
+});
+Deno.test("selectLongUnprocessed: 첫감지 경과 ≥ 3일만 선택", () => {
+  const rows = [
+    row({ id: "old3", merchant_id: "M1", first_seen_at: "2026-08-03T00:00:00Z" }), // 3일 → 포함
+    row({ id: "old5", merchant_id: "M2", first_seen_at: "2026-08-01T00:00:00Z" }), // 5일 → 포함
+    row({ id: "new1", merchant_id: "M3", first_seen_at: "2026-08-05T12:00:00Z" }), // <1일 → 제외
+  ];
+  const long = selectLongUnprocessed(rows, NOW);
+  assertEquals(long.map((r) => r.id).sort(), ["old3", "old5"]);
+  assertEquals(LONG_UNPROC_DAYS, 3);
+});
+Deno.test("buildEscalationText: 0건 → 빈 문자열(발송 억제)", () => {
+  assertEquals(buildEscalationText([], "2026-08-06 09:00", NOW), "");
+});
+Deno.test("buildEscalationText: 장기 미처리 ≥1 → 에스컬레이션 헤더 + 경과일 표기", () => {
+  const rows = [row({ id: "x", merchant_id: "1777289007", tid: "1047538243", first_seen_at: "2026-08-01T00:00:00Z", hit_count: 9 })];
+  const text = buildEscalationText(rows, "2026-08-06 09:00", NOW);
+  const lines = text.split("\n");
+  assertEquals(lines[0], "🚨 *[레드페이 장기 미처리 에스컬레이션 · 풋센터]* 2026-08-06 09:00");
+  assertEquals(lines[1].includes("3일 이상"), true);
+  assertEquals(lines[3], "• 가맹점 1777289007 / 회선 1047538243 (첫 감지 8/1, 5일 경과, 누적 9건)");
 });

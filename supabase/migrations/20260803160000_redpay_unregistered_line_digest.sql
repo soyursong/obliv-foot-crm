@@ -22,6 +22,16 @@
 --     파괴 변경 아님 → 대표 게이트 불요(autonomy §3.1). CONSULT GO 후 prod apply + deploy-ready.
 --   Rollback: 20260803160000_redpay_unregistered_line_digest.rollback.sql
 --     (cron unschedule + DROP FUNC 2 + DROP TABLE. 데이터손실 0 — 운영 알람 상태만 소실).
+--
+-- ── DA CONSULT-REPLY(MSG-20260803-171750, 조건부 GO) 반영 — Material 조건 5 ─────────────
+--   C-1 note fn 호출 = webhook DROP(center='unknown') 분기 한정. drift(foot merchant 신-TID auto-admit,
+--        §10.4.4) 는 center='foot' ingest → 미도달(오탐 재유입 없음). [redpay-webhook/index.ts]
+--   C-2 밴드 스코핑 = note fn 밴드가드(풋 1777285/288/289 + merchant미상만 적재, cross-tenant carve-out). [§2 WHERE]
+--   C-3 resolved auto-resolve = digest EF 가 open 행을 registry(domain=foot,active) 대조 → 등록완료 resolved_at
+--        stamp → 차기 digest 제외. [redpay-unreg-digest/index.ts + digest-lib.partitionByRegistry]
+--   C-4 SECDEF grant-seal = 2 fn 모두 search_path='' + REVOKE PUBLIC/anon/authenticated + GRANT service_role. [§2·§3]
+--   C-5 cron→EF fail-closed = 0 0 * * *(09:00 KST) + X-Internal-Cron/service_role(EF 401 fail-closed).
+--        ⚠ INTERNAL_CRON_SECRET(EF env) == vault internal_cron_secret 값 일치 = infra lane(sb_secret_* 포맷, 08-02 rotation). [§3·§4]
 -- ══════════════════════════════════════════════════════════════════
 
 BEGIN;
@@ -68,6 +78,15 @@ GRANT SELECT ON public.redpay_unregistered_line_seen TO authenticated;
 -- 2. FUNC redpay_note_unregistered_line — webhook accumulate (멱등 증분, INSERT..ON CONFLICT)
 --    최초 = hit_count 1 / first_seen_at now. 재감지 = hit_count+1 / last_seen_at now / resolved_at 재개(NULL).
 --    (한번 등록됐다 다시 미등록 신호가 오면 재-open — 실제 재발을 놓치지 않음.)
+--
+--    ★ C-2(DA CONSULT-REPLY MSG-20260803-171750 · A12 §8-3 BAND-CHECK 교훈): note 대상은
+--       풋 밴드(merchant_id 1777285/288/289 = VAN/유선/멀티/무선) '미등록 candidate' 한정.
+--       cross-tenant 밴드(도수 1777274-276* / 피부 1777277·279-281* / 롱레 1777282·284*)는
+--       CONTAM carve-out — 애초 적재를 skip(안그러면 도수 오염으로 digest 가 매일 스팸).
+--       merchant_id 미상(line-only, 밴드 분류불가) 은 AC5(유실 0) 우선 → note(digest 에서 수동 표면화).
+--       webhook 는 이 함수를 filterToFootScope DROP(center='unknown') 분기에서만 호출(C-1) — 밴드가드는
+--       그 위의 단일 chokepoint 방어(defense-in-depth). foot merchant 신-TID auto-admit(drift, §10.4.4)은
+--       center='foot' 로 ingest 되어 이 함수에 도달하지 않음(오탐 재유입 없음).
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.redpay_note_unregistered_line(
   p_merchant_id   text,
@@ -78,18 +97,20 @@ CREATE OR REPLACE FUNCTION public.redpay_note_unregistered_line(
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
   INSERT INTO public.redpay_unregistered_line_seen
     (clinic_id, merchant_id, merchant_name, tid, dedup_key, hit_count, first_seen_at, last_seen_at)
-  VALUES (
+  SELECT
     p_clinic_id,
     NULLIF(btrim(p_merchant_id), ''),
     NULLIF(btrim(p_merchant_name), ''),
     NULLIF(btrim(p_tid), ''),
     COALESCE(NULLIF(btrim(p_merchant_id), ''), '∅') || '::' || COALESCE(NULLIF(btrim(p_tid), ''), '∅'),
     1, now(), now()
-  )
+  -- C-2 밴드가드: 풋 밴드(1777285/288/289) 또는 merchant 미상만 적재. cross-tenant 밴드는 carve-out(적재 skip).
+  WHERE NULLIF(btrim(p_merchant_id), '') IS NULL
+     OR NULLIF(btrim(p_merchant_id), '') ~ '^1777(285|288|289)[0-9]+$'
   ON CONFLICT (dedup_key) DO UPDATE SET
     hit_count     = public.redpay_unregistered_line_seen.hit_count + 1,
     last_seen_at  = now(),
@@ -100,9 +121,12 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION public.redpay_note_unregistered_line(text, text, text, uuid) IS
-  'T-20260803: redpay-webhook unknown 경로 accumulate. 멱등 증분(dedup_key). realtime Slack 대체(스팸 억제). '
-  'SECURITY DEFINER(service_role EF 호출). 재감지 시 hit_count+1 + resolved_at 재-open.';
+  'T-20260803: redpay-webhook unknown(DROP) 경로 accumulate. 멱등 증분(dedup_key). realtime Slack 대체(스팸 억제). '
+  'C-2 밴드가드=풋(1777285/288/289)+merchant미상만 적재(cross-tenant carve-out). '
+  'SECURITY DEFINER/search_path=''''/service_role-only(C-4). 재감지 시 hit_count+1 + resolved_at 재-open.';
 
+-- C-4 grant-seal(C23/§15-5-10 backend-only): default PUBLIC EXECUTE 회수 → service_role 전용(anon EXEC=false, A7 baseline).
+REVOKE ALL ON FUNCTION public.redpay_note_unregistered_line(text, text, text, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.redpay_note_unregistered_line(text, text, text, uuid) TO service_role;
 
 -- ============================================================
@@ -113,7 +137,7 @@ CREATE OR REPLACE FUNCTION public.trigger_redpay_unreg_digest()
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
 DECLARE
   v_ef_url      TEXT;
@@ -150,7 +174,12 @@ $$;
 
 COMMENT ON FUNCTION public.trigger_redpay_unreg_digest() IS
   'T-20260803-foot-REDPAY-UNREG-LINE-ALARM-DAILY-DIGEST: redpay-unreg-digest EF 호출(하루 1회). '
-  '미등록 회선 요약 Slack 1건. EF 가 registry 재확인 → 등록 전이 resolved 처리 + 미등록만 발송.';
+  '미등록 회선 요약 Slack 1건. EF 가 registry 재확인 → 등록 전이 resolved 처리 + 미등록만 발송. '
+  'SECURITY DEFINER/search_path=''''/service_role-only(C-4). cron(X-Internal-Cron)/service_role fail-closed 인증(C-5).';
+
+-- C-4 grant-seal: cron(schedule owner, 대개 postgres/superuser) 은 grant 우회로 실행. PUBLIC 실행 회수(anon EXEC=false).
+REVOKE ALL ON FUNCTION public.trigger_redpay_unreg_digest() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.trigger_redpay_unreg_digest() TO service_role;
 
 -- ============================================================
 -- 4. pg_cron — 하루 1회 09:00 KST (= 00:00 UTC). 멱등 가드.
@@ -183,6 +212,9 @@ ON CONFLICT (version) DO NOTHING;
 -- [ ] 1. EF 배포     : supabase functions deploy redpay-unreg-digest --project-ref rxlomoozakkjesdqjtvd
 -- [ ] 2. 테이블 생성 : SELECT to_regclass('public.redpay_unregistered_line_seen');  -- non-null
 -- [ ] 3. 함수 생성   : SELECT proname FROM pg_proc WHERE proname IN ('redpay_note_unregistered_line','trigger_redpay_unreg_digest');  -- 2행
+-- [ ] 3b. grant-seal(C-4): SELECT proname, prosecdef, proconfig, proacl FROM pg_proc WHERE proname IN
+--         ('redpay_note_unregistered_line','trigger_redpay_unreg_digest');
+--         → prosecdef=true / proconfig={search_path=} / proacl 에 anon·authenticated·PUBLIC EXECUTE 부재(service_role 만).
 -- [ ] 4. cron 등록   : SELECT jobname,schedule,active FROM cron.job WHERE jobname='foot-redpay-unreg-digest';  -- 0 0 * * * active
 -- [ ] 5. env 세팅    : redpay-webhook REDPAY_UNREG_ALARM_MODE=digest (기본) / rollback=realtime
 -- [ ] 6. 수동 1틱    : SELECT public.trigger_redpay_unreg_digest();  → EF 200 (미등록 0건이면 no-send)

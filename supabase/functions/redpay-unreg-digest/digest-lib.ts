@@ -65,3 +65,35 @@ export function buildDigestText(stillUnreg: UnregRow[], nowKST: string): string 
   ];
   return lines.join("\n");
 }
+
+// ── AC7 (MSG-76a9 delta): 3일+ 장기 미처리 별도 에스컬레이션 ────────────────────────────
+/** AC7 장기 미처리 임계(일). 첫 감지일 기준 경과 ≥ 이 값 & 여전히 미등록 → 일일 요약과 별개 에스컬레이션. */
+export const LONG_UNPROC_DAYS = 3;
+
+/** 첫 감지일(ISO) 기준 절대 경과일(24h*N, floor) — 결정적(테스트 재현 가능). */
+export function daysSince(iso: string, nowMs: number): number {
+  return Math.floor((nowMs - new Date(iso).getTime()) / 86_400_000);
+}
+
+/** AC7: stillUnreg 중 first_seen 경과 ≥ LONG_UNPROC_DAYS 인 장기 미처리 회선 분리(여전히 미등록 전제=stillUnreg). */
+export function selectLongUnprocessed(stillUnreg: UnregRow[], nowMs: number): UnregRow[] {
+  return stillUnreg.filter((r) => daysSince(r.first_seen_at, nowMs) >= LONG_UNPROC_DAYS);
+}
+
+/**
+ * AC7 에스컬레이션 본문 — 일일 요약과 별개(장기 방치 경고). 0건이면 빈 문자열(발송 억제).
+ *   digest 가 하루 1회 → 회선당 1회/일 상한이 자연 충족(별도 카운터 불요).
+ */
+export function buildEscalationText(longRows: UnregRow[], nowKST: string, nowMs: number): string {
+  if (longRows.length === 0) return "";
+  const lines: string[] = [
+    `🚨 *[레드페이 장기 미처리 에스컬레이션 · 풋센터]* ${nowKST}`,
+    `${LONG_UNPROC_DAYS}일 이상 미등록 방치 ${longRows.length}개 회선 — 즉시 등록 처리 필요(방치 방지)`,
+    ``,
+    ...longRows.map((r) =>
+      `• 가맹점 ${r.merchant_id ?? "∅"} / 회선 ${r.tid ?? "∅"} `
+        + `(첫 감지 ${fmtMD(r.first_seen_at)}, ${daysSince(r.first_seen_at, nowMs)}일 경과, 누적 ${r.hit_count}건)`
+    ),
+  ];
+  return lines.join("\n");
+}
