@@ -248,4 +248,6 @@ export const METHOD_KO: Record<string, string> = {
   transfer: '이체',
   // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: 기존 레코드도 "패키지"로 표시 (DB value 'membership' 유지)
   membership: '패키지',
+  // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: 공단(건강생활유지비) 대납 — 의료급여1종 본인부담 공단 차감
+  health_maintenance: '공단(건강생활유지비)',
 };

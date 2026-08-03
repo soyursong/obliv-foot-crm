@@ -66,6 +66,9 @@ import { supabase } from '@/lib/supabase';
 import { RX_COL, rxDigits } from '@/lib/rxFormat';
 import { useAuth } from '@/lib/auth';
 import { formatAmount } from '@/lib/format';
+// T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: 결제수단 라벨 SSOT — health_maintenance(공단 건강생활유지비) 등
+//   비-기본 수단이 raw 토큰으로 노출되지 않게 METHOD_KO 로 표기.
+import { METHOD_KO } from '@/lib/status';
 import { FOOT_SYMPTOM_OPTIONS } from '@/lib/footHealthSymptoms';
 import { isLaserService } from '@/lib/laserService';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
@@ -1150,6 +1153,22 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   // ── 진료비 영수증 인쇄 ──
   const printInvoice = (doc: InvoiceDoc) => {
     // [SYNC: G-007] fmtAmt 로컬 중복 제거 → formatAmount(중앙함수) + '원' 교체
+    // ── T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT-BTN-PHASEA (AC3 영수증 차감 내역 3줄) ──
+    //   이 방문에 공단(건강생활유지비) 대납 결제행(method='health_maintenance')이 있으면 영수증에
+    //   차감 내역 3줄을 별도 표기: 진료비 본인부담금 / 건강생활유지비 차감(−) / 환자 실수납.
+    //   doc.paid_amount = Σ(payments)(공단 대납 포함) → 진료비 본인부담 = paid_amount − 비급여(공단대납분 포함
+    //   급여 본인부담 전액), 환자 실수납 = paid_amount − 공단대납분. 공단 대납분 없으면 3줄 미표기(비대상 무영향).
+    const hmPaid = paymentItems
+      .filter((p) => p.method === 'health_maintenance' && p.payment_type !== 'refund')
+      .reduce((s, p) => s + (p.amount ?? 0), 0);
+    const copayGross = Math.max(0, doc.paid_amount - doc.non_covered); // 진료비 급여 본인부담(공단 대납 포함)
+    const patientNetPaid = Math.max(0, doc.paid_amount - hmPaid);       // 환자 실수납(공단 대납 제외)
+    const healthFeeRows = hmPaid > 0
+      ? `
+  <tr><td>진료비 본인부담금</td><td>${formatAmount(copayGross)}원</td></tr>
+  <tr><td>건강생활유지비 차감 (공단 대납)</td><td>− ${formatAmount(hmPaid)}원</td></tr>
+  <tr class="total"><td>실수납 (환자 부담)</td><td>${formatAmount(patientNetPaid)}원</td></tr>`
+      : '';
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>진료비 영수증 — ${checkIn.customer_name}</title>
 <style>
   /* T-20260702-foot-DOCPRINT-BROWSERHEADER-REMOVE: @page margin:0 → 브라우저 자동 헤더(인쇄일시·제목) 제거.
@@ -1171,7 +1190,7 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   <tr><td>환자명</td><td>${checkIn.customer_name}</td></tr>
   <tr><td>급여 (공단+본인)</td><td>${formatAmount(doc.insurance_covered)}원</td></tr>
   <tr><td>비급여</td><td>${formatAmount(doc.non_covered)}원</td></tr>
-  <tr class="total"><td>실제 납부액</td><td>${formatAmount(doc.paid_amount)}원</td></tr>
+  <tr class="total"><td>실제 납부액</td><td>${formatAmount(doc.paid_amount)}원</td></tr>${healthFeeRows}
 </table>
 </body></html>`;
     const w = window.open('', '_blank');
@@ -1814,10 +1833,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         ) : (
           paymentItems.map((pay) => {
             const isSel = selectedPaymentIds.has(pay.id);
-            const methodLabel =
-              pay.method === 'card' ? '카드' :
-              pay.method === 'cash' ? '현금' :
-              pay.method === 'transfer' ? '이체' : (pay.method ?? '');
+            // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: METHOD_KO SSOT — health_maintenance='공단(건강생활유지비)'
+            //   등 비-기본 수단도 한국어 라벨로(raw 토큰 노출 방지).
+            const methodLabel = pay.method ? (METHOD_KO[pay.method] ?? pay.method) : '';
             return (
               <div
                 key={pay.id}

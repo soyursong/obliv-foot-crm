@@ -274,7 +274,10 @@ export const prepaidSessionType = (
 // ── 결제수단 ────────────────────────────────────────────────────────────────
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
-type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
+// T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: 'health_maintenance'(공단 건강생활유지비 대납) 추가.
+//   ⚠ METHOD_OPTIONS(수동 선택 드롭다운)에는 넣지 않는다 — 스태프가 임의 선택 못 하게 하고, 오직
+//   의료급여1종 '공단 차감' 버튼(handleSettle 분리 결제행)으로만 기록되는 canonical 결제수단이다.
+type PayMethod = 'card' | 'cash' | 'transfer' | 'membership' | 'health_maintenance';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE Phase2: 라벨 멤버십→패키지 (DB value 'membership' 유지)
 const METHOD_OPTIONS: { value: PayMethod; label: string }[] = [
@@ -996,6 +999,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   //   settled=true 이후엔 handleSettle 을 조기 차단하고 버튼을 비활성('수납 완료')한다. checkIn 전환 시 리셋(아래 useEffect).
   const [settled, setSettled] = useState(false);
 
+  // ── T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT-BTN-PHASEA ─────────────────────
+  //   의료급여1종 + 건강생활유지비(국가 지원금) 잔액>0 → 수납창 '공단 차감' 버튼.
+  //   Phase A(총괄 김주연 A안 확정, MSG-qijq): 잔액 '자동조회'는 CRM 코드에 없음 → 스태프가 공단 포털에서
+  //   확인한 잔액을 화면에 '직접 입력'한다. 버튼 클릭 → 급여 본인부담금(정액 1,000 등)을 건강생활유지비에서
+  //   차감 → 실수납 0원(부분차감=잔액만큼, 0원 강제 금지). 차감분은 payments method='health_maintenance'
+  //   (공단 대납, settled)로 분리 기록 → Σ(payments)==payableTotal 불변(AC4-GATE c).
+  const [healthMaintenanceBalance, setHealthMaintenanceBalance] = useState<number>(0); // 스태프 직접입력 잔액
+  const [healthFeeApplied, setHealthFeeApplied] = useState<boolean>(false);            // '공단 차감' 클릭 적용 여부
+
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
@@ -1145,6 +1157,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: 새 방문(checkIn.id 전환) 진입 시 수납완료 플래그 리셋
     //   → [수납] 버튼 재활성. (동일 방문 리페치는 [checkIn?.id] 미변으로 이 effect 미재실행 → 창 유지 상태 보존.)
     setSettled(false);
+    // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: 새 방문 진입 시 공단 차감 상태 리셋(잔액 입력·적용 초기화).
+    setHealthMaintenanceBalance(0);
+    setHealthFeeApplied(false);
     setPayMethod('card');
     // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
     setSplitMode(false);
@@ -1888,6 +1903,18 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   // 최종 수납금액(수납잔액) = 절사된 급여 본인부담(가산 포함, floor100) + 비급여 전액(무절사). 가산 공단분은 환자가 내지 않음(공단 몫).
   const payableTotalWithSurcharge = payCopaymentWithSurcharge + nonCoveredTotal;
 
+  // ── T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT-BTN-PHASEA (파생) ──────────────
+  //   AC2 대상가드: 의료급여1종(medical_aid_1) AND 스태프 입력 잔액>0 AND 급여 본인부담금>0.
+  //   AC3 차감액: min(잔액, 급여 본인부담금) — 부분차감(잔액<본인부담)=잔액만큼, 0원 강제 금지.
+  //     차감 대상 = 급여 본인부담(payCopaymentWithSurcharge, 정액 1,000 등)뿐. 비급여는 공단 대납 대상 아님.
+  //   healthFeeApplied(버튼 클릭) 시에만 실차감 반영 — 잔액/본인부담이 이후 바뀌면 healthFeeDeducted 도 재파생.
+  const isMedicalAid1 = customerInsuranceGrade === 'medical_aid_1';
+  const healthFeeDeductable = Math.min(healthMaintenanceBalance, payCopaymentWithSurcharge);
+  const healthFeeEligible = isMedicalAid1 && healthMaintenanceBalance > 0 && payCopaymentWithSurcharge > 0;
+  const healthFeeDeducted = healthFeeApplied && healthFeeEligible ? healthFeeDeductable : 0;
+  const healthFeeRemainingBalance = Math.max(0, healthMaintenanceBalance - healthFeeDeducted); // 차감 후 갱신 잔액(표기)
+  const netPayableAfterHealthFee = Math.max(0, payableTotalWithSurcharge - healthFeeDeducted);  // 공단 차감 반영 실수납액
+
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
     ? getBaseCopayRate(customerInsuranceGrade)
@@ -2341,8 +2368,14 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   ⚠ 단일 결제수단(splits.length===1)·비선수금 경로에서만 RPC 사용 — 분할/선수금 혼합은 parent C4
     //     활성화(1:N 배분) 소관(DA Q3, 본 티켓 blocking 아님) → 기존 동선 그대로(폴백 snapshot 이 명세 담당).
     const isDeductSettle = taxType === '선수금';
+    // ── T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: health_maintenance(공단 대납) 결제행이 있으면 covered-RPC
+    //   경로를 우회한다. record_insurance_consult_payment 는 method 도메인을 4값(card/cash/transfer/membership)
+    //   으로 자체 검증(RAISE)하므로 'health_maintenance' 로 호출하면 예외. → 대신 plain payment insert +
+    //   snapshotCoveredServiceCharges 폴백이 급여 명세(service_charges, is_insurance_covered=TRUE)를 적재한다.
+    //   매출 급여구분축은 service_charges.is_insurance_covered 파생이므로(DA Q2) rev_copay_self 분류 정합 유지.
+    const isHealthMaintenanceSettle = splits.some((s) => s.method === 'health_maintenance');
     const coveredServices =
-      !isDeductSettle && splits.length === 1
+      !isDeductSettle && !isHealthMaintenanceSettle && splits.length === 1
         ? Array.from(
             new Map(
               pricingItems
@@ -2549,8 +2582,30 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       toast.error('결제 금액이 올바르지 않습니다');
       return;
     }
-    // T-20260616-foot-PMW-SPLIT-PAYMENT AC-2: 분할 합산=수납액 아닐 시 차단
-    const splits = buildSettleSplits(amount);
+    // ── T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT-BTN-PHASEA (settle 분리 결제행) ──
+    //   공단 차감 적용 시: 차감분(healthFeeDeducted) = 공단(건강생활유지비) 대납 → method='health_maintenance'
+    //   결제행 1개 + 잔여 실수납액은 스태프 선택 결제수단. Σ(payments)==payableTotal 불변(AC4-GATE c).
+    //   전액 차감(실수납 0, 비급여 무)이면 splits.length===1(health_maintenance) → executeAutoDone 의 급여
+    //   covered-RPC 경로가 그대로 동작해 service_charge + FK-copay(method='health_maintenance')를 원자 적재.
+    //   부분/비급여 잔여가 있으면 2행 → 명세는 snapshotCoveredServiceCharges 폴백이 담당(중복 dedup).
+    //   선수금차감(deductMode)엔 미적용(급여 정액 본인부담 시나리오 전용).
+    let splits: { method: PayMethod; amount: number }[] | null;
+    if (!deductMode && healthFeeDeducted > 0) {
+      const hmAmount = Math.min(healthFeeDeducted, amount);
+      const remainder = amount - hmAmount;
+      const built: { method: PayMethod; amount: number }[] = [
+        { method: 'health_maintenance', amount: hmAmount },
+      ];
+      if (remainder > 0) {
+        const rest = buildSettleSplits(remainder);
+        if (!rest) return; // 분할 합산 불일치 등 → 차단(제출 미시작)
+        built.push(...rest);
+      }
+      splits = built;
+    } else {
+      // T-20260616-foot-PMW-SPLIT-PAYMENT AC-2: 분할 합산=수납액 아닐 시 차단
+      splits = buildSettleSplits(amount);
+    }
     if (!splits) return;
     setSubmitting(true);
     try {
@@ -3520,6 +3575,74 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                         {formatAmount(payableTotalWithSurcharge)}
                       </span>
                     </div>
+                    {/* ── T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT-BTN-PHASEA ──────────────
+                        의료급여1종 환자 → 건강생활유지비(국가 지원금) 공단 차감 UI.
+                        Phase A: 스태프가 공단 포털에서 확인한 잔액을 직접 입력 → '공단 차감' 버튼 클릭 시
+                        급여 본인부담금을 잔액에서 차감 → 실수납 0원(부분차감=잔액만큼). 자동조회 아님(총괄 A안). */}
+                    {isMedicalAid1 && (
+                      <div className="mt-2 rounded-md border border-teal-300 bg-teal-50/70 p-2 space-y-1.5">
+                        <div className="text-xs font-semibold text-teal-800">
+                          의료급여 1종 · 건강생활유지비 공단 차감
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-muted-foreground whitespace-nowrap">공단 잔액</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className="h-8 flex-1 rounded border px-2 text-sm text-right tabular-nums disabled:bg-muted disabled:text-muted-foreground"
+                            value={healthMaintenanceBalance > 0 ? formatAmount(healthMaintenanceBalance) : ''}
+                            onChange={(e) => {
+                              const v = Number(e.target.value.replace(/[^0-9]/g, ''));
+                              setHealthMaintenanceBalance(Number.isFinite(v) ? v : 0);
+                              setHealthFeeApplied(false); // 잔액 변경 시 재적용 필요
+                            }}
+                            placeholder="공단 포털에서 확인한 잔액 입력"
+                            disabled={healthFeeApplied || settled}
+                          />
+                          <span className="text-xs text-muted-foreground">원</span>
+                        </div>
+                        {!healthFeeApplied ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full h-9 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold"
+                            disabled={!healthFeeEligible || settled}
+                            onClick={() => setHealthFeeApplied(true)}
+                          >
+                            공단 차감
+                            {healthFeeEligible && ` (건강생활유지비에서 ${formatAmount(healthFeeDeductable)} 차감)`}
+                          </Button>
+                        ) : (
+                          <div className="space-y-0.5 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">진료비 본인부담금</span>
+                              <span className="tabular-nums">{formatAmount(payCopaymentWithSurcharge)}</span>
+                            </div>
+                            <div className="flex justify-between text-teal-700">
+                              <span>건강생활유지비 차감</span>
+                              <span className="tabular-nums font-semibold">− {formatAmount(healthFeeDeducted)}</span>
+                            </div>
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>차감 후 건강생활유지비 잔액</span>
+                              <span className="tabular-nums">{formatAmount(healthFeeRemainingBalance)}</span>
+                            </div>
+                            <div className="flex justify-between font-bold text-purple-700 pt-0.5 border-t border-teal-200">
+                              <span>실수납액</span>
+                              <span className="tabular-nums">{formatAmount(netPayableAfterHealthFee)}</span>
+                            </div>
+                            {!settled && (
+                              <button
+                                type="button"
+                                className="mt-0.5 text-[11px] text-muted-foreground underline"
+                                onClick={() => setHealthFeeApplied(false)}
+                              >
+                                공단 차감 취소
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {prepaidIds.size > 0 && (
                       <div className="flex justify-between text-xs text-purple-600 pt-0.5">
                         <span>차감 후 청구</span>

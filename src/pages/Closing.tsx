@@ -756,6 +756,10 @@ export default function Closing() {
     const singleCash      = sum(payments, 'cash');
     const singleTransfer  = sum(payments, 'transfer');
     const singleMembership = sum(payments, 'membership');
+    // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b, silent-drop 금지):
+    //   공단(건강생활유지비) 대납 = 실현매출(현금주의) → grossTotal 유니버스 포함(membership 과 달리 제외 아님).
+    //   단건 결제(handleSettle 분리행)로만 생성 — 패키지/수기 경로 없음.
+    const singleHealthMaintenance = sum(payments, 'health_maintenance');
 
     // GROSS (display)
     const pkgCardGross     = sumGross(pkgPayments, 'card');
@@ -822,12 +826,15 @@ export default function Closing() {
     // 'membership' method = 전액 패키지 차감건(amount=0 마커) 또는 구형 패키지차감건
     // 패키지는 최초 구매 시점(package_payments)에 이미 집계됨 → 차감 시점에 재집계 불가
     // grossTotal = NET (환불 차감 후, membership 제외) — reconciliation 기준점
-    const grossTotal = totalCard + totalCash + totalTransfer;
+    // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(health_maintenance)은 실현매출이므로
+    //   grossTotal 에 가산(silent-drop 금지). membership(선불 use)은 여전히 제외 유지.
+    const grossTotal = totalCard + totalCash + totalTransfer + singleHealthMaintenance;
 
     return {
       // NET (reconciliation/DB)
       pkgCard, pkgCash, pkgTransfer,
       singleCard, singleCash, singleTransfer, singleMembership,
+      singleHealthMaintenance,
       totalCard, totalCash, totalTransfer,
       // GROSS (SummaryCard 표시)
       pkgCardGross, pkgCashGross, pkgTransferGross,
@@ -1762,6 +1769,11 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 ['카드 총합', totals.totalCardGross, totals.totalCardCount],
                 ['현금 총합', totals.totalCashGross, totals.totalCashCount],
                 ['이체 총합', totals.totalTransferGross, totals.totalTransferCount],
+                // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
+                //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
+                ...(totals.singleHealthMaintenance !== 0
+                  ? [['공단(건강생활유지비)', totals.singleHealthMaintenance, 0] as [string, number, number]]
+                  : []),
                 ...(totals.manualTotal > 0
                   ? [['수기결제 포함', totals.manualTotal, totals.manualCardCount + totals.manualCashCount + totals.manualTransferCount] as [string, number, number]]
                   : []),
