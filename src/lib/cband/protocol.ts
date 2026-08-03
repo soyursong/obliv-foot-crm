@@ -204,6 +204,17 @@ export const CBAND_MSG_VERSION = '0002' as const;
 export const CBAND_TCODE = 'S0' as const;
 
 /**
+ * ★body.DEVICE_TYPE — 데몬이 결제기 종류(모듈)를 라우팅하는 값. 정확히 "CAT_"(4자, 끝 밑줄) 고정.
+ *   T-20260804-foot-CBAND-DEVICETYPE-CAT-FIXED: header 봉투(370ba999) 해소 후 데몬 오류가
+ *   9999(전문형식)→9998(모듈로드)로 전진 = 파싱은 통과, 이제 모듈 라우팅 단계. DEVICE_TYPE 이
+ *   정확히 "CAT_"가 아니면(누락/빈값/"CAT"(밑줄없음)/"VPOS") 데몬이 VPOS 분기(VPOS_Client.dll,
+ *   현장 미설치·C:\KOVAN 미존재)로 빠져 DLL 로드 실패(9998). CAT 연동 KovanSocketCat.dll=설치됨.
+ *   ★근거 = 7/31 실승인 전문 원문 body 20필드(DIAGNOSE §ROOT-CAUSE)의 "DEVICE_TYPE":"CAT_"
+ *   + 최필경 총괄 현장 5케이스 직접 재현(CAT_=✅ / 누락·빈값·"CAT"·"VPOS"=❌9998). 추측 아님.
+ */
+export const CBAND_DEVICE_TYPE = 'CAT_' as const;
+
+/**
  * UTF-8 바이트 길이 — header.LENGTH 산출용. TextEncoder 우선(브라우저·Node), 미지원 시 수동 폴백.
  * ASCII(코드·숫자) 위주라 대개 문자수와 동일하나, 정확성을 위해 UTF-8 바이트로 계산.
  */
@@ -277,6 +288,7 @@ export function buildMsg(params: BuildMsgParams): {
     TID: tid.trim(),
     CAT_PORT: pad2Port(catPort),   // 규칙#4
     TAMT: pad9(amount),            // 규칙#3
+    DEVICE_TYPE: CBAND_DEVICE_TYPE, // ★FIX-A(DEVICETYPE-CAT-FIXED): 정확히 "CAT_" 고정 → 데몬 CAT 모듈 라우팅(9998 차단)
   };
   // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청에 주입하지 않는다(7/31 실승인 20필드 부재).
   //   값이 명시적으로 있을 때만 계승해 실어 보내고, 빈값(정상)은 전문에서 제외한다.
@@ -310,6 +322,11 @@ export function buildMsg(params: BuildMsgParams): {
   // ★FIX-C 방어: DATA_TYPE 항상 존재·비어있지 않음(현장 케이스 ②③ 불가 — 데몬 "DATA_TYPE 값이 없습니다" 재발 차단).
   if (!header.DATA_TYPE || !header.DATA_TYPE.trim()) {
     throw new Error('header.DATA_TYPE(전문형태) 가 비어 있습니다 — 데몬이 전문을 거부합니다.');
+  }
+  // ★FIX-A 방어(DEVICETYPE-CAT-FIXED): body.DEVICE_TYPE 정확히 "CAT_"(4자, 끝 밑줄) 불변식.
+  //   현장 케이스 ②(누락)③(빈값)④("CAT")⑤("VPOS") 전부 발생 불가 — 어긋나면 데몬 VPOS 분기(9998) 차단.
+  if (body.DEVICE_TYPE !== CBAND_DEVICE_TYPE) {
+    throw new Error('body.DEVICE_TYPE 는 정확히 "CAT_" 여야 합니다 — 데몬이 VPOS 모듈로 오라우팅되어 결제 실패(9998).');
   }
   // fields = body alias(하위호환: 기존 테스트/소비자가 fields.TID/TAMT/MERNO 참조).
   return { message, fields: body, header, body, envelope };
