@@ -220,3 +220,142 @@ export function computeDrugVerifyVerdict(
   // 출처 불명·데이터 부족 → 대조전(에러 아님, AC-5 graceful degrade).
   return { status: 'pending' };
 }
+
+// ---------------------------------------------------------------------------
+// AC-3 검증결과 영속 캐시 — read-side staleness 가드 + 읽기 폴백(J2/J3).
+// Ticket: T-20260803-foot-RXSET-VERIFY-CACHE-AC3
+// DA CONSULT-REPLY: DA-20260803-foot-RXSET-VERIFY-CACHE-AC3 (GO/ADDITIVE 조건부).
+//   SSOT = da_decision_foot_rxset_verify_cache_ac3_20260803.md
+//
+// ★ 이 섹션은 prescription_codes 의 verify_* 캐시 컬럼(마이그레이션
+//   20260803210000_prescription_codes_verify_cache.sql)을 "비-권위 성능 materialization"으로
+//   안전하게 읽기 위한 순수 로직이다. 캐시는 절대 유일진실이 아니다.
+//
+//   J2 SSOT 방화벽(HARD): 이 모듈(computeDrugVerifyVerdict/compareIngredient)이 판정 권위.
+//     캐시는 그 결과의 materialization일 뿐 → 읽기 경로는 항상 recompute 폴백 가능해야 하고,
+//     캐시를 유일진실로 신뢰하지 않는다(FE 로직 개정 시 divergence 방지).
+//   J3 staleness 가드(DISPOSITIVE·옵션 아님): 캐시 = 입력3필드(claim_code/code_source/
+//     insurance_status_source)의 순수함수 + model_version. self-healing 방식(택1-a):
+//       verify_input_hash(3입력 지문) + verify_model_version 을 읽기 시 대조 →
+//       hash 불일치 OR version 불일치 → 캐시 MISS → recompute(트리거 불요,
+//       FE 로직 버전업까지 자동 무효화). stale 을 조용히 서빙하면 캐시 없는 것보다 나쁘다.
+//
+//   ⚠️ 성분축(verify_ingredient)의 외부(MFDS) 원천 drift 는 이 hash 범위 밖이다
+//      (DA J3 = 행-소유 3필드 + model_version 로 명시적 한정). 외부 성분 재검증은
+//      EF(mfds-ingredient-verify)가 자체 주기로 재적재하며 verified_at 을 갱신한다.
+//      FE 판정 로직(성분 대조 포함)이 바뀌면 VERIFY_MODEL_VERSION 을 올려 전체 무효화한다.
+//   외부 호출 0 · 신규 패키지 0 (순수 함수/상수만).
+// ---------------------------------------------------------------------------
+
+/**
+ * 검증 판정 로직 버전. computeDrugVerifyVerdict/compareIngredient(+매핑) 로직이 바뀔 때마다
+ * 반드시 올린다. 읽기 시 캐시의 verify_model_version 과 불일치하면 캐시 MISS → recompute
+ * (self-healing: FE 배포로 과거 캐시가 자동 무효화된다).
+ */
+export const VERIFY_MODEL_VERSION = 'v1' as const;
+
+/** prescription_codes verify_* 캐시 컬럼의 읽기 표현(부분집합). DB row 전체 아님. */
+export interface DrugVerifyCacheRow {
+  verify_status?: string | null;
+  verify_ingredient?: string | null;
+  verify_matched_code?: string | null;
+  verified_at?: string | null;
+  verify_input_hash?: string | null;
+  verify_model_version?: string | null;
+}
+
+/** 영속에 실을 verify_* 캐시 값(쓰기 표현). populate(EF/데스크) 가 그대로 UPDATE 한다. */
+export interface DrugVerifyCacheWrite {
+  verify_status: DrugVerifyStatus;
+  verify_ingredient: IngredientVerifyStatus | null;
+  verify_matched_code: string | null;
+  verify_input_hash: string;
+  verify_model_version: string;
+}
+
+/** 32-bit FNV-1a 지문(순수·동기·의존0). 브라우저/Deno(EF) 동일 산출 — 캐시 write/read 정합. */
+function fnv1aHex(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * verify_input_hash 산출 — 판정에 영향을 주는 3입력의 canonical 지문.
+ *   claim_code(trim) · code_source(trim+lower) · insurance_status_source(trim+lower).
+ * ★compute 판정과 동일 정규화 → 판정 결과가 바뀌는 입력변경만 hash 를 바꾼다(정합).
+ *   ★write/read 양쪽이 이 함수를 써야 self-healing 대조가 성립한다(EF 는 동형 포팅).
+ */
+export function computeVerifyInputHash(input: DrugVerifyInput | null | undefined): string {
+  const claim = (input?.claim_code ?? '').trim();
+  const codeSource = (input?.code_source ?? '').trim().toLowerCase();
+  const insSource = (input?.insurance_status_source ?? '').trim().toLowerCase();
+  return fnv1aHex(`${claim}${codeSource}${insSource}`);
+}
+
+/** verify_matched_code 스냅샷 — HIRA claim_code(placeholder 제외). FK 아님. 없으면 null. */
+export function pickVerifyMatchedCode(input: DrugVerifyInput | null | undefined): string | null {
+  const code = (input?.claim_code ?? '').trim();
+  if (code === '' || PLACEHOLDER_CODE_RE.test(code)) return null;
+  return code;
+}
+
+/**
+ * J3 staleness 가드 — 캐시가 현재 입력·현재 로직버전에 대해 신선한가.
+ *   verify_input_hash == computeVerifyInputHash(input)  AND
+ *   verify_model_version == VERIFY_MODEL_VERSION        (둘 다 충족해야 HIT)
+ * 하나라도 불일치/누락 → false(MISS → recompute).
+ */
+export function isVerifyCacheFresh(
+  cache: DrugVerifyCacheRow | null | undefined,
+  input: DrugVerifyInput | null | undefined,
+): boolean {
+  if (!cache) return false;
+  if (!cache.verify_input_hash || !cache.verify_model_version) return false;
+  if (cache.verify_model_version !== VERIFY_MODEL_VERSION) return false;
+  return cache.verify_input_hash === computeVerifyInputHash(input);
+}
+
+/**
+ * J2 읽기 폴백(권위 read 경로) — 캐시가 신선하면 캐시값으로 판정을 구성하고,
+ * 아니면(MISS/누락/stale) computeDrugVerifyVerdict 로 recompute 한다. **캐시를 유일진실로 신뢰하지 않는다.**
+ *   반환 source: 'cache'(HIT) | 'recompute'(MISS). 소비자는 이 함수만 호출하면 안전하다.
+ */
+export function resolveVerifyVerdict(
+  cache: DrugVerifyCacheRow | null | undefined,
+  input: DrugVerifyInput | null | undefined,
+): { verdict: DrugVerifyVerdict | null; source: 'cache' | 'recompute' } {
+  if (isVerifyCacheFresh(cache, input)) {
+    const status = (cache?.verify_status ?? '') as DrugVerifyStatus;
+    const known = STATUS_META[status] ? status : null;
+    if (known) {
+      const ing = (cache?.verify_ingredient ?? '') as IngredientVerifyStatus;
+      const base: DrugVerifyVerdict = { status: known };
+      return { verdict: mergeIngredientAxis(base, INGREDIENT_META[ing] ? ing : null), source: 'cache' };
+    }
+    // 캐시 status 가 알 수 없는 값 → 신뢰 금지, recompute 로 폴백.
+  }
+  return { verdict: computeDrugVerifyVerdict(input), source: 'recompute' };
+}
+
+/**
+ * populate 헬퍼 — 현재 입력(+선택 성분 대조결과)으로 영속에 실을 verify_* 값을 만든다.
+ * verified_at 은 쓰기 주체(DB now()/EF)가 스탬프한다(여기서는 미포함 — 순수 유지).
+ *   ingredient: 외부(MFDS) 성분 대조결과가 있으면 전달(없으면 null → 성분축 미기록).
+ */
+export function buildVerifyCacheWrite(
+  input: DrugVerifyInput | null | undefined,
+  ingredient?: IngredientVerifyStatus | null,
+): DrugVerifyCacheWrite {
+  const verdict = computeDrugVerifyVerdict(input);
+  return {
+    verify_status: verdict?.status ?? 'pending',
+    verify_ingredient: ingredient ?? null,
+    verify_matched_code: pickVerifyMatchedCode(input),
+    verify_input_hash: computeVerifyInputHash(input),
+    verify_model_version: VERIFY_MODEL_VERSION,
+  };
+}
