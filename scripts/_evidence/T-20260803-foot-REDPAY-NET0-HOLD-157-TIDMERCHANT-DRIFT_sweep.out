@@ -1,0 +1,129 @@
+[2026-08-03T04:18:08.862Z] RedPay feed pull — biz=457-23-00938 window=2026-07-01~2026-08-03 key=***REDACTED***
+[2026-08-03T04:18:09.295Z]   [2026-07-01~2026-07-14] page 1/1 — 누적 items=81 pairs=22
+[2026-08-03T04:18:09.799Z]   [2026-07-15~2026-07-28] page 1/1 — 누적 items=577 pairs=65
+[2026-08-03T04:18:10.081Z]   [2026-07-29~2026-08-03] page 1/1 — 누적 items=857 pairs=68
+[2026-08-03T04:18:10.081Z] feed items=857 · distinct (tid,merchant) 짝=68 · distinct tid=68
+[2026-08-03T04:18:10.313Z] registry foot rows = 27 · membership tids = 40
+
+════════ B-2 SWEEP RESULT ════════
+feed pairs=68 · DRIFT(registry tid 있고 merchant 불일치)=1 · feed-tid-unknown(registry 미등재)=33 · multi-merchant-tid=0
+
+── DRIFT 상세 (registry 등재 tid ↔ feed merchant 불일치) ──
+[
+  {
+    "tid": "1047479153",
+    "registry_merchant": "1777289009",
+    "registry_via": "tid",
+    "registry_active": true,
+    "registry_label": "풋(무선)",
+    "feed_merchant": "1777289013",
+    "feed_merchant_name": "오블리브-서울오리진점 풋(무선)",
+    "feed_trx_cnt": 2,
+    "feed_net": 0,
+    "feed_statuses": {
+      "N": 1,
+      "Y": 1
+    },
+    "feed_window": [
+      "2026-07-23 18:16:29",
+      "2026-07-23 18:16:46"
+    ],
+    "registry_tid_for_feed_merchant": "1047479157"
+  }
+]
+
+── multi-merchant tid (feed 에서 1 tid 가 복수 merchant) ──
+[]
+
+── feed-tid-unknown 재분류: foot-silent-miss(★위험)=0 · 타센터/미분류=33 ──
+foot-silent-miss 상세: NONE (foot 매출 침묵누락 0 — bidir census 07-28 정합)
+
+── FOCUS (153/157 · 289009/289013) ──
+{
+  "registry": [
+    {
+      "merchant_id": "1777289009",
+      "tid": "1047479153",
+      "superseded_tids": null,
+      "active": true,
+      "domain": "foot",
+      "terminal_label": "풋(무선)"
+    },
+    {
+      "merchant_id": "1777289013",
+      "tid": "1047479157",
+      "superseded_tids": null,
+      "active": true,
+      "domain": "foot",
+      "terminal_label": "풋(무선)"
+    }
+  ],
+  "feed_by_tid": [
+    {
+      "tid": "1047479153",
+      "pairs": [
+        {
+          "tid": "1047479153",
+          "mid": "1777289013",
+          "mname": "오블리브-서울오리진점 풋(무선)",
+          "cnt": 2,
+          "net": 0,
+          "firstAt": "2026-07-23 18:16:29",
+          "lastAt": "2026-07-23 18:16:46",
+          "statuses": {
+            "N": 1,
+            "Y": 1
+          }
+        }
+      ]
+    },
+    {
+      "tid": "1047479157",
+      "pairs": []
+    }
+  ],
+  "feed_by_merchant": [
+    {
+      "merchant": "1777289009",
+      "pairs": []
+    },
+    {
+      "merchant": "1777289013",
+      "pairs": [
+        {
+          "tid": "1047479153",
+          "mid": "1777289013",
+          "mname": "오블리브-서울오리진점 풋(무선)",
+          "cnt": 2,
+          "net": 0,
+          "firstAt": "2026-07-23 18:16:29",
+          "lastAt": "2026-07-23 18:16:46",
+          "statuses": {
+            "N": 1,
+            "Y": 1
+          }
+        }
+      ]
+    }
+  ]
+}
+
+════════ SUMMARY(JSON) ════════
+{
+  "window": [
+    "2026-07-01",
+    "2026-08-03"
+  ],
+  "biz": "457-23-00938",
+  "feed_items": 857,
+  "feed_pairs": 68,
+  "registry_foot_rows": 27,
+  "drift_count": 1,
+  "feed_tid_unknown_count": 33,
+  "multi_merchant_tid_count": 0,
+  "unknown_foot_silentmiss_count": 0,
+  "unknown_othercenter_count": 33,
+  "drift_tids": [
+    "1047479153"
+  ]
+}
