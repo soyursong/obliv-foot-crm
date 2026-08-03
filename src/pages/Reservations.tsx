@@ -250,12 +250,14 @@ type CanonicalCreateResult =
 //   또는 42703(undefined_column)을 던져 '신규예약 생성' 버튼 클릭 시 오류(현장 스샷 F0BBDM8314Y)로 표면화.
 //   ⇒ 동일 패턴으로 WRITE 도 내성화: 컬럼 누락 에러 감지 시 is_healer_intent 제외 payload 로 1회 재시도.
 //   ⚠ 영구 RC = 마이그 미적용 → supervisor/planner FOLLOWUP 으로 마이그 적용 권고(본 FE 내성화는 즉시 unblock 용).
-function isHealerIntentColMissing(err: { code?: string; message?: string } | null): boolean {
+// MSG-20260803-234838 재발방지: 신규/선택 컬럼(is_healer_intent·visit_nature 등)의 부분배포로 인한
+//   column-absent 를 폭넓게 감지(42703/PGRST204 = undefined_column/schema-cache miss). proactive omit 의 backstop.
+function isOptionalColMissing(err: { code?: string; message?: string } | null): boolean {
   if (!err) return false;
   return (
     err.code === '42703' ||
     err.code === 'PGRST204' ||
-    /is_healer_intent/.test(err.message ?? '')
+    /is_healer_intent|visit_nature/.test(err.message ?? '')
   );
 }
 
@@ -371,9 +373,14 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     visit_route: input.visit_route ?? null,
     // T-20260801/T-20260803: 예약행 유입경로 이벤트값 영속(canonical 코드) — 선택값 우선, 없으면 고객 최초유입 상속(effectiveInflow).
     inflow_channel: effectiveInflow,
-    // T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격 각인 — 선택값 우선, 미제공 시 visit_type 크로스워크 default.
+    // T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED / MSG-20260803-234838 재발방지(DB-first graceful write):
+    //   호출측이 컬럼 실재(picker RPC available=true)를 확인한 경우에만 visit_nature 를 input 에 실어보낸다.
+    //   available=false(RPC/컬럼 미배포) 시 호출측이 key 를 생략(undefined) → 여기서도 spread 제외 →
+    //   column-absent(42703) 상황에서 전체 INSERT 가 깨지지 않음(CF auto-deploy live-break 재발 차단).
     //   visit_type 무접촉·직교 축(방화벽). fulfillment 자동승격 없음(스태프 명시 선택만).
-    visit_nature: (input.visit_nature?.trim() || deriveVisitNatureDefault(input.visit_type)) || null,
+    ...(input.visit_nature !== undefined
+      ? { visit_nature: input.visit_nature?.trim() || null }
+      : {}),
     registrar_id: input.registrar_id ?? null,
     // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 이름 스냅샷도 생성 시 영속.
     //   기존 컬럼(reservations.registrar_name) — 신규 스키마 0. 편집경로(popup saveRouteAndRegistrar)와 동일 컬럼.
@@ -398,13 +405,20 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     .insert(insertBody)
     .select('id')
     .maybeSingle();
-  // T-20260615-foot-RESVPOPUP-3BUG AC2: is_healer_intent 컬럼 미반영(PGRST204/42703) 시 제외 후 1회 재시도.
-  if (result.error && isHealerIntentColMissing(result.error)) {
-    const { is_healer_intent: _omit, ...bodyNoHealer } = insertBody as typeof insertBody & { is_healer_intent?: boolean };
-    void _omit;
+  // T-20260615-foot-RESVPOPUP-3BUG AC2 + MSG-20260803-234838 재발방지 backstop:
+  //   신규/선택 컬럼(is_healer_intent·visit_nature) 부분배포로 인한 column-absent(PGRST204/42703) 시
+  //   해당 key 제외 후 1회 재시도 → 전체 INSERT 실패 방지(proactive omit 의 belt-and-suspenders).
+  if (result.error && isOptionalColMissing(result.error)) {
+    const {
+      is_healer_intent: _omitHealer,
+      visit_nature: _omitNature,
+      ...bodyStripped
+    } = insertBody as typeof insertBody & { is_healer_intent?: boolean; visit_nature?: string | null };
+    void _omitHealer;
+    void _omitNature;
     result = await supabase
       .from('reservations')
-      .insert(bodyNoHealer)
+      .insert(bodyStripped)
       .select('id')
       .maybeSingle();
   }
@@ -3767,7 +3781,8 @@ function ReservationEditor({
         .select('id')
         .maybeSingle();
       // T-20260615-foot-RESVPOPUP-3BUG AC2: is_healer_intent 컬럼 미반영(PGRST204/42703) 시 제외 후 1회 재시도.
-      if (result.error && isHealerIntentColMissing(result.error)) {
+      //   (이 update payload 는 visit_nature 무포함 — healer key 만 strip.)
+      if (result.error && isOptionalColMissing(result.error)) {
         const { is_healer_intent: _omit, ...payloadNoHealer } = payload as typeof payload & { is_healer_intent?: boolean };
         void _omit;
         result = await supabase
@@ -3926,10 +3941,12 @@ function ReservationEditor({
       inflow_channel: state.inflow_channel ?? null,
       // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: inbound.etc 사유 위임(first_inflow_source_ref stamp).
       inflow_reason: inflow.requiresReason(state.inflow_channel) ? inflowReason.trim() : null,
-      // T-20260803-foot-VISIT-NATURE: 방문성격 위임 — picker 배포 시 선택값(유효 코드만), 미배포 시 크로스워크 default 폴백.
-      visit_nature: visitNat.available
-        ? (visitNat.isValid(visitNature) ? visitNature : null)
-        : deriveVisitNatureDefault(state.visit_type),
+      // T-20260803-foot-VISIT-NATURE / MSG-20260803-234838 재발방지(graceful write): picker RPC 배포(available=true) 시에만
+      //   visit_nature key 를 위임(payload 각인). 미배포(available=false) 시 key 자체를 생략(undefined) →
+      //   column-absent 시 INSERT 42703 방지(DB-first 규율). visit_type 무접촉·직교 축.
+      ...(visitNat.available
+        ? { visit_nature: visitNat.isValid(visitNature) ? visitNature : null }
+        : {}),
       referral_name: state.referral_name,
       linked_package_id: state.linked_package_id,
       preferred_therapist_id: state.visit_type === 'returning' ? (overrideTherapistId || null) : null,

@@ -395,11 +395,12 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         // INFLOW event anchor(워크인=예약없는 접수 발급앵커). 신규 접수에서 캡처한 이벤트값만 기록.
         //   기존/예약연결 고객은 미재입력 → null(forward-only, first-touch canonical은 customers.first_inflow_channel).
         inflow_channel: inflowChannel || null,
-        // T-20260803-foot-VISIT-NATURE: 방문성격 forward stamp(per-visit). picker 배포(available) 시 선택값,
-        //   미배포 시 visit_type 크로스워크 default. 유효 코드만 각인(미포착 → null, 강제 대입 금지).
-        visit_nature: visitNat.available
-          ? (visitNat.isValid(visitNature) ? visitNature : null)
-          : deriveVisitNatureDefault(visitType),
+        // T-20260803-foot-VISIT-NATURE / MSG-20260803-234838 재발방지(graceful write): picker RPC 배포(available=true)
+        //   시에만 visit_nature key 를 payload 에 포함(spread). 미배포(available=false) 시 key 자체를 생략 →
+        //   column-absent(42703) 시 워크인 접수 INSERT 전체가 깨지지 않음(DB-first 규율). visit_type 무접촉·직교 축.
+        ...(visitNat.available
+          ? { visit_nature: visitNat.isValid(visitNature) ? visitNature : null }
+          : {}),
       })
       .select('id')
       .single();
