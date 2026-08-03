@@ -73,6 +73,8 @@ import type { CheckIn, Service } from '@/lib/types';
 //   1번차트(CheckInDetailSheet) 기준점과 동일 컴포넌트/데이터소스 재사용(경로별 별도구현 금지).
 //   checkIn(방문) 스코프 = form_submissions.check_in_id 필터 = 그 결제 대상 방문 서류만(전체이력 아님).
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
+// ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ①: 코밴 CAT 직결결제 버튼을 수납 미니창 맨 아래(수납 옆)로 이관.
+import CbandPayEntryButton from '@/components/CbandPayEntryButton';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
 // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: 셀프체크인(키오스크) 신규 유입 null-grade 데스크 캡처.
@@ -3763,12 +3765,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                     </div>
                   )}
 
-                  {/* T-20260526-foot-PAY-INPUT-001-SIMPLIFY: 카드 자동 매칭 안내 (입력 칸 제거)
-                      대표 지시 2026-05-26 — 매처가 시간·금액 기반으로 자동 매칭
-                      T-20260616-foot-PMW-SPLIT-PAYMENT AC-6: 분할 시 카드 행이 있으면 안내 유지 */}
+                  {/* T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ③: 안내문구 플랜A 기준 정정.
+                      (구) 플랜B '단말기 데이터와 시간·금액 기반 자동 매칭' 문구 삭제 — 플랜A 는 '매칭' 개념이 없고
+                      카드 승인번호를 단말기에서 직접 수신해 기록한다. 개발용어 배제·한국어(현장 표준).
+                      T-20260616-foot-PMW-SPLIT-PAYMENT AC-6: 분할 시 카드 행이 있으면 안내 유지. */}
                   {saved && showCardInfo && (
-                    <p className="text-[10px] text-muted-foreground px-1" data-testid="card-auto-match-info">
-                      결제 정보는 단말기 데이터와 시간·금액 기반으로 자동 매칭됩니다.
+                    <p className="text-[10px] text-muted-foreground px-1" data-testid="card-payment-info">
+                      카드 결제 승인 정보는 단말기에서 직접 받아 기록됩니다.
                     </p>
                   )}
 
@@ -3811,6 +3814,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                             : `수납 ${formatAmount(displayAmount)}`
                       )}
                     </Button>
+                  )}
+
+                  {/* ★① 코밴 CAT 직결결제(플랜A) — 결제 미니창 맨 아래 [수납] 옆(현장 동선: 카드 수납 직전).
+                      · 결제수단=카드(단일)일 때만 active. · 분할결제 체크 시 disabled(사유 1줄 노출).
+                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전). */}
+                  {saved && (payMethod === 'card' || splitMode) && (
+                    <CbandPayEntryButton
+                      checkInId={checkIn.id}
+                      clinicId={checkIn.clinic_id}
+                      customerId={checkIn.customer_id ?? null}
+                      disabled={splitMode}
+                      disabledReason="분할결제(복수 결제수단)에서는 카드 단말 결제를 사용할 수 없습니다. 카드 단일 결제로 진행해 주세요."
+                    />
                   )}
                 </div>
             </div>

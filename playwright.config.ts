@@ -549,6 +549,11 @@ export default defineConfig({
         //   6-상태 문구 SSOT(lib/cband/gateCopy) 결정론 검증 + 게이트 dispatch/disabled/툴팁 래퍼 소스 가드.
         //   TID미등록·연결실패(두 조치 함께)·연결됨(활성) 커버. 결제/이중결제방지 무변경(FE 렌더 조건만). unit 전용.
         '**/T-20260803-foot-CBAND-PAYBTN-DISABLED-TOOLTIP.spec.ts',
+        // T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX: flag-ON 전 확정 수정 5건.
+        //   ④타임아웃 45초(CRM 상수)·⑤ -14 표시매핑(additive)·③안내문구 플랜A·①버튼 이관(수납 옆) 정적/순수 가드.
+        //   GO_WARN 회귀 고정: classify 3분기(성공/실패/무응답=ATTENTION) 불변. auth/server/page 불요. unit 전용.
+        //   (②TID/COM 팝업 이관은 총괄 스크린샷 확정 대기 → 후속. ①③ 실렌더·활성카드결제 = supervisor QA/field-soak.)
+        '**/T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

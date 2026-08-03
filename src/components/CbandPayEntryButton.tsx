@@ -41,6 +41,14 @@ interface Props {
   checkInId: string;
   clinicId: string;
   customerId: string | null;
+  /**
+   * ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ① — 외부(수납창) 게이팅.
+   * true 면 결제 진입을 비활성 렌더(사유 1줄 노출) 한다. 분할결제 선택 시 등 '카드 단일결제가 아닐 때'
+   * 상위(PaymentMiniWindow)가 전달. ★결제·전문·이중결제방지 로직 무접촉 — 진입 버튼 렌더 조건만.
+   */
+  disabled?: boolean;
+  /** disabled=true 일 때 버튼 아래 상시 노출할 사유 1줄. */
+  disabledReason?: string;
 }
 
 /**
@@ -102,7 +110,7 @@ function CbandGateButton({ kind, onRetry }: { kind: CbandGateKind; onRetry: () =
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
 
-export default function CbandPayEntryButton({ checkInId, clinicId, customerId }: Props) {
+export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason }: Props) {
   // ★U3: probe 결과 3분기 (null=탐지중 / 'ok' / 'awaiting' / 'blocked').
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [open, setOpen] = useState(false);
@@ -129,15 +137,48 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
   useEffect(() => {
     mounted.current = true;
     // ★AC-4: TID 미등록(cfg 없음) PC 는 탐지하지 않는다(더 근본 차단 = ② 상태). 플래그 ON + cfg 있을 때만 탐지.
-    if (!enabled || !hasCfg) return;
+    // ★①: 외부 disabled(분할결제 등)면 단말 탐지 자체를 건너뜀(불필요한 소켓·권한창 방지).
+    if (!enabled || !hasCfg || disabled) return;
     runProbe();
     // ★U2: 언마운트 시 잔여 탐침 소켓 정리(동시 1개 보장).
     return () => { mounted.current = false; cancelProbe(); };
-  }, [enabled, hasCfg, runProbe]);
+  }, [enabled, hasCfg, disabled, runProbe]);
 
   // 게이트 ①(기능플래그): 플래그 OFF 인 PC(=기능 미도입)에서만 완전 숨김.
   //  ※ '미연결/미설정(TID·데몬·권한)'은 더 이상 숨기지 않는다 → 아래 6-상태 표대로 비활성+툴팁+1줄사유.
   if (!enabled) return null;
+
+  // ★① 외부 게이팅(수납창) — 분할결제 등 '카드 단일결제가 아닐 때' 비활성 진입 버튼 + 사유 1줄.
+  //   결제·전문·이중결제방지 로직 무접촉(진입 렌더만). 플래그 ON PC 에서만 도달(위 !enabled 이후).
+  if (disabled) {
+    return (
+      <div className="w-full space-y-1" data-testid="cband-entry-disabled-ext">
+        <span
+          className="block w-full"
+          title={disabledReason ?? '지금은 카드 단말 결제를 사용할 수 없습니다.'}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-1 border-gray-300 text-gray-400"
+            disabled
+            data-testid="btn-cband-pay-entry-disabled"
+          >
+            <CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)
+            <span className="ml-1 rounded-sm bg-gray-200 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-gray-500">
+              BETA
+            </span>
+          </Button>
+        </span>
+        {disabledReason && (
+          <div className="flex items-start gap-1.5 px-0.5 text-xs text-gray-500">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span className="flex-1" data-testid="cband-disabled-reason">{disabledReason}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
   const canPay = amountNum > 0 && ui !== 'sending';

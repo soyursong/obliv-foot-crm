@@ -46,6 +46,27 @@ export const RESPONSE_CODE_SUCCESS = '0000' as const;
  */
 export const ATTENTION_CODES: ReadonlySet<string> = new Set(['C011', '8003', '8555']);
 
+/**
+ * ★ DLL_RET(로컬 단말 DLL 반환코드) → 현장(실장) 표시 문구 매핑 — 표시 전용(additive).
+ *   T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ⑤: DLL_RET 참조표에 없던 -14 실 로그 발생 확인
+ *   ('단말기에 IC 카드 이미 꽂힘'). 수신·분류(classify) 로직은 불변 — 사용자에게 보일 메시지만 사람이
+ *   읽을 문구로 치환한다. 키는 문자열 정규화(trim) 후 비교. 표에 없는 DLL_RET 는 기존 폴백 문구 유지.
+ *
+ *   ★분류 관점: -14 는 '카드가 이미 꽂혀 있어 진행 불가' = 과금 미발생(재시도 안전) → classify 는
+ *   기존대로 FAIL 로 판정된다(코드가 0000 아님·ATTENTION 집합 아님). 여기서는 그 FAIL 화면의 문구만
+ *   자명한 안내로 바꾼다(자동 재시도/이중결제 방지 로직 무접촉).
+ */
+export const DLL_RET_MESSAGES: Readonly<Record<string, string>> = {
+  '-14': '단말기에 IC(칩) 카드가 이미 꽂혀 있습니다. 카드를 뺀 뒤 다시 결제해 주세요.',
+};
+
+/** DLL_RET 코드로 표시 문구 조회(없으면 null). trim 정규화 후 비교. */
+export function dllRetMessage(code: string | null | undefined): string | null {
+  if (code == null) return null;
+  const k = String(code).trim();
+  return k in DLL_RET_MESSAGES ? DLL_RET_MESSAGES[k] : null;
+}
+
 // ── 요청 전문 파라미터 ───────────────────────────────────────────────────────
 export interface BuildMsgParams {
   /** 전문 종류: 승인('0210') / 취소('0430'). */
@@ -74,6 +95,8 @@ export interface NormalizedResponse {
   authNo: string | null;
   /** 응답코드. ★실측 정본 = ERRCODE("0000"=성공, "9999"=메시지동반 실패). RESPCODE 등은 별칭 관용. */
   responseCode: string | null;
+  /** ★DLL_RET(로컬 단말 DLL 반환코드, 예: '-14'). ERRCODE(밴 응답코드)와 별개 축 — 표시 매핑 전용(⑤). 없으면 null. */
+  dllRet: string | null;
   /** 응답 메시지. ★실측 정본 = MSG1(+ ERRCODE=9999 시 ResultMessage 의 [-N] 패턴). */
   responseMessage: string | null;
   /** 가맹점번호(MERNO) — 수납기록 필수(정산 귀속 §11). */
@@ -271,6 +294,8 @@ export function normalize(parsed: Record<string, unknown> | null): NormalizedRes
     authNo: pick(raw, ['AUTHNO', 'APPRNO', 'APPROVALNO', 'AUTH_NO']),
     // ★ERRCODE 가 실측 정본 판정 필드(0000=성공). RESPCODE 계열은 종전 추정 별칭(관용 폴백).
     responseCode: pick(raw, ['ERRCODE', 'RESPCODE', 'RESPONSECODE', 'RESCODE', 'RESULTCODE', 'CODE']),
+    // ★DLL_RET(로컬 단말 DLL 반환코드) — ERRCODE 와 별개. ⑤ 표시 매핑용(추출만, classify 미참여).
+    dllRet: pick(raw, ['DLL_RET', 'DLLRET', 'DLL_RETURN', 'DLLRETURN', 'RETURNCODE', 'RETCODE']),
     // ★MSG1 이 실측 정본 서버 메시지. ERRCODE=9999 실패 시 ResultMessage 의 [-N] 패턴도 함께.
     responseMessage: pick(raw, ['MSG1', 'RESULTMESSAGE', 'RESULT_MESSAGE', 'RESPMSG', 'RESPONSEMESSAGE', 'RESMSG', 'MESSAGE', 'MSG']),
     merno: pick(raw, ['MERNO', 'MERCHANTNO', 'MID']),
@@ -331,6 +356,10 @@ export function responseMessageForUser(cls: PaymentClassification, resp: Normali
     return '결제 결과를 확인할 수 없습니다. 카드가 승인되었을 수 있으니 다시 결제하지 마시고, 단말기 [승인내역조회]로 확인해 주세요. (확인 필요)';
   }
   // FAIL
+  // ⑤ DLL_RET 표시 매핑(additive) — dllRet 또는 responseCode 가 DLL_RET 표에 있으면 자명한 안내로 치환.
+  //    (예: -14 = 단말기에 IC 카드 이미 꽂힘). 표에 없으면 기존 폴백(메시지 → 코드 → 일반문구) 유지.
+  const dllMsg = dllRetMessage(resp?.dllRet) ?? dllRetMessage(resp?.responseCode);
+  if (dllMsg) return dllMsg;
   const msg = resp?.responseMessage;
   if (msg) return `결제가 처리되지 않았습니다: ${msg}`;
   const code = resp?.responseCode;

@@ -60,8 +60,10 @@ test.describe('AC-2/AC-3 기존 [결제 등록] 버튼 존치(삭제·숨김 금
   test('AC-2: [결제 등록] 버튼 라벨이 시트에 그대로 존재한다', () => {
     const src = SHEET();
     expect(src).toContain('결제 등록');
-    // 코밴 직결결제 버튼과 동일 컨테이너에 병존(같은 결제 섹션에서 함께 렌더).
-    expect(src).toContain('CbandPayEntryButton');
+    // ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ① 로 supersede: 코밴 직결결제 버튼은 이 시트에서
+    //   '결제 미니창 맨 아래 [수납] 옆'(PaymentMiniWindow)으로 이관됨. [결제 등록] 존치 계약(삭제·숨김 금지)은
+    //   유지되며(위 라벨 존재), 코밴 버튼의 시트내 병존 계약은 5FIX ① 가 대체한다(더 이상 시트에 없음).
+    expect(src).not.toContain('CbandPayEntryButton');
   });
 
   test('AC-3: [결제 등록] 버튼은 VITE_CBAND_PAY(직결결제 플래그)로 게이팅되지 않는다 — 잠금 ON 후에도 존치', () => {

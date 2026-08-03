@@ -22,8 +22,12 @@
 
 export const CBAND_WS_URL = 'ws://127.0.0.1:8888';
 
-/** 승인/취소 응답 대기 타임아웃(ms). 실측: 승인 8초·취소 7초 → 여유 포함 25초. (티켓 §7-5) */
-export const CBAND_SEND_TIMEOUT_MS = 25_000;
+/**
+ * 승인/취소 응답 대기 타임아웃(ms). 실측: 승인 8초·취소 7초.
+ *   T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ④: 여유 25초 → 45초 상향
+ *   (현장: 카드 삽입 지연·서명·재시도 여지 확보 요청). ★이 상수가 send() 응답 대기의 유일 출처(CRM측)이며
+ *   데몬/외부 고정값이 아니다 → 값 변경만으로 반영. classify 3분기(성공/실패/무응답=ATTENTION) 로직은 불변. */
+export const CBAND_SEND_TIMEOUT_MS = 45_000;
 /** probe 연결 타임아웃(ms) — 단말 없으면 빠르게 숨김. */
 export const CBAND_PROBE_TIMEOUT_MS = 1_500;
 
