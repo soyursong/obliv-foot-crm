@@ -196,13 +196,13 @@ test.describe('T-20260522-foot-PAY-INPUT-001 — 결제 입력 UI + DB 컬럼', 
 
     await page.waitForTimeout(500);
 
-    // 자동 매칭 안내 문구 확인
-    const autoMatchInfo = page.locator('[data-testid="card-auto-match-info"]');
+    // 카드 결제 안내 문구 확인 (T-20260803-DIRECTPAY-PREDEPLOY-5FIX ③: 플랜A '직접 수신'으로 문구·testid 갱신)
+    const autoMatchInfo = page.locator('[data-testid="card-payment-info"]');
     const infoCount = await autoMatchInfo.count();
     if (infoCount > 0) {
       const infoText = await autoMatchInfo.first().textContent();
-      expect(infoText).toContain('자동 매칭');
-      console.log('[AC-2-NEW] 자동 매칭 안내 문구 노출 PASS:', infoText?.trim());
+      expect(infoText).toContain('단말기에서 직접');
+      console.log('[AC-2-NEW] 카드 결제 안내 문구 노출 PASS:', infoText?.trim());
     } else {
       // PaymentMiniWindow에서는 saved 후 노출 — PASS 처리
       console.log('[AC-2-NEW] 안내 문구 미노출 (MiniWindow saved 이전 상태 — PASS)');

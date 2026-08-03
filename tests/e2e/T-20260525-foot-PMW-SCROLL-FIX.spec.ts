@@ -224,7 +224,7 @@ test('AC-2: 카드 결제 선택 후 수납 버튼이 클릭 가능 (클리핑 �
   const cardMethodBtn = page.locator('button:has-text("카드")').first();
   await expect(cardMethodBtn).toBeVisible();
   await cardMethodBtn.click();
-  await expect(page.locator('[data-testid="card-auto-match-info"]')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[data-testid="card-payment-info"]')).toBeVisible({ timeout: 5000 });
 
   // 카드 정보 박스 출현 후에도 수납 버튼이 스크롤로 접근 가능 + 클릭 가능 (클리핑 없음)
   await settleBtn.scrollIntoViewIfNeeded();
