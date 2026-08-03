@@ -315,6 +315,39 @@ export function buildMsg(params: BuildMsgParams): {
   return { message, fields: body, header, body, envelope };
 }
 
+// ── ★ canonicalizeCatMessage — 데몬 리터럴-매칭 대비 wire 정규화 ─────────────────
+//   T-20260803-foot-CBAND-DAEMON-JEONMUN-DATATYPE-PARSE-ROBUST (P2, GO_WARN 금전경로)
+//
+//   ★근본원인(외부 데몬, CONFIRMED): 로컬 코밴 CAT 데몬(ws://127.0.0.1:8888)은 전문에서
+//     DATA_TYPE(전문형태)를 정식 JSON 파싱이 아니라 리터럴 substring 매칭(`"DATA_TYPE":"…"`)으로
+//     추출한다 → 콜론 뒤 공백(케이스④)·들여쓰기/개행(케이스⑤)이 섞이면 유효한 전문도
+//     "DATA_TYPE 전문형태 값이 없습니다"로 오거부. (①accepted vs ④⑤rejected 패턴이 리터럴매칭을 확증.)
+//   ★데몬은 밴사 소프트웨어(외부) — CRM 이 데몬 파서를 고칠 수 없다. 그래서 CRM 은 "데몬이 항상
+//     받아들이는 compact(①) 형태"만 wire 로 내보내도록 **송신 직전 단일 chokepoint**에서 정규화해
+//     ④⑤ 를 원천 차단한다(catClient.send 가 ws.send 직전 호출).
+//
+//   동작: JSON.parse(공백/개행 tolerant — JSON 문법상 토큰 사이 whitespace 는 항상 유효) →
+//     JSON.stringify(space 인자 미지정 → 콜론 뒤 공백 0·개행 0). 전 필드가 문자열이라
+//     값·키순서를 round-trip 정확 보존(★값 왜곡 0 = GO_WARN 오파싱/오탐 방지). 이미 compact(①)면
+//     idempotent no-op(회귀 0). 파싱 불가(깨진 전문)면 원문 그대로 반환(fail-safe — CRM 이 값을
+//     훼손하지 않고 데몬이 판정하게 둔다).
+//
+//   ★DATA_TYPE 주입/보정 안함: 케이스②(필드누락)③(빈값)은 코밴 CAT header 프로토콜상 전문형태
+//     discriminator 부재/무효 = 스펙상 무효 → 데몬 거부가 정당(판정: AC4). canonicalize 가 DATA_TYPE 를
+//     지어내면 실오류를 가린다 → round-trip 만 하고 무효 전문은 무효인 채 통과시켜 데몬이 정당 거부하도록 둔다.
+export function canonicalizeCatMessage(message: string): string {
+  if (typeof message !== 'string') return message as unknown as string;
+  try {
+    const parsed = JSON.parse(message);
+    // 스칼라/배열이 아닌 전문 객체만 정규화. 그 외(이상 입력)는 원문 유지(값 훼손 금지).
+    if (parsed == null || typeof parsed !== 'object') return message;
+    // space 인자 미지정 = 콜론 뒤 공백 0·개행 0. 중첩(header/body)도 재귀 compact, 키순서·값 보존.
+    return JSON.stringify(parsed);
+  } catch {
+    return message; // 파싱 불가 = fail-safe 원문 반환(데몬이 판정)
+  }
+}
+
 // ── safeParse — 응답 전문 안전 파싱 (실측#3: FILLER offset·미지필드 관대) ─────
 
 /**

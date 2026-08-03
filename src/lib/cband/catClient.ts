@@ -20,6 +20,8 @@
  *      ok=권한허용+데몬구동 / awaiting=권한창 대기중(버튼 숨기지 않음) / blocked=[차단] 또는 데몬꺼짐.
  */
 
+import { canonicalizeCatMessage } from './protocol';
+
 export const CBAND_WS_URL = 'ws://127.0.0.1:8888';
 
 /**
@@ -164,7 +166,10 @@ export function send(
     const timer = setTimeout(() => finish(null, true), timeoutMs);
     try {
       ws = new WS(url);
-      ws.onopen = () => { try { ws?.send(message); } catch { finish(null, true); } };
+      // ★T-20260803-CBAND-DAEMON-JEONMUN-DATATYPE-PARSE-ROBUST: 데몬은 DATA_TYPE 를 리터럴
+      //   substring 매칭으로 읽어 콜론뒤공백(④)·개행/들여쓰기(⑤) 전문을 오거부한다(외부 데몬, 수정불가).
+      //   → wire 직전 compact(①)로 정규화해 데몬이 항상 받아들이는 형태만 내보낸다(값·키순서 round-trip 보존).
+      ws.onopen = () => { try { ws?.send(canonicalizeCatMessage(message)); } catch { finish(null, true); } };
       ws.onmessage = (ev: MessageEvent) => finish(typeof ev.data === 'string' ? ev.data : String(ev.data), false);
       // 응답 전 error/close = 무응답 처리(ATTENTION). '실패(FAIL)'로 내리지 않는다 — 승인 성립 가능성.
       ws.onerror = () => finish(null, true);
