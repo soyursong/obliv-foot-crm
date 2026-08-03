@@ -11,6 +11,9 @@
  *   0. ★봉투(T-20260804-CBAND-DATATYPE-HEADER-ENVELOPE): {"header":{…DATA_TYPE:"JSON"…},"body":{…}} 로 emit.
  *      데몬은 header 의 DATA_TYPE(전문형태)를 먼저 읽어 전문 종류를 판정 → header 누락 시 "DATA_TYPE 값이 없습니다" 거부.
  *      (응답은 flat — 봉투 아님. 요청측만 봉투. safeParse/normalize 는 flat 파싱 유지.)
+ *   0-b. ★DEVICE_TYPE(T-20260804-CBAND-DEVICETYPE-CAT-VALUE-MISSING): body 에 DEVICE_TYPE:"CAT_" 필수.
+ *      DATA_TYPE(header) 해소 후 한 단계 안쪽 VPOS_Client.dll 이 body.DEVICE_TYPE 요구 → 누락/""/"CAT"/"VPOS" 모두 거부,
+ *      정확히 "CAT_"(언더스코어 포함) 하나만 정상(현장 5케이스). 하드코딩 상수. header 봉투 무접촉(ENVELOPE 회귀0).
  *   1. 콜론 뒤 공백 금지 — JSON.stringify 기본값 그대로(indent 미지정). 기본출력은 이미 공백無.
  *   2. MSG_TRACE 12자리 숫자, 중복 금지 — makeTrace() 가 12자리 보장 + 세션내 dedup. (★header 에 실림)
  *   3. TAMT 9자리 zero-pad — pad9(amount). (body)
@@ -198,6 +201,17 @@ export function isValidTrace(t: string | null | undefined): t is string {
 
 /** header.DATA_TYPE — 전문형태(데몬이 header 에서 먼저 읽는 값). 항상 "JSON"(FIX-C). */
 export const CBAND_DATA_TYPE = 'JSON' as const;
+/**
+ * body.DEVICE_TYPE — 단말 기종(거래처리 시 VPOS_Client.dll 이 body 에서 읽는 값). 항상 "CAT_"(직결 CAT).
+ *   T-20260804-foot-CBAND-DEVICETYPE-CAT-VALUE-MISSING:
+ *   DATA_TYPE(header 봉투) 해소 후 한 단계 안쪽에서 VPOS_Client.dll 이 DEVICE_TYPE 를 요구.
+ *   현장 5케이스 재현(최필경 총괄): ①"CAT_"→정상 ②누락→오류 ③""→오류 ④"CAT"(밑줄X)→오류 ⑤"VPOS"→오류.
+ *   → 정확히 "CAT_"(언더스코어 포함) 하나만 정상. ★하드코딩 상수(사용자입력·per-seat 설정 유래 금지 —
+ *     ②③④⑤ 는 CRM 경로에서 물리적으로 발생 불가해야 한다).
+ *   ★배치 = body(거래필드, CAT_PORT 와 동일 device-config 축) — DATA_TYPE(header envelope)·이중결제 불변식 무접촉.
+ *     (header 봉투 byte-identical 유지 → ENVELOPE 회귀0. 오류가 VPOS_Client.dll = 거래처리 body 층에서 발생.)
+ */
+export const CBAND_DEVICE_TYPE = 'CAT_' as const;
 /** header.MSG_VERSION — 현장 정상 전문 예시 + PARSE-ROBUST 예시 공통 확정값. */
 export const CBAND_MSG_VERSION = '0002' as const;
 /** header.TCODE — 현장 정상 전문 예시 확정값("S0"). CAT 결제요청 전문형태 코드(승인/취소 구분은 body.TRANTYPE). */
@@ -275,7 +289,8 @@ export function buildMsg(params: BuildMsgParams): {
   const body: Record<string, string> = {
     TRANTYPE: tranType,            // ★body 유지: 응답도 flat TRANTYPE echo·승인/취소 discriminator
     TID: tid.trim(),
-    CAT_PORT: pad2Port(catPort),   // 규칙#4
+    DEVICE_TYPE: CBAND_DEVICE_TYPE, // ★단말 기종 = "CAT_"(직결 CAT). VPOS_Client.dll 이 body 에서 읽는 기종 구분(케이스①만 정상).
+    CAT_PORT: pad2Port(catPort),   // 규칙#4 (DEVICE_TYPE 와 동일 device-config 축)
     TAMT: pad9(amount),            // 규칙#3
   };
   // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청에 주입하지 않는다(7/31 실승인 20필드 부재).
@@ -310,6 +325,11 @@ export function buildMsg(params: BuildMsgParams): {
   // ★FIX-C 방어: DATA_TYPE 항상 존재·비어있지 않음(현장 케이스 ②③ 불가 — 데몬 "DATA_TYPE 값이 없습니다" 재발 차단).
   if (!header.DATA_TYPE || !header.DATA_TYPE.trim()) {
     throw new Error('header.DATA_TYPE(전문형태) 가 비어 있습니다 — 데몬이 전문을 거부합니다.');
+  }
+  // ★DEVICE_TYPE 방어: body.DEVICE_TYPE 항상 정확히 "CAT_"(현장 케이스 ②누락·③""·④"CAT"·⑤"VPOS" 불가 —
+  //   VPOS_Client.dll "DEVICE_TYPE" 오류 재발 차단). 값은 하드코딩 상수라 CRM 경로에서 다른 값이 실릴 수 없음을 강제.
+  if (body.DEVICE_TYPE !== CBAND_DEVICE_TYPE) {
+    throw new Error(`body.DEVICE_TYPE(단말 기종) 는 정확히 "${CBAND_DEVICE_TYPE}" 여야 합니다 — VPOS_Client.dll 이 전문을 거부합니다.`);
   }
   // fields = body alias(하위호환: 기존 테스트/소비자가 fields.TID/TAMT/MERNO 참조).
   return { message, fields: body, header, body, envelope };
