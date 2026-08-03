@@ -9,6 +9,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
+// T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 사전예약 접수(팝업 new-mode) 유입경로 필수 드롭다운 배선.
+//   walk-in(NewCheckInDialog) 컨벤션 동일: inflow.available/requiresReason/options. §36 방화벽 — inflow_channel(inflow 축)만 write.
+import { useInflowChannels } from '@/hooks/useInflowChannels';
 import {
   Dialog,
   DialogContent,
@@ -132,6 +135,10 @@ type CreateReservationParams = {
   //   ⚠ brief_note(텍스트)와 직교한 플래그 — is_healer_intent(영속 컬럼, T-20260614 HEALER-RESV-CLASSIFY-DEF)
   //   write-path(createReservationCanonical, 5699b54) 재사용. 신규 컬럼/저장경로 0(DB 무변경). 캘린더 resvKind→노란박스(#FFFDE7).
   is_healer_intent?: boolean | null;
+  // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로 canonical 코드 + inbound.etc 사유(inflow 축).
+  //   예약행 reservations.inflow_channel 영속 + 고객 first_inflow_channel first-write-wins. referral_source(§36 방화벽) 무접점.
+  inflow_channel?: string | null;
+  inflow_reason?: string | null;
 };
 
 // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 초진 간략메모 빠른선택 칩(발톱무좀/내성발톱) + 직접입력.
@@ -239,6 +246,13 @@ export function ReservationDetailPopup({
     : [...NEW_RESV_TIME_SLOTS, newResvTime].sort();
   const [newResvVisitType, setNewResvVisitType] = useState<'new' | 'returning'>('returning');
   const [creatingResv, setCreatingResv] = useState(false);
+
+  // ── T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 사전예약 접수(new-mode) 유입경로 필수 선택 ──
+  //   신규(미식별) 고객 접수에서만 노출·강제. 기존 고객(loadedMatch)은 최초유입 canonical 자동상속(parent first-write-wins) → 미노출.
+  //   inflow.available(RPC 배포)일 때만 강제 — 미배포/오버레이 전부숨김 환경은 게이트 완화(무중단). inbound.etc = 사유 필수.
+  const inflow = useInflowChannels(clinicId ?? undefined);
+  const [inflowChannel, setInflowChannel] = useState('');
+  const [inflowReason, setInflowReason] = useState('');
 
   // T-20260615-foot-RESVMGMT-REFIX-8 AC3-b: (+) new-mode 팝업에서 '시스템에 없는 완전 신규 고객' 직접 등록.
   //   검색으로 못 찾은 고객을 성함+연락처 입력으로 예약·등록. 고객 INSERT 는 parent(onCreateReservation) 책임 —
@@ -440,6 +454,9 @@ export function ReservationDetailPopup({
       // T-20260623-foot-RESVMGMT-OVERHAUL2-W2-DB (item3/10): 간략메모·예약메모 매 진입 클린 리셋(stale 차단).
       setBriefNote('');
       setNewBookingMemo('');
+      // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로 선택/사유 매 진입 클린 리셋(stale 차단).
+      setInflowChannel('');
+      setInflowReason('');
       // T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트로 진입(동선1·2)이면 해당 고객 자동 prefill(재진),
       //   아니면 기존 빈 진입(검색창 활성, AC4 회귀 0). 고객 prefill 은 검색 선택과 동일 경로(handleSelectOtherCustomer)
       //   재사용 → 1번구역(고객정보·패키지·치료내역) 자동 로드 + 이름·연락처 populate. 🔒 L-002: 생성 로직 무변경(인젝션 0).
@@ -825,6 +842,43 @@ export function ReservationDetailPopup({
                 </Select>
               </div>
             </div>
+
+            {/* ── T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로(inflow_channel) 필수 선택 드롭다운 ──
+                신규(미식별) 접수에서만 노출·필수. 기존 고객(loadedMatch)은 최초유입 canonical 자동상속(parent first-write-wins) → 숨김(회귀 0).
+                배포순서 graceful: RPC 미배포(available=false) 시 렌더 skip → 저장 게이트 완화(무중단). longre AdminReservations.tsx 정본 parity. */}
+            {!isReturning && inflow.available && (
+              <div className="flex flex-col gap-1 text-xs" data-testid="resv-inflow-block">
+                <Label htmlFor="resv-inflow" className="text-[10px] text-muted-foreground">
+                  유입경로 <span className="text-red-600">*</span>
+                  <span className="ml-1 font-normal text-muted-foreground">(어떻게 알고 오셨는지)</span>
+                </Label>
+                <select
+                  id="resv-inflow"
+                  data-testid="resv-inflow-select"
+                  value={inflowChannel}
+                  onChange={(e) => {
+                    setInflowChannel(e.target.value);
+                    if (!inflow.requiresReason(e.target.value)) setInflowReason('');
+                  }}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">— 선택 —</option>
+                  {inflow.options.map((o) => (
+                    <option key={o.code} value={o.code}>{o.label}</option>
+                  ))}
+                </select>
+                {inflow.requiresReason(inflowChannel) && (
+                  <input
+                    type="text"
+                    data-testid="resv-inflow-etc"
+                    value={inflowReason}
+                    onChange={(e) => setInflowReason(e.target.value)}
+                    placeholder="유입경로 사유를 입력하세요 (필수)"
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                )}
+              </div>
+            )}
 
             {/* AC6: 간략메모 — 발톱무좀/내성발톱/발각질케어 3종 체크박스 + 직접입력(brief_note).
                 T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX (김주연 총괄): 4번째 [힐러] 칩 추가.
@@ -1298,6 +1352,18 @@ export function ReservationDetailPopup({
       toast.error('예약 시간을 선택하세요.');
       return;
     }
+    // ── T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로 필수 선택 게이트 ──
+    //   신규(미식별) 접수에서만 강제 — 기존 고객(loadedMatch)은 자동상속(면제). RPC 배포(inflow.available)일 때만.
+    //   TM(source_system=dopamine) 자동귀속 예약은 EF 경로라 이 수기 폼 미도달 → 게이트 무저촉(원본 lane 계승).
+    const isNewCustomer = !loadedMatch;
+    if (isNewCustomer && inflow.available && !inflowChannel) {
+      toast.error('유입경로를 선택하세요');
+      return;
+    }
+    if (isNewCustomer && inflow.available && inflow.requiresReason(inflowChannel) && !inflowReason.trim()) {
+      toast.error('기타 유입경로는 사유를 입력하세요');
+      return;
+    }
     // T-20260629-foot-RESVCREATE-CUSTAUTOLOAD AC3: 자동 채움 값이 수정됐을 수 있음 → 편집된 newCust* 우선(빈값이면 매칭값 fallback).
     //   신원(customerId=loadedMatch.id)은 선택 고정 — 편집은 이 예약의 표기(name/phone) 스냅샷에만 반영(고객 마스터 무변경, 🔒L-002).
     const targetName = loadedMatch ? (newCustName.trim() || loadedMatch.name) : manualName;
@@ -1321,6 +1387,10 @@ export function ReservationDetailPopup({
       booking_memo: newBookingMemo.trim() || null,
       // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩 → is_healer_intent(영속) 위임. parent createReservationCanonical 가 기존 write-path 로 저장.
       is_healer_intent: isHealerIntent,
+      // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 신규 접수 유입경로(canonical) + inbound.etc 사유 위임.
+      //   기존 고객(loadedMatch)은 미선택 → null(parent 가 first_inflow_channel 자동상속). §36: inflow 축만 접촉.
+      inflow_channel: (!loadedMatch && inflowChannel) ? inflowChannel : null,
+      inflow_reason: (!loadedMatch && inflow.requiresReason(inflowChannel)) ? inflowReason.trim() : null,
     });
     setCreatingResv(false);
     if (!res.ok) {
