@@ -20,6 +20,12 @@
  *   Dialog 를 열 수 있게 한다(창 안에서 TID/COM 입력 → chicken-egg 방지). daemon 미연결·권한차단은 유지.
  *   빈값(TID) 전송 차단은 onApprove 에서(“단말기 번호를 먼저 입력해 주세요”). db_change=false.
  *
+ * ── ★ 현장 보강(총괄 MSG-151826) — 구현 불변식 2건 ─────────────────────────────
+ *   DELTA 1: 통신속도(baud/COM speed) 입력 칸 미노출. baud=38400 고정(값 계승만, config/protocol).
+ *            팝업 입력 필드는 `단말기 TID`+`COM 포트` 2칸만 — 3칸(+통신속도) 금지.
+ *   DELTA 2: TID 자동획득(auto-fetch) 불가 확정. 데몬 응답 어디에도 TID 없음(MERNO=가맹점번호만).
+ *            데몬 응답을 파싱해 TID 를 자동 세팅하는 경로 신설 금지 — 사람이 직접 조회·입력(수동입력)만.
+ *
  * 태블릿 UX: teal-emerald · 큰 버튼 · 천단위 콤마 · 한국어. (풋센터 표준)
  *
  * ── ★ 이중결제 방지 UX(D) ──────────────────────────────────────────────────
@@ -119,6 +125,8 @@ function CbandGateButton({ kind, onRetry }: { kind: CbandGateKind; onRetry: () =
  * ★T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ② — 코밴 결제 Dialog 안 단말기 설정 인라인 패널.
  *  · 위치: 카드결제 창(Dialog) 안. 저장여부 무관 모든 PC에서 항상 표시(입력/전송 화면 상단).
  *  · 입력란 = `단말기 TID` + `COM 포트` (2필드) + [저장] 버튼 1개. (⑧ AdminSettings 의 MERNO 는 계승·비노출)
+ *    ★DELTA 1: 통신속도(baud) 입력 칸 없음 — baud=38400 고정(값 계승만). 3칸 금지.
+ *    ★DELTA 2: TID 는 수동입력만 — 데몬 응답에 TID 없음(자동획득 경로 신설 금지).
  *  · 프리필: localStorage `cband.terminal.config`(TERMINAL 티켓 deployed) 있으면 자동채움, 없으면 빈칸.
  *  · 저장됨(TID·COM 둘 다 있음): `단말기 {TID} · COM {n} [변경]` 한 줄 읽기전용. [변경] → 입력모드.
  *  · 규칙 계승(재정의 X): zero-pad·baud 38400·빈값차단 = TERMINAL 티켓(config/protocol). merno 는 ⑧/env 보존.

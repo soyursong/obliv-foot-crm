@@ -135,3 +135,52 @@ test('AC8 AdminSettings 의 ⑧ 카드 단말기 설정 섹션은 존치(무단 
   expect(admin).toMatch(/<SectionTerminal\s*\/>/);
   expect(admin).toMatch(/data-testid="terminal-config-section"/);
 });
+
+// ── AC9 (DELTA 1): 통신속도(baud/COM speed) 입력 칸 미노출 — 팝업 입력 필드는 TID·COM 2칸만 ──
+//   현장 확정(총괄 MSG-151826): baud=38400 고정, 화면에 통신속도 입력 칸 두지 말 것. 3칸(TID/COM/통신속도)
+//   금지. baud 는 값 계승만(config/protocol)이고 UI 노출은 제거.
+test('AC9 팝업 편집 패널은 입력칸이 정확히 2개(TID·COM)뿐 — 통신속도/baud 입력칸 없음', () => {
+  const src = ENTRY();
+  // 편집 패널 슬라이스(cband-terminal-config-edit ~ 저장 버튼) 안의 <Input> 은 정확히 2개
+  const editIdx = src.indexOf('data-testid="cband-terminal-config-edit"');
+  const saveIdx = src.indexOf('data-testid="btn-cband-terminal-save"');
+  expect(editIdx).toBeGreaterThan(-1);
+  expect(saveIdx).toBeGreaterThan(editIdx);
+  const panel = src.slice(editIdx, saveIdx);
+  const inputCount = (panel.match(/<Input\b/g) ?? []).length;
+  expect(inputCount).toBe(2);
+  // 그리드는 2열(TID·COM) — 3필드 그리드 금지
+  expect(panel).toContain('grid grid-cols-2');
+  // 통신속도/baud 입력 필드·라벨·testid 미존재(렌더 패널 슬라이스 기준 — 헤더 주석의 금지명시는 제외)
+  expect(src).not.toMatch(/data-testid="cband-terminal-baud-input"/);
+  expect(src).not.toMatch(/data-testid="cband-terminal-comspeed-input"/);
+  expect(panel).not.toContain('통신속도');
+  // ⑧ 별도 설정화면에도 통신속도 입력칸이 없어야(baud 노출 금지 일관) — SectionTerminal 렌더 슬라이스 기준
+  const admin = read('src/pages/AdminSettings.tsx');
+  const secIdx = admin.indexOf('function SectionTerminal()');
+  const secPanel = admin.slice(secIdx, secIdx + 4000);
+  expect(secPanel).not.toContain('통신속도');
+  expect(admin).not.toMatch(/data-testid="terminal-baud-input"/);
+});
+
+// ── AC10 (DELTA 2): TID 자동획득(auto-fetch) 경로 없음 — 사람이 직접 입력하는 수동입력만 ────
+//   현장 전수확인(응답 26필드×51건) 결과 데몬 응답 어디에도 TID 없음(MERNO=가맹점번호만). 데몬 응답을
+//   파싱해 TID 를 자동 세팅하는 경로 신설 금지. saveTerminalConfig 호출은 사람이 누른 저장 핸들러뿐.
+test('AC10 데몬 응답→TID 자동세팅 경로 없음(수동입력만) — probe/결제 계층은 config write 안 함', () => {
+  // saveTerminalConfig(TID 영속) 는 사람이 입력하는 화면(팝업/⑧)에서만 호출 — probe/결제/전문 계층 금지
+  const savers = ['src/lib/cband/catClient.ts', 'src/lib/cband/paymentFlow.ts', 'src/lib/cband/protocol.ts']
+    .map((f) => read(f));
+  for (const src of savers) {
+    expect(src).not.toContain('saveTerminalConfig');
+  }
+  // 팝업 컴포넌트에서 TID 저장은 사람의 저장 핸들러(handleSave)에서만 — 응답 파싱 setTid 자동경로 없음
+  const entry = ENTRY();
+  // setTid 호출은 (a)초기 state (b)[변경] 클릭 (c)입력 onChange 뿐. probe/approve 응답 기반 setTid 금지.
+  const onApproveIdx = entry.indexOf('async function onApprove()');
+  const onApprove = entry.slice(onApproveIdx, onApproveIdx + 1600);
+  expect(onApprove).not.toContain('saveTerminalConfig');
+  expect(onApprove).not.toContain('setTid');
+  // catClient probe 결과(ProbeResult)는 'ok|awaiting|blocked' 뿐 — TID 를 실어오지 않음(자동획득 불가 확정)
+  const cat = read('src/lib/cband/catClient.ts');
+  expect(cat).not.toMatch(/tid\s*[:=]\s*(resp|response|data|payload|parsed)/i);
+});
