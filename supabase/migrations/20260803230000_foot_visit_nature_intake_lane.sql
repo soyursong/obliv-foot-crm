@@ -96,6 +96,9 @@ ON CONFLICT (code_type, code, clinic_id) DO NOTHING;
 -- ════════════════════════════════════════════════════════════════════
 -- Step 4: RPC get_visit_natures(clinic) — system_codes ∩ code_availability 오버레이
 --   (inflow lane get_inflow_channels 물리 동형)
+-- ⚠ C23 재발방지(§4 / §15-5-10 / §15-5-1): SECDEF RPC 는 처음부터 authenticated 단독 EXECUTE.
+--   anon EXECUTE 부여 금지(자매 crm child C23 Yellow 잔차 = anon EXECUTE + intended-caller-tier 미선언 재발방지).
+--   staff picker 전용(비-PHI 코드-라벨) → anon allowlist(§15-5-1) 근거 없음. PUBLIC/anon 상속분은 명시 REVOKE.
 -- ════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION public.get_visit_natures(p_clinic_id uuid)
 RETURNS TABLE (
@@ -107,6 +110,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
 AS $$
+  -- intended-caller-tier: authenticated (staff picker only, non-PHI code labels). anon 미허용(§15-5-10).
   SELECT sc.code, sc.label, sc.series, sc.sort_order, sc.requires_reason
   FROM public.system_codes sc
   WHERE sc.code_type = 'visit_nature'
@@ -121,7 +125,10 @@ AS $$
   ORDER BY sc.sort_order, sc.code;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_visit_natures(uuid) TO authenticated, anon;
+-- C23: authenticated 단독. 상속 가능한 PUBLIC/anon 은 명시 REVOKE 로 fail-closed 봉인.
+REVOKE EXECUTE ON FUNCTION public.get_visit_natures(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_visit_natures(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_visit_natures(uuid) TO authenticated;
 
 -- PostgREST 스키마 캐시 새로고침
 NOTIFY pgrst, 'reload schema';
