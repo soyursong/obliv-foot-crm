@@ -61,11 +61,12 @@ test.describe('T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING 패키지(선수�
 
     const tableEl = page.locator('[data-testid="sales-doctor-tab"]');
     const headers = tableEl.getByRole('columnheader');
-    // 신규 패키지 컬럼 노출
+    // 패키지 컬럼 노출(값=선수금 SUM)
     await expect(tableEl.getByRole('columnheader', { name: '패키지 (선수금)' })).toBeVisible();
-    // 최우측 배치 검증 — 마지막 컬럼헤더가 패키지
-    await expect(headers.last()).toHaveText('패키지 (선수금)');
-    console.log('[PKG-REVENUE] 시나리오1 패키지 컬럼 최우측 렌더 OK');
+    // T-20260804 ④: '총 매출' 컬럼이 신규 최우측에 추가됨 → 패키지는 끝에서 2번째.
+    await expect(headers.last()).toHaveText('총 매출');
+    await expect(headers.nth(-2)).toHaveText('패키지 (선수금)');
+    console.log('[PKG-REVENUE] 시나리오1 패키지 컬럼 렌더 OK (총매출 우측 추가)');
   });
 
   // ── 시나리오 1: 패키지 셀/합계가 "원" 금액 포맷으로 렌더 ──────────────────────
@@ -100,19 +101,19 @@ test.describe('T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING 패키지(선수�
     }
 
     const tableEl = page.locator('[data-testid="sales-doctor-tab"]');
-    // 기존 5개 컬럼 헤더 그대로 유지 (라벨·존재 불변)
+    // 기존 컬럼 헤더 유지 (T-20260804: '급여 본부금'→'진찰료' 라벨만 변경, 값 불변)
     await expect(tableEl.getByRole('columnheader', { name: '담당실장' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '오더 건수' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '비급여 순매출' })).toBeVisible();
-    await expect(tableEl.getByRole('columnheader', { name: '급여 본부금' })).toBeVisible();
+    await expect(tableEl.getByRole('columnheader', { name: '진찰료' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '공단부담액 (명세)' })).toBeVisible();
-    // 패키지 컬럼이 추가되어 총 6개 (ADDITIVE — 기존 5개 + 1)
-    await expect(tableEl.getByRole('columnheader')).toHaveCount(6);
+    // T-20260804 ④: '총 매출' 컬럼 ADDITIVE → 기존 6개 + 1 = 7개
+    await expect(tableEl.getByRole('columnheader')).toHaveCount(7);
 
     // 기존 데이터소스 testid 불변(급여/비급여/공단 합계 셀 그대로 존재)
     await expect(page.locator('[data-testid="sales-doctor-total-nonins"]')).toBeVisible();
     await expect(page.locator('[data-testid="sales-doctor-total-covered"]')).toBeVisible();
-    console.log('[PKG-REVENUE] 시나리오2 기존 컬럼 구조 불변 + 6컬럼 ADDITIVE OK');
+    console.log('[PKG-REVENUE] 시나리오2 기존 컬럼 구조 불변 + 7컬럼 ADDITIVE OK');
   });
 
   // ── 엣지: 데이터 없어도 에러 없이 렌더 ───────────────────────────────────────
