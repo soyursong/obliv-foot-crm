@@ -70,6 +70,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { whitelistFingerprint, formatFingerprintLog } from "./lib/redpay_wl_fingerprint.mjs";
+import {
+  detectionKey, seedWatchdogDetection, pruneResolvedEntries,
+  buildDailyDigest, selectLongUnprocessed, markLongUnprocessedAlerted,
+} from "./lib/redpay_unreg_digest.mjs";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. 환경설정 (폴러와 동일 로딩 규약 — process.env → ~/.env.redpay-foot → ~/.env.redpay)
@@ -149,6 +153,13 @@ const TID_QUERY_DAYS = Math.max(1, parseInt(cfg("REDPAY_WATCHDOG_TID_QUERY_DAYS"
 const DORMANT_DAYS = Math.max(1, parseInt(cfg("REDPAY_WATCHDOG_DORMANT_DAYS", "30"), 10) || 30);
 const DORMANT_REPORT_DOW = ((parseInt(cfg("REDPAY_WATCHDOG_DORMANT_DOW", "1"), 10)) % 7 + 7) % 7;
 const SLACK_CHANNEL = cfg("REDPAY_WATCHDOG_SLACK_CHANNEL", "C0ATE5P6JTH");
+// ── T-20260803-foot-REDPAY-UNREG-LINE-ALARM-DAILY-DIGEST (AC2·AC6·AC7) ──────────
+//   digest 모드 ON(기본) = 미등록 회선 개별 알람(②-b·④)을 억제하고, 발송 시점 여전히 미등록인 회선을
+//     모아 요약 1건 발송(AC2·AC3·AC4). 3일+ 장기 미처리는 별도 에스컬레이션 1건(AC7).
+//   OFF = 기존 개별 알람(즉시 발송) 복구 = 롤백 스위치(AC6). 타 알람(휴면·unscopable·소계)은 무영향(AC5 격리).
+//   발송 시각 = 워치독 launchd 주기(잠정 오전 09:00 KST 제안 — responder 통해 현장 확정, AC2).
+const UNREG_DIGEST_MODE = cfg("REDPAY_UNREG_DIGEST_MODE", "true") === "true";
+const UNREG_LONG_THRESHOLD_DAYS = Math.max(1, parseInt(cfg("REDPAY_UNREG_LONG_THRESHOLD_DAYS", "3"), 10) || 3);
 const STATE_PATH = cfg("REDPAY_WATCHDOG_STATE_PATH", join(homedir(), `.redpay-watchdog-${REDPAY_DOMAIN}-state.json`));
 const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
 
@@ -520,7 +531,7 @@ function compareTidSubtotals(redpayMap, dbMap) {
 // 5. dedup 상태 (로컬 JSON — DB 무변경). auto-release = registry 편입 시 제거.
 // ════════════════════════════════════════════════════════════════════════════
 function loadState() {
-  const fresh = () => ({ version: 4, alerted_merchants: {}, alerted_tids: {}, alerted_subtotals: {}, alerted_unscopable: {}, last_run_at: null, last_dormant_report_at: null });
+  const fresh = () => ({ version: 5, alerted_merchants: {}, alerted_tids: {}, alerted_subtotals: {}, alerted_unscopable: {}, unreg_digest: {}, long_unproc_alerted: {}, last_run_at: null, last_dormant_report_at: null });
   if (!existsSync(STATE_PATH)) return fresh();
   try {
     const s = JSON.parse(readFileSync(STATE_PATH, "utf8"));
@@ -528,6 +539,8 @@ function loadState() {
     if (!s.alerted_tids) s.alerted_tids = {}; // v1→v2 마이그(TID-grain dedup 신설)
     if (!s.alerted_subtotals) s.alerted_subtotals = {}; // v2→v3 마이그(⑤ 소계 대조 dedup 신설, AC-2)
     if (!s.alerted_unscopable) s.alerted_unscopable = {}; // v3→v4 마이그(Path A merchant 부재 격리 dedup, SILENT-PATH-HARDEN AC-1)
+    if (!s.unreg_digest) s.unreg_digest = {}; // v4→v5 마이그(미등록 회선 하루1회 요약 누적, DAILY-DIGEST AC1~AC4)
+    if (!s.long_unproc_alerted) s.long_unproc_alerted = {}; // v4→v5 마이그(3일+ 장기 미처리 1회/일 상한, DAILY-DIGEST AC7)
     return s;
   } catch (e) {
     warn(`상태파일 파싱 실패 → 초기화: ${e instanceof Error ? e.message : String(e)}`);
@@ -682,9 +695,15 @@ async function main() {
     log(`[UNCLASSIFIED-OTHER] 타센터 미분류 단말 없음`);
   }
 
-  // ②-b '풋' 포함 → 긴급 슬랙(dedup)
-  let newFootAlerts = 0, suppressed = 0;
+  // ②-b '풋' 포함 → 긴급 슬랙(dedup). ★digest 모드: 개별 발송 억제 + 요약 대상 회선으로 수집(AC1·AC2).
+  //   신규 merchant 는 그 하위 TID(들)도 미등록 → (merchant, tid) 단위로 펼쳐 요약 행 후보로 수집.
+  const digestFootLines = [];
   for (const g of foot) {
+    const tids = (g.tids && g.tids.length) ? g.tids : [null];
+    for (const t of tids) digestFootLines.push({ merchant_id: g.merchant_id, merchant_name: g.merchant_name, tid: t, trx_count: g.trx_count });
+  }
+  let newFootAlerts = 0, suppressed = 0;
+  for (const g of (UNREG_DIGEST_MODE ? [] : foot)) {
     if (state.alerted_merchants[g.merchant_id]) { suppressed++; continue; } // dedup: 이미 알림함
     const text =
       `🚨 [레드페이 단말 감시] 명단에 없는 새 결제 단말이 결제를 시작했습니다\n` +
@@ -736,8 +755,22 @@ async function main() {
     warn(`⑤ 소계 대조 오류(비치명 — ①~④ 결과 유지): ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // ── ⑥ T-20260803-...-DAILY-DIGEST(AC2·AC4·AC5·AC7): 미등록 회선 하루 1회 요약 + 장기 미처리 에스컬레이션 ──
+  //   요약 대상 = ②-b 신규 merchant 하위 회선 + ④ 기등록 merchant 의 명단-밖 신 TID. 발송 시점 여전히 미등록인
+  //   회선만 1건으로 요약. 타 알람(휴면·unscopable·소계)은 무접촉(격리). digest 모드 OFF 면 스킵(기존 개별 알람).
+  let digestRes = { skipped: true };
+  if (UNREG_DIGEST_MODE) {
+    try {
+      digestRes = emitUnregDigest(now, state, digestFootLines, tidRecon.flagged);
+    } catch (e) {
+      warn(`⑥ 미등록 회선 요약 오류(비치명 — ①~⑤ 결과 유지): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   saveState(state);
   const subMismatch = subtotalRecon.skipped ? "skip" : (subtotalRecon.mismatches?.length ?? 0);
+  log(`⑥ digest: mode=${UNREG_DIGEST_MODE ? "on" : "off"} ` +
+      `digest_count=${digestRes.digestCount ?? "-"} long_unproc=${digestRes.longCount ?? "-"} released=${digestRes.released ?? "-"}`);
   log(`완료 elapsed_ms=${Date.now() - startMs} new_foot_alerts=${newFootAlerts} suppressed=${suppressed} ` +
       `unscopable_quarantined=${unscopableRes.quarantined} unscopable_suppressed=${unscopableRes.suppressed} ` +
       `other=${other.length} dormant=${dormant.length} tid_new=${tidRecon.newTidAlerts} tid_suppressed=${tidRecon.suppressed} ` +
@@ -761,6 +794,12 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
   if (flagged.length === 0) {
     log(`④ ✅ TID-grain clean — 명단-밖 신 TID 없음 (적재/소비 필터와 정합).`);
     return { newTidAlerts: 0, suppressed: 0, flagged: [], items };
+  }
+
+  // ★digest 모드(AC1·AC2): ④ 개별 TID 발송 억제 → main() 이 요약 1건으로 대체. flagged 는 그대로 반환(요약 재료).
+  if (UNREG_DIGEST_MODE) {
+    log(`④ [DIGEST] 개별 TID 발송 억제(하루 1회 요약으로 대체) — 명단-밖 신 TID ${flagged.length}종은 요약 대상으로 전달.`);
+    return { newTidAlerts: 0, suppressed: flagged.length, flagged, items };
   }
 
   // raw-presence 분기(R1 부수신호) — seed-only(§9.5.2) vs 백필(§7) 후속판정 즉시화
@@ -796,6 +835,46 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
   }
   log(`④ 신규 TID 감지: 신규알림 ${newTidAlerts}건 / dedup억제 ${suppressed}건`);
   return { newTidAlerts, suppressed, flagged, items };
+}
+
+// ⑥ 미등록 회선 하루 1회 요약(digest) + 3일+ 장기 미처리 에스컬레이션 실행부.
+//    footLines = ②-b 신규 merchant 하위 (merchant,tid) 행 / flaggedTids = ④ 기등록 merchant 명단-밖 신 TID.
+//    순수 조립은 redpay_unreg_digest.mjs 위임(self-test 대상). 여기선 seed·prune·슬랙 발송만.
+function emitUnregDigest(now, state, footLines, flaggedTids) {
+  const nowIso = now.toISOString();
+  const tidLines = (flaggedTids ?? []).map((g) => ({
+    merchant_id: g.merchant_id, merchant_name: g.merchant_name, tid: g.tid, trx_count: g.trx_count,
+  }));
+  const currentLines = [...(footLines ?? []), ...tidLines];
+
+  // 첫 감지일 seed(폴러 미관측 회선 fallback) — 폴러가 이미 누적한 엔트리는 미변경(이중계상 방지).
+  for (const line of currentLines) seedWatchdogDetection(state, line, nowIso);
+
+  // AC3(auto-release): 발송 시점 여전히 미등록인 회선만 유지 + 등록완료/미감지 회선 상태 정리.
+  const currentKeys = new Set(currentLines.map((l) => detectionKey(l.merchant_id, l.tid)));
+  const released = pruneResolvedEntries(state, currentKeys);
+  if (released.length) log(`⑥ [DIGEST] 등록완료/미감지 회선 상태 정리(auto-release) ${released.length}종`);
+
+  // AC2·AC4·AC5: 미등록 회선이 하나라도 있으면 요약 1건 반드시 발송.
+  const digest = buildDailyDigest(currentLines, state);
+  if (digest.count > 0) {
+    sendSlack(SLACK_CHANNEL, digest.text);
+    log(`⑥ [DIGEST] 미등록 회선 요약 발송: ${digest.count}건.`);
+  } else {
+    log(`⑥ [DIGEST] 미등록 회선 0건 — 요약 미발송(정상 clean).`);
+  }
+
+  // AC7: 3일+ 장기 미처리 별도 에스컬레이션(회선당 1회/일 상한).
+  const long = selectLongUnprocessed(currentLines, state, nowIso, UNREG_LONG_THRESHOLD_DAYS);
+  if (long.count > 0) {
+    sendSlack(SLACK_CHANNEL, long.text);
+    markLongUnprocessedAlerted(state, long.rows, long.today);
+    log(`⑥ [DIGEST] 장기 미처리(≥${UNREG_LONG_THRESHOLD_DAYS}일) 에스컬레이션 발송: ${long.count}건.`);
+  } else {
+    log(`⑥ [DIGEST] 장기 미처리(≥${UNREG_LONG_THRESHOLD_DAYS}일) 없음 — 에스컬레이션 미발송.`);
+  }
+
+  return { skipped: false, digestCount: digest.count, longCount: long.count, released: released.length };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

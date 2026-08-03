@@ -39,6 +39,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { whitelistFingerprint, formatFingerprintLog } from "./lib/redpay_wl_fingerprint.mjs";
+import { accruePollerDetection } from "./lib/redpay_unreg_digest.mjs";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. 환경설정 로드 — process.env → ~/.env.redpay-foot → ~/.env.redpay (fallback)
@@ -172,6 +173,11 @@ const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설�
 //   fail-safe: 슬랙/상태파일 오류는 모두 비치명 — 적재(폴러 본업)에 절대 영향 없음(best-effort).
 const TID_ALARM_ENABLED = cfg("REDPAY_POLLER_TID_ALARM_ENABLED", "true") === "true"; // 킬스위치
 const TID_ALARM_CHANNEL = cfg("REDPAY_POLLER_TID_ALARM_CHANNEL", cfg("REDPAY_WATCHDOG_SLACK_CHANNEL", "C0ATE5P6JTH"));
+// ── T-20260803-foot-REDPAY-UNREG-LINE-ALARM-DAILY-DIGEST (AC1·AC6) ──────────────
+//   digest 모드 ON(기본) = 폴러의 실시간 개별 알람을 억제하고 미등록 회선 상태만 누적(첫감지·누적건수).
+//     → 워치독(일 1회 아침)이 요약 1건으로 발송(AC2). 같은 회선 실시간 반복 발송 금지(AC1).
+//   OFF = 기존 실시간 개별 알람(즉시 인지) 복구 = 즉시 롤백 스위치(AC6). 상태파일·타 알람 경로 무영향(AC5 격리).
+const UNREG_DIGEST_MODE = cfg("REDPAY_UNREG_DIGEST_MODE", "true") === "true";
 // 워치독과 동일 상태파일 공유(dedup 통일). 워치독 기본값과 정확히 동일 경로.
 const TID_ALARM_STATE_PATH = cfg("REDPAY_WATCHDOG_STATE_PATH", join(homedir(), `.redpay-watchdog-${REDPAY_DOMAIN}-state.json`));
 const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
@@ -707,6 +713,28 @@ async function fireRealtimeTidAlarms(driftItems) {
 
   const state = loadAlarmStateSafe();
   if (state == null) return { alerted: 0, suppressed: 0, skipped: driftItems.length };
+
+  // ── T-20260803-...-DAILY-DIGEST(AC1): digest 모드 = 실시간 개별 발송 억제 + 상태 누적만 ──
+  //   미등록 회선(잔여 drift = 화이트리스트 밖)을 그룹핑해 첫감지일·누적건수를 축적한다(발송 0).
+  //   워치독 일배치가 이 상태를 읽어 요약 1건 발송. '알림 유실 0'(AC5)은 누적 상태로 보장(발송만 미룸).
+  if (UNREG_DIGEST_MODE) {
+    const groups = selectRealtimeTidAlarms(driftItems, tidWhitelist, {}); // alerted={} → 현 사이클 전량 그룹
+    let accrued = 0;
+    // 이중계상 방지: incremental(거래 1회 관측)에서만 누적. daily_full 재sweep 은 발송 억제만(누적 skip).
+    if (POLL_MODE === "incremental" && groups.length > 0) {
+      const nowIso = ts();
+      for (const g of groups) {
+        accruePollerDetection(state, { merchant_id: g.merchant_id, merchant_name: g.merchant_name, tid: g.tid, trx_count: g.trx_count }, nowIso);
+        accrued++;
+      }
+      try { saveAlarmStateAtomic(state); }
+      catch (e) { warn(`[TID-ALARM][DIGEST] 누적 상태 저장 실패(비치명 — 워치독 재조회 백스톱): ${e instanceof Error ? e.message : String(e)}`); }
+    }
+    if (groups.length > 0) {
+      log(`[TID-ALARM][DIGEST] 실시간 개별 발송 억제(하루 1회 요약으로 대체) — 미등록 회선 ${groups.length}종 (accrued=${accrued}, mode=${POLL_MODE})`);
+    }
+    return { alerted: 0, suppressed: groups.length, skipped: 0, digest_accrued: accrued };
+  }
 
   const candidates = selectRealtimeTidAlarms(driftItems, tidWhitelist, state.alerted_tids);
   // 억제 카운트(로그용) = 이미 알림한 distinct TID 수
