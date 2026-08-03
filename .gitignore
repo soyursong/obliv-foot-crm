@@ -100,3 +100,11 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 # T-20260720-meta-CROSSFORK-REPO-GHOST-HANDOFF-ARTIFACTS-SWEEP — _handoff/ (L3 핸드오프 아티팩트: qa_screenshots 등)는
 # claude-sync SSOT(~/claude-sync/memory/_handoff/)가 정본 → 프로덕트 레포 track 금지(하드포크 index 상속 유령 차단).
 /_handoff/
+
+# T-20260531-meta-FOOT-REPO-MIRROR-DRIFT (AC1) — SSOT 미러(claude-sync 정본과 별개 사본) 레포 track 금지.
+#   정본 = ~/claude-sync/memory/_handoff/tickets · docs/signals.md 상당. 레포 내 미러 추적 = supervisor가 정본만 읽어
+#   frontmatter/신호가 미러에만 기록될 때 재QA 미트리거(silent loop stop) 재발원(recurrence 4건, LASER-TIMER 등).
+#   추적 해제(git rm --cached)만 수행 — 기존 워킹트리 파일은 물리 보존(mirror-only 88건은 별도 스크리닝 티켓 인계).
+/tickets/
+/docs/signals.md
+/memory/

@@ -26,19 +26,24 @@ set -euo pipefail
 
 Z40="0000000000000000000000000000000000000000"
 
-# --- 공유 검출: 파일 목록(stdin) 중 repo-root signals.md / retro/ 매칭만 출력 ---
+# --- 공유 검출: 파일 목록(stdin) 중 유령/미러 경로 매칭만 출력 ---
+#   ① repo-root signals.md / retro/  = 포크 상속 유령본(원 규칙).
+#   ② tickets/ · docs/signals.md · memory/ = SSOT 미러 경로.
+#      T-20260531-meta-FOOT-REPO-MIRROR-DRIFT (AC3, supervisor GO 조건부 MSG-20260804-082659-755l) —
+#      정본(claude-sync SSOT)과 별개 미러가 레포에 재추적되면 supervisor 재QA silent-stall 재발(recurrence 4건).
+#      추적 해제 후 이 표면 확장으로 미래 세션의 resurrection(재추적) 경로를 구조 차단.
 _ghost_match() {
-  grep -E '^(signals\.md$|retro/)' || true
+  grep -E '^(signals\.md$|retro/|tickets/|docs/signals\.md$|memory/)' || true
 }
 
 # --- 공유 리포트: 위반 목록 인자로 받아 안내 후 exit 1 ---
 _ghost_report_and_die() {
   local viol="$1"
-  echo "🚫 [ghost-handoff-guard] repo-root 핸드오프 유령 경로 유입 차단:" >&2
+  echo "🚫 [ghost-handoff-guard] 핸드오프 유령/SSOT-미러 경로 유입 차단:" >&2
   echo "$viol" | sed 's/^/   - /' >&2
-  echo "   핸드오프(signals/retro)는 claude-sync SSOT(~/claude-sync/memory/_handoff/) 전용입니다." >&2
-  echo "   dev-foot 는 mq send + 티켓 frontmatter 로만 핸드오프하세요." >&2
-  echo "   근거: T-20260720-foot-REPO-GHOST-SIGNALS-BELT-INSTALL / -PREPUSH-GUARD-PORT (DA GO / supervisor cogate / 원저 scalp2 9a6e219e)" >&2
+  echo "   핸드오프(signals/retro)·티켓(tickets/·memory/·docs/signals.md)은 claude-sync SSOT(~/claude-sync/memory/) 전용입니다." >&2
+  echo "   dev 는 mq send + 티켓 frontmatter(SSOT) 로만 핸드오프하세요. 레포 내 미러 track = 재QA silent-stall 재발원." >&2
+  echo "   근거: T-20260720-*-REPO-GHOST-SIGNALS-BELT-INSTALL / -PREPUSH-GUARD-PORT + T-20260531-meta-FOOT-REPO-MIRROR-DRIFT (AC3, supervisor GO)" >&2
   echo "   우회(비권장): GHOST_HANDOFF_BYPASS=1 (사유 명기)" >&2
   exit 1
 }
