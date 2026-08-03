@@ -79,10 +79,14 @@ test.describe('AC-2/AC-3 기존 [결제 등록] 버튼 존치(삭제·숨김 금
 });
 
 test.describe('시나리오3 플래그 OFF 회귀 — 게이트 구조 보존', () => {
-  test('직결결제 버튼은 3중 게이트(enabled=플래그+단말설정) 유지 — 플래그 OFF면 컴포넌트 null', () => {
+  // ★T-20260803-foot-CBAND-PAYBTN-DISABLED-TOOLTIP: enabled 에서 cfg 결합 분리(TID 미등록은 숨김이 아니라
+  //   비활성+툴팁+1줄사유로 처리). 단, '플래그 OFF = 완전 숨김(return null)' 회귀 계약은 그대로 유지된다.
+  test('플래그 OFF면 컴포넌트 null(완전 숨김) — enabled=플래그만(cfg 결합 분리)', () => {
     const src = ENTRY();
-    // enabled = isCbandPayEnabled() && cfg != null (게이트 ①②), !enabled → null.
-    expect(src).toContain('const enabled = isCbandPayEnabled() && cfg != null;');
+    // enabled 는 이제 기능플래그만. TID 미등록(cfg==null)은 6-상태 표의 비활성 상태로 별도 처리.
+    expect(src).toContain('const enabled = isCbandPayEnabled();');
+    expect(src).not.toContain('const enabled = isCbandPayEnabled() && cfg != null;');
+    // 플래그 OFF 완전 숨김 계약은 유지.
     expect(src).toContain('if (!enabled) return null;');
   });
 });

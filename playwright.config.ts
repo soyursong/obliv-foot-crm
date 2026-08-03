@@ -545,6 +545,10 @@ export default defineConfig({
         //   probe==="ok" 노출경로 격리 + 기존 [결제 등록] 존치(플래그 무결선, 잠금 ON 후 병존) + 플래그OFF 게이트 보존.
         //   플래그/probe 런타임 분기는 부모 BUILD spec §F 커버. auth/server/page 불요, 결정론. unit 전용.
         '**/T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE.spec.ts',
+        // T-20260803-foot-CBAND-PAYBTN-DISABLED-TOOLTIP: 코밴 직결결제(BETA) 버튼 미연결 시 숨김→비활성+툴팁+1줄사유.
+        //   6-상태 문구 SSOT(lib/cband/gateCopy) 결정론 검증 + 게이트 dispatch/disabled/툴팁 래퍼 소스 가드.
+        //   TID미등록·연결실패(두 조치 함께)·연결됨(활성) 커버. 결제/이중결제방지 무변경(FE 렌더 조건만). unit 전용.
+        '**/T-20260803-foot-CBAND-PAYBTN-DISABLED-TOOLTIP.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

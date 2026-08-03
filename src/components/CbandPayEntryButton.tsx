@@ -3,10 +3,15 @@
  * ════════════════════════════════════════════════════════════════════════════
  * T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD (플랜A · FE)
  *
- * ★ 대원칙: 기존 결제 화면 무접촉. 이 버튼은 아래 3중 게이트가 모두 통과할 때만 렌더:
- *   ① 기능플래그 VITE_CBAND_PAY ON (기본 OFF — DDL 적용 전 프로덕션 노출 0)
+ * ★ 대원칙: 기존 결제 화면 무접촉. 결제·이중결제방지·전문 로직은 불변, 바뀌는 건 'FE 렌더 조건'뿐.
+ *   ① 기능플래그 VITE_CBAND_PAY ON (기본 OFF — DDL 적용 전 프로덕션 노출 0). OFF 인 PC 만 완전 숨김.
  *   ② 로컬 단말 설정(TID/MERNO/CAT_PORT) 존재 (실측#1: 없으면 결제 불가)
- *   ③ probeTerminal() 성공 = 단말 데몬 구동중 (없는 PC 는 버튼 숨김, 티켓 시나리오2/§3-2)
+ *   ③ probeTerminal() = 단말 데몬 구동중 판정(ws://127.0.0.1:8888 접속 1회).
+ *
+ * ── ★ T-20260803-foot-CBAND-PAYBTN-DISABLED-TOOLTIP (미연결 시 숨김→비활성) ──────────────
+ *   미연결/미설정(TID 미등록·탐지중·권한대기·연결실패)에서 버튼을 '숨김'이 아니라 '비활성 버튼 +
+ *   마우스오버 툴팁 + 버튼 아래 상시 1줄 사유'로 렌더한다. "왜 못 누르는지"가 항상 보이게(AC-6).
+ *   6-상태 표는 아래 cbandGateCopy 위 주석 참조. db_change=false.
  *
  * 태블릿 UX: teal-emerald · 큰 버튼 · 천단위 콤마 · 한국어. (풋센터 표준)
  *
@@ -16,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, ShieldQuestion, PlugZap, Users } from 'lucide-react';
+import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -30,11 +35,68 @@ import {
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { probeTerminal, cancelProbe, type ProbeResult } from '@/lib/cband/catClient';
 import { getTerminalConfig } from '@/lib/cband/config';
+import { cbandGateCopy, type CbandGateKind } from '@/lib/cband/gateCopy';
 
 interface Props {
   checkInId: string;
   clinicId: string;
   customerId: string | null;
+}
+
+/**
+ * 비활성 상태의 코밴 직결결제 버튼 + 툴팁 + 상시 1줄 사유.
+ *  · 신규 npm 의존성 없이 경량 CSS(group-hover / group-focus-within)로 툴팁 구현.
+ *  · disabled 버튼은 pointer-events-none 이라 hover 미발생 → 래퍼 span(group)에 hover/focus·title 을 건다.
+ *  · ★AC-6: 마우스오버 없이도 버튼 아래 1줄 사유를 상시 노출(놓침 방지).
+ */
+function CbandGateButton({ kind, onRetry }: { kind: CbandGateKind; onRetry: () => void }) {
+  const copy = cbandGateCopy(kind);
+  return (
+    <div className="w-full space-y-1" data-testid={copy.testid}>
+      <div className="group relative w-full">
+        <span className="block w-full" tabIndex={0} aria-label={copy.tooltip} title={copy.tooltip}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-1 border-gray-300 text-gray-400"
+            disabled
+            data-testid="btn-cband-pay-entry-disabled"
+          >
+            <CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)
+            <span
+              className="ml-1 rounded-sm bg-gray-200 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-gray-500"
+              data-testid="cband-beta-badge-disabled"
+            >
+              BETA
+            </span>
+          </Button>
+        </span>
+        {/* 마우스오버(또는 포커스) 툴팁 — 경량 CSS, 신규 의존성 없음 */}
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-72 max-w-[90vw] -translate-x-1/2 rounded-md bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+          data-testid="cband-gate-tooltip"
+        >
+          {copy.tooltip}
+        </div>
+      </div>
+      {/* ★AC-6: 상시 1줄 사유(마우스오버 불필요) + (해당 시) [다시 확인] */}
+      <div className="flex items-start gap-1.5 px-0.5 text-xs text-gray-500">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+        <span className="flex-1" data-testid="cband-gate-reason">{copy.reason}</span>
+        {copy.retryable && (
+          <button
+            type="button"
+            className="shrink-0 font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+            data-testid="btn-cband-reprobe"
+            onClick={onRetry}
+          >
+            다시 확인
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
@@ -53,7 +115,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
   const mounted = useRef(true);
 
   const cfg = getTerminalConfig();
-  const enabled = isCbandPayEnabled() && cfg != null;
+  // ★AC-4: '기능 노출(플래그)'과 '연결/설정 상태'를 분리. enabled = 기능플래그(ON/OFF)만.
+  //  단말기 정보(TID) 미등록(cfg==null)은 '숨김'이 아니라 6-상태 표의 비활성 상태(②)로 처리한다.
+  const enabled = isCbandPayEnabled();
+  const hasCfg = cfg != null;
 
   // ③ 단말 감지 — probeTerminal(열고 닫기만). ★U3 3분기 결과를 그대로 반영.
   const runProbe = useCallback(() => {
@@ -63,14 +128,15 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
 
   useEffect(() => {
     mounted.current = true;
-    if (!enabled) return;
+    // ★AC-4: TID 미등록(cfg 없음) PC 는 탐지하지 않는다(더 근본 차단 = ② 상태). 플래그 ON + cfg 있을 때만 탐지.
+    if (!enabled || !hasCfg) return;
     runProbe();
     // ★U2: 언마운트 시 잔여 탐침 소켓 정리(동시 1개 보장).
     return () => { mounted.current = false; cancelProbe(); };
-  }, [enabled, runProbe]);
+  }, [enabled, hasCfg, runProbe]);
 
-  // 게이트 ①②: 플래그 OFF / 단말 미설정 PC → 미노출(시나리오2 "단말 없는 PC → 버튼 숨김" 유지).
-  // ★U3: 단말 설정이 있는 PC 는 probe 상태(awaiting/blocked)에서도 숨기지 않고 안내를 노출한다.
+  // 게이트 ①(기능플래그): 플래그 OFF 인 PC(=기능 미도입)에서만 완전 숨김.
+  //  ※ '미연결/미설정(TID·데몬·권한)'은 더 이상 숨기지 않는다 → 아래 6-상태 표대로 비활성+툴팁+1줄사유.
   if (!enabled) return null;
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
@@ -138,73 +204,13 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
     setUi('idle');
   }
 
-  // ★U3: probe 3분기 — 결제 버튼은 'ok' 에서만 노출. 그 외에는 숨기지 않고 상태 안내를 보인다.
-  //  · null(탐지중): 확인 중 표시(버튼 유지·비활성).
-  //  · 'awaiting'(권한창 대기): 버튼 유지 + 브라우저 [허용] 안내 + [다시 확인].  ★숨김 대상 아님.
-  //  · 'blocked'([차단] 또는 데몬 꺼짐): 안내 메시지(두 원인 함께) + [다시 확인].
-  if (probe === null) {
-    return (
-      <div
-        className="flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-50 py-2 text-sm text-gray-500"
-        data-testid="cband-probing"
-      >
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 카드 단말 확인 중…
-      </div>
-    );
-  }
-
-  if (probe === 'awaiting') {
-    return (
-      <div
-        className="w-full space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm"
-        data-testid="cband-awaiting"
-      >
-        <div className="flex items-center gap-2 font-semibold text-amber-800">
-          <ShieldQuestion className="h-4 w-4" /> 카드 단말 접속 허용이 필요합니다
-        </div>
-        <p className="text-amber-900">
-          브라우저에 <b>“이 사이트가 로컬 기기(카드 단말)에 접속하도록 허용하시겠습니까?”</b> 창이 뜨면
-          <b> [허용]</b>을 눌러 주세요. 한 번 허용하면 이 PC에서는 계속 카드결제를 쓸 수 있습니다.
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
-          data-testid="btn-cband-reprobe"
-          onClick={runProbe}
-        >
-          허용한 뒤 다시 확인
-        </Button>
-      </div>
-    );
-  }
-
-  if (probe === 'blocked') {
-    return (
-      <div
-        className="w-full space-y-2 rounded-md border border-rose-300 bg-rose-50 p-3 text-sm"
-        data-testid="cband-blocked"
-      >
-        <div className="flex items-center gap-2 font-semibold text-rose-800">
-          <PlugZap className="h-4 w-4" /> 카드 단말에 연결하지 못했습니다
-        </div>
-        <p className="text-rose-900">
-          다음 중 하나입니다: ① 브라우저에서 로컬 기기 접속을 <b>[차단]</b>했거나, ② 카드 단말
-          프로그램이 <b>꺼져 있습니다</b>. 주소창의 자물쇠 → 사이트 설정에서 차단을 해제하거나,
-          단말 프로그램을 켠 뒤 아래 <b>[다시 확인]</b>을 눌러 주세요.
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full border-rose-300 text-rose-800 hover:bg-rose-100"
-          data-testid="btn-cband-reprobe"
-          onClick={runProbe}
-        >
-          다시 확인
-        </Button>
-      </div>
-    );
-  }
+  // ★AC-4 6-상태 표 — 미연결/미설정은 '숨김' 대신 비활성 버튼 + 툴팁 + 상시 1줄 사유(AC-6).
+  //  ② TID 미등록(cfg==null) → ③ 탐지중(probe null) → ④ 권한대기(awaiting) → ⑤ 연결실패(blocked) → ⑥ 연결됨(ok, 활성)
+  //  ⑤ blocked: 권한차단·데몬미실행 두 원인은 WS close 1006 으로 코드 구분 불가 → 툴팁에 두 조치를 함께 안내.
+  if (!hasCfg) return <CbandGateButton kind="tid-missing" onRetry={runProbe} />;
+  if (probe === null) return <CbandGateButton kind="probing" onRetry={runProbe} />;
+  if (probe === 'awaiting') return <CbandGateButton kind="awaiting" onRetry={runProbe} />;
+  if (probe === 'blocked') return <CbandGateButton kind="blocked" onRetry={runProbe} />;
 
   // probe === 'ok' → 결제 버튼 + 다이얼로그
   return (
