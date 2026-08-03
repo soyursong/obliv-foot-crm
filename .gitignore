@@ -73,6 +73,8 @@ rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_archive_*.json
 rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
 # apply 증빙 로그는 count만(PHI/secret 없음) → git-track 허용 (*.log override)
 !db-gate/T-20260702-foot-CODY-PKG-CREATE-PERM_apply_evidence.log
+# T-20260803-foot-ACCOUNT-CREATE-ERROR-4STAFF-PROVISION — 4명 임시비번 relay 덤프 (auth secret, off-git only)
+rollback/T-20260803-foot-ACCOUNT-4STAFF_relay_SECRET.txt
 
 # migration DDL(백필 정정)은 PK-only·PHI 없음 → git-track 허용 (T-20260713 mask-contam backfill, *backfill*.sql override)
 !supabase/migrations/*backfill*.sql
