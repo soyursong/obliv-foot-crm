@@ -1,0 +1,70 @@
+{
+  "ticket": "T-20260803-foot-REDPAY-NOTXN-4TERM-RAWVERIFY-DEACTIVATE",
+  "ac": "AC-2",
+  "applied_at": "2026-08-03",
+  "freeze_set": [
+    "1047479476",
+    "1047479148",
+    "1047479155"
+  ],
+  "expected": 3,
+  "rows_affected": 3,
+  "assert_ok": true,
+  "method": "soft flag active=false, no DDL, no ledger contact",
+  "rollback_sql": "/Users/domas/GitHub/obliv-foot-crm/scripts/T-20260803-foot-REDPAY-NOTXN-4TERM-RAWVERIFY-DEACTIVATE_ac2_rollback.sql",
+  "held": {
+    "1047479157": "merchant 1777289013 07-23 net0 승인+취소쌍(1004원, tid 1047479153) 158-class + tid/merchant registry 불일치 → CANCELPAIR-AUDIT 편입 보고"
+  },
+  "before": [
+    {
+      "id": "fd593131-154e-4ade-a4d4-cf559c0b99e9",
+      "domain": "foot",
+      "merchant_id": "1777289010",
+      "tid": "1047479148",
+      "terminal_label": "풋(무선)",
+      "active": true,
+      "source": "redpay_foot_terminal_registry.md §2 (authoritative, DA read-only prod probe, last_verified 2026-07-11)",
+      "updated_at": "2026-07-17 17:36:49.945489+00"
+    },
+    {
+      "id": "4140ab3f-4b17-40d5-b81a-61dfb54ca174",
+      "domain": "foot",
+      "merchant_id": "1777289011",
+      "tid": "1047479155",
+      "terminal_label": "풋(무선)",
+      "active": true,
+      "source": "redpay_foot_terminal_registry.md §2 (authoritative, DA read-only prod probe, last_verified 2026-07-11)",
+      "updated_at": "2026-07-17 17:36:49.945489+00"
+    },
+    {
+      "id": "75735b93-1ab6-425f-9453-8124b56e902f",
+      "domain": "foot",
+      "merchant_id": "1777289002",
+      "tid": "1047479476",
+      "terminal_label": "풋(멀티)",
+      "active": true,
+      "source": "redpay_foot_terminal_registry.md §2 (authoritative, DA read-only prod probe, last_verified 2026-07-11)",
+      "updated_at": "2026-07-17 17:36:49.945489+00"
+    }
+  ],
+  "after": [
+    {
+      "tid": "1047479148",
+      "merchant_id": "1777289010",
+      "active": false,
+      "updated_at": "2026-08-03 01:52:58.972511+00"
+    },
+    {
+      "tid": "1047479155",
+      "merchant_id": "1777289011",
+      "active": false,
+      "updated_at": "2026-08-03 01:52:58.972511+00"
+    },
+    {
+      "tid": "1047479476",
+      "merchant_id": "1777289002",
+      "active": false,
+      "updated_at": "2026-08-03 01:52:58.972511+00"
+    }
+  ]
+}

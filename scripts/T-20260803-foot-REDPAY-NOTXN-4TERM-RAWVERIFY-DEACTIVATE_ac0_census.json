@@ -1,0 +1,82 @@
+{
+  "ticket": "T-20260803-foot-REDPAY-NOTXN-4TERM-RAWVERIFY-DEACTIVATE",
+  "ac": "AC-0",
+  "window": [
+    "2026-07-01",
+    "2026-08-03"
+  ],
+  "feed_ok": true,
+  "feed_total_items": 835,
+  "results": [
+    {
+      "tid": "1047479476",
+      "merchant": "1777289002",
+      "label": "풋(멀티)",
+      "role": "candidate",
+      "feed_cnt": 0,
+      "feed_by_status": {},
+      "feed_net": 0,
+      "raw_ingested_cnt": 0,
+      "verdict": "TRUE-ZERO",
+      "deactivate": true
+    },
+    {
+      "tid": "1047479148",
+      "merchant": "1777289010",
+      "label": "풋(무선)",
+      "role": "candidate",
+      "feed_cnt": 0,
+      "feed_by_status": {},
+      "feed_net": 0,
+      "raw_ingested_cnt": 0,
+      "verdict": "TRUE-ZERO",
+      "deactivate": true
+    },
+    {
+      "tid": "1047479155",
+      "merchant": "1777289011",
+      "label": "풋(무선)",
+      "role": "candidate",
+      "feed_cnt": 0,
+      "feed_by_status": {},
+      "feed_net": 0,
+      "raw_ingested_cnt": 0,
+      "verdict": "TRUE-ZERO",
+      "deactivate": true
+    },
+    {
+      "tid": "1047479157",
+      "merchant": "1777289013",
+      "label": "풋(무선)",
+      "role": "candidate",
+      "feed_cnt": 0,
+      "feed_by_status": {},
+      "feed_net": 0,
+      "raw_ingested_cnt": 0,
+      "verdict": "TRUE-ZERO",
+      "deactivate": true
+    },
+    {
+      "tid": "1047479158",
+      "merchant": "1777289012",
+      "label": "풋(무선)",
+      "role": "control-158",
+      "feed_cnt": 2,
+      "feed_by_status": {
+        "N": 1,
+        "Y": 1
+      },
+      "feed_net": 0,
+      "raw_ingested_cnt": 0,
+      "verdict": "HAS-TXN",
+      "deactivate": false
+    }
+  ],
+  "freeze_set_deactivate": [
+    "1047479148",
+    "1047479155",
+    "1047479157",
+    "1047479476"
+  ],
+  "held": []
+}
