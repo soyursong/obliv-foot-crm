@@ -42,6 +42,20 @@ export function getTerminalConfig(): CbandTerminalConfig | null {
   return { tid, merno, catPort: portRaw };
 }
 
+/**
+ * 프리필/부분표시용 원시 설정(LS > env). getTerminalConfig 와 달리 3값 완비를 요구하지 않고
+ * 각 값을 그대로(빈문자 가능) 돌려준다.
+ *   ★T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ②: 코밴 결제 Dialog 안 TID/COM 팝업의
+ *     프리필 + 저장여부 판정(TID·COM 2필드) + merno 계승(⑧/env 값 보존)에 사용.
+ */
+export function getTerminalConfigRaw(): { tid: string; merno: string; catPort: string } {
+  const ls = fromLocalStorage() ?? {};
+  const tid = (ls.tid ?? viteEnv.VITE_CBAND_TID ?? procEnv.VITE_CBAND_TID ?? '').toString().trim();
+  const merno = (ls.merno ?? viteEnv.VITE_CBAND_MERNO ?? procEnv.VITE_CBAND_MERNO ?? '').toString().trim();
+  const catPort = (ls.catPort ?? viteEnv.VITE_CBAND_PORT ?? procEnv.VITE_CBAND_PORT ?? '').toString().trim();
+  return { tid, merno, catPort };
+}
+
 /** PC별 단말 설정 저장(설정 화면용 — 총괄이 로컬에서 세팅). */
 export function saveTerminalConfig(cfg: CbandTerminalConfig): void {
   try {

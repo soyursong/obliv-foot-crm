@@ -13,6 +13,13 @@
  *   마우스오버 툴팁 + 버튼 아래 상시 1줄 사유'로 렌더한다. "왜 못 누르는지"가 항상 보이게(AC-6).
  *   6-상태 표는 아래 cbandGateCopy 위 주석 참조. db_change=false.
  *
+ * ── ★ T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ② (TID/COM 팝업을 결제 Dialog 안으로) ──
+ *   결제 Dialog(카드결제 버튼 클릭 시 창) 안에 단말기 TID·COM 설정 인라인 패널(CbandTerminalConfigInline)을
+ *   저장여부 무관 항상 표시. 저장 시 요약 한 줄(`단말기 {TID} · COM {n} [변경]`)로 접힌다.
+ *   CONFLICT#1 reconcile(§8): 위 6-상태 표의 disable 중 'TID 미등록(!hasCfg)'만 '활성'으로 분리해
+ *   Dialog 를 열 수 있게 한다(창 안에서 TID/COM 입력 → chicken-egg 방지). daemon 미연결·권한차단은 유지.
+ *   빈값(TID) 전송 차단은 onApprove 에서(“단말기 번호를 먼저 입력해 주세요”). db_change=false.
+ *
  * 태블릿 UX: teal-emerald · 큰 버튼 · 천단위 콤마 · 한국어. (풋센터 표준)
  *
  * ── ★ 이중결제 방지 UX(D) ──────────────────────────────────────────────────
@@ -21,8 +28,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, Users } from 'lucide-react';
+import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, Users, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -34,7 +42,7 @@ import {
 } from '@/lib/cband/paymentFlow';
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { probeTerminal, cancelProbe, type ProbeResult } from '@/lib/cband/catClient';
-import { getTerminalConfig } from '@/lib/cband/config';
+import { getTerminalConfig, getTerminalConfigRaw, saveTerminalConfig } from '@/lib/cband/config';
 import { cbandGateCopy, type CbandGateKind } from '@/lib/cband/gateCopy';
 
 interface Props {
@@ -107,6 +115,104 @@ function CbandGateButton({ kind, onRetry }: { kind: CbandGateKind; onRetry: () =
   );
 }
 
+/**
+ * ★T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ② — 코밴 결제 Dialog 안 단말기 설정 인라인 패널.
+ *  · 위치: 카드결제 창(Dialog) 안. 저장여부 무관 모든 PC에서 항상 표시(입력/전송 화면 상단).
+ *  · 입력란 = `단말기 TID` + `COM 포트` (2필드) + [저장] 버튼 1개. (⑧ AdminSettings 의 MERNO 는 계승·비노출)
+ *  · 프리필: localStorage `cband.terminal.config`(TERMINAL 티켓 deployed) 있으면 자동채움, 없으면 빈칸.
+ *  · 저장됨(TID·COM 둘 다 있음): `단말기 {TID} · COM {n} [변경]` 한 줄 읽기전용. [변경] → 입력모드.
+ *  · 규칙 계승(재정의 X): zero-pad·baud 38400·빈값차단 = TERMINAL 티켓(config/protocol). merno 는 ⑧/env 보존.
+ */
+function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
+  const raw = getTerminalConfigRaw();
+  const savedTid = raw.tid;
+  const savedPort = raw.catPort;
+  // ② 저장여부 판정은 팝업 2필드(TID·COM) 기준. MERNO 는 팝업이 다루지 않음(⑧/env 계승).
+  const hasSaved = savedTid !== '' && savedPort !== '';
+  const [editing, setEditing] = useState(!hasSaved);
+  const [tid, setTid] = useState(savedTid);
+  const [port, setPort] = useState(savedPort);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleSave = () => {
+    const t = tid.trim();
+    const p = port.trim();
+    // 빈값차단(TERMINAL 티켓 계승) — TID·COM 필수.
+    if (!t) { setErr('단말기 번호(TID)를 입력해 주세요.'); return; }
+    if (!p) { setErr('COM 포트 번호를 입력해 주세요.'); return; }
+    // ★merno 계승(재정의 X): ⑧ 설정/ENV 값을 보존해 저장(팝업은 TID·COM 만 다룸).
+    saveTerminalConfig({ tid: t, merno: getTerminalConfigRaw().merno, catPort: p });
+    setErr(null);
+    setEditing(false);
+    onSaved();
+  };
+
+  if (!editing) {
+    return (
+      <div
+        className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+        data-testid="cband-terminal-config-summary"
+      >
+        <span className="flex items-center gap-1.5">
+          <CreditCard className="h-4 w-4 shrink-0 text-emerald-600" />
+          <span data-testid="cband-terminal-summary-text">단말기 {savedTid} · COM {savedPort}</span>
+        </span>
+        <button
+          type="button"
+          className="shrink-0 font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+          data-testid="btn-cband-terminal-edit"
+          onClick={() => { setTid(getTerminalConfigRaw().tid); setPort(getTerminalConfigRaw().catPort); setErr(null); setEditing(true); }}
+        >
+          변경
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="cband-terminal-config-edit">
+      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+        <Settings2 className="h-4 w-4 text-gray-500" /> 이 PC 카드 단말기 설정
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="text-xs text-gray-600">단말기 TID</label>
+          <Input
+            value={tid}
+            onChange={(e) => setTid(e.target.value)}
+            placeholder="예: 1234567890"
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-11 text-base"
+            data-testid="cband-terminal-tid-input"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-gray-600">COM 포트</label>
+          <Input
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="예: 3 (또는 COM3)"
+            autoComplete="off"
+            className="h-11 text-base"
+            data-testid="cband-terminal-comport-input"
+          />
+        </div>
+      </div>
+      {err && <p className="text-xs text-rose-600" data-testid="cband-terminal-config-err">{err}</p>}
+      <Button
+        type="button"
+        variant="outline"
+        className="h-10 w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+        data-testid="btn-cband-terminal-save"
+        onClick={handleSave}
+      >
+        저장
+      </Button>
+    </div>
+  );
+}
+
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
 
@@ -120,6 +226,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   // ★AC-6-2 동시결제 서버 재확인 결과(팝업 open 직전).
   const [concurrency, setConcurrency] = useState<ConcurrencyDecision | null>(null);
   const [prechecking, setPrechecking] = useState(false);
+  // ★T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ②: Dialog 안 TID/COM 저장 후 재평가용 버전 카운터.
+  const [cfgVersion, setCfgVersion] = useState(0);
+  // ②: 빈값(TID) 전송 차단 안내(pre-daemon).
+  const [payBlock, setPayBlock] = useState<string | null>(null);
   const mounted = useRef(true);
 
   const cfg = getTerminalConfig();
@@ -142,7 +252,14 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     runProbe();
     // ★U2: 언마운트 시 잔여 탐침 소켓 정리(동시 1개 보장).
     return () => { mounted.current = false; cancelProbe(); };
-  }, [enabled, hasCfg, disabled, runProbe]);
+    // ②: cfgVersion — Dialog 안에서 TID/COM 저장(설정 완성)되면 즉시 재탐지.
+  }, [enabled, hasCfg, disabled, cfgVersion, runProbe]);
+
+  // ②: Dialog 안 TID/COM 패널 저장 후 config 재평가(+ 차단 안내 해제).
+  const onTerminalSaved = useCallback(() => {
+    setPayBlock(null);
+    setCfgVersion((v) => v + 1);
+  }, []);
 
   // 게이트 ①(기능플래그): 플래그 OFF 인 PC(=기능 미도입)에서만 완전 숨김.
   //  ※ '미연결/미설정(TID·데몬·권한)'은 더 이상 숨기지 않는다 → 아래 6-상태 표대로 비활성+툴팁+1줄사유.
@@ -184,13 +301,20 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   const canPay = amountNum > 0 && ui !== 'sending';
 
   async function onApprove() {
-    if (!cfg || !(amountNum > 0)) return;
+    if (!(amountNum > 0)) return;
+    // ★② 빈값 전송 차단(pre-daemon): TID 미입력이면 결제 전문 전송 이전에 정지 + 안내.
+    const rawCfg = getTerminalConfigRaw();
+    if (!rawCfg.tid) { setPayBlock('단말기 번호를 먼저 입력해 주세요.'); return; }
+    // TID 는 있으나 설정 미완(merno 등, ⑧에서 보정) → 전송 차단 + 설정 안내.
+    const activeCfg = getTerminalConfig();
+    if (!activeCfg) { setPayBlock('단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
+    setPayBlock(null);
     setUi('sending');
     setResult(null);
     cancelProbe(); // ★U2: 결제 소켓 열기 전 탐침 소켓 확실히 종료(동시 1개). send 내부에서도 재호출됨.
     try {
       const r = await approve(
-        { tid: cfg.tid, merno: cfg.merno, catPort: cfg.catPort, amount: amountNum, clinicId, customerId, checkInId },
+        { tid: activeCfg.tid, merno: activeCfg.merno, catPort: activeCfg.catPort, amount: amountNum, clinicId, customerId, checkInId },
         supabaseAttemptStore,
       );
       if (!mounted.current) return;
@@ -211,6 +335,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     setResult(null);
     setAmount('');
     setConcurrency(null);
+    setPayBlock(null);
   }
 
   // ★AC-6-2: 결제 버튼 클릭 순간 서버 재확인(팝업 open 직전) → 진행중/완료/단말사용중이면 분기 안내.
@@ -246,15 +371,15 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   }
 
   // ★AC-4 6-상태 표 — 미연결/미설정은 '숨김' 대신 비활성 버튼 + 툴팁 + 상시 1줄 사유(AC-6).
-  //  ② TID 미등록(cfg==null) → ③ 탐지중(probe null) → ④ 권한대기(awaiting) → ⑤ 연결실패(blocked) → ⑥ 연결됨(ok, 활성)
+  //  ② TID 미등록 → ③ 탐지중(probe null) → ④ 권한대기(awaiting) → ⑤ 연결실패(blocked) → ⑥ 연결됨(ok, 활성)
   //  ⑤ blocked: 권한차단·데몬미실행 두 원인은 WS close 1006 으로 코드 구분 불가 → 툴팁에 두 조치를 함께 안내.
-  if (!hasCfg) return <CbandGateButton kind="tid-missing" onRetry={runProbe} />;
-  if (probe === null) return <CbandGateButton kind="probing" onRetry={runProbe} />;
-  if (probe === 'awaiting') return <CbandGateButton kind="awaiting" onRetry={runProbe} />;
-  if (probe === 'blocked') return <CbandGateButton kind="blocked" onRetry={runProbe} />;
-
-  // probe === 'ok' → 결제 버튼 + 다이얼로그
-  return (
+  //
+  // ★T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ② / CONFLICT#1 reconcile(§8):
+  //   PAYBTN-DISABLED-TOOLTIP 의 버튼 disable 중 'TID 미등록(!hasCfg)'만 '활성'으로 분리한다.
+  //   → Dialog 를 열어 창 안(CbandTerminalConfigInline)에서 TID/COM 을 입력할 수 있게(chicken-egg 방지).
+  //   'daemon 미연결·권한차단(awaiting/blocked)' disable 은 그대로 유지(hasCfg 일 때만 탐지·게이트).
+  //   ※ 빈값 전송 차단은 onApprove(②)에서 담당.
+  const entryAndDialog = (
     <>
       <Button
         variant="outline"
@@ -298,6 +423,8 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
           {/* 입력/전송 */}
           {(ui === 'idle' || ui === 'sending') && (
             <div className="space-y-4 py-2">
+              {/* ★② 코밴 결제 Dialog 안 단말기 설정(TID/COM) — 저장여부 무관 항상 표시 */}
+              <CbandTerminalConfigInline onSaved={onTerminalSaved} />
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">결제 금액</label>
                 <AmountInput
@@ -313,6 +440,13 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                   <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
                 )}
               </div>
+              {/* ★② 빈값(TID) 전송 차단 안내 — 결제요청 눌렀는데 단말기 번호 미입력 시 */}
+              {payBlock && ui === 'idle' && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-testid="cband-payblock">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <span>{payBlock}</span>
+                </div>
+              )}
               {ui === 'sending' && (
                 <div className="flex items-center justify-center gap-2 rounded-lg bg-emerald-50 py-4 text-emerald-700">
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -434,4 +568,14 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       </Dialog>
     </>
   );
+
+  // ② reconcile: TID 미등록(!hasCfg)은 '활성' 진입 버튼 + Dialog(창 안 TID/COM 입력)로 분리.
+  if (!hasCfg) return entryAndDialog;
+  // 나머지 미연결/미설정 상태(daemon 탐지중/권한대기/연결실패)는 비활성 게이트 유지.
+  if (probe === null) return <CbandGateButton kind="probing" onRetry={runProbe} />;
+  if (probe === 'awaiting') return <CbandGateButton kind="awaiting" onRetry={runProbe} />;
+  if (probe === 'blocked') return <CbandGateButton kind="blocked" onRetry={runProbe} />;
+
+  // probe === 'ok' → 활성 결제 버튼 + 다이얼로그
+  return entryAndDialog;
 }

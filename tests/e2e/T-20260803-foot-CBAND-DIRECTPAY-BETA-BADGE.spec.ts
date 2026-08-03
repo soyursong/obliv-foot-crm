@@ -36,15 +36,19 @@ test.describe('AC-1 코밴 직결결제 버튼 BETA 표기', () => {
     expect(badge.slice(0, 200)).toMatch(/>\s*BETA\s*</);
   });
 
-  test('AC-1: BETA 뱃지는 결제 버튼(probe==="ok") 노출 경로 안에만 있다 — 게이트/awaiting/blocked 분기 밖', () => {
+  test('AC-1: BETA 뱃지는 결제 버튼(활성 경로) 안에만 있다 — 게이트/awaiting/blocked 분기 밖', () => {
     const src = ENTRY();
-    // 결제 버튼 진입점 마커(btn-cband-pay-entry)와 BETA 뱃지가 동일 렌더 블록(probe==="ok" return)에 있음.
-    const okReturnIdx = src.indexOf('// probe === \'ok\'');
-    expect(okReturnIdx).toBeGreaterThan(-1);
-    const tail = src.slice(okReturnIdx);
-    expect(tail).toContain('data-testid="btn-cband-pay-entry"');
-    expect(tail).toContain('data-testid="cband-beta-badge"');
-    // 게이트 ①② 조기 return(!enabled → null)은 BETA 뱃지보다 앞(=미노출 경로엔 뱃지 없음).
+    // ★T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ② reconcile 로 활성 진입 버튼+Dialog 가
+    //   entryAndDialog 공용 const 로 추출됨(활성 경로 = !hasCfg / probe==="ok"). 뱃지는 이 안에만 있다.
+    const entryIdx = src.indexOf('const entryAndDialog = (');
+    expect(entryIdx).toBeGreaterThan(-1);
+    const entryBlock = src.slice(entryIdx);
+    // 결제 버튼 진입점 마커(btn-cband-pay-entry)와 활성 BETA 뱃지가 동일 렌더 블록(entryAndDialog)에 있음.
+    expect(entryBlock).toContain('data-testid="btn-cband-pay-entry"');
+    expect(entryBlock).toContain('data-testid="cband-beta-badge"');
+    // probe==="ok" 경로는 entryAndDialog 를 반환(활성 경로에만 뱃지).
+    expect(src).toMatch(/\/\/ probe === 'ok'[^\n]*\n\s*return entryAndDialog;/);
+    // 게이트 조기 return(!enabled → null)은 BETA 뱃지보다 앞(=미노출 경로엔 뱃지 없음).
     const nullGateIdx = src.indexOf('if (!enabled) return null;');
     expect(nullGateIdx).toBeGreaterThan(-1);
     expect(nullGateIdx).toBeLessThan(src.indexOf('data-testid="cband-beta-badge"'));

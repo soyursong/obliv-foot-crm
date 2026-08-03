@@ -62,9 +62,15 @@ test.describe('시나리오1b — TID 미등록(seat_config TID 없음)', () => 
     expect(c.retryable).toBe(false); // 스태프가 재탐지해도 소용없음 → [다시 확인] 미노출
   });
 
-  test('컴포넌트: cfg==null(!hasCfg) → tid-missing 게이트로 dispatch(숨김 아님)', () => {
+  // ★ CONFLICT#1 reconcile (T-20260803-foot-CBAND-TIDCOM-POPUP-PLACEMENT ② §8):
+  //   'TID 미등록(!hasCfg)'은 더 이상 비활성 게이트가 아니라 '활성' 진입 버튼 + Dialog(창 안 TID/COM 입력)로
+  //   분리됐다(chicken-egg 방지). tid-missing gateCopy 문구 SSOT 는 유지하되 컴포넌트 dispatch 만 바뀐다.
+  test('컴포넌트: cfg==null(!hasCfg) → (reconcile) tid-missing 비활성 게이트 대신 활성 진입+Dialog', () => {
     const src = ENTRY();
-    expect(src).toMatch(/if \(!hasCfg\) return <CbandGateButton kind="tid-missing"/);
+    // 비활성 tid-missing 게이트 dispatch 는 제거됨.
+    expect(src).not.toMatch(/if \(!hasCfg\) return <CbandGateButton kind="tid-missing"/);
+    // 대신 !hasCfg 는 활성 진입+Dialog(entryAndDialog)로 분리.
+    expect(src).toMatch(/if \(!hasCfg\) return entryAndDialog;/);
   });
 });
 
@@ -91,23 +97,26 @@ test.describe('시나리오1 — 즉시끊김(연결 실패, blocked)', () => {
 test.describe('시나리오2 — 연결됨(ok) → 활성 결제 버튼', () => {
   test('probe==="ok" 경로에서 활성 결제 버튼(btn-cband-pay-entry) 노출', () => {
     const src = ENTRY();
-    const okIdx = src.indexOf("// probe === 'ok'");
-    expect(okIdx).toBeGreaterThan(-1);
-    const tail = src.slice(okIdx);
-    expect(tail).toContain('data-testid="btn-cband-pay-entry"');
+    // ★reconcile: 진입 버튼+Dialog 는 entryAndDialog 로 공용화(활성 상태 = !hasCfg / probe ok).
+    expect(src).toContain('data-testid="btn-cband-pay-entry"');
     // 활성 버튼은 disabled 하드코딩이 아니라 조건부(!customerId || prechecking)만.
-    expect(tail).toContain('disabled={!customerId || prechecking}');
+    expect(src).toContain('disabled={!customerId || prechecking}');
+    // ok 경로는 활성 진입+Dialog 반환.
+    expect(src).toMatch(/\/\/ probe === 'ok'[^\n]*\n\s*return entryAndDialog;/);
   });
 
-  test('게이트 dispatch 4종은 ok 경로(활성 버튼)보다 앞에 위치(그 외엔 비활성)', () => {
+  test('비활성 게이트(probing/awaiting/blocked) dispatch 는 ok 경로(활성 버튼)보다 앞에 위치', () => {
     const src = ENTRY();
-    const gateIdx = src.indexOf('if (!hasCfg) return <CbandGateButton');
+    // ★reconcile: tid-missing 은 게이트가 아니라 활성 분리 → 비활성 게이트는 3종만 남는다.
+    const gateIdx = src.indexOf("if (probe === null) return <CbandGateButton");
     const okIdx = src.indexOf("// probe === 'ok'");
     expect(gateIdx).toBeGreaterThan(-1);
     expect(gateIdx).toBeLessThan(okIdx);
-    for (const k of ['tid-missing', 'probing', 'awaiting', 'blocked']) {
+    for (const k of ['probing', 'awaiting', 'blocked']) {
       expect(src).toContain(`kind="${k}"`);
     }
+    // tid-missing 은 컴포넌트 dispatch 에서 제거(활성 분리).
+    expect(src).not.toContain('kind="tid-missing"');
   });
 });
 
