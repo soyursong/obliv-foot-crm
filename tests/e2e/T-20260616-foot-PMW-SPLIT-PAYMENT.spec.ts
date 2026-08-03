@@ -323,11 +323,16 @@ test('AC-6: 분할에 카드 행 포함 시 카드 자동매칭 안내 노출', 
   await enableSplit(page);
 
   // 1행 카드 → 카드 안내 노출
+  // T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ③ 정합(nightly): 소스 testid rename
+  //   card-auto-match-info → card-payment-info. 문구도 플랜A('단말기에서 직접 받아 기록') 기준 assert.
+  //   (구 플랜B '자동 매칭' 개념 삭제 — 플랜A 는 카드 승인정보를 단말기에서 직접 수신·기록.)
   await page.locator('[data-testid="split-method-0"]').selectOption('card');
-  await expect(page.locator('[data-testid="card-auto-match-info"]')).toBeVisible();
+  const cardInfo = page.locator('[data-testid="card-payment-info"]');
+  await expect(cardInfo).toBeVisible();
+  await expect(cardInfo).toContainText('단말기에서 직접 받아 기록');
 
   // 1행을 현금으로 바꾸면(카드 행 0) 안내 숨김
   await page.locator('[data-testid="split-method-0"]').selectOption('cash');
-  await expect(page.locator('[data-testid="card-auto-match-info"]')).toHaveCount(0);
-  console.log('✅ AC-6: 카드 행 유무에 따른 안내 노출/숨김 검증');
+  await expect(page.locator('[data-testid="card-payment-info"]')).toHaveCount(0);
+  console.log('✅ AC-6: 카드 행 유무에 따른 안내 노출/숨김 검증 (플랜A 문구)');
 });
