@@ -107,6 +107,9 @@ export const supabaseAttemptStore: AttemptStore = {
     if (patch.status !== undefined) row.status = patch.status;
     if (patch.authNo !== undefined) row.auth_no = patch.authNo;
     if (patch.responseCode !== undefined) row.response_code = patch.responseCode;
+    // ★FIX-2(MERNO-REQFIELD-BUG): 승인 응답에서 파싱한 MERNO 를 시도 레코드에도 각인(감사 정합).
+    //   요청 시점 merno 는 빈값 → 응답 확정 후 이 경로로만 채워진다. null/부재는 그대로 둠(스킵).
+    if (patch.merno !== undefined) row.merno = patch.merno;
     // ★K2: raw(정규화·PCI-safe) 를 raw_response(jsonb)에 보존. DB BEFORE INSERT/UPDATE PCI 가드가 2차 방어.
     if (patch.rawResponse !== undefined) row.raw_response = patch.rawResponse;
     const { error } = await supabase
@@ -142,7 +145,10 @@ export const supabaseAttemptStore: AttemptStore = {
         payment_type: isCancel ? 'refund' : 'payment',
         external_approval_no: rec.authNo,     // ★K1 AUTHNO canonical home(LIVE·matcher 독출=dedup 앵커).
         external_tid: rec.tid,                // ★K1 TID(LIVE·matcher 독출=dedup 앵커).
-        merchant_no: rec.merno,               // ★§9 MERNO 저장 필수(총괄) — mig190500 착지 컬럼에 값-write(ADDITIVE·DDL무변). A11/A12 MERNO 대사 조인 + DEDUP(K5) MERNO 축.
+        // ★FIX-2(MERNO-REQFIELD-BUG): MERNO 는 요청값(rec.merno, 이제 빈값)이 아니라 승인 '응답' 전문에서
+        //   파싱한 값(rec.rawResponse.merno, normalize 가 MERNO/MERCHANTNO/MID 관대 추출)을 저장한다.
+        //   응답에 MERNO 부재 시 null 저장(결제는 성공 처리 — AC-3). DA canonical('선택 payments.merchant_no', 응답 파생) 정합.
+        merchant_no: rec.rawResponse?.merno ?? null,  // mig190500 착지 컬럼(ADDITIVE·DDL무변). A11/A12 대사 조인 + DEDUP(K5) MERNO 축.
         payment_attempt_id: rec.attemptId,    // ★K1 CAT-origin 판별자(FK) + L2 이중수납 2차방어(partial UNIQUE).
         // external_trxid 미기입(NULL 유지) = RedPay 예약 매칭키.
         is_simulation: rec.isSimulation,      // ★C6 테스트금액 격리(payments 패리티).

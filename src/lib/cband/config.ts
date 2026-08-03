@@ -32,13 +32,20 @@ function fromLocalStorage(): Partial<CbandTerminalConfig> | null {
   } catch { return null; }
 }
 
-/** 로컬 단말 설정 조회. TID·MERNO 둘 다 있어야 유효(없으면 null → 결제 진입 차단). */
+/**
+ * 로컬 단말 설정 조회. ★결제 유효조건 = TID + CAT_PORT 2개뿐(없으면 null → 결제 진입 차단).
+ *   ★T-20260803-foot-CBAND-MERNO-REQFIELD-BUG (FIX-1): MERNO(가맹점번호)는 결제 '요청' 전문에 없고
+ *   (7/31 실승인 20필드 부재 확인)·단말기 화면 어디에도 없고·승인 '응답'에서만 온다. 이전 구현이
+ *   MERNO 를 결제 前 필수로 걸어 "결제해야 MERNO 알고·MERNO 있어야 결제" 순환참조 → 첫 결제 불가.
+ *   → MERNO 유무는 유효성 판정에서 제외한다. merno 는 (있으면) 계승해 그대로 실어 보내지만, 없어도 결제 가능.
+ *   DA canonical(3way-canon: '선택 payments.merchant_no', 응답 파생)과 정합 복원.
+ */
 export function getTerminalConfig(): CbandTerminalConfig | null {
   const ls = fromLocalStorage() ?? {};
   const tid = (ls.tid ?? viteEnv.VITE_CBAND_TID ?? procEnv.VITE_CBAND_TID ?? '').toString().trim();
   const merno = (ls.merno ?? viteEnv.VITE_CBAND_MERNO ?? procEnv.VITE_CBAND_MERNO ?? '').toString().trim();
   const portRaw = (ls.catPort ?? viteEnv.VITE_CBAND_PORT ?? procEnv.VITE_CBAND_PORT ?? '').toString().trim();
-  if (!tid || !merno || !portRaw) return null; // 실측#1: TID/MERNO/PORT 미설정 → 결제 불가
+  if (!tid || !portRaw) return null; // 실측#1: TID/PORT 미설정 → 결제 불가. MERNO 는 필수 아님(FIX-1).
   return { tid, merno, catPort: portRaw };
 }
 

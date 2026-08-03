@@ -73,8 +73,12 @@ export interface BuildMsgParams {
   tranType: TranType;
   /** 단말기 ID(TID). ★실측: 비우면 거부됨 → 반드시 채울 것(공백/미지정 시 throw). */
   tid: string;
-  /** 가맹점번호(MERNO) — 수납기록 필수 저장 항목(티켓 §9/§B). */
-  merno: string;
+  /**
+   * 가맹점번호(MERNO) — ★선택(optional). T-20260803-foot-CBAND-MERNO-REQFIELD-BUG(FIX-1):
+   * MERNO 는 결제 '요청' 전문에 들어가는 값이 아니라(7/31 실승인 20필드 부재) 승인 '응답'에서만 온다.
+   * 비었으면 요청 전문에서 아예 제외(MERNO 없이도 결제 성립). 값이 있으면 계승해 그대로 실어 보낸다.
+   */
+  merno?: string;
   /** 결제/취소 금액(원, 정수). TAMT 9자리 zero-pad 로 조립. */
   amount: number;
   /** CAT 포트. 숫자(3) 또는 "COM3"/"03" 문자열 허용 → 2자리 zero-pad. */
@@ -195,9 +199,8 @@ export function buildMsg(params: BuildMsgParams): { message: string; fields: Rec
   if (!tid || !tid.trim()) {
     throw new Error('TID 가 비어 있습니다(실측: 비우면 단말이 거부). TID 를 채워야 합니다.');
   }
-  if (!merno || !merno.trim()) {
-    throw new Error('MERNO(가맹점번호)가 비어 있습니다(수납기록 필수 저장 항목).');
-  }
+  // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청 전문에 없고 승인 응답에서만 온다 → 유무검사 제거.
+  //   결제 개시 조건은 TID + CAT_PORT 만. MERNO 빈값이어도 결제 성립(순환참조 해소).
   // 규칙#2: MSG_TRACE 12자리 숫자.
   if (!isValidTrace(msgTrace)) {
     throw new Error(`MSG_TRACE 는 12자리 숫자여야 합니다: ${msgTrace}`);
@@ -213,11 +216,15 @@ export function buildMsg(params: BuildMsgParams): { message: string; fields: Rec
   const fields: Record<string, string> = {
     TRANTYPE: tranType,
     TID: tid.trim(),
-    MERNO: merno.trim(),
     CAT_PORT: pad2Port(catPort),   // 규칙#4
     TAMT: pad9(amount),            // 규칙#3
     MSG_TRACE: msgTrace,           // 규칙#2
   };
+  // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청에 주입하지 않는다(7/31 실승인 20필드 부재).
+  //   값이 명시적으로 있을 때만 계승해 실어 보내고, 빈값(정상)은 전문에서 제외한다.
+  if (merno && merno.trim()) {
+    fields.MERNO = merno.trim();
+  }
   if (tranType === TRANTYPE_CANCEL) {
     fields.AUTHNO = (originalAuthNo as string).trim();     // 실측#2: 원거래 동일 AUTHNO
     if (originalAuthDate && originalAuthDate.trim()) fields.AUTHDATE = originalAuthDate.trim();

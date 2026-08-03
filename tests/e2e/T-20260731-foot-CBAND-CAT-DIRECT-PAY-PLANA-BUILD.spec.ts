@@ -170,11 +170,28 @@ test.describe('전문 조립 4대 규칙', () => {
     })).toThrow(/TID/);
   });
 
-  test('MERNO 필수 / 잘못된 TRACE 거부', () => {
-    expect(() => buildMsg({
+  // ★T-20260803-foot-CBAND-MERNO-REQFIELD-BUG(FIX-1 회귀정정): MERNO 는 더 이상 요청 필수 아님.
+  //   MERNO 는 승인 '응답'에서만 오므로(7/31 실승인 20필드 부재) 빈 MERNO 로도 조립 성립하고,
+  //   빈값이면 요청 전문에서 MERNO 키 자체가 제외된다(순환참조 해소). MSG_TRACE 검증은 불변.
+  test('MERNO 미입력 허용(요청 전문서 제외) / 잘못된 TRACE 거부', () => {
+    const { fields } = buildMsg({
       tranType: TRANTYPE_APPROVE, tid: BASE.tid, merno: '',
       amount: 1001, catPort: 3, msgTrace: makeTrace(),
-    })).toThrow(/MERNO/);
+    });
+    expect(fields.MERNO).toBeUndefined();  // ★빈 MERNO → 전문에 미주입(throw 아님)
+    expect(fields.TID).toBe(BASE.tid);
+    // MERNO 파라미터 자체를 생략해도 성립.
+    const { fields: f2 } = buildMsg({
+      tranType: TRANTYPE_APPROVE, tid: BASE.tid,
+      amount: 1001, catPort: 3, msgTrace: makeTrace(),
+    });
+    expect(f2.MERNO).toBeUndefined();
+    // 값이 있으면 계승(주입)됨.
+    const { fields: f3 } = buildMsg({
+      tranType: TRANTYPE_APPROVE, tid: BASE.tid, merno: BASE.merno,
+      amount: 1001, catPort: 3, msgTrace: makeTrace(),
+    });
+    expect(f3.MERNO).toBe(BASE.merno);
     expect(() => buildMsg({
       tranType: TRANTYPE_APPROVE, tid: BASE.tid, merno: BASE.merno,
       amount: 1001, catPort: 3, msgTrace: '123', // 12자리 아님
@@ -286,7 +303,9 @@ test.describe('§12 시나리오 (★D 상태머신)', () => {
     // 수납기록 1건 + 시도레코드 approved
     expect(payments).toHaveLength(1);
     expect(payments[0].authNo).toBe('28102510');
-    // ★§9 MERNO 필수(총괄): recordCardPayment 가 MERNO 를 수신 → supabaseAttemptStore 가 payments.merchant_no 로 값-write.
+    // ★FIX-2(MERNO-REQFIELD-BUG): recordCardPayment 는 요청 rec 를 수신하지만, 실 supabaseAttemptStore 는
+    //   payments.merchant_no 를 응답 파싱값(rawResponse.merno)에서 write 한다. mock store 는 요청 rec.merno 를 그대로
+    //   관측(여기선 입력 merno echo). 응답 파생 merchant_no 저장은 MERNO-REQFIELD-BUG 신규 스펙에서 검증.
     expect(payments[0].merno).toBe(BASE.merno);
     expect(attempts.get(r.msgTrace)?.status).toBe('approved');
     expect(isValidTrace(r.msgTrace)).toBe(true);

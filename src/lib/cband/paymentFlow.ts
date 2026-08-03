@@ -429,6 +429,7 @@ export async function runPaymentFlow(
     const authNo = resp?.authNo ?? '';
     await store.updateAttempt(msgTrace, {
       status: 'approved', authNo, responseCode: resp?.responseCode ?? null,
+      merno: resp?.merno ?? undefined,   // ★FIX-2: 승인 응답에서 파싱한 MERNO 를 시도 레코드에 각인(부재 시 skip).
       rawResponse: resp,   // ★K2: raw(정규화) 를 attempt.raw_response 로 보존(payments 미착지).
     });
     // 승인 성공 → payments 정본 수납기록.

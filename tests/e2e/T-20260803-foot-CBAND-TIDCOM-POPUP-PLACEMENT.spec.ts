@@ -36,8 +36,9 @@ test('AC1 config.ts 에 getTerminalConfigRaw(LS>env, 완비요건 없음) + 기�
   expect(src).toMatch(/const LS_KEY\s*=\s*'cband\.terminal\.config'/);
   // 3값(tid/merno/catPort)을 그대로 반환(완비 요건 없이) — 팝업 프리필·merno 계승용
   expect(src).toMatch(/return \{ tid, merno, catPort \}/);
-  // 기존 getTerminalConfig(3값 완비 시에만 non-null)은 불변
-  expect(src).toMatch(/if \(!tid \|\| !merno \|\| !portRaw\) return null;/);
+  // ★T-20260803-foot-CBAND-MERNO-REQFIELD-BUG(FIX-1 회귀정정): getTerminalConfig 유효조건=TID+PORT(2값).
+  //   MERNO 는 승인 응답 파생값이므로 결제 前 유효성 판정에 불참(순환참조 해소).
+  expect(src).toMatch(/if \(!tid \|\| !portRaw\) return null;/);
 });
 
 // ── AC2: 코밴 결제 Dialog 안에 단말기 설정 인라인 패널이 '항상' 렌더 ─────────────────────

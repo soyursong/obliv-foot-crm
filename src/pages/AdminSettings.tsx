@@ -1837,7 +1837,6 @@ function SectionTerminal() {
   // 기존 저장값(env fallback 포함)으로 프리필. getTerminalConfig 는 3값 모두 있어야 non-null.
   const existing = getTerminalConfig();
   const [tid, setTid]         = useState(existing?.tid ?? '');
-  const [merno, setMerno]     = useState(existing?.merno ?? '');
   const [catPort, setCatPort] = useState(existing?.catPort != null ? String(existing.catPort) : '');
   const [saving, setSaving]   = useState(false);
   // 저장 완료 후 "이 PC에 저장됨" 확정 표시 — 재부팅해도 유지됨을 현장에 각인.
@@ -1845,15 +1844,16 @@ function SectionTerminal() {
 
   const handleSave = () => {
     const t = tid.trim();
-    const m = merno.trim();
     const p = catPort.trim();
-    // ★ TID·COM포트는 필수(단말 거부 방지, config.ts 실측#1). 가맹점번호(MERNO)도 결제엔 필요.
+    // ★TID·COM포트만 필수(단말 거부 방지, config.ts 실측#1).
+    //   ★FIX-3(MERNO-REQFIELD-BUG): MERNO(가맹점번호) 필수 칸 제거 — 결제 '요청'에 쓰이는 값이 아니라
+    //   승인 '응답'에서만 오므로 결제 前 입력 대상이 아니다(순환참조 해소). 기존 저장값(env/legacy)은
+    //   조용히 계승(wipe 안 함) — 결제 요청엔 주입되지 않음(protocol FIX-1). merchant_no 는 응답에서 자동 저장.
     if (!t) { toast.error('단말기 번호(TID)를 입력하세요.'); return; }
-    if (!m) { toast.error('가맹점 번호(MERNO)를 입력하세요.'); return; }
     if (!p) { toast.error('COM 포트 번호를 입력하세요.'); return; }
     setSaving(true);
     try {
-      saveTerminalConfig({ tid: t, merno: m, catPort: p });
+      saveTerminalConfig({ tid: t, merno: existing?.merno ?? '', catPort: p });
       setPersisted(true);
       toast.success('이 PC의 카드 단말기 설정을 저장했습니다. 재부팅해도 자동으로 채워집니다.');
     } catch (err) {
@@ -1896,19 +1896,9 @@ function SectionTerminal() {
           />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">가맹점 번호 (MERNO)</label>
-          <Input
-            value={merno}
-            onChange={(e) => setMerno(e.target.value)}
-            placeholder="예: 0012345678"
-            inputMode="numeric"
-            autoComplete="off"
-            className="h-12 text-lg"
-            data-testid="terminal-merno-input"
-          />
-          <p className="text-xs text-muted-foreground">단말 설치 시 밴사(코밴)에서 발급한 가맹점 번호입니다.</p>
-        </div>
+        {/* ★FIX-3(MERNO-REQFIELD-BUG): 가맹점 번호(MERNO) 입력 칸 제거(옵션 A).
+            MERNO 는 결제 '요청'이 아니라 승인 '응답'에서만 오므로 결제 前 입력 대상이 아니다.
+            결제 성공 시 응답에서 자동으로 파싱·저장(payments.merchant_no)된다. */}
 
         <div className="space-y-2">
           <label className="text-sm font-medium">COM 포트 번호</label>

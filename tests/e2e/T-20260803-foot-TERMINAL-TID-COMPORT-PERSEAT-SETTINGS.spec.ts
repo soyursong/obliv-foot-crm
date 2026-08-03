@@ -50,11 +50,13 @@ test('AC2 AdminSettings 에 ⑧ 카드 단말기 설정 섹션이 저장 인프�
   expect(src).toMatch(/getTerminalConfig\(\)/);
 });
 
-// ── AC3: 입력 필드 3종(TID/MERNO/COM포트) + 저장 버튼(태블릿 큰 버튼) 존재 ───────────
-test('AC3 TID/MERNO/COM포트 입력칸 + 저장 버튼 testid 존재', () => {
+// ── AC3: 입력 필드(TID/COM포트) + 저장 버튼(태블릿 큰 버튼) 존재 ───────────
+//   ★T-20260803-foot-CBAND-MERNO-REQFIELD-BUG(FIX-3 회귀정정): MERNO 입력칸 제거(옵션 A).
+//   MERNO 는 결제 '요청'이 아니라 승인 '응답'에서만 오므로 설정화면 입력 대상이 아니다(순환참조 해소).
+test('AC3 TID/COM포트 입력칸 + 저장 버튼 testid 존재 (MERNO 칸 제거)', () => {
   const src = read('src/pages/AdminSettings.tsx');
   expect(src).toMatch(/data-testid="terminal-tid-input"/);
-  expect(src).toMatch(/data-testid="terminal-merno-input"/);
+  expect(src).not.toMatch(/data-testid="terminal-merno-input"/);  // ★FIX-3: MERNO 칸 제거됨
   expect(src).toMatch(/data-testid="terminal-comport-input"/);
   expect(src).toMatch(/data-testid="terminal-save-btn"/);
   expect(src).toMatch(/data-testid="terminal-config-section"/);
@@ -86,7 +88,8 @@ test('AC5 localStorage 영속 — 저장값이 재접속(새 read)에도 자동�
   // saveTerminalConfig 계약(= window.localStorage.setItem(LS_KEY, JSON.stringify(cfg)))
   const save = (cfg: { tid: string; merno: string; catPort: string }) =>
     fakeLS.setItem(LS_KEY, JSON.stringify(cfg));
-  // getTerminalConfig 계약(= localStorage read 우선, 3값 모두 있어야 유효)
+  // getTerminalConfig 계약(= localStorage read 우선). ★FIX-1(MERNO-REQFIELD-BUG): 유효조건=TID+PORT 2값.
+  //   merno 는 계승·저장되지만 유효성 판정엔 불참(빈값이어도 결제 가능 — 순환참조 해소).
   const get = () => {
     const raw = fakeLS.getItem(LS_KEY);
     if (!raw) return null;
@@ -94,7 +97,7 @@ test('AC5 localStorage 영속 — 저장값이 재접속(새 read)에도 자동�
     const tid = (o.tid ?? '').toString().trim();
     const merno = (o.merno ?? '').toString().trim();
     const port = (o.catPort ?? '').toString().trim();
-    if (!tid || !merno || !port) return null;
+    if (!tid || !port) return null;  // ★FIX-1: MERNO 는 필수 아님
     return { tid, merno, catPort: port };
   };
 
