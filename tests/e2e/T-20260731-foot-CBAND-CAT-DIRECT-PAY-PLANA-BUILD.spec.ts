@@ -16,6 +16,9 @@ import {
   runPaymentFlow,
   approve,
   cancel,
+  precheckConcurrentPayment,
+  classifyConcurrency,
+  CbandConcurrentPaymentError,
   type AttemptRecord,
   type AttemptStore,
 } from '../../src/lib/cband/paymentFlow';
@@ -71,6 +74,12 @@ function makeMemStore() {
   const store: AttemptStore = {
     async insertAttempt(rec) {
       if (attempts.has(rec.msgTrace)) throw new Error('MSG_TRACE 중복');
+      // ★AC-6-1 L2 partial UNIQUE(clinic_id, check_in_id) WHERE status='requested' 모사(하드백스톱).
+      //   동일 환자에 in-flight('requested') 존재 시 CbandConcurrentPaymentError → 상위가 송신 중단(과금 0).
+      if (rec.checkInId && [...attempts.values()].some(
+        (a) => a.clinicId === rec.clinicId && a.checkInId === rec.checkInId && a.status === 'requested')) {
+        throw new CbandConcurrentPaymentError('patient_in_progress');
+      }
       const id = `attempt-${++seq}`;
       attempts.set(rec.msgTrace, { ...rec });
       log.push(`insert:${rec.msgTrace}:${rec.status}`);
@@ -86,6 +95,16 @@ function makeMemStore() {
       // rec.attemptId = insertAttempt 반환 id. external_* canonical 착지의 CAT-origin FK.
       payments.push(rec);
       log.push(`payment:${rec.msgTrace}:${rec.tranType}:${rec.attemptId}`);
+    },
+    // ★AC-6-2 서버 재확인(순수 read) — cband_payment_attempts 스캔.
+    async probeConcurrent(q) {
+      const rows = [...attempts.values()].filter((a) => a.clinicId === q.clinicId);
+      return {
+        patientInProgress: !!q.checkInId && rows.some((a) => a.checkInId === q.checkInId && a.status === 'requested'),
+        patientCompleted: !!q.checkInId && rows.some(
+          (a) => a.checkInId === q.checkInId && a.status === 'approved' && a.tranType === TRANTYPE_APPROVE),
+        terminalBusy: !!q.merno && rows.some((a) => a.merno === q.merno && a.status === 'requested'),
+      };
     },
   };
   return { store, log, attempts, payments };
@@ -343,6 +362,156 @@ test.describe('§12 시나리오 (★D 상태머신)', () => {
     expect(r.classification).toBe('ATTENTION');
     expect(r.needsCheck).toBe(true);
     expect(payments).toHaveLength(0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// ★AC-6 동시결제 중복방지 (2026-08-03, 플랜B §7-4/§4-4 → 플랜A 이관)
+//   시나리오7 = 같은 환자 open('requested') 시도 존재 → 후발 차단 + 팝업분기(patient_in_progress).
+//   시나리오8 = 서버 재확인이 완료('approved') 건 감지 → 분기(patient_completed, confirm 유도).
+//   두 실장 = 서로 다른 브라우저 → client 상태 불신, 서버측 잠금(L2)+서버 재확인이 유일 방어.
+// ══════════════════════════════════════════════════════════════════════════
+test.describe('★AC-6 동시결제 중복방지 (시나리오7/8)', () => {
+  // ── classifyConcurrency 순수 분기(우선순위: 진행중 > 단말사용중 > 완료) ──────
+  test('classifyConcurrency: 진행중 > 단말사용중 > 완료 우선순위 + allowOverride', () => {
+    const inprog = classifyConcurrency({ patientInProgress: true, patientCompleted: true, terminalBusy: true });
+    expect(inprog.reason).toBe('patient_in_progress');
+    expect(inprog.blocked).toBe(true);
+    expect(inprog.allowOverride).toBe(false);          // 진행중은 override 불가(하드 차단)
+
+    const term = classifyConcurrency({ patientInProgress: false, patientCompleted: true, terminalBusy: true });
+    expect(term.reason).toBe('terminal_busy');
+    expect(term.allowOverride).toBe(false);
+
+    const done = classifyConcurrency({ patientInProgress: false, patientCompleted: true, terminalBusy: false });
+    expect(done.reason).toBe('patient_completed');
+    expect(done.allowOverride).toBe(true);             // 완료건은 실장 confirm 후 진행 허용
+
+    const clear = classifyConcurrency({ patientInProgress: false, patientCompleted: false, terminalBusy: false });
+    expect(clear.blocked).toBe(false);
+    expect(clear.reason).toBeNull();
+  });
+
+  // ── ★시나리오7: 같은 환자 in-flight 존재 → 후발 차단 ─────────────────────────
+  test('★시나리오7-A(서버재확인): 동일 환자 open 시도 존재 → precheck blocked=patient_in_progress', async () => {
+    const { store } = makeMemStore();
+    // 선발 실장: insert-first 로 in-flight('requested') 시도 생성(무응답으로 정지 상태 잔존).
+    await runPaymentFlow({ ...BASE, amount: 1001, tranType: TRANTYPE_APPROVE }, store, mockSender(null, true));
+    // 무응답(timedOut)은 attention 으로 전이 → in-flight 아님. 진짜 in-flight 재현 위해 requested 유지 시도 별도 주입.
+    await store.insertAttempt({
+      msgTrace: '900000000001', tranType: TRANTYPE_APPROVE, amount: 1002, merno: BASE.merno, tid: BASE.tid,
+      clinicId: BASE.clinicId, customerId: BASE.customerId, checkInId: BASE.checkInId,
+      originalAuthNo: null, isSimulation: true, status: 'requested',
+    });
+    // 후발 실장(다른 PC): 버튼순간 서버 재확인 → 진행중 감지·차단.
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: BASE.checkInId, merno: BASE.merno }, store);
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toBe('patient_in_progress');
+    expect(decision.allowOverride).toBe(false);
+  });
+
+  test('★시나리오7-B(하드백스톱): in-flight 우회 시 insert-first L2 잠금 발화 → 송신 0·수납 0·확인필요', async () => {
+    const { store, payments, log } = makeMemStore();
+    // 선발: 동일 환자 in-flight('requested') 주입(precheck 우회한 TOCTOU 재현).
+    await store.insertAttempt({
+      msgTrace: '900000000010', tranType: TRANTYPE_APPROVE, amount: 1001, merno: BASE.merno, tid: BASE.tid,
+      clinicId: BASE.clinicId, customerId: BASE.customerId, checkInId: BASE.checkInId,
+      originalAuthNo: null, isSimulation: true, status: 'requested',
+    });
+    let sent = false;
+    const sender = (async (_m: string, msgTrace: string): Promise<SendResult> => {
+      sent = true; return { raw: REAL_APPROVAL, timedOut: false, msgTrace };
+    });
+    // 후발: runPaymentFlow → insert-first 에서 L2 잠금(CbandConcurrentPaymentError) → 송신하지 않고 blocked 반환.
+    const r = await runPaymentFlow({ ...BASE, amount: 1002, tranType: TRANTYPE_APPROVE }, store, sender);
+    expect(sent).toBe(false);                    // ★송신 안 함(과금 0)
+    expect(r.blocked).toBe(true);
+    expect(r.blockReason).toBe('patient_in_progress');
+    expect(r.needsCheck).toBe(true);             // 확인 필요 정지(자동 재시도 없음)
+    expect(payments).toHaveLength(0);            // ★수납기록 생성 안 함
+    expect(log.some((l) => /^payment:/.test(l))).toBe(false);
+  });
+
+  test('★시나리오7-C: in-flight 완결(승인/실패)되면 잠금 해제 → 후발 정상 진행', async () => {
+    const { store, payments } = makeMemStore();
+    // 선발 승인 완료 → status='approved'(in-flight 아님).
+    const r1 = await runPaymentFlow({ ...BASE, amount: 1001, tranType: TRANTYPE_APPROVE }, store, mockSender(REAL_APPROVAL));
+    expect(r1.classification).toBe('APPROVED');
+    // 후발 서버 재확인: 진행중 아님 → 완료 감지(시나리오8 로 넘어감), 진행중 차단 아님.
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: BASE.checkInId, merno: BASE.merno }, store);
+    expect(decision.reason).not.toBe('patient_in_progress');
+    expect(payments).toHaveLength(1);
+  });
+
+  // ── ★시나리오8: 서버 재확인이 완료('approved') 건 감지 → 분기(confirm 유도) ──
+  test('★시나리오8(서버재확인): 동일 환자 완료 결제 존재 → precheck blocked=patient_completed·override 허용', async () => {
+    const { store } = makeMemStore();
+    // 선발: 승인 완료(approved) 수납.
+    await runPaymentFlow({ ...BASE, amount: 1001, tranType: TRANTYPE_APPROVE }, store, mockSender(REAL_APPROVAL));
+    // 후발(다른 PC): 버튼순간 서버 재확인 → 완료 감지.
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: BASE.checkInId, merno: BASE.merno }, store);
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toBe('patient_completed');
+    expect(decision.allowOverride).toBe(true);   // 추가 결제(패키지 등)는 실장 confirm 후 허용
+  });
+
+  test('★시나리오8 보강: 취소(0430) 완료는 재결제 경고 아님(승인 0210 만 patient_completed)', async () => {
+    const { store } = makeMemStore();
+    // 취소(refund)만 존재 → patientCompleted 아님.
+    await runPaymentFlow(
+      { ...BASE, amount: 1001, tranType: TRANTYPE_CANCEL, originalAuthNo: '28102510' }, store, mockSender(REAL_CANCEL));
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: BASE.checkInId, merno: BASE.merno }, store);
+    expect(decision.reason).not.toBe('patient_completed');
+  });
+
+  test('동시결제 없음(clean) → precheck blocked=false (정상 결제 진행)', async () => {
+    const { store } = makeMemStore();
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: 'ci-clean', merno: 'MER-NEW' }, store);
+    expect(decision.blocked).toBe(false);
+    expect(decision.reason).toBeNull();
+  });
+
+  test('probeConcurrent 미구현 store → precheck degrade-open(하드백스톱 L2 유효)', async () => {
+    const noProbe: AttemptStore = {
+      async insertAttempt() { return { id: 'x' }; },
+      async updateAttempt() { /* noop */ },
+      async recordCardPayment() { /* noop */ },
+    };
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: BASE.checkInId, merno: BASE.merno }, noProbe);
+    expect(decision.blocked).toBe(false);        // 미구현이어도 크래시 없이 진행(하드백스톱은 insert-first)
+  });
+
+  test('probeConcurrent 조회 실패 → precheck degrade-open(예외 삼킴, blocked=false)', async () => {
+    const errStore: AttemptStore = {
+      async insertAttempt() { return { id: 'x' }; },
+      async updateAttempt() { /* noop */ },
+      async recordCardPayment() { /* noop */ },
+      async probeConcurrent() { throw new Error('DB timeout'); },
+    };
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: BASE.checkInId, merno: BASE.merno }, errStore);
+    expect(decision.blocked).toBe(false);
+  });
+
+  test('단말기(MERNO) in-flight → terminalBusy 차단(§6-4 동시1건 정합)', async () => {
+    const { store } = makeMemStore();
+    // 다른 환자지만 같은 단말(MERNO)에 in-flight 존재.
+    await store.insertAttempt({
+      msgTrace: '900000000020', tranType: TRANTYPE_APPROVE, amount: 1001, merno: BASE.merno, tid: BASE.tid,
+      clinicId: BASE.clinicId, customerId: 'cust-other', checkInId: 'ci-other',
+      originalAuthNo: null, isSimulation: true, status: 'requested',
+    });
+    const decision = await precheckConcurrentPayment(
+      { clinicId: BASE.clinicId, checkInId: 'ci-new-patient', merno: BASE.merno }, store);
+    expect(decision.blocked).toBe(true);
+    expect(decision.reason).toBe('terminal_busy');
+    expect(decision.allowOverride).toBe(false);
   });
 });
 

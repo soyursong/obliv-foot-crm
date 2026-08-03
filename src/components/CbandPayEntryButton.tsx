@@ -16,14 +16,17 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, ShieldQuestion, PlugZap } from 'lucide-react';
+import { CreditCard, AlertTriangle, CheckCircle2, Loader2, XCircle, ShieldQuestion, PlugZap, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { AmountInput, parseAmountRaw } from '@/components/ui/AmountInput';
 import { formatAmount } from '@/lib/format';
-import { isCbandPayEnabled, approve, type PaymentFlowResult } from '@/lib/cband/paymentFlow';
+import {
+  isCbandPayEnabled, approve, precheckConcurrentPayment,
+  type PaymentFlowResult, type ConcurrencyDecision,
+} from '@/lib/cband/paymentFlow';
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { probeTerminal, cancelProbe, type ProbeResult } from '@/lib/cband/catClient';
 import { getTerminalConfig } from '@/lib/cband/config';
@@ -34,7 +37,8 @@ interface Props {
   customerId: string | null;
 }
 
-type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention';
+// ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
+type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
 
 export default function CbandPayEntryButton({ checkInId, clinicId, customerId }: Props) {
   // ★U3: probe 결과 3분기 (null=탐지중 / 'ok' / 'awaiting' / 'blocked').
@@ -43,6 +47,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
   const [amount, setAmount] = useState('');
   const [ui, setUi] = useState<UiState>('idle');
   const [result, setResult] = useState<PaymentFlowResult | null>(null);
+  // ★AC-6-2 동시결제 서버 재확인 결과(팝업 open 직전).
+  const [concurrency, setConcurrency] = useState<ConcurrencyDecision | null>(null);
+  const [prechecking, setPrechecking] = useState(false);
   const mounted = useRef(true);
 
   const cfg = getTerminalConfig();
@@ -96,6 +103,39 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
     setUi('idle');
     setResult(null);
     setAmount('');
+    setConcurrency(null);
+  }
+
+  // ★AC-6-2: 결제 버튼 클릭 순간 서버 재확인(팝업 open 직전) → 진행중/완료/단말사용중이면 분기 안내.
+  //   client 상태 불신(두 실장=다른 브라우저) → 서버 재확인이 유일 방어. 미감지면 정상 결제 팝업.
+  async function onEntryClick() {
+    reset();
+    setPrechecking(true);
+    let decision: ConcurrencyDecision = { blocked: false, reason: null, allowOverride: false, userMessage: '' };
+    try {
+      decision = await precheckConcurrentPayment(
+        { clinicId, checkInId, merno: cfg?.merno ?? null },
+        supabaseAttemptStore,
+      );
+    } catch (e) {
+      // degrade-open: 재확인 실패해도 하드백스톱(insert-first L2)이 유효 → 정상 진행.
+      console.error('동시결제 재확인 실패(degrade-open):', (e as Error)?.message);
+    }
+    if (!mounted.current) return;
+    setPrechecking(false);
+    if (decision.blocked) {
+      setConcurrency(decision);
+      setUi('concurrency');
+    } else {
+      setUi('idle');
+    }
+    setOpen(true);
+  }
+
+  // ★AC-6-2 완료건 재결제: 실장 confirm(그래도 진행) → 정상 결제 입력으로 전환.
+  function overrideConcurrency() {
+    setConcurrency(null);
+    setUi('idle');
   }
 
   // ★U3: probe 3분기 — 결제 버튼은 'ok' 에서만 노출. 그 외에는 숨기지 않고 상태 안내를 보인다.
@@ -173,11 +213,13 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
         variant="outline"
         size="sm"
         className="w-full gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-        disabled={!customerId}
+        disabled={!customerId || prechecking}
         data-testid="btn-cband-pay-entry"
-        onClick={() => { reset(); setOpen(true); }}
+        onClick={onEntryClick}
       >
-        <CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)
+        {prechecking
+          ? (<><Loader2 className="h-3.5 w-3.5 animate-spin" /> 확인 중…</>)
+          : (<><CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)</>)}
       </Button>
 
       <Dialog open={open} onOpenChange={(v) => { if (ui !== 'sending') setOpen(v); }}>
@@ -211,6 +253,22 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
                   <Loader2 className="h-5 w-5 animate-spin" />
                   <span className="text-sm">카드 단말에서 결제를 진행해 주세요…</span>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* ★AC-6-2 동시결제 분기 — 진행중/완료/단말사용중. 자동 진행 금지, confirm 유도 */}
+          {ui === 'concurrency' && concurrency && (
+            <div className="space-y-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4" data-testid="cband-concurrency">
+              <div className="flex items-center gap-2 text-amber-800">
+                <Users className="h-6 w-6" />
+                <span className="text-lg font-bold">
+                  {concurrency.reason === 'patient_completed' ? '이미 결제된 환자' : '결제 진행 중'}
+                </span>
+              </div>
+              <p className="text-sm text-amber-900" data-testid="cband-concurrency-msg">{concurrency.userMessage}</p>
+              {!concurrency.allowOverride && (
+                <p className="text-xs text-amber-700">※ 중복 결제를 막기 위해 결제를 시작하지 않았습니다.</p>
               )}
             </div>
           )}
@@ -266,6 +324,28 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
               >
                 {ui === 'sending' ? '진행 중…' : '결제 요청'}
               </Button>
+            )}
+            {/* ★AC-6-2 동시결제 분기: 진행중/단말사용중=닫기만(진행 불가). 완료건=confirm 후 진행 허용. */}
+            {ui === 'concurrency' && concurrency && (
+              <>
+                <Button
+                  variant="outline"
+                  className="h-12 flex-1"
+                  onClick={() => setOpen(false)}
+                  data-testid="btn-cband-concurrency-close"
+                >
+                  닫기
+                </Button>
+                {concurrency.allowOverride && (
+                  <Button
+                    className="h-12 flex-1 bg-emerald-600 hover:bg-emerald-700"
+                    onClick={overrideConcurrency}
+                    data-testid="btn-cband-concurrency-override"
+                  >
+                    확인, 그래도 결제
+                  </Button>
+                )}
+              </>
             )}
             {/* ★ attention 은 '다시 시도' 버튼을 주지 않는다(자동/수동 재시도 정지). 닫기만. */}
             {ui === 'attention' && (

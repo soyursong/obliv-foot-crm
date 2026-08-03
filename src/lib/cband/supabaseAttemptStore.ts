@@ -33,8 +33,8 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import type { AttemptRecord, AttemptStore } from './paymentFlow';
-import { TRANTYPE_CANCEL } from './protocol';
+import { CbandConcurrentPaymentError, type AttemptRecord, type AttemptStore, type OpenPaymentProbe } from './paymentFlow';
+import { TRANTYPE_APPROVE, TRANTYPE_CANCEL } from './protocol';
 
 /**
  * ★3-way canon: 코밴 CAT 결제의 채널 식별은 provider 컬럼이 아니라 **payments.payment_attempt_id IS NOT NULL**(FK)로 한다.
@@ -82,7 +82,15 @@ export const supabaseAttemptStore: AttemptStore = {
         is_simulation: rec.isSimulation,
       })
       .select('id');
-    if (error) throw new Error(`결제 시도 기록 실패(insert-first): ${error.message}`);
+    if (error) {
+      // ★AC-6-1 동시성 잠금: L2 partial UNIQUE(clinic_id, check_in_id) WHERE status='requested' 위반(23505)
+      //   = 동일 환자 in-flight 존재(두 실장 다른 PC 동시결제) → CbandConcurrentPaymentError 로 승격.
+      //   runPaymentFlow 가 잡아 송신하지 않고 '확인 필요' 정지(과금 0). L1(msg_trace) 충돌도 동일 안전처리(송신 금지).
+      if (isUniqueViolation(error)) {
+        throw new CbandConcurrentPaymentError('patient_in_progress', `이미 진행 중인 결제가 있습니다(insert-first 잠금): ${error.message}`);
+      }
+      throw new Error(`결제 시도 기록 실패(insert-first): ${error.message}`);
+    }
     const attemptId = data?.[0]?.id as string | undefined;
     if (!attemptId) {
       // 0-row + error=null = RLS 거부/스코프 불일치(INV-W2). 추적 불가 상태로 과금 금지 → 송신 중단.
@@ -170,5 +178,41 @@ export const supabaseAttemptStore: AttemptStore = {
     if (linkErr) {
       console.error(`수납-시도 역링크 실패(attempt=${rec.attemptId}, payment_id=${paymentId}):`, linkErr.message);
     }
+  },
+
+  async probeConcurrent(q: { clinicId: string; checkInId: string | null; merno: string | null }): Promise<OpenPaymentProbe> {
+    // ★AC-6-2 버튼 순간 서버 재확인(순수 read, no-DDL). 스키마 무접촉 — cband_payment_attempts SELECT(count/head) 만.
+    //   조회 실패는 상위(precheckConcurrentPayment)가 degrade-open 처리(L2 하드백스톱 유효).
+    const clinicId = q.clinicId;
+    async function existsAttempt(
+      filter: Record<string, string>,
+      label: string,
+    ): Promise<boolean> {
+      let query = supabase
+        .from('cband_payment_attempts')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId);
+      for (const [col, val] of Object.entries(filter)) query = query.eq(col, val);
+      const { count, error } = await query;
+      if (error) throw new Error(`동시결제 재확인 실패(${label}): ${error.message}`);
+      return (count ?? 0) > 0;
+    }
+
+    let patientInProgress = false;
+    let patientCompleted = false;
+    let terminalBusy = false;
+
+    if (q.checkInId) {
+      patientInProgress = await existsAttempt({ check_in_id: q.checkInId, status: 'requested' }, '환자 진행중');
+      // 완료(승인 0210)만 confirm 유도 대상 — 취소(0430)/실패는 재결제 경고 아님.
+      patientCompleted = await existsAttempt(
+        { check_in_id: q.checkInId, status: 'approved', tran_type: TRANTYPE_APPROVE },
+        '환자 완료',
+      );
+    }
+    if (q.merno) {
+      terminalBusy = await existsAttempt({ merno: q.merno, status: 'requested' }, '단말 사용중');
+    }
+    return { patientInProgress, patientCompleted, terminalBusy };
   },
 };

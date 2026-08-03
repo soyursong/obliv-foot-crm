@@ -84,6 +84,97 @@ export interface AttemptRecord {
   approvalTime?: string | null;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★AC-6 동시결제 중복방지 (2026-08-03 신설, 플랜B §7-4/§4-4 → 플랜A 이관)
+//   출처: 최필경 총괄 field(MSG-20260803-090530-nz88) "두 실장이 같은 환자에 동시에
+//   결제를 누르는 케이스는 플랜A에서도 동일 발생". 서로 다른 브라우저(PC) → client 상태 불신,
+//   서버측 잠금 + 서버 재확인이 유일 방어.
+//
+//   ★스키마 무접촉: 신규 컬럼/테이블/제약 0. 아래 3층으로 커버(DA CONSULT 불요).
+//     · (a) 한 환자 하드백스톱 = 기존 L2 partial UNIQUE(clinic_id, check_in_id) WHERE status='requested'
+//           (mig 20260731190000, prod 적용 2026-08-01). insert-first 시점에 23505 발화 → 송신 0.
+//     · (b) 한 단말기(MERNO) = 순수 서버 read-recheck(probeConcurrent) + CAT 프로토콜 동시1건 한도(§6-4).
+//     · (c) 한 PC(세션) = catClient send-lock(앱뮤텍스, 기존).
+// ════════════════════════════════════════════════════════════════════════════
+
+export type ConcurrencyReason = 'patient_in_progress' | 'patient_completed' | 'terminal_busy';
+
+/**
+ * ★AC-6-1 서버측 동시성 잠금(L2 partial UNIQUE) 발화 — 동일 환자(check_in)에 in-flight('requested')
+ * 시도가 이미 존재하여 insert-first 가 거부됨. runPaymentFlow 는 이 에러를 잡아 **송신하지 않고**(과금 0)
+ * '확인 필요' 정지로 반환한다(두 실장 다른 PC 동시결제 하드백스톱). 그 외 저장오류(DB down 등)는 이 에러가 아님.
+ */
+export class CbandConcurrentPaymentError extends Error {
+  readonly reason: ConcurrencyReason;
+  constructor(reason: ConcurrencyReason = 'patient_in_progress', message?: string) {
+    super(message ?? '이미 진행 중인 결제가 있습니다.');
+    this.name = 'CbandConcurrentPaymentError';
+    this.reason = reason;
+  }
+}
+
+/** ★AC-6-2 서버 재확인 결과(순수 read). */
+export interface OpenPaymentProbe {
+  /** 동일 환자(check_in) in-flight('requested') 시도 존재 — 다른 PC 진행중(하드 차단). */
+  patientInProgress: boolean;
+  /** 동일 환자(check_in) 완료('approved', 승인 0210) 시도 존재 — 재결제 confirm 유도. */
+  patientCompleted: boolean;
+  /** 동일 단말기(MERNO) in-flight 존재 — 단말 사용중(§6-4 동시1건 정합). */
+  terminalBusy: boolean;
+}
+
+export interface ConcurrencyDecision {
+  /** true 면 정상 결제 팝업을 열지 않고 분기 안내를 노출. */
+  blocked: boolean;
+  reason: ConcurrencyReason | null;
+  /** true 면 실장 confirm 후 진행 허용(완료건 재결제). false 면 진행 불가(진행중/단말사용중). */
+  allowOverride: boolean;
+  userMessage: string;
+}
+
+/** OpenPaymentProbe → 분기 결정(순수함수·우선순위: 진행중 > 단말사용중 > 완료). */
+export function classifyConcurrency(probe: OpenPaymentProbe): ConcurrencyDecision {
+  if (probe.patientInProgress) {
+    return {
+      blocked: true, reason: 'patient_in_progress', allowOverride: false,
+      userMessage: '이 환자의 카드 결제가 이미 진행 중입니다. 다른 PC에서 결제 중일 수 있어요. 잠시 후 상태를 확인해 주세요.',
+    };
+  }
+  if (probe.terminalBusy) {
+    return {
+      blocked: true, reason: 'terminal_busy', allowOverride: false,
+      userMessage: '이 카드 단말기가 다른 결제를 처리하고 있습니다. 완료된 뒤 다시 시도해 주세요.',
+    };
+  }
+  if (probe.patientCompleted) {
+    return {
+      blocked: true, reason: 'patient_completed', allowOverride: true,
+      userMessage: '이 환자는 이미 결제가 완료된 내역이 있습니다. 추가 결제가 맞는지 확인한 뒤 진행해 주세요.',
+    };
+  }
+  return { blocked: false, reason: null, allowOverride: false, userMessage: '' };
+}
+
+/**
+ * ★AC-6-2 버튼 순간 서버 재확인 — 팝업 open 직전 호출. 서버(store)에서 동일 환자/단말 진행중·완료 재조회 → 분기.
+ *   client 상태 불신(두 실장=다른 브라우저) → 서버 재확인이 유일 방어. store.probeConcurrent 미구현/조회실패 시
+ *   degrade-open(차단 안 함) — 하드 백스톱(L2 partial UNIQUE)은 insert-first 에서 여전히 유효.
+ */
+export async function precheckConcurrentPayment(
+  q: { clinicId: string; checkInId: string | null; merno: string | null },
+  store: AttemptStore,
+): Promise<ConcurrencyDecision> {
+  if (!store.probeConcurrent) return { blocked: false, reason: null, allowOverride: false, userMessage: '' };
+  try {
+    const probe = await store.probeConcurrent(q);
+    return classifyConcurrency(probe);
+  } catch (e) {
+    // degrade-open: 재확인 실패해도 하드백스톱(insert-first L2)은 유효 → 진행 허용(로그만).
+    console.error('동시결제 서버 재확인 실패(degrade-open, L2 하드백스톱 유효):', (e as Error)?.message);
+    return { blocked: false, reason: null, allowOverride: false, userMessage: '' };
+  }
+}
+
 /**
  * 시도 레코드 저장소(주입). 실 구현은 supabaseAttemptStore(cband_payment_attempts 테이블, DDL 게이트).
  * 상태머신은 이 인터페이스만 알면 되므로 unit 테스트에서 in-memory 스텁 주입 가능.
@@ -104,6 +195,11 @@ export interface AttemptStore {
    *   payment_attempt_id partial UNIQUE 가 이중수납 2차 방어(중복 승인콜백 = 멱등 skip).
    */
   recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void>;
+  /**
+   * ★AC-6-2 동시결제 서버 재확인(순수 read) — 동일 환자(check_in) 진행중/완료 + 동일 단말(MERNO) 진행중 재조회.
+   *   optional: 구현 없으면 precheckConcurrentPayment 는 degrade-open(하드백스톱=insert-first L2 partial UNIQUE 유효).
+   */
+  probeConcurrent?(q: { clinicId: string; checkInId: string | null; merno: string | null }): Promise<OpenPaymentProbe>;
 }
 
 export interface PaymentFlowInput {
@@ -134,6 +230,9 @@ export interface PaymentFlowResult {
   approvalDate: string | null;
   /** ★승인 거래시각(TRANTIME, HHMMSS) — BINDING#3 근거. */
   approvalTime: string | null;
+  /** ★AC-6-1 서버 동시성잠금(L2 partial UNIQUE) 발화로 개시 차단됨(송신 0·과금 0). */
+  blocked?: boolean;
+  blockReason?: ConcurrencyReason | null;
 }
 
 /** WS 송신부 주입 타입(테스트 시 mock). */
@@ -183,7 +282,23 @@ export async function runPaymentFlow(
   // 1) ★insert-first — 반드시 송신 '전'에 저장(응답 유실 대비 MSG_TRACE 확보).
   //    저장 실패 시 송신하지 않는다(추적 불가 상태로 과금하지 않음).
   //    ★3-way canon: attempt id 확보 → 승인 시 payments.payment_attempt_id(FK, CAT-origin 판별자)로 착지.
-  const { id: attemptId } = await store.insertAttempt(baseRec);
+  //    ★AC-6-1: 동일 환자 in-flight 잠금(L2 partial UNIQUE) 발화 시 CbandConcurrentPaymentError →
+  //             송신하지 않고 '확인 필요' 정지로 반환(두 실장 동시결제 하드백스톱, 과금 0).
+  let attemptId: string;
+  try {
+    const inserted = await store.insertAttempt(baseRec);
+    attemptId = inserted.id;
+  } catch (e) {
+    if (e instanceof CbandConcurrentPaymentError) {
+      return {
+        classification: 'ATTENTION', msgTrace, response: null, needsCheck: true,
+        blocked: true, blockReason: e.reason, authNo: null,
+        approvalDate: null, approvalTime: null,
+        userMessage: '이 환자의 카드 결제가 이미 진행 중입니다. 중복 결제를 막기 위해 요청을 보내지 않았습니다. 진행 중인 결제를 확인해 주세요. (확인 필요)',
+      };
+    }
+    throw e; // 그 외 저장오류(DB down 등) = 기존 동작(상위 catch → 안전측 정지).
+  }
 
   // 2) 송신(+타임아웃). 무응답은 timedOut=true, raw=null.
   let sr: SendResult;
