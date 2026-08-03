@@ -45,7 +45,7 @@ import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { AmountInput } from '@/components/ui/AmountInput';
+import { AmountInput, formatAmountDisplay } from '@/components/ui/AmountInput';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -274,6 +274,21 @@ function parseAmountStr(v: string | null | undefined): number {
   const n = Number(v.replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
+
+// ── T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE (총괄 김주연 직접 지시) ──
+//   계산서·영수증(bill_receipt_new) 발행폼의 결제금액 필드는 발행 시점의 라이브 산출(footFb / computedTotal /
+//   applyBillReceiptNewLiveTotals)로 매 렌더 force 재계산돼, 사용자가 input 에 값을 입력해도 allValues memo 가
+//   즉시 자동값으로 되돌려 사실상 편집이 불가(readOnly 처럼 보임)했다. → 아래 키들에 한해 사용자가 명시 입력한 값을
+//   amountOverrides 에 기록하고 allValues 최종단에 병합(editOverrides 와 동일 패턴)해 '자동반영 + 수동수정 우선'을
+//   달성한다. 자동 산출 로직 자체는 무변경(미수정 필드는 종전대로 라이브 자동값) — 회귀 0.
+//   ⑧ 환자부담총액(patient_amount)은 ⑨/⑩ 납부박스 파생값과 정합을 위해 별도(라이브 절사 vs override) 처리한다.
+const MANUAL_AMOUNT_OVERRIDE_KEYS = [
+  'copayment',        // ⑤ 본인부담금
+  'insurance_covered',// ⑦ 공단부담금
+  'non_covered',      // ⑥ 비급여
+  'total_amount',     // 진료비총액
+  'patient_amount',   // ⑧ 환자부담총액
+] as const;
 
 // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: applyBillReceiptNewCategoryTokens 는
 //   footBilling.ts SSOT 로 승격(export)됨 — 결제미니창(PATH-4)과 동일 토큰 주입 공유. import 로 소비.
@@ -2569,6 +2584,11 @@ function IssueDialog({
   //   editOverrides 는 allValues 최종단에 병합 → 출력 바인딩 최우선 적용(기존 출력 플로우 무파괴, AC5).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editOverrides, setEditOverrides] = useState<Record<string, string>>({});
+  // T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE: 결제금액 4필드(+환자부담총액) 수동 수정값.
+  //   빈 객체로 시작 → 발행폼 오픈 시 자동 산출값 그대로 표시(자동반영 유지). 사용자가 입력한 키만 담겨
+  //   allValues 최종단에 병합(라이브 자동값보다 우선). IssueDialog 는 selectedTemplate 단위로 언마운트되어
+  //   서류 전환 시 자연 초기화(stale override 없음).
+  const [amountOverrides, setAmountOverrides] = useState<Record<string, string>>({});
   // T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-③: 신양식 사전 납부금액(FE-only 표시, 비영속).
   // 복수 원장님일 때 선택 상태 (단일이면 자동 설정됨)
   const [selectedDoctorName, setSelectedDoctorName] = useState<string>('');
@@ -3434,8 +3454,14 @@ function IssueDialog({
       //   bundle-floor 버그로 영수증 ⑧ > PMW 실수납액 divergence를 남겼다. floor10 은 bill_detail 문서 grain 전용(§수정2).
       const rawPatient = parseAmountStr(base.patient_amount);
       const copayComponent = parseAmountStr(base.copayment);
-      const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
-      if (rawPatient > 0) base.patient_amount = formatAmount(patientFloored);
+      const autoPatientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
+      if (rawPatient > 0) base.patient_amount = formatAmount(autoPatientFloored);
+      // T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE: ⑧ 환자부담총액 수동 override 시 자동 절사값 대신 사용.
+      //   ⑨(이미 납부한 금액)/⑩(납부할 금액) 파생값도 동일 override 로 산출해 문서 내부 정합 유지(절사 재적용 없음).
+      const patientOverrideRaw = amountOverrides.patient_amount;
+      const hasPatientOverride = patientOverrideRaw != null && patientOverrideRaw !== '';
+      const patientFloored = hasPatientOverride ? parseAmountStr(patientOverrideRaw) : autoPatientFloored;
+      if (hasPatientOverride) base.patient_amount = patientOverrideRaw;
 
       // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX ──
       // 결함A: 급여 category 분해 토큰 주입. ★야간가산 fold 이후(여기)에 호출해야 진찰료 remainder 가
@@ -3459,6 +3485,15 @@ function IssueDialog({
       if (v != null && v !== '') base[k] = v;
     }
 
+    // T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE: 결제금액 4필드(+환자부담총액) 수동 수정값을 최종 병합.
+    //   라이브 자동 산출(applyBillReceiptNewLiveTotals / footFb / computedTotal)로 덮인 base 를 사용자가 명시 입력한
+    //   값으로 최종 override → ⑤⑥⑦·진료비총액·⑧ 서류 출력에 반영. 미수정 키는 담기지 않아 자동값 그대로(회귀 0).
+    //   원장(payments/service_charges) write 없음 — 표시(field_data JSONB persist) 전용.
+    for (const k of MANUAL_AMOUNT_OVERRIDE_KEYS) {
+      const v = amountOverrides[k];
+      if (v != null && v !== '') base[k] = v;
+    }
+
     // T-20260729-foot-DOCFORM-FIRSTVISIT-MGMTRECORD-P2: 항목④ 시술및처방 / ⑤ 상병명 선택 코드를 _html(raw)로 주입.
     //   증상경과(symptom_progress) 자유텍스트는 manualValues 로 이미 base 에 포함(별도 주입 불요).
     if (template.form_key === 'first_visit_mgmt_record') {
@@ -3474,7 +3509,7 @@ function IssueDialog({
     }
 
     return base;
-  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, holidayDateSet, surchargeOverriddenKeys, mgmtProcedures, mgmtDiagnoses]);
+  }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, amountOverrides, holidayDateSet, surchargeOverriddenKeys, mgmtProcedures, mgmtDiagnoses]);
 
   const editableFields = useMemo(() => {
     const base: FieldMapEntry[] =
@@ -3520,6 +3555,16 @@ function IssueDialog({
       next.add(key);
       return next;
     });
+    // T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE: 결제금액 필드 수동 입력 기록(라이브 자동값보다 우선).
+    //   빈 문자열이면 override 해제(자동값 복귀) → 사용자가 지우면 다시 자동 산출값 노출.
+    if ((MANUAL_AMOUNT_OVERRIDE_KEYS as readonly string[]).includes(key)) {
+      setAmountOverrides((prev) => {
+        const next = { ...prev };
+        if (value === '') delete next[key];
+        else next[key] = value;
+        return next;
+      });
+    }
     if (key in autoValues) {
       setAutoValues((prev) => ({ ...prev, [key]: value }));
     } else {
@@ -3531,6 +3576,11 @@ function IssueDialog({
   //   기존 하단 루프 JSX 를 그대로 추출 → 초진 관리기록지 '고객정보' 상단 이동 블록에서 재사용(이중구현 방지).
   const renderEditableField = (f: FieldMapEntry) => {
     const val = allValues[f.key] ?? '';
+    // T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE: 결제금액 필드가 수동 수정되면 '수정' 배지로 전환(자동값 override 신호).
+    const isAmountOverridden =
+      (MANUAL_AMOUNT_OVERRIDE_KEYS as readonly string[]).includes(f.key) &&
+      amountOverrides[f.key] != null &&
+      amountOverrides[f.key] !== '';
     // doctor_name: 단일 자동 세팅이면 자동 뱃지, 복수면 위 배너에서 처리
     const isAuto =
       f.key === 'doctor_name'
@@ -3540,7 +3590,14 @@ function IssueDialog({
       <div key={f.key}>
         <Label className="text-xs flex items-center gap-1">
           {f.label}
-          {isAuto && (
+          {isAmountOverridden ? (
+            <Badge
+              variant="outline"
+              className="text-[9px] px-1 py-0 text-amber-600 border-amber-300"
+            >
+              수정됨
+            </Badge>
+          ) : isAuto && (
             <Badge
               variant="outline"
               className="text-[9px] px-1 py-0 text-teal-600 border-teal-300"
@@ -3556,6 +3613,16 @@ function IssueDialog({
             placeholder={f.label}
             rows={3}
             className="text-sm mt-1"
+          />
+        ) : f.type === 'amount' ? (
+          /* T-20260803-foot-DOCREPRINT-PAYFIELDS-EDITABLE: 결제금액 필드 편집 가능 + 천단위 쉼표 자동 포맷.
+             onChange(raw) → 쉼표 포함 표시문자열로 저장(출력 바인딩도 쉼표 유지). 지우면 자동값 복귀(updateField 빈값 처리). */
+          <AmountInput
+            value={val}
+            onChange={(raw) => updateField(f.key, formatAmountDisplay(raw))}
+            placeholder={f.label}
+            className="text-sm mt-1"
+            data-testid={`docissue-amount-${f.key}`}
           />
         ) : (
           <Input
