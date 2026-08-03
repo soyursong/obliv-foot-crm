@@ -39,6 +39,7 @@ import {
 } from '@/lib/insurance';
 // T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 신규 접수 유입경로 필수 선택(11코드) + 기타 사유필수.
 import { useInflowChannels } from '@/hooks/useInflowChannels';
+import { useVisitNatures, deriveVisitNatureDefault } from '@/hooks/useVisitNatures';
 
 interface Props {
   open: boolean;
@@ -66,6 +67,12 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
   const [inflowChannel, setInflowChannel] = useState<string>('');
   const [inflowReason, setInflowReason] = useState('');
   const inflow = useInflowChannels(clinicId);
+  // T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(per-visit). forward default = visit_type 크로스워크
+  //   (new→new, returning→revisit). 스태프가 회차권 이행 방문을 fulfillment 로 명시 override 가능(touched 플래그).
+  //   미배포(visitNature.available=false) 시 picker 미노출 → visit_nature 는 default(또는 null)로 write.
+  const [visitNature, setVisitNature] = useState<string>('new');
+  const [visitNatureTouched, setVisitNatureTouched] = useState(false);
+  const visitNat = useVisitNatures(clinicId);
   const [submitting, setSubmitting] = useState(false);
   const [todayReservations, setTodayReservations] = useState<Reservation[]>([]);
   // T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 예약 고객(customer_id) → 차트번호 맵
@@ -87,12 +94,22 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     setInsuranceGrade(null);
     setInflowChannel('');
     setInflowReason('');
+    setVisitNature('new');
+    setVisitNatureTouched(false);
     setLinkedReservation(null);
     setSelectedCustomerId(null);
     setTodayReservations([]);
     setSelectedOutstanding(null);
     setConfirmOutstanding(false);
   };
+
+  // T-20260803-foot-VISIT-NATURE: visit_type 변경 시 방문성격 default 크로스워크 동기화(스태프 override 전까지만).
+  //   new→new / returning→revisit. fulfillment 는 스태프 명시 선택(touched) — 자동 대입 금지(보수적).
+  useEffect(() => {
+    if (visitNatureTouched) return;
+    const d = deriveVisitNatureDefault(visitType);
+    if (d) setVisitNature(d);
+  }, [visitType, visitNatureTouched]);
 
   useEffect(() => {
     // open 변경 시 항상 초기화 (닫힐 때도 포함)
@@ -378,6 +395,11 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
         // INFLOW event anchor(워크인=예약없는 접수 발급앵커). 신규 접수에서 캡처한 이벤트값만 기록.
         //   기존/예약연결 고객은 미재입력 → null(forward-only, first-touch canonical은 customers.first_inflow_channel).
         inflow_channel: inflowChannel || null,
+        // T-20260803-foot-VISIT-NATURE: 방문성격 forward stamp(per-visit). picker 배포(available) 시 선택값,
+        //   미배포 시 visit_type 크로스워크 default. 유효 코드만 각인(미포착 → null, 강제 대입 금지).
+        visit_nature: visitNat.available
+          ? (visitNat.isValid(visitNature) ? visitNature : null)
+          : deriveVisitNatureDefault(visitType),
       })
       .select('id')
       .single();
@@ -677,6 +699,37 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
                   className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               )}
+            </div>
+          )}
+
+          {/* ── T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(visit_nature) 선택 드롭다운 ──
+              default = visit_type 크로스워크(new→신규, returning→재방문). 회차권 이행 방문은 스태프가 '이행'으로 명시 선택.
+              배포순서 graceful: RPC 미배포(available=false) 시 렌더 skip → default(또는 null)로 write(무중단).
+              visit_type 축과 직교 — visit_type 은 무접촉, visit_nature 신규 컬럼에만 각인. */}
+          {visitNat.available && (
+            <div className="space-y-1">
+              <Label htmlFor="ci-visit-nature">
+                방문성격
+                <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                  (신규 / 재방문 / 회차권 이행)
+                </span>
+              </Label>
+              <select
+                id="ci-visit-nature"
+                data-testid="checkin-visit-nature"
+                value={visitNat.isValid(visitNature) ? visitNature : ''}
+                onChange={(e) => {
+                  setVisitNature(e.target.value);
+                  setVisitNatureTouched(true);
+                }}
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {visitNat.options.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

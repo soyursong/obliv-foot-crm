@@ -43,6 +43,7 @@ import { useDragToPan } from '@/hooks/useDragToPan';
 //   원본 lane(T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE)이 방문접수(NewCheckInDialog)에만 배선 → 사전예약 폼 누락분 이행.
 //   longre 정본 AdminReservations.tsx + foot 자기 walk-in 컨벤션(inflow.available/requiresReason/options) 재사용.
 import { useInflowChannels } from '@/hooks/useInflowChannels';
+import { useVisitNatures, deriveVisitNatureDefault } from '@/hooks/useVisitNatures';
 import {
   closeTimeFor,
   generateSlots,
@@ -223,6 +224,9 @@ type CanonicalCreateInput = {
   // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: inbound.etc(기타) 선택 시 사유. customers.first_inflow_source_ref
   //   (inflow 축 내부 컬럼 — referral_source/§36 방화벽과 무관)에 first-write-wins stamp. walk-in(NewCheckInDialog) 컨벤션 동일.
   inflow_reason?: string | null;
+  // T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(per-visit). 예약행 reservations.visit_nature 각인.
+  //   선택값(new/revisit/fulfillment) 우선, 미제공 시 visit_type 크로스워크 default(new→new, returning→revisit). visit_type 무접촉·직교 축.
+  visit_nature?: string | null;
   registrar_id?: string | null; // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약등록자(예약행 컬럼 기존)
   registrar_name?: string | null; // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 표시 스냅샷(생성 시 영속)
   referral_name?: string | null;
@@ -367,6 +371,9 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     visit_route: input.visit_route ?? null,
     // T-20260801/T-20260803: 예약행 유입경로 이벤트값 영속(canonical 코드) — 선택값 우선, 없으면 고객 최초유입 상속(effectiveInflow).
     inflow_channel: effectiveInflow,
+    // T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격 각인 — 선택값 우선, 미제공 시 visit_type 크로스워크 default.
+    //   visit_type 무접촉·직교 축(방화벽). fulfillment 자동승격 없음(스태프 명시 선택만).
+    visit_nature: (input.visit_nature?.trim() || deriveVisitNatureDefault(input.visit_type)) || null,
     registrar_id: input.registrar_id ?? null,
     // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE: 예약등록자 이름 스냅샷도 생성 시 영속.
     //   기존 컬럼(reservations.registrar_name) — 신규 스키마 0. 편집경로(popup saveRouteAndRegistrar)와 동일 컬럼.
@@ -3329,6 +3336,17 @@ function ReservationEditor({
   const inflow = useInflowChannels(clinicId);
   const [inflowReason, setInflowReason] = useState('');        // inbound.etc(기타) 사유
   const [inheritedInflow, setInheritedInflow] = useState<string | null>(null); // 구환 customers.first_inflow_channel 상속값
+  // ── T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(visit_nature) picker(예약 접수 폼 편승) ──
+  //   default = visit_type 크로스워크(new→new, returning→revisit). 회차권 이행 방문은 스태프가 '이행(fulfillment)' 명시 선택.
+  //   visit_type 무접촉·직교. 미배포(available=false) 시 picker 미노출 → default 로 write(무중단).
+  const visitNat = useVisitNatures(clinicId);
+  const [visitNature, setVisitNature] = useState<string>(() => deriveVisitNatureDefault(draft?.visit_type) ?? 'new');
+  const [visitNatureTouched, setVisitNatureTouched] = useState(false);
+  useEffect(() => {
+    if (visitNatureTouched) return;
+    const d = deriveVisitNatureDefault(state?.visit_type);
+    if (d) setVisitNature(d);
+  }, [state?.visit_type, visitNatureTouched]);
   // 선택 고객이 구환(최초유입 보유)이면 자동상속 → 강제선택 면제(재입력 요구 X). customer_id 확정 시점에 조회.
   useEffect(() => {
     let cancelled = false;
@@ -3908,6 +3926,10 @@ function ReservationEditor({
       inflow_channel: state.inflow_channel ?? null,
       // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: inbound.etc 사유 위임(first_inflow_source_ref stamp).
       inflow_reason: inflow.requiresReason(state.inflow_channel) ? inflowReason.trim() : null,
+      // T-20260803-foot-VISIT-NATURE: 방문성격 위임 — picker 배포 시 선택값(유효 코드만), 미배포 시 크로스워크 default 폴백.
+      visit_nature: visitNat.available
+        ? (visitNat.isValid(visitNature) ? visitNature : null)
+        : deriveVisitNatureDefault(state.visit_type),
       referral_name: state.referral_name,
       linked_package_id: state.linked_package_id,
       preferred_therapist_id: state.visit_type === 'returning' ? (overrideTherapistId || null) : null,
@@ -4363,6 +4385,27 @@ function ReservationEditor({
                   )}
                 </>
               )}
+            </div>
+          )}
+          {/* ── T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(visit_nature) 선택 드롭다운(inflow lane surface 편승) ──
+              신규 예약(생성)에서만 노출. default = visit_type 크로스워크(new→신규, returning→재방문). 회차권 이행 방문은 '이행' 명시 선택.
+              배포순서 graceful: RPC 미배포(available=false) 시 렌더 skip → default 로 write(무중단). visit_type 무접촉·직교 축. */}
+          {!state.existingId && visitNat.available && (
+            <div className="space-y-1.5">
+              <Label>방문성격 <span className="ml-1 text-xs font-normal text-muted-foreground">(신규 / 재방문 / 회차권 이행)</span></Label>
+              <select
+                data-testid="resv-visit-nature-select"
+                value={visitNat.isValid(visitNature) ? visitNature : ''}
+                onChange={(e) => {
+                  setVisitNature(e.target.value);
+                  setVisitNatureTouched(true);
+                }}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {visitNat.options.map((o) => (
+                  <option key={o.code} value={o.code}>{o.label}</option>
+                ))}
+              </select>
             </div>
           )}
           {/* AC-4: 예약메모 — 수정 모달은 ReservationMemoTimeline(append-only), 신규는 단순 Textarea */}
