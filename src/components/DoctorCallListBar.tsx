@@ -338,6 +338,16 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
     return m;
   }, [activeList]);
 
+  // T-20260612-foot-DOCTORCALL-INTREATMENT-BADGE AC-11(C 옵션): "다음 순서" 강조 대상 산출.
+  //   진료 중 환자(tier-1 상단 고정)가 있으면 그 바로 다음(진료중이 아닌 첫 활성 환자 = 명단 2위)을 강조,
+  //   진료 중 환자가 없으면 명단 1위를 강조. → activeList(compareCallOrder: 진료중 고정 > 수기 > 진입순)에서
+  //   isInTreatment 아닌 첫 행이 곧 "다음 진료할 환자". 진료중 다수여도 진료중 블록 바로 아래로 자연 수렴.
+  //   진료 중 아닌 활성 환자가 하나도 없으면(전원 진료중/큐 비었음) 강조 없음(null).
+  const nextHighlightId = useMemo(() => {
+    const next = activeList.find((ci) => !isInTreatment(ci));
+    return next?.id ?? null;
+  }, [activeList]);
+
   // WS-A) 상단 방번호 요약 — activeList(진료순 좌→우)의 현재 입실 방코드. 미배정 토큰 '–'.
   //   getCurrentRoomCode = ROOM-LABEL의 입실게이트+getAssignedSlotName 재사용(SSOT, 중복구현 금지) →
   //   요약행 방번호 == 각 행 위치배지 방번호 항상 일치. activeOrderNo와 동일 순서라 N번 ↔ 방코드 대응.
@@ -862,6 +872,7 @@ export default function DoctorCallListBar({ checkIns, onRefresh, onOpenChart }: 
                 checkIn={ci}
                 inactive={inactive}
                 orderNo={activeIdx}
+                isNext={ci.id === nextHighlightId}
                 canMoveUp={canMoveUp}
                 onMoveUp={canMoveUp ? () => reorderUp(ci) : undefined}
                 reordering={reordering}
@@ -893,6 +904,8 @@ interface DoctorCallRowProps {
   reordering?: boolean;
   /** 진료완료(핑크) = 비활성 — dimmed + "진료완료" 배지, 콜 대상 제외 */
   inactive?: boolean;
+  /** T-20260612-foot-DOCTORCALL-INTREATMENT-BADGE AC-11(C 옵션): 다음 진료 순서 환자 → "다음" 배지 + 행 테두리 강조 */
+  isNext?: boolean;
   /** T-20260610-foot-CALLLIST-ROW-HIDE-AUTOSHOW AC-1: 이 행 숨기기(표시 필터에서 제외) */
   onHide?: () => void;
   /** T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 고객 이름 클릭 → 진료차트 */
@@ -900,7 +913,11 @@ interface DoctorCallRowProps {
   onRefresh?: () => void;
 }
 
-function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMoveUp, reordering = false, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
+function DoctorCallRow({ checkIn, visitCount, orderNo, isNext = false, canMoveUp = false, onMoveUp, reordering = false, inactive = false, onHide, onOpenChart, onRefresh }: DoctorCallRowProps) {
+  // T-20260612-foot-DOCTORCALL-INTREATMENT-BADGE AC-6: "🟢 진료 중" 세션 표지(원장이 명단 행에서 '진료중' 전환).
+  //   status='examination'(입실) 또는 doctor_status='in_treatment'(WS-2 세션) → 진료 중. isInTreatment SSOT 재사용.
+  //   직원/간호사 화면에도 realtime(check_ins 구독)로 동일 반영 → 성함 옆 초록 배지로 한눈에 "누가 진료 중인지".
+  const inTreatment = isInTreatment(checkIn);
   const isReturning = checkIn.visit_type === 'returning';
   const isExperience = checkIn.visit_type === 'experience';
   // T-20260609-foot-CALLLIST-HEALER-POSITION item1 + REOPEN FIX-SPEC: 힐러 구분 배지.
@@ -988,8 +1005,13 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
         // CALLLIST-DONE-INACTIVE) 진료완료 = 비활성 (흐림 + 회색조), 콜 대상 활성과 시각 구분
         inactive
           ? 'border-gray-200 bg-gray-50 opacity-60'
-          : 'border-purple-200 bg-white hover:border-purple-300',
+          // T-20260612-foot-DOCTORCALL-INTREATMENT-BADGE AC-11: "다음" 순서 환자 → 앰버 링+테두리 강조(진료중 초록과 시각 구분).
+          : isNext
+            ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-300 hover:border-amber-500'
+            : 'border-purple-200 bg-white hover:border-purple-300',
       )}
+      data-is-next={String(isNext)}
+      data-in-treatment={String(inTreatment)}
     >
       {/* 헤더: 고객명(클릭→진료차트) + 위치배지 + 배지 + 지정콜/호출표시 */}
       {/* T-20260601-foot-DASH-HSCROLL-CHART-LOC #2: 이름=차트, 지정콜=별도 버튼(클릭영역 분리) */}
@@ -1048,6 +1070,29 @@ function DoctorCallRow({ checkIn, visitCount, orderNo, canMoveUp = false, onMove
             </span>
           )}
           {visitBadge}
+          {/* T-20260612-foot-DOCTORCALL-INTREATMENT-BADGE AC-6: "🟢 진료 중" 배지 — 원장이 '진료중' 전환 시 표시.
+              직원/간호사 화면에도 realtime(check_ins 구독)로 즉시 반영. 성함 바로 옆 → "🟢 진료 중 [환자명]" 한눈 파악. */}
+          {inTreatment && (
+            <span
+              data-testid="doctor-call-intreatment-badge"
+              className="shrink-0 inline-flex items-center gap-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] px-1 py-px rounded font-semibold whitespace-nowrap"
+              title={`진료 중 — ${checkIn.customer_name}`}
+            >
+              <span className="text-emerald-500 leading-none">●</span>
+              진료 중
+            </span>
+          )}
+          {/* T-20260612-foot-DOCTORCALL-INTREATMENT-BADGE AC-11(C 옵션): "다음" 배지 — 다음 진료 순서 환자.
+              진료중 환자 바로 다음(명단 2위), 진료중 없으면 명단 1위. 진료중 배지(초록)와 앰버로 시각 구분. */}
+          {isNext && !inTreatment && (
+            <span
+              data-testid="doctor-call-next-badge"
+              className="shrink-0 inline-flex items-center bg-amber-100 text-amber-800 border border-amber-300 text-[10px] px-1 py-px rounded font-semibold whitespace-nowrap"
+              title="다음 진료 순서"
+            >
+              다음
+            </span>
+          )}
           {/* T-20260616-foot-CALLCARD-COMPACT-MEMO-TOGGLE #1: stepper(현장 호칭 "지하철 표시")를 이 인라인 그룹에서
               빼내 성함 바로 아래 전용 줄로 이동(아래 doctor-call-stepper-line). SUBWAY-BADGE-INLINE이 세로높이 축소
               목적으로 인라인 합류시켰으나, 긴 이름은 wrap·짧은 이름은 인라인이라 카드마다 위치가 흔들림(현장 지적
