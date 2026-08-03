@@ -5,6 +5,11 @@ import { DOPAMINE_TM_PREFIX_RE, cleanRegistrantName } from './registrarMatch';
 
 export type VisitType = 'new' | 'returning' | 'experience';
 
+// T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(per-visit 본질) 축 — visit_type 과 직교(별도 컬럼).
+//   canonical enum 4값(system_codes code_type='visit_nature'). foot picker 노출 = new/revisit/fulfillment(experience=body 전용, 오버레이 미노출).
+//   fulfillment 만 AOV/전환율 분모 제외. NULL=미포착(분모 포함).
+export type VisitNature = 'new' | 'revisit' | 'fulfillment' | 'experience';
+
 // 직원촬영 임상사진 (T-20260703-foot-STAFFPHOTO-CHART-LINK) — canonical treatment_photos 테이블 row.
 // ※ 레거시 check_ins.treatment_photos(TEXT[] 컬럼)와 별개. 이쪽은 전용 테이블 + private 'treatment-photos' 버킷.
 export type TreatmentPhotoType = 'before' | 'after' | 'progress';
