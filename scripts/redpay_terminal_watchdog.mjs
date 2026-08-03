@@ -108,14 +108,18 @@ const SERVICE_ROLE_KEY = cfg("SUPABASE_SERVICE_ROLE_KEY");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
-// ── ★ Path C(T-20260728-foot-REDPAY-SILENT-PATH-HARDEN AC-2): merchant-grain(①) fetch bizno DEFAULT 단일점 봉인 ──
-//   [RC] 구 DEFAULT=511-60-00988. env(REDPAY_BUSINESS_NO) 유실 시 ① fetch 가 죽은 511 band 로 폴백
-//     → 7/23 flip 후 511=0건(2026-07-25 READ-ONLY probe 실증) → ①이 "미분류 merchant 0건 = 이상없음"으로
-//     조용해지는 FALSE-CLEAN 단일 취약점. 457=189건(라이브)인데 감시가 침묵.
-//   [정본] DEFAULT 를 라이브 band 457-23-00938 로 교정 → env 유실 시에도 457 폴백(FALSE-CLEAN 제거).
-//     ④ TID-grain 은 이미 REDPAY_RECON_BUSINESS_NOS(511∪457 union)로 커버 → 무접촉(중복구현 금지).
-//     ★ENVSHADOW-REGUNION-FIX(poller admission env union)와 경계 상이 — 본건은 watchdog ① fetch DEFAULT 만 교정.
-const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "457-23-00938"); // merchant-grain(①) fetch scope (라이브 band DEFAULT; env=457 현행)
+// ── ★ Path C fail-closed 재교정(T-20260803-foot-REDPAY-BIZNO-DEFAULT-FAILCLOSED): merchant-grain(①) fetch bizno 하드값 폴백 제거 ──
+//   [연혁] 구 DEFAULT=511-60-00988 → SILENT-PATH-HARDEN(deployed 08-02)이 라이브 band 457-23-00938 하드값 폴백으로 교정.
+//   [RC of RC] 457 하드값 폴백도 근본해결이 아님(총괄 최필경 실사용 논거): bizno 는 이미 511→457 로 1회 바뀌었고
+//     또 바뀔 수 있다 → 다음 변경 시 457 이 똑같이 '틀린 기본값'이 되어 동일 FALSE-CLEAN 단일점이 재발한다.
+//   [정본] 하드값 기본값(폴백)을 아예 제거 → env(REDPAY_BUSINESS_NO) 유실/미설정 시 '조용히 어떤 band 로 폴백'하지 않고
+//     명시적 fail-closed(business_no 미설정 오류 + 슬랙 경보, main() 참조)로 실패시켜 사람이 인지하게 표면화한다.
+//     ★핵심 불변식: '실제 0건(정상 clean)' 과 'bizno read-fail(경보)' 을 서로 다른 신호로 구분 —
+//       read-fail 은 fetch 이전에 fail-closed 알람+종료(0건 clean 신호를 절대 만들지 않음). 미니PC 선례 동형.
+//     ④ TID-grain union(REDPAY_RECON_BUSINESS_NOS) 및 경로A(NULL quarantine) 은 무접촉 — 본건은 ① fetch 폴백 제거만.
+const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO"); // merchant-grain(①) fetch scope — ★하드값 폴백 없음(env 유실 시 fail-closed)
+// fail-closed 판정: bizno env 유실/공란 = read-fail(경보) — '실제 0건 clean' 과 구분되는 별도 신호.
+function isBiznoReadFail(bizno) { return !bizno || String(bizno).trim().length === 0; }
 // 7/23 flip 으로 죽은 band(0건) — env/DEFAULT 가 이 값이면 ① merchant-grain 이 FALSE-CLEAN 될 수 있어 기동 시 경고.
 const REDPAY_DEAD_BIZNO_BANDS = new Set(["511-60-00988"]);
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
@@ -601,7 +605,22 @@ async function main() {
 
   const startMs = Date.now();
   if (!SERVICE_ROLE_KEY) { errlog("SUPABASE_SERVICE_ROLE_KEY 미설정 — ~/.env.redpay-foot 확인. 종료."); process.exit(1); }
-  if (!REDPAY_API_KEY || !REDPAY_BUSINESS_NO) { errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)})/BUSINESS_NO(${REDPAY_BUSINESS_NO}) 미설정 — 종료.`); process.exit(1); }
+  if (!REDPAY_API_KEY) { errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)}) 미설정 — 종료.`); process.exit(1); }
+  // ── ★ fail-closed(T-20260803-FAILCLOSED): bizno env 유실/미설정 = read-fail. 하드값 폴백이 없으므로 여기서 걸린다.
+  //   조용히 skip/0건 clean 으로 넘어가지 않고, 명시적 오류 + 슬랙 경보로 표면화한 뒤 종료(감시 무결성 우선).
+  //   ★'실제 0건(정상 clean)' 과는 다른 신호 — 이 경로는 ① fetch 이전에 종료하므로 clean 신호를 만들지 않는다.
+  if (isBiznoReadFail(REDPAY_BUSINESS_NO)) {
+    const alarm =
+      `🚨 [레드페이 단말 감시] 사업자번호(business_no) 미설정 — 감시 조회 불가(read-fail)\n` +
+      `• 감시 폴러가 REDPAY_BUSINESS_NO 를 읽지 못했습니다(env 유실/미설정). domain=${REDPAY_DOMAIN}\n` +
+      `• 이 상태에서는 결제 감시가 동작하지 않습니다. '거래 0건'이 아니라 '조회 자체 실패'입니다 — 정상(이상없음)이 아님.\n` +
+      `• ~/.env.redpay-foot 의 REDPAY_BUSINESS_NO 설정을 확인해 주세요. (하드코딩 기본값으로 임의 폴백하지 않습니다 — 틀린 값으로 감시가 눈머는 것을 막기 위함)`;
+    errlog(`[BIZNO-READFAIL] REDPAY_BUSINESS_NO 미설정(env 유실) — fail-closed 종료. ` +
+           `하드값 폴백 없음(457/511 자동 사용 안 함). 슬랙 경보 발송 후 exit(1). ` +
+           `★read-fail ≠ 거래0건 clean.`);
+    sendSlack(SLACK_CHANNEL, alarm);
+    process.exit(1);
+  }
 
   const baseUrl = resolveRedpayEndpoint();
   // ★ Path C(SILENT-PATH-HARDEN AC-2): ① merchant-grain fetch bizno 가 죽은 band(511, 7/23 flip 후 0건)면
@@ -910,9 +929,17 @@ function runSelfTest() {
   const uSel2 = selectUnscopableAlarms(uMixed, { "tid:TX": { first_alerted_at: "x" } });
   assert(!uSel2.some((g) => g.key === "tid:TX") && uSel2.length === 2, `Path A dedup: 기알림 tid 억제 (실제=${uSel2.length})`);
 
-  // ── ★ Path C: ① merchant-grain fetch bizno DEFAULT = 라이브 band(457), 죽은 band(511) 는 dead 목록 ──
+  // ── ★ Path C fail-closed(T-20260803-FAILCLOSED): ① merchant-grain fetch bizno 하드값 폴백 제거 + read-fail 구분 ──
   assert(REDPAY_DEAD_BIZNO_BANDS.has("511-60-00988"), `Path C: 511 은 dead band 목록에 존재(FALSE-CLEAN 경고 대상)`);
   assert(!REDPAY_DEAD_BIZNO_BANDS.has("457-23-00938"), `Path C: 457(라이브)은 dead band 아님`);
+  // fail-closed 불변식: bizno 유실/공란 = read-fail(경보) 신호, 정상 bizno 는 read-fail 아님(0건 clean 은 별개 신호).
+  assert(isBiznoReadFail("") === true, `fail-closed: bizno 공란 = read-fail(경보) 신호`);
+  assert(isBiznoReadFail(undefined) === true, `fail-closed: bizno undefined = read-fail`);
+  assert(isBiznoReadFail("   ") === true, `fail-closed: bizno 공백만 = read-fail`);
+  assert(isBiznoReadFail("457-23-00938") === false, `정상 bizno 는 read-fail 아님(→ fetch 진입, 실제 0건이면 그때야 clean 신호)`);
+  assert(isBiznoReadFail("511-60-00988") === false, `bizno 값이 있으면(설령 dead band 여도) read-fail 아님 — read-fail 은 '값 자체 부재'만`);
+  // 하드값 폴백 제거 검증: 미설정 key 는 빈값(457/511 자동 폴백 없음) → main() 에서 fail-closed 로 걸림.
+  assert(cfg("REDPAY_BUSINESS_NO__NONEXISTENT_KEY_FOR_TEST") === "", `bizno 조회는 하드값 폴백 없음 — 미설정 시 빈값(457/511 자동 대입 안 함)`);
 
   // dedup + auto-release
   const state = { version: 1, alerted_merchants: {} };
@@ -975,7 +1002,14 @@ function runSelfTest() {
   // bizno 전환기 스코프 불변식 (build-gate §10.5-4): recon union 이 511·457 모두 커버
   assert(REDPAY_RECON_BUSINESS_NOS.includes("511-60-00988"), `recon bizno union 511 포함`);
   assert(REDPAY_RECON_BUSINESS_NOS.includes("457-23-00938"), `recon bizno union 457 포함(7/23 이관 대응)`);
-  assert(REDPAY_RECON_BUSINESS_NOS.includes(REDPAY_BUSINESS_NO), `recon union 이 현행 env bizno(${REDPAY_BUSINESS_NO}) 포함(false-clean 방지)`);
+  // ★ bizno 하드값 폴백 제거 후: env 유실 시 REDPAY_BUSINESS_NO="" 이므로 union superset 검사는 값이 있을 때만 유효.
+  //   (env 미설정 경로는 main() fail-closed 로 별도 차단 — union 자체는 자기 기본값 511∪457 유지, ④ 무접촉.)
+  if (!isBiznoReadFail(REDPAY_BUSINESS_NO)) {
+    assert(REDPAY_RECON_BUSINESS_NOS.includes(REDPAY_BUSINESS_NO), `recon union 이 현행 env bizno(${REDPAY_BUSINESS_NO}) 포함(false-clean 방지)`);
+  } else {
+    assert(REDPAY_RECON_BUSINESS_NOS.includes("511-60-00988") && REDPAY_RECON_BUSINESS_NOS.includes("457-23-00938"),
+      `env bizno 미설정(fail-closed 대상) — union 은 자기 기본값(511∪457) 유지(④ 무접촉 확인)`);
+  }
 
   // ── ⑤ TID별 소계 대조 검증 (AC-2) ─────────────────────────────────────────
   const subMerchants = new Set(["1777289001", "1777289002"]);

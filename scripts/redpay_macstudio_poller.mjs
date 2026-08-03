@@ -85,7 +85,12 @@ const INTERNAL_CRON_SECRET = cfg("INTERNAL_CRON_SECRET");
 
 // ── 레드페이 ────────────────────────────────────────────────────────────────
 const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
-const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO", "457-23-00938"); // 종로 풋 (457=롱레+풋 공유 merchant, 07-23 RedPay flip; 풋은 merchant_id 격리) — T-20260723-foot-REDPAY-LOOKUP-BIZNO-511TO457
+// ★ fail-closed(T-20260803-foot-REDPAY-BIZNO-DEFAULT-FAILCLOSED): bizno 하드값 폴백 제거.
+//   구 default="457-23-00938" 은 미래 재변경(bizno 는 이미 511→457 1회 flip) 시 '틀린 기본값'이 되어
+//   silent-default→FALSE-CLEAN 재발. → 기본값 없음. env 유실 시 main() 에서 명시적 fail-closed(business_no 미설정 오류+경보).
+const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO"); // 종로 풋 (457=롱레+풋 공유 merchant, 07-23 flip; merchant_id 격리) — ★하드값 폴백 없음
+// fail-closed 판정: bizno env 유실/공란 = read-fail(경보) — '실제 0건 수집(정상)' 과 구분되는 별도 신호.
+function isBiznoReadFail(bizno) { return !bizno || String(bizno).trim().length === 0; }
 // REDPAY_TID_WHITELIST_ENV / REDPAY_MERCHANT_WHITELIST_ENV 는 도메인 스코프 해석이 필요하므로
 // REDPAY_DOMAIN 정의 이후로 이동(아래 domainScopedOverride 참조 — T-20260714 FIX phase2 결함2).
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
@@ -1073,8 +1078,22 @@ async function main() {
     errlog("SUPABASE_SERVICE_ROLE_KEY 미설정 — ~/.env.redpay-foot 또는 env 확인. 종료.");
     process.exit(1);
   }
-  if (!REDPAY_API_KEY || !REDPAY_BUSINESS_NO) {
-    errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)}) 또는 REDPAY_BUSINESS_NO(${REDPAY_BUSINESS_NO}) 미설정 — 종료.`);
+  if (!REDPAY_API_KEY) {
+    errlog(`REDPAY_API_KEY(${mask(REDPAY_API_KEY)}) 미설정 — 종료.`);
+    process.exit(1);
+  }
+  // ── ★ fail-closed(T-20260803-FAILCLOSED): bizno env 유실/미설정 = read-fail. 하드값 폴백 없음 → 여기서 걸린다.
+  //   조용히 skip/0건 수집으로 넘어가지 않고, 명시적 오류 + 슬랙 경보로 표면화 후 종료(수집 무결성 우선).
+  //   ★'실제 0건 수집(정상)' 과는 다른 신호 — 이 경로는 조회 이전에 종료하므로 '수집 성공/0건' 신호를 만들지 않는다.
+  if (isBiznoReadFail(REDPAY_BUSINESS_NO)) {
+    const alarm =
+      `🚨 [레드페이 수집] 사업자번호(business_no) 미설정 — 결제 수집 불가(read-fail)\n` +
+      `• 수집 폴러가 REDPAY_BUSINESS_NO 를 읽지 못했습니다(env 유실/미설정). domain=${REDPAY_DOMAIN}\n` +
+      `• 이 상태에서는 결제 수집이 동작하지 않습니다. '거래 0건'이 아니라 '조회 자체 실패'입니다 — 정상(이상없음)이 아님.\n` +
+      `• ~/.env.redpay-foot 의 REDPAY_BUSINESS_NO 설정을 확인해 주세요. (하드코딩 기본값으로 임의 폴백하지 않습니다 — 틀린 값으로 수집이 눈머는 것을 막기 위함)`;
+    errlog(`[BIZNO-READFAIL] REDPAY_BUSINESS_NO 미설정(env 유실) — fail-closed 종료. ` +
+           `하드값 폴백 없음(457/511 자동 사용 안 함). 슬랙 경보 발송 후 exit(1). ★read-fail ≠ 거래0건.`);
+    sendSlack(TID_ALARM_CHANNEL, alarm);
     process.exit(1);
   }
 
