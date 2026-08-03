@@ -24,6 +24,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { QR_CODE_API_ENDPOINT, EDGE_FUNCTIONS } from '@/lib/externalServices';
+// T-20260803-foot-TERMINAL-TID-COMPORT-PERSEAT-SETTINGS: 자리(PC)별 카드 단말 설정 입력·저장·영속.
+//   저장방식 = localStorage(PC별). 기존 cband CAT 직결결제(T-20260731) 인프라 재사용 — DB 무변경.
+import { getTerminalConfig, saveTerminalConfig } from '@/lib/cband/config';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
@@ -48,7 +51,7 @@ import {
 import {
   MessageSquare, Settings, ChevronRight, Loader2, AlertCircle,
   CheckCircle2, Phone, Send, History, Ban, Zap, QrCode, Download,
-  ImagePlus, X,
+  ImagePlus, X, CreditCard,
 } from 'lucide-react';
 import type { Clinic, CheckIn } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
@@ -146,7 +149,7 @@ function optOutPhoneKey(raw: string): string {
   return normalizeToE164(raw) ?? raw.replace(/[^0-9]/g, '');
 }
 
-type Section = '0_connection' | '1_channels' | '2_rules' | '3_templates' | '4_manual' | '5_history' | '6_optout' | '7_selfcheckin_qr';
+type Section = '0_connection' | '1_channels' | '2_rules' | '3_templates' | '4_manual' | '5_history' | '6_optout' | '7_selfcheckin_qr' | '8_terminal';
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   resv_confirm:          'T01 예약 확정',
@@ -179,7 +182,7 @@ const DEFAULT_TEMPLATES: Record<string, string> = {
   noshow:                '[오블리브 {지점명}] {고객명}님, 오늘 {시간} 방문이 확인되지 않았습니다.\n재예약 도와드릴게요: {지점전화번호}',
 };
 
-const SECTIONS: { id: Section; label: string; icon: React.ReactNode; adminOnly?: boolean; mgrPlus?: boolean }[] = [
+const SECTIONS: { id: Section; label: string; icon: React.ReactNode; adminOnly?: boolean; mgrPlus?: boolean; dirMgrOnly?: boolean }[] = [
   { id: '0_connection', label: '⓪ 연결 설정',     icon: <Settings className="h-4 w-4" />,      adminOnly: true },
   { id: '1_channels',   label: '① 채널 가능 여부', icon: <Zap className="h-4 w-4" /> },
   { id: '2_rules',      label: '② 자동 발송 규칙', icon: <MessageSquare className="h-4 w-4" /> },
@@ -188,6 +191,8 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode; adminOnly?:
   { id: '5_history',    label: '⑤ 발송 이력',      icon: <History className="h-4 w-4" /> },
   { id: '6_optout',     label: '⑥ 수신거부 명단',  icon: <Ban className="h-4 w-4" /> },
   { id: '7_selfcheckin_qr', label: '⑦ 셀프접수 QR 다운로드', icon: <QrCode className="h-4 w-4" />, mgrPlus: true },
+  // T-20260803-foot-TERMINAL-...-SETTINGS: 자리(PC)별 카드 단말기 설정 — 실장(admin/manager/director) 전용.
+  { id: '8_terminal',   label: '⑧ 카드 단말기 설정', icon: <CreditCard className="h-4 w-4" />, dirMgrOnly: true },
 ];
 
 function extractErrorMsg(err: unknown): string {
@@ -231,6 +236,9 @@ export default function AdminSettings() {
   const role      = profile?.role ?? '';
   const isAdmin   = role === 'admin';
   const isManager = role === 'manager';
+  const isDirector = role === 'director';
+  // ⑧ 카드 단말기 설정(자리별 TID/COM포트) — 실장급(admin/manager/director) 전용.
+  const canTerminal = isAdmin || isManager || isDirector;
   // T-20260620-foot-STAFF-PERM-UNLOCK-6MENU ③: 메시지 설정 — 3역할(consultant/coordinator/therapist) 일괄 해제.
   //   ⓪ 연결 설정(Solapi 자격증명)은 adminOnly 유지(clinics write=is_admin_or_manager·column-scope 불가 → DEFERRED).
   //   ⑦ 셀프접수 QR 다운로드(read-only)는 3역할 개방. 그 외 섹션은 PERM_MATRIX.messaging(旣 전직원 개방, MSGSETTINGS-STAFF-ACCESS)과 정합.
@@ -354,7 +362,7 @@ export default function AdminSettings() {
   // ⓪ 연결설정(adminOnly): admin 한정 유지(Solapi 자격증명 write=clinics RLS DEFERRED).
   // ⑦ QR(mgrPlus): read-only 다운로드 → 3역할(isUnlock) 개방.
   const visibleSections = SECTIONS.filter(
-    (s) => (!s.adminOnly || isAdmin) && (!s.mgrPlus || isAdmin || isManager || isUnlock),
+    (s) => (!s.adminOnly || isAdmin) && (!s.mgrPlus || isAdmin || isManager || isUnlock) && (!s.dirMgrOnly || canTerminal),
   );
 
   return (
@@ -439,6 +447,9 @@ export default function AdminSettings() {
           )}
           {activeSection === '7_selfcheckin_qr' && (isAdmin || isManager || isUnlock) && (
             <SectionSelfCheckinQR clinic={clinic} />
+          )}
+          {activeSection === '8_terminal' && canTerminal && (
+            <SectionTerminal />
           )}
         </div>
       </div>
@@ -1808,6 +1819,127 @@ function SectionSelfCheckinQR({ clinic }: { clinic: Clinic }) {
             인쇄 후 데스크에 비치하세요. 기존에 인쇄해 둔 QR이 있다면, 이 코드로 교체해야 셀프접수가 정상 동작합니다.
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑧ 카드 단말기 설정 (자리별 TID/COM포트)
+// ──────────────────────────────────────────────────────────────────────────────
+// T-20260803-foot-TERMINAL-TID-COMPORT-PERSEAT-SETTINGS
+//   각 자리(PC)마다 카드 결제 단말 연동값(단말기번호 TID / COM 포트)을 실장이 직접 입력·저장.
+//   저장방식 = localStorage(이 PC 전용). 한 번 저장하면 이 PC에서 재부팅/재접속해도 자동으로 채워진다.
+//   ※ 인프라(getTerminalConfig/saveTerminalConfig, LS_KEY='cband.terminal.config')는
+//     T-20260731-foot-CBAND-CAT-DIRECT-PAY 에서 이미 구축됨 — 본 티켓은 '입력 UI'만 추가(DB 무변경).
+//   ※ 스코프 가드: 값 입력·저장·영속까지. 실제 단말 제어(COM포트로 카드리더 명령)는 본 티켓 밖.
+function SectionTerminal() {
+  // 기존 저장값(env fallback 포함)으로 프리필. getTerminalConfig 는 3값 모두 있어야 non-null.
+  const existing = getTerminalConfig();
+  const [tid, setTid]         = useState(existing?.tid ?? '');
+  const [merno, setMerno]     = useState(existing?.merno ?? '');
+  const [catPort, setCatPort] = useState(existing?.catPort != null ? String(existing.catPort) : '');
+  const [saving, setSaving]   = useState(false);
+  // 저장 완료 후 "이 PC에 저장됨" 확정 표시 — 재부팅해도 유지됨을 현장에 각인.
+  const [persisted, setPersisted] = useState(existing != null);
+
+  const handleSave = () => {
+    const t = tid.trim();
+    const m = merno.trim();
+    const p = catPort.trim();
+    // ★ TID·COM포트는 필수(단말 거부 방지, config.ts 실측#1). 가맹점번호(MERNO)도 결제엔 필요.
+    if (!t) { toast.error('단말기 번호(TID)를 입력하세요.'); return; }
+    if (!m) { toast.error('가맹점 번호(MERNO)를 입력하세요.'); return; }
+    if (!p) { toast.error('COM 포트 번호를 입력하세요.'); return; }
+    setSaving(true);
+    try {
+      saveTerminalConfig({ tid: t, merno: m, catPort: p });
+      setPersisted(true);
+      toast.success('이 PC의 카드 단말기 설정을 저장했습니다. 재부팅해도 자동으로 채워집니다.');
+    } catch (err) {
+      toast.error(`저장 실패: ${extractErrorMsg(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-xl space-y-6" data-testid="terminal-config-section">
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <CreditCard className="h-5 w-5 text-emerald-600" /> ⑧ 카드 단말기 설정
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          이 자리(PC)에 연결된 카드 결제 단말기 정보를 입력합니다. 한 번 저장하면 <b>이 PC</b>에서
+          재부팅하거나 다시 접속해도 자동으로 채워집니다.
+        </p>
+      </div>
+
+      {persisted && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" data-testid="terminal-persisted-badge">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          이 PC에 단말기 설정이 저장되어 있습니다.
+        </div>
+      )}
+
+      <div className="rounded-lg border p-4 space-y-5">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">단말기 번호 (TID)</label>
+          <Input
+            value={tid}
+            onChange={(e) => setTid(e.target.value)}
+            placeholder="예: 1234567890"
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-12 text-lg"
+            data-testid="terminal-tid-input"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">가맹점 번호 (MERNO)</label>
+          <Input
+            value={merno}
+            onChange={(e) => setMerno(e.target.value)}
+            placeholder="예: 0012345678"
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-12 text-lg"
+            data-testid="terminal-merno-input"
+          />
+          <p className="text-xs text-muted-foreground">단말 설치 시 밴사(코밴)에서 발급한 가맹점 번호입니다.</p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">COM 포트 번호</label>
+          <Input
+            value={catPort}
+            onChange={(e) => setCatPort(e.target.value)}
+            placeholder="예: 3  (또는 COM3)"
+            autoComplete="off"
+            className="h-12 text-lg"
+            data-testid="terminal-comport-input"
+          />
+          <p className="text-xs text-muted-foreground">단말 케이블이 꽂힌 COM 포트 번호입니다. 숫자만(3) 또는 COM3 형식 모두 가능합니다.</p>
+        </div>
+
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="h-12 w-full bg-emerald-600 text-lg hover:bg-emerald-700"
+          data-testid="terminal-save-btn"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          저장
+        </Button>
+      </div>
+
+      <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <span>
+          설정은 <b>이 PC(브라우저)에만</b> 저장됩니다. 다른 PC에서는 그 자리에서 한 번 더 입력해 주세요.
+          브라우저 기록(인터넷 사용기록)을 완전히 지우거나 시크릿창을 쓰면 값이 사라질 수 있어 재입력이 필요합니다.
+        </span>
       </div>
     </div>
   );
