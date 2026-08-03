@@ -219,7 +219,18 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
       >
         {prechecking
           ? (<><Loader2 className="h-3.5 w-3.5 animate-spin" /> 확인 중…</>)
-          : (<><CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)</>)}
+          : (
+            <>
+              <CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)
+              {/* T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE AC-1: 첫 도입 시범 표시. 안정화 후 별도 티켓으로 제거. */}
+              <span
+                className="ml-1 rounded-sm bg-amber-100 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-amber-700"
+                data-testid="cband-beta-badge"
+              >
+                BETA
+              </span>
+            </>
+          )}
       </Button>
 
       <Dialog open={open} onOpenChange={(v) => { if (ui !== 'sending') setOpen(v); }}>
@@ -227,6 +238,13 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId }:
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-emerald-600" /> 카드 단말 결제(코밴)
+              {/* T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE AC-1: 시범 표시(버튼과 동일 맥락). */}
+              <span
+                className="rounded-sm bg-amber-100 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-amber-700"
+                data-testid="cband-beta-badge-dialog"
+              >
+                BETA
+              </span>
             </DialogTitle>
           </DialogHeader>
 

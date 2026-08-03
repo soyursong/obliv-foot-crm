@@ -536,6 +536,11 @@ export default defineConfig({
         //   (FIX-REQUEST MSG-20260730-024921-h69j §결함2: 무등록 시 무-project 실행이 desktop-chrome 로 낙하 +
         //    auth.setup(TEST_PASSWORD) 유입 → 자격증명 없는 워크트리/CI 에서 회귀가드 무력화. 등록으로 차단.)
         '**/T-20260729-foot-RX-PRINT-PATH-CONSISTENCY.spec.ts',
+        // T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE: 코밴 CAT 직결결제 버튼 'BETA' 표기(라이브 전 시범표시).
+        //   순수 FE 라벨 ADDITIVE(결제·수납·이중결제방지 무변경). 정적 소스 가드 — 진입버튼/다이얼로그 BETA 뱃지 +
+        //   probe==="ok" 노출경로 격리 + 기존 [결제 등록] 존치(플래그 무결선, 잠금 ON 후 병존) + 플래그OFF 게이트 보존.
+        //   플래그/probe 런타임 분기는 부모 BUILD spec §F 커버. auth/server/page 불요, 결정론. unit 전용.
+        '**/T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
