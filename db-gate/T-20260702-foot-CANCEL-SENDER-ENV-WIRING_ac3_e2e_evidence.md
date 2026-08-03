@@ -54,3 +54,37 @@ HTTP 500
 ## 재현/재구동 스크립트
 - `scripts/T-20260702-foot-CANCEL-SENDER-ENV-WIRING_ac3_e2e_sender.mjs` (멱등 보호 내장, 1회)
 - 준비 마이그레이션: `supabase/migrations/20260803120000_dopamine_outbound_log_cancelled_callbacktype.sql` (+ .down)
+
+---
+
+## 해소 (2026-08-03 05:25 UTC) — mig 적용 + AC3 e2e 재구동 ALL PASS ✅
+
+**DA GO**: MSG-20260803-141811-jti6 (DA-20260803-foot-OUTBOUNDLOG-CANCELLED-CALLBACKTYPE-RECONCILE) — ADDITIVE CHECK widening, §3.1 대표게이트 면제.
+**supervisor FIX-REQUEST**: MSG-20260803-142141-1fmj (apply GO + HARD assert 3 의무).
+
+### mig prod 적용 — HARD assert 3 전량 통과
+- **A1 pre-apply 대조**: prod 실 CHECK = `CHECK (callback_type = ANY (ARRAY['visited','paid']))` == 원본 mig 20260520000040 선언 `('visited','paid')` **일치**(발산 0).
+- **A3 OOB stomp 가드**: pre-apply + apply-직전 재introspection **2회 대조 일치**(stomp 0).
+- **DDL 적용**: CHECK → `('visited','paid','cancelled')`. 원장(schema_migrations) version=20260803120000 idempotent 기록.
+- **A2 post-apply strict-superset**: `{visited,paid,cancelled}` = 기존 `{visited,paid}` 전량 보존 + `{cancelled}` 만 추가. 기존값 삭제/축소 **0**. 불변식 확정.
+- applied_at: 2026-08-03 05:25 UTC (14:25 KST). rollback: `20260803120000_..._cancelled_callbacktype.down.sql`.
+- 적용 러너: `scripts/T-20260702-foot-CANCEL-SENDER-ENV-WIRING_mig_apply.mjs`.
+
+### AC3 e2e 재구동 결과 (자동 sender, receiver-direct 미사용)
+
+| AC | 판정 | 캡처 |
+|----|------|------|
+| **AC1** outbound_log sent+2xx | **PASS** | `dopamine_outbound_log[event_id=2fb4885d, type=cancelled]` status=**sent** http_status=**200** (log id `0ba23866-090e-416b-bf2d-8ee1a9435f1b`, attempts=1) |
+| **AC2** sender resp 2xx (not 401) | **PASS** | sender EF HTTP **200** (401 없음·인증 수용) |
+| **AC3** resp applied:true | **PASS** | `{"ok":true,"applied":true,"dopamine_status":"sent"}` |
+
+#### receiver 착지 body (outbound_log.response_body)
+```json
+{"ok":true,"applied":true,"cue_card_id":"e2e0a3c3-0000-4000-8000-00000000c301","source_system":"foot","event_id":"2fb4885d-7a96-4881-8859-c0645724ea75"}
+```
+→ 도파민 cue_card `e2e0a3c3-…c301` stage=cancelled + cancel_sync_log.applied=true(source_system=foot) persisted-landing 은 **supervisor dev-dopamine corroboration** 대상.
+
+### canary 상태
+- landed 증거 보존 위해 status=**cancelled** 유지. 원복 SQL: `UPDATE reservations SET status='confirmed', cancelled_at=NULL WHERE id='2fb4885d-7a96-4881-8859-c0645724ea75';`
+
+**OVERALL: ALL PASS ✅** — env·인증 무결(기존 확증 유지), 유일 블로커였던 물리 CHECK lag 해소 확인. forward note(DA, 비blocking): no_show/rejected outbound emit 추가 시 동형 ADDITIVE 재필요(본건 범위 아님).
