@@ -175,6 +175,84 @@ export async function precheckConcurrentPayment(
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★T-20260803-foot-CBAND-PAYRESULT-SWEEP — 결과 미아건(orphan 'requested') 회수 + 상세시트 재표시
+//   출처: ASYNCFLOW-CONFIRM A안(현행 동기) 확정 후 남는 tail-case(smzh AC-3):
+//     결제 진행 중 탭닫힘/새로고침 → WS 즉시 소멸 → 응답 전이면 recordCardPayment 미실행 →
+//     시도레코드 status='requested' 고아(단말은 승인됐을 수 있으나 payments 미기록).
+//
+//   ★스키마 무접촉(AC-6 동시성방지 선례 계승 — 신규 컬럼/테이블/enum 0 → DA CONSULT 불요):
+//     · 'attention'(확인 필요)은 이미 status CHECK 에 존재(mig 20260731190000, prod 2026-08-01) — 신규 enum 아님.
+//     · 스윕 = 기존 UPDATE RLS(cband_pa_update_own_clinic, 자기 clinic)로 'requested'→'attention' 승격.
+//     · 재표시 = 기존 SELECT RLS(cband_pa_read_own_clinic) 순수 read. 신규 EF/cron/service_role/RLS 0.
+//   ★멱등(AC-1): 스윕은 status UPDATE 만 — payments 를 만들지 않는다(이중기록 0). requested→attention 승격 시
+//     L2 partial UNIQUE(WHERE status='requested')에서 자연 이탈 → 고아가 in-flight 잠금을 영구 점유하지 않음(안전).
+//   ★scope(A안 정합): 로그인 없이도 도는 '자율 서버측 EF+cron' 스윕은 AC-0 DA CONSULT 게이트 대상(스키마무변이나
+//     service_role PHI 접근경로/스케줄 인프라 신설=정책접촉) → 별건 유지. 본 구현은 그와 직교한 '기회주의 스윕'
+//     (상세시트/관련 surface 진입 시 자기 clinic 스코프로 승격)으로 tail-case 를 소프트 회수(P2 비차단).
+//   ★임계: CAT 단말 응답은 통상 수 초~1분. 진행중 결제 오승격 회피 위해 STALE=5분(보수적).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** 고아('requested') 판정·표시 임계(분). 정상 결제(수 초~1분)를 오승격하지 않도록 보수적. */
+export const CBAND_ORPHAN_STALE_MINUTES = 5 as const;
+
+/** 상세시트 재표시용 시도 레코드 뷰(읽기 전용 subset). PCI/PII 원문 미포함(msg_trace/status/금액/시각만). */
+export interface CbandAttemptView {
+  id: string;
+  msgTrace: string;
+  status: AttemptStatus;
+  tranType: TranType;
+  amount: number;
+  /** ISO8601(created_at). */
+  createdAt: string;
+  authNo: string | null;
+  responseCode: string | null;
+}
+
+/** 재표시 항목 종류: 'attention'(확인 필요 확정) / 'stale_requested'(응답없이 오래 남은 고아). */
+export type CbandRecapKind = 'attention' | 'stale_requested';
+
+export interface CbandRecapItem {
+  view: CbandAttemptView;
+  kind: CbandRecapKind;
+}
+
+/**
+ * ★AC-1/AC-2 순수 판정: '확인 필요'로 재표시할 시도만 선별(결정론·DB무관·테스트가능).
+ *   · status==='attention' → 확정 재표시.
+ *   · status==='requested' 이고 createdAt 이 staleMinutes 초과 → 고아('지연') 재표시.
+ *   · approved/failed 및 최근(진행중일 수 있는) requested 는 제외(정상 흐름 무소음).
+ *   최신순 정렬은 호출측(store)에서 수행 — 여기서는 입력 순서 보존.
+ */
+export function selectRecapAttempts(
+  rows: CbandAttemptView[],
+  nowMs: number,
+  staleMinutes: number = CBAND_ORPHAN_STALE_MINUTES,
+): CbandRecapItem[] {
+  const cutoff = nowMs - staleMinutes * 60_000;
+  const out: CbandRecapItem[] = [];
+  for (const view of rows) {
+    if (view.status === 'attention') {
+      out.push({ view, kind: 'attention' });
+    } else if (view.status === 'requested') {
+      const t = Date.parse(view.createdAt);
+      if (!Number.isNaN(t) && t < cutoff) out.push({ view, kind: 'stale_requested' });
+    }
+  }
+  return out;
+}
+
+/** 스윕 대상 판정(순수) — 'requested' 이고 staleMinutes 초과. store(SQL)·테스트 공용 술어. */
+export function isSweepableOrphan(
+  row: Pick<CbandAttemptView, 'status' | 'createdAt'>,
+  nowMs: number,
+  staleMinutes: number = CBAND_ORPHAN_STALE_MINUTES,
+): boolean {
+  if (row.status !== 'requested') return false;
+  const t = Date.parse(row.createdAt);
+  return !Number.isNaN(t) && t < nowMs - staleMinutes * 60_000;
+}
+
 /**
  * 시도 레코드 저장소(주입). 실 구현은 supabaseAttemptStore(cband_payment_attempts 테이블, DDL 게이트).
  * 상태머신은 이 인터페이스만 알면 되므로 unit 테스트에서 in-memory 스텁 주입 가능.
@@ -200,6 +278,17 @@ export interface AttemptStore {
    *   optional: 구현 없으면 precheckConcurrentPayment 는 degrade-open(하드백스톱=insert-first L2 partial UNIQUE 유효).
    */
   probeConcurrent?(q: { clinicId: string; checkInId: string | null; merno: string | null }): Promise<OpenPaymentProbe>;
+  /**
+   * ★AC-2 상세시트 재진입 재표시(순수 read) — 특정 체크인의 최근 코밴 시도 레코드를 최신순 반환.
+   *   기존 SELECT RLS(cband_pa_read_own_clinic)만 소비(스키마 무변). 구현 없으면 재표시 생략(degrade).
+   */
+  listRecentAttempts?(q: { clinicId: string; checkInId: string; limit?: number }): Promise<CbandAttemptView[]>;
+  /**
+   * ★AC-1 기회주의 스윕 — 자기 clinic 의 오래된 고아('requested', staleMinutes 초과)를 'attention' 승격.
+   *   기존 UPDATE RLS(cband_pa_update_own_clinic)만 소비(스키마 무변). payments 미생성(이중기록 0·멱등).
+   *   실패는 상위가 삼킴(재표시/시트를 막지 않음). 반환 = 승격 건수.
+   */
+  sweepStaleRequested?(q: { clinicId: string; checkInId?: string; staleMinutes?: number }): Promise<{ swept: number }>;
 }
 
 export interface PaymentFlowInput {

@@ -8,6 +8,8 @@ import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 // T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제 진입(기능플래그 게이트, OFF 시 null 반환 → 기존 화면 무변경).
 import PlanbPaymentEntryButton from '@/components/PlanbPaymentEntryButton';
 import PlanbSusuScheduleButton from '@/components/PlanbSusuScheduleButton';
+// T-20260803-foot-CBAND-PAYRESULT-SWEEP AC-2: 코밴 직결결제 결과 미아건(탭닫힘/새로고침) 재진입 재표시
+import CbandAttemptRecap from '@/components/CbandAttemptRecap';
 // T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD: 코밴 CAT 직결 결제 진입(3중 게이트, OFF/미탐지 시 null → 기존 화면 무변경).
 import { type FootSite, parseFootSite, isCompleteFootSite, parseFootSites } from '@/components/FootSiteSelector';
 import FootToeIllustration from '@/components/FootToeIllustration';
@@ -2165,6 +2167,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
               >
                 <CreditCard className="h-3.5 w-3.5" /> 결제 등록
               </Button>
+            )}
+            {/* ★T-20260803-foot-CBAND-PAYRESULT-SWEEP AC-1/AC-2: 코밴 직결결제 결과 미아건 재표시.
+                진입 시 기회주의 스윕(자기 clinic 고아 'requested'→'attention', 기존 UPDATE RLS) 후
+                최근 시도의 '확인 필요'/'지연'을 재표시(휘발성 다이얼로그 보완). 플래그 OFF·미아건 없음 → 미노출. */}
+            {checkIn.clinic_id && (
+              <CbandAttemptRecap checkInId={checkIn.id} clinicId={checkIn.clinic_id} />
             )}
             {/* (구) 비대기형 결제(플랜B NOWAIT 풀페이지 route) 진입 — OPT3 팝업이 이 surface 를 대체(supersede).
                 기능플래그 ON 시에만 렌더(OFF=무노출). NOWAIT spec 회귀 보존 위해 유지 — OPT3 현장 confirm 후 제거 예정. */}

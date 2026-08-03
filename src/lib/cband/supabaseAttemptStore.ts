@@ -33,7 +33,10 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import { CbandConcurrentPaymentError, type AttemptRecord, type AttemptStore, type OpenPaymentProbe } from './paymentFlow';
+import {
+  CbandConcurrentPaymentError, CBAND_ORPHAN_STALE_MINUTES,
+  type AttemptRecord, type AttemptStore, type CbandAttemptView, type OpenPaymentProbe,
+} from './paymentFlow';
 import { TRANTYPE_APPROVE, TRANTYPE_CANCEL } from './protocol';
 
 /**
@@ -214,5 +217,52 @@ export const supabaseAttemptStore: AttemptStore = {
       terminalBusy = await existsAttempt({ merno: q.merno, status: 'requested' }, '단말 사용중');
     }
     return { patientInProgress, patientCompleted, terminalBusy };
+  },
+
+  async listRecentAttempts(q: { clinicId: string; checkInId: string; limit?: number }): Promise<CbandAttemptView[]> {
+    // ★T-20260803-foot-CBAND-PAYRESULT-SWEEP AC-2: 상세시트 재진입 재표시용 순수 read(기존 SELECT RLS).
+    //   PCI/PII 원문(raw_response) 미조회 — 표시에 필요한 subset(msg_trace/status/금액/시각/AUTHNO/응답코드)만.
+    const { data, error } = await supabase
+      .from('cband_payment_attempts')
+      .select('id, msg_trace, status, tran_type, requested_amount, created_at, auth_no, response_code')
+      .eq('clinic_id', q.clinicId)
+      .eq('check_in_id', q.checkInId)
+      .order('created_at', { ascending: false })
+      .limit(q.limit ?? 10);
+    if (error) throw new Error(`코밴 결제 시도 조회 실패: ${error.message}`);
+    return (data ?? []).map((r) => ({
+      id: r.id as string,
+      msgTrace: r.msg_trace as string,
+      status: r.status as AttemptRecord['status'],
+      tranType: r.tran_type as AttemptRecord['tranType'],
+      amount: (r.requested_amount as number) ?? 0,
+      createdAt: r.created_at as string,
+      authNo: (r.auth_no as string | null) ?? null,
+      responseCode: (r.response_code as string | null) ?? null,
+    }));
+  },
+
+  async sweepStaleRequested(q: { clinicId: string; checkInId?: string; staleMinutes?: number }): Promise<{ swept: number }> {
+    // ★T-20260803-foot-CBAND-PAYRESULT-SWEEP AC-1 기회주의 스윕(기존 UPDATE RLS, 스키마 무변).
+    //   자기 clinic 의 오래된 고아('requested', staleMinutes 초과)를 'attention'(확인 필요) 승격.
+    //   ★멱등/안전: status UPDATE 만 — payments 미생성(이중수납 0). 'requested'→'attention' 이탈로
+    //     L2 partial UNIQUE(WHERE status='requested')에서 자연 해제(in-flight 잠금 영구점유 방지).
+    //     PCI 가드 트리거는 raw_response 무변경(NEW.raw_response 불변) → 통과. 이미 승격된 건은 WHERE 로 자연 제외(재실행 no-op).
+    //   실패는 삼킴(로그만) — 재표시/상세시트를 막지 않는다(soft 강화).
+    const staleMs = (q.staleMinutes ?? CBAND_ORPHAN_STALE_MINUTES) * 60_000;
+    const cutoffIso = new Date(Date.now() - staleMs).toISOString();
+    let query = supabase
+      .from('cband_payment_attempts')
+      .update({ status: 'attention' })
+      .eq('clinic_id', q.clinicId)
+      .eq('status', 'requested')
+      .lt('created_at', cutoffIso);
+    if (q.checkInId) query = query.eq('check_in_id', q.checkInId);
+    const { data, error } = await query.select('id');
+    if (error) {
+      console.error(`코밴 고아 결제 스윕 실패(clinic=${q.clinicId}):`, error.message);
+      return { swept: 0 };
+    }
+    return { swept: data?.length ?? 0 };
   },
 };
