@@ -70,7 +70,8 @@ export interface TherapistServiceRow {
   avg_minutes: number | null;    // 시술별 평균 소요시간(분). 매칭 없으면 null
 }
 
-export type StatsRangePreset = 'today' | 'week' | 'month' | 'custom';
+// T-20260804-foot-SALESSTAT-DATEFILTER-PRESETS: '지난달'(직전 달 1일~말일) 프리셋 추가.
+export type StatsRangePreset = 'today' | 'week' | 'month' | 'lastMonth' | 'custom';
 
 /**
  * T-20260609-foot-THERAPIST-STATS-LOAD-FAIL (AC-3): 통계 로드 에러 가시성 보강.
@@ -123,6 +124,13 @@ export function resolveRange(
     const monday = new Date(today);
     monday.setDate(today.getDate() - diffToMon);
     return { from: fmt(monday), to };
+  }
+  if (preset === 'lastMonth') {
+    // 직전 달 1일 ~ 직전 달 말일. month−1(=이전달 1일), day 0(=당월 0일=이전달 말일).
+    // JS Date가 연초 경계(1월→전년12월)와 말일(28/29/30/31·윤년)을 자동 계산.
+    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const last = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { from: fmt(first), to: fmt(last) };
   }
   // month
   const first = new Date(today.getFullYear(), today.getMonth(), 1);
