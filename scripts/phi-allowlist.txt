@@ -96,3 +96,11 @@
 #   실환자 재식별 0. NAME='[PMW-KEEPOPEN-TEST] 수납대기' + before/afterAll cleanup(phone 기준) 즉시 정리.
 #   provenance: tests/e2e/T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN.spec.ts. 리뷰 게이트: dev-foot 자가확인, supervisor QA.
 \+?821099998827
+
+# ── T-20260616-foot-PMW-SPLIT-PAYMENT 합성 E2E fixture phone (2026-08-03) ──
+#   분할결제 spec(SEED_PHONE) 전용 합성값. 반복 자릿수(9999-88xx) 합성마커 — KEEPOPEN(8827)·9888 동일 계열,
+#   실환자 재식별 0. NAME='[PMW-SPLIT-TEST] 수납대기' + before/afterEach cleanupSeed(phone 기준) 즉시 정리.
+#   provenance: tests/e2e/T-20260616-foot-PMW-SPLIT-PAYMENT.spec.ts L31 SEED_PHONE.
+#   경위: 콘텐츠 phi-scan(2026-07-16) 도입 이전 커밋분이라 미등재였음 — nightly 정합 fix(5FIX ③ testid rename 반영) 착수 시
+#   phi-scan false-positive 로 표면화. 리뷰 게이트: dev-foot 자가확인 + supervisor QA(FIX-REQUEST MSG-20260803-160347-f0dz 승인).
+\+?821099998816
