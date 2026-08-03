@@ -31,6 +31,16 @@
 - 08-03 00:10 UTC(09:10 KST) 워치독 가동 로그: `business_no=457-23-00938`(정상, 공백 아님), 합계 대조 ✅ 일치. **런타임 bizno-readfail 경보 없음.**
 - 09:08~09:10 경보 = 부모 FAILCLOSED(deploy_ready_at 09:10) **sign-off 재현 테스트(일부러 bizno 비워 알람 뜨는지)** 발원으로 정합. 즉 **"실 env 공백"이 아니라 배포검증 시뮬 경보**였음. (총괄 sign-off 기준 자체가 "일부러 비웠을 때 알람 재현".)
 
+### 근거 C — CF Pages/EF env(REDPAY_BIZNO) 교차확인 (AC-1 총괄 명시 힌트: "한 곳만 보고 결론 금지")
+457 **수집(adfetch)** 경로 = macstudio 폴러(`~/.env.redpay-foot` 단독 소비). CF Pages/Supabase-EF env(`REDPAY_BUSINESS_NO`)를 읽는 소비자는 **redpay-reconcile / redpay-webhook** EF 2곳뿐이며 **둘 다 수집 경로가 아님 + 511 하드default 없음**:
+| EF | env bizno 사용 | 빈 bizno 거동 | 511 silent 폴백? |
+|---|---|---|---|
+| redpay-reconcile | `Deno.env ?? ""` (마스터키 스코프) | **fail-closed BLOCKED**(`REDPAY_BUSINESS_NO 미등록`, L330·363) + `REDPAY_DRY_RUN=true` 기본 + WAF로 RedPay egress 403 | ❌ 없음 |
+| redpay-webhook | allow-filter(`?? ""`) | **allow-all**(빈 allow=전건 허용, verify.test L116) → 드롭 없음 | ❌ 없음 |
+- ∴ CF/EF env 쪽에는 "빈 bizno → 511 → 457 통째 누락" 경로가 **구조적으로 없음**(양쪽 다 fail-closed/allow-all). 유일한 511-하드default 코드 = **구 폴러**(`cfg(...,"511-60-00988")`)뿐이고, 그 폴러 macstudio env bizno는 §근거A로 전 기간 비어있던 적 없음.
+- **정합성**: §2 delta 대조는 **최종 DB상태 ↔ RedPay 진실값** 비교라 폴러·webhook 등 **모든 적재경로를 경로-무관하게 포괄** — 그 결과 실누락 = 07-22 2건(net 0)뿐. 즉 어느 env 소스였든 실 누락 결과는 동일 검증됨.
+- **잔여(정직 disclosure)**: CF Pages 대시보드의 `REDPAY_BIZNO` **변경이력 원본 타임스탬프** live pull은 CF 대시보드 권한 필요(supervisor/ops 보유) → planner 라우팅. 단 위 구조분석상 이력값과 무관하게 수집 누락엔 영향 없음(load-bearing 아님).
+
 ### 별개 실 인시던트 (정직 disclosure, bizno 아님)
 - **08-03 07:47~08:03 KST**: 폴러 `~1분 간격` 크래시-루프(정상 5분 아님). `.err` 동시각 **Supabase "Invalid API key" 401**(service_role 키, restGet 상태조회). env 재작성(mtime **08:02:08 KST**)으로 해소 → 08:03 KST 5분 주기·200 OK 복귀.
 - 이 인시던트는 **bizno가 아니라 Supabase 키** 문제(가동 라인 bizno=457 유지). 아래 §2-B에서 무손실 확인.
