@@ -137,6 +137,14 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
   const savedPort = raw.catPort;
   // ② 저장여부 판정은 팝업 2필드(TID·COM) 기준. MERNO 는 팝업이 다루지 않음(⑧/env 계승).
   const hasSaved = savedTid !== '' && savedPort !== '';
+  // ★T-20260803-foot-CBAND-TIDCOM-TERMINAL-NOSETUP — "TID·COM 입력했는데 단말 설정이 안됨" 진단 fix.
+  //   원인축(CRM-side legibility trap): 팝업은 TID·COM 2필드만 다루고 MERNO 는 ⑧/env 계승(DELTA1 유지).
+  //   그런데 결제 게이트 getTerminalConfig() 는 TID·MERNO·COM **3값 모두** 있어야 non-null(config.ts §41).
+  //   → MERNO 미설정(env 없음 + ⑧ 미입력) PC 에서 팝업으로 TID·COM 만 저장하면 요약줄은 '저장됨'처럼 보이나
+  //     결제요청 시 getTerminalConfig()=null 로 차단된다("단말기 설정이 완료되지 않았습니다"). [변경]은 TID·COM 만
+  //     다뤄 MERNO 를 못 채우는 dead-end. 여기서는 그 은닉된 진짜 블로커(MERNO 미설정)를 명시적으로 노출한다.
+  //   ★스펙 준수: 팝업에 MERNO 입력칸을 추가하지 않는다(DELTA1 2필드 유지) — '어디서 고치는지'만 안내.
+  const mernoMissing = raw.merno === '';
   const [editing, setEditing] = useState(!hasSaved);
   const [tid, setTid] = useState(savedTid);
   const [port, setPort] = useState(savedPort);
@@ -157,22 +165,42 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 
   if (!editing) {
     return (
-      <div
-        className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
-        data-testid="cband-terminal-config-summary"
-      >
-        <span className="flex items-center gap-1.5">
-          <CreditCard className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span data-testid="cband-terminal-summary-text">단말기 {savedTid} · COM {savedPort}</span>
-        </span>
-        <button
-          type="button"
-          className="shrink-0 font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
-          data-testid="btn-cband-terminal-edit"
-          onClick={() => { setTid(getTerminalConfigRaw().tid); setPort(getTerminalConfigRaw().catPort); setErr(null); setEditing(true); }}
+      <div className="space-y-1.5">
+        <div
+          className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${
+            mernoMissing
+              ? 'border-amber-300 bg-amber-50 text-amber-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          }`}
+          data-testid="cband-terminal-config-summary"
         >
-          변경
-        </button>
+          <span className="flex items-center gap-1.5">
+            <CreditCard className={`h-4 w-4 shrink-0 ${mernoMissing ? 'text-amber-600' : 'text-emerald-600'}`} />
+            <span data-testid="cband-terminal-summary-text">단말기 {savedTid} · COM {savedPort}</span>
+          </span>
+          <button
+            type="button"
+            className="shrink-0 font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+            data-testid="btn-cband-terminal-edit"
+            onClick={() => { setTid(getTerminalConfigRaw().tid); setPort(getTerminalConfigRaw().catPort); setErr(null); setEditing(true); }}
+          >
+            변경
+          </button>
+        </div>
+        {/* ★NOSETUP fix: TID·COM 은 저장됐지만 MERNO 미설정 → 결제 불가. 진짜 블로커를 명시하고 조치 위치(관리자 설정 ⑧) 안내. */}
+        {mernoMissing && (
+          <div
+            className="flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            data-testid="cband-terminal-merno-missing"
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span>
+              가맹점 번호(MERNO)가 아직 설정되지 않아 카드 결제를 시작할 수 없습니다.
+              <b> 관리자 설정 → ⑧ 카드 단말기 설정</b> 화면에서 가맹점 번호를 한 번 입력해 주세요.
+              (단말기 번호·COM 포트는 저장되었습니다.)
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -314,8 +342,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     const rawCfg = getTerminalConfigRaw();
     if (!rawCfg.tid) { setPayBlock('단말기 번호를 먼저 입력해 주세요.'); return; }
     // TID 는 있으나 설정 미완(merno 등, ⑧에서 보정) → 전송 차단 + 설정 안내.
+    // ★NOSETUP fix: 미완 원인이 MERNO 면 [변경](TID·COM 만)=dead-end → 정확한 조치 위치(관리자 설정 ⑧) 안내.
     const activeCfg = getTerminalConfig();
-    if (!activeCfg) { setPayBlock('단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
+    if (!activeCfg) { const mernoMissing = !getTerminalConfigRaw().merno; setPayBlock(mernoMissing ? '가맹점 번호(MERNO)가 설정되지 않아 결제를 시작할 수 없습니다. 관리자 설정 → ⑧ 카드 단말기 설정 화면에서 가맹점 번호를 입력해 주세요. (단말기 번호·COM 포트는 이미 저장됨)' : '단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
     setPayBlock(null);
     setUi('sending');
     setResult(null);
