@@ -108,3 +108,12 @@ verify_jwt = false
 #   (redpay-reconcile / redpay-webhook / attendance-sync 동일 컨벤션).
 [functions.redpay-planb-match]
 verify_jwt = false
+
+# T-20260803-foot-STAFF-PROVISION-ATOMIC-EF-INV6-PORT (P2, body pilot 15d18d00 이식):
+#   admin-register-staff 는 직원 계정 등록을 원자화하는 오케스트레이터 EF 다. FE(Accounts.tsx)가
+#   현재 로그인 세션의 실제 Supabase JWT(Bearer)를 실어 invoke 하고, EF 는 그 JWT 를
+#   admin.auth.getUser(jwt) 로 검증 + user_profiles.role ∈ (admin,manager,director) 게이트 한다.
+#   따라서 게이트웨이 기본 verify_jwt=true(진짜 세션 JWT 요구)가 정확히 맞다 — X-…-Secret 계열 EF 와
+#   달리 게이트웨이 우회가 필요 없다. 명시적으로 true 를 박아 의도를 문서화(body pilot 동일 컨벤션).
+[functions.admin-register-staff]
+verify_jwt = true

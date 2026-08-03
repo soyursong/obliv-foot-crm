@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { toast } from '@/lib/toast';
 import { Check, ChevronDown, ChevronUp, Copy, KeyRound, Shield, UserPlus, UserX, X } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
+import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { recordAuthAction, stampAuthActionOutcome } from '@/lib/authAudit';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
@@ -22,12 +22,9 @@ import { Input } from '@/components/ui/input';
 import type { Staff, UserProfile, UserRole } from '@/lib/types';
 import { USER_ROLE_LABEL as ROLE_LABEL } from '@/lib/status';
 
-// admin 세션 유지를 위해 persistSession:false 로 별도 client 사용 (signUp 이 현재 세션을 덮어쓰지 않도록)
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-const signupClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+// T-20260803-foot-STAFF-PROVISION-ATOMIC-EF-INV6-PORT: 구 signupClient(별도 anon client 로 signUp)
+//   제거 — 계정 생성이 서버측 원자 EF(admin-register-staff)로 이동하면서 FE 는 더 이상 브라우저에서
+//   signUp 을 호출하지 않는다(현재 admin 세션이 덮어써질 위험 원천 소멸).
 
 const ROLES: UserRole[] = ['admin', 'manager', 'part_lead', 'consultant', 'coordinator', 'therapist', 'technician', 'tm', 'staff'];
 
@@ -274,87 +271,72 @@ export default function Accounts() {
     if (!name) { toast.error('이름을 입력하세요'); return; }
 
     setInviteBusy(true);
-    // 1) auth.users 생성 (admin 세션 유지를 위해 별도 client 로 signUp)
-    const { data, error } = await signupClient.auth.signUp({
-      email,
-      password: pw,
-      options: { data: { name } },
-    });
-    if (error || !data.user) {
+    // ── T-20260803-foot-STAFF-PROVISION-ATOMIC-EF-INV6-PORT (body pilot 15d18d00 이식) ──
+    //   구 비원자 3단 클라흐름(signUp → admin_register_user → admin_approve_and_confirm_user)을
+    //   원자 오케스트레이터 EF(admin-register-staff) 1콜로 대체. EF 가 계정 생성/프로필매핑/email 확인을
+    //   all-or-nothing 으로 소유하고, 중간 실패 시 "이번에 새로 만든 auth.users 만" 보상삭제(고아 방지) +
+    //   기존(고아 포함) 계정은 self-heal(id 재사용)한다. FE 는 반환봉투 {ok,error} 하나만 검사한다
+    //   (구 identities[] 빈배열 중복감지 / 고아 잔존 우회 로직 전량 제거 — 재발원 뿌리뽑기).
+    const { data: session } = await supabase.auth.getSession();
+    const accessToken = session?.session?.access_token;
+    if (!accessToken) {
       setInviteBusy(false);
-      toast.error(`계정 생성 실패: ${error?.message ?? 'unknown'}`);
+      toast.error('세션 인증이 만료됐어요. 다시 로그인 후 시도하세요.');
       return;
     }
 
-    // 중복 이메일 감지: Supabase는 이미 등록된 이메일로 signUp 시 가짜 UUID를 반환하고
-    // auth.users row를 만들지 않음 → identities 배열이 비어있으면 중복 이메일
-    if (!data.user.identities || data.user.identities.length === 0) {
-      setInviteBusy(false);
-      toast.error(`이미 등록된 이메일이에요. 기존 계정 목록에서 확인하거나 다른 이메일을 사용하세요.`);
-      return;
+    type RegisterEnvelope = {
+      ok?: boolean;
+      error?: { code?: string; message?: string } | null;
+      data?: Record<string, unknown>;
+    };
+    let envelope: RegisterEnvelope | null = null;
+    let transportError: string | null = null;
+    try {
+      const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.ADMIN_REGISTER_STAFF, {
+        body: {
+          email,
+          password: pw,
+          name,
+          role: inviteRole,
+          staff_id: inviteStaffId || null,
+        },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) transportError = error.message ?? 'invoke 실패';
+      envelope = (data ?? null) as RegisterEnvelope | null;
+    } catch (e) {
+      transportError = e instanceof Error ? e.message : String(e);
     }
-
-    // 2) user_profiles 등록 + staff 매핑/생성 (RPC 트랜잭션)
-    // INV-5 §3-B: admin 이 신규 계정을 발급/덮어쓰는 destructive auth op → actor 감사
-    const auditId = await recordAuthAction(supabase, {
-      actorUserId,
-      targetUserId: data.user.id,
-      targetEmail: email,
-      action: 'invite_overwrite',
-    });
-    const { error: rpcErr } = await supabase.rpc('admin_register_user', {
-      target_user_id: data.user.id,
-      email,
-      name,
-      role: inviteRole,
-      approved: true,
-      staff_id: inviteStaffId || null,
-    });
-    await stampAuthActionOutcome(supabase, auditId, rpcErr ? 'failed' : 'succeeded');
-    if (rpcErr) {
-      setInviteBusy(false);
-      // auth.users에 고아 레코드가 남았을 수 있음 (UUID: data.user.id)
-      // → Supabase 대시보드 Authentication > Users에서 해당 이메일 삭제 후 재등록 필요
-      const isNotFound = rpcErr.message?.includes('not found');
-      toast.error(
-        isNotFound
-          ? `프로필 매핑 실패: 이메일 인증 미완료이거나 중복 이메일입니다. 이메일 확인 후 재시도하세요.`
-          : `프로필/staff 매핑 실패: ${rpcErr.message}`
-      );
-      return;
-    }
-
-    // 3) 이메일 자동확인 하드닝 — T-20260731-foot-STAFF-REGISTER-EMAILCONFIRM-GAP-SCAN
-    //   RC(ESKI/김지윤/기은서 등 반복): signUp 으로 만든 계정은 auth.users.email_confirmed_at=NULL
-    //   → admin_register_user 가 user_profiles.approved=true 만 세팅할 뿐 auth 레벨 email 확인은
-    //     하지 않아 GoTrue 가 "Email not confirmed" 로 로그인 거부 → 현장엔 "비밀번호가 틀렸습니다"로 표출.
-    //   해법: 등록 직후 기존 idempotent RPC admin_approve_and_confirm_user 로 email_confirmed_at 강제.
-    //     (해당 RPC = approved=true 재확정 + 미확인 계정만 email_confirmed_at=now() + id↔email 재검증
-    //      + rows-affected 검증. 신규 스키마/컬럼 0 = DB 변경 없음.)
-    //   confirm 실패해도 계정 자체는 등록됨 → 로그인만 막힘. 이 경우 fail-loud 로 승인 버튼 재시도 안내.
-    const { data: confirmData, error: confirmErr } = await supabase.rpc('admin_approve_and_confirm_user', {
-      target_user_id: data.user.id,
-    });
     setInviteBusy(false);
-    if (confirmErr) {
-      toast.error(
-        `계정은 등록됐지만 이메일 자동확인에 실패했어요: ${confirmErr.message}. ` +
-        `계정 관리 목록에서 해당 직원의 '승인' 버튼을 눌러 로그인 활성화를 완료하세요.`,
-      );
+
+    // AC2 silent-success 차단: transport error OR ok!==true 둘 다 실패로 취급.
+    if (transportError || !envelope || envelope.ok !== true) {
+      const code = envelope?.error?.code;
+      const msg = envelope?.error?.message ?? transportError ?? '알 수 없는 오류';
+      if (code === 'ALREADY_REGISTERED') {
+        toast.error('이미 등록된 이메일이에요. 기존 계정 목록에서 확인하거나 다른 이메일을 사용하세요.');
+      } else {
+        toast.error(`계정 등록 실패: ${msg}`);
+      }
+      return;
+    }
+
+    // 성공. EF 가 email 확인까지 보증하되, 고아 재사용 등에서 confirm 이 불확실하면 경고 동반.
+    const d = envelope.data ?? {};
+    const emailConfirmed = d['email_confirmed'] !== false;
+    const warning = (d['email_confirm_warning'] as string | null) ?? null;
+    if (!emailConfirmed && warning) {
+      toast.error(warning);
       fetchUsers();
       return;
     }
-    const emailConfirmedNow = (confirmData as { email_confirmed_now?: boolean } | null)?.email_confirmed_now;
-    const emailAlready = (confirmData as { already_confirmed?: boolean } | null)?.already_confirmed;
-    if (!emailConfirmedNow && !emailAlready) {
-      // 방어적: RPC 는 성공했으나 확인 상태가 명확히 서지 않은 이례 케이스 → 로그인 가능성 미보장 경고.
-      toast.error(
-        `${email} 등록됐지만 이메일 확인 상태가 확실치 않아요. 로그인 안 되면 '승인' 버튼을 눌러 다시 시도하세요.`,
-      );
-      fetchUsers();
-      return;
-    }
-    toast.success(`${email} 등록 완료 (즉시 승인 · 이메일 자동확인 → 바로 로그인 가능)`);
+    const reused = !!d['reused_orphan'];
+    toast.success(
+      reused
+        ? `${email} 등록 완료 (기존 미완료 계정 복구 · 즉시 승인 → 바로 로그인 가능)`
+        : `${email} 등록 완료 (즉시 승인 · 이메일 자동확인 → 바로 로그인 가능)`,
+    );
     setInviteOpen(false);
     setInviteEmail('');
     setInvitePw('');

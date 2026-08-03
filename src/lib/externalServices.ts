@@ -25,6 +25,8 @@ export const EDGE_FUNCTIONS = {
   REDPAY_REVERSE_MATCH: 'redpay-reverse-match',
   /** T-20260629-foot-RXSET-DRUG-VERIFY-PHASE2 AC-7: 식약처(MFDS) 2차 성분축 대조(키 부재 시 graceful degrade) */
   MFDS_INGREDIENT_VERIFY: 'mfds-ingredient-verify',
+  /** T-20260803-foot-STAFF-PROVISION-ATOMIC-EF-INV6-PORT: 직원 계정 등록 원자화 오케스트레이터(고아 self-heal + 보상삭제). body pilot 15d18d00 이식. */
+  ADMIN_REGISTER_STAFF: 'admin-register-staff',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];
