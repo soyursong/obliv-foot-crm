@@ -16,7 +16,8 @@ gate: supervisor-ddl-diff
 mig_files: [supabase/migrations/20260803210000_prescription_codes_verify_cache.sql]
 mig_rollback: supabase/migrations/20260803210000_prescription_codes_verify_cache.rollback.sql
 mig_dryrun: supabase/migrations/20260803210000_prescription_codes_verify_cache.dryrun.sql
-applied_at:
+applied_at: "2026-08-03 21:00 KST"  # prod(rxlomoozakkjesdqjtvd) apply PASS — scripts/T-...AC3_prod_apply.mjs. embedded verify DO-block PASS. POSTCHECK: verify_* 6컬럼 실재·verified_at=timestamptz·타객체무변경(cols 22→28, idx/con/trg/pol 불변). supervisor 사후검증 대기.
+mig_ledger_check: "REGISTERED (prod) — schema_migrations version=20260803210000 name=prescription_codes_verify_cache created_by='dev-foot:T-20260803-foot-RXSET-VERIFY-CACHE-AC3' (멱등)."
 e2e_spec: tests/e2e/T-20260803-foot-RXSET-VERIFY-CACHE-AC3.spec.ts
 risk_verdict: GO
 risk_reason: "ADDITIVE — prescription_codes 에 nullable verify_* 6컬럼 추가(NULL default·CHECK無·FK無·기존 RLS 상속). 동형 선례=20260716140100_rxset_hira_provenance_columns / 20260615120000_rxset_tag_meta. 청구/KPI/집계 reader 무입력. DA GO+ADDITIVE=§3.1 대표게이트 면제, supervisor DDL-diff 만. J3 staleness 가드(self-healing hash)·J2 read fallback FE 포함. backfill=N/A(첫 read recompute+populate warm-up). 신규 npm 0, prescription_codes write-RLS 무변경(populate=service-role/EF·기존 write 경로 상속)→ 재-CONSULT 트리거 무저촉. FE deploy-tolerant(컬럼 미적용 시 resolveVerifyVerdict recompute 폴백)."
