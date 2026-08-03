@@ -23,6 +23,8 @@ export const EDGE_FUNCTIONS = {
   SEND_CONSULT_NOTIFY: 'send-consult-notify',
   /** T-20260730-foot-REDPAY-REVERSE-MATCH-SUSU-HOOK: [수납] 저장 훅 → 레드페이 역방향 매칭 1회(claim-first write-path) */
   REDPAY_REVERSE_MATCH: 'redpay-reverse-match',
+  /** T-20260629-foot-RXSET-DRUG-VERIFY-PHASE2 AC-7: 식약처(MFDS) 2차 성분축 대조(키 부재 시 graceful degrade) */
+  MFDS_INGREDIENT_VERIFY: 'mfds-ingredient-verify',
 } as const;
 
 export type EdgeFunctionName = (typeof EDGE_FUNCTIONS)[keyof typeof EDGE_FUNCTIONS];

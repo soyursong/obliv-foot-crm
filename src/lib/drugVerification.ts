@@ -102,6 +102,62 @@ export function verdictNeedsHumanCheck(verdict: DrugVerifyVerdict | null | undef
 }
 
 // ---------------------------------------------------------------------------
+// AC-7 식약처(MFDS) 2차 성분축 대조 — 순수 판정 로직.
+// Ticket: T-20260629-foot-RXSET-DRUG-VERIFY-PHASE2
+//
+//   ⚠️ 외부 호출 0 · 신규 DB 스키마 0 (여기는 순수 함수만). 실 대조 데이터(공식 성분명)는
+//      Edge Function(mfds-ingredient-verify)이 식약처 e약은요/완제의약품 OpenAPI에서 가져오고,
+//      본 함수들은 그 값으로 판정만 한다. 키(data.go.kr)=Edge Secret(supervisor 주입, 평문하드코딩 금지).
+//      키 부재/장애 → 'unverified'(AC-5 graceful degrade, 비차단 — 1차 HIRA 코드축은 항상 동작).
+//   ★canon(부모 drug_identity_rule): 퍼지 매칭·용량표기 자동연결 금지(auto-merge 금지).
+// ---------------------------------------------------------------------------
+
+/**
+ * 성분명 정규화(대조 전처리). canon 준수:
+ *   · 앞뒤 공백 제거 + 내부 연속 공백 1칸 축약 + 소문자 fold(영문 대소문자 차 흡수).
+ *   · ★용량/함량 표기(250mg 등)는 제거하지 않는다 — 용량표기 자동연결 금지.
+ *     따라서 "아목시실린 250mg" ≠ "아목시실린"(서로 다른 성분표기로 취급).
+ *   · 퍼지(부분일치·유사도) 없음 — 정확일치 전용.
+ */
+export function normalizeIngredientName(name: string | null | undefined): string {
+  return (name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * 내부 성분명 ↔ 식약처 공식 성분명(들) 대조 판정(순수, canon).
+ *   · officialNames 중 하나라도 정규화 후 정확일치 → 'matched'.
+ *   · officialNames 가 있는데 아무것도 정확일치 안 함 → 'mismatch'(성분 주의).
+ *   · 내부 성분명 없음 or 공식 목록 없음(대조불가) → 'unverified'(비차단).
+ *   ※ 정확일치만 인정 — 퍼지/용량표기 자동연결 금지.
+ */
+export function compareIngredient(
+  internalName: string | null | undefined,
+  officialNames: readonly (string | null | undefined)[] | null | undefined,
+): IngredientVerifyStatus {
+  const internal = normalizeIngredientName(internalName);
+  const officials = (officialNames ?? [])
+    .map(normalizeIngredientName)
+    .filter((s) => s !== '');
+  if (internal === '' || officials.length === 0) return 'unverified';
+  return officials.includes(internal) ? 'matched' : 'mismatch';
+}
+
+/**
+ * 1차(HIRA 코드축) 판정에 2차 성분축을 결합(순수). **1차 status 는 절대 바꾸지 않는다.**
+ *   · 'matched'/'mismatch' → 배지 보조표기 유지(확인/주의 신호).
+ *   · 'unverified'(대조불가 — 키 미주입·장애 포함) → 보조표기 생략(undefined)으로 접는다:
+ *     매 약마다 "성분 미확인"을 띄우면 노이즈이므로, 실제로 못 맞춘 경우만 조용히 생략(graceful).
+ */
+export function mergeIngredientAxis(
+  verdict: DrugVerifyVerdict | null | undefined,
+  ingredient: IngredientVerifyStatus | null | undefined,
+): DrugVerifyVerdict | null {
+  if (!verdict) return null;
+  if (ingredient == null || ingredient === 'unverified') return { ...verdict };
+  return { ...verdict, ingredient };
+}
+
+// ---------------------------------------------------------------------------
 // 검증 판정 산출(AC-2 매칭로직) — 외부 공식소스(HIRA) 출처 기반.
 //   ⚠️ 외부 API 런타임 호출 0 · 신규 DB 스키마 0. prescription_codes 에 이미 있는 출처 필드
 //      (code_source · claim_code · insurance_status_source)만으로 판정한다.
