@@ -1,0 +1,20 @@
+{
+  "ticket": "T-20260803-foot-REDPAY-POLLER-DAILYFULL-RESWEEP-BACKSTOP",
+  "ac": [
+    "AC-1 멱등 무중복 upsert",
+    "AC-3 rows-affected/무중복 assert"
+  ],
+  "on_conflict_key": "external_trxid,external_status,amount",
+  "structural_proof": {
+    "checked": false,
+    "reason": "rpc 404",
+    "present": null
+  },
+  "observational_proof": {
+    "method": "postgrest_scan",
+    "dup_groups": 0,
+    "scanned": 573,
+    "ok": true
+  },
+  "verdict": "PASS — 동일 거래 이중 INSERT = 0 (멱등 무중복 실증)"
+}
