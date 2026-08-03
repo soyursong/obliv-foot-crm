@@ -9,7 +9,6 @@ import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 import PlanbPaymentEntryButton from '@/components/PlanbPaymentEntryButton';
 import PlanbSusuScheduleButton from '@/components/PlanbSusuScheduleButton';
 // T-20260731-foot-CBAND-CAT-DIRECT-PAY-PLANA-BUILD: 코밴 CAT 직결 결제 진입(3중 게이트, OFF/미탐지 시 null → 기존 화면 무변경).
-import CbandPayEntryButton from '@/components/CbandPayEntryButton';
 import { type FootSite, parseFootSite, isCompleteFootSite, parseFootSites } from '@/components/FootSiteSelector';
 import FootToeIllustration from '@/components/FootToeIllustration';
 import { toast } from '@/lib/toast';
@@ -2170,8 +2169,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             {/* (구) 비대기형 결제(플랜B NOWAIT 풀페이지 route) 진입 — OPT3 팝업이 이 surface 를 대체(supersede).
                 기능플래그 ON 시에만 렌더(OFF=무노출). NOWAIT spec 회귀 보존 위해 유지 — OPT3 현장 confirm 후 제거 예정. */}
             <PlanbPaymentEntryButton checkInId={checkIn.id} hasCustomer={!!checkIn.customer_id} />
-            {/* 코밴 CAT 직결 결제(플랜A) — 플래그 ON + 단말설정 + 단말감지 3중 게이트 시에만 렌더(OFF/미탐지=무노출) */}
-            <CbandPayEntryButton checkInId={checkIn.id} clinicId={checkIn.clinic_id} customerId={checkIn.customer_id ?? null} />
+            {/* ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ①: 코밴 CAT 직결결제(플랜A) 버튼은
+                [결제 등록] 옆에서 → '결제 미니창 맨 아래 [수납] 옆'으로 이관(PaymentMiniWindow).
+                현장 동선: 카드 단일결제 수납 직전 위치. (분할결제 시 비활성) */}
           </div>
 
           {/* 서류 발행 */}

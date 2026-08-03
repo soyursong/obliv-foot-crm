@@ -29,7 +29,7 @@ export const CBAND_WS_URL = 'ws://127.0.0.1:8888';
  *   2026-07-31 32·32·32·32·31·32 / 2026-08-03 31×8). 종전 25초는 단말 자가종료(31~32초)보다 짧아
  *   CRM 이 먼저 대기를 포기 → 단말이 아직 처리중인 어중간 구간이 발생했다.
  * → 단말 자가종료(최대 32초) + 결과 전문 반환 수신 여유를 포함해 45초로 연장.
- *   (T-20260803-foot-CBAND-PAYRESP-WAIT-TIMEOUT-EXTEND / 최필경 총괄 실측)
+ *   (T-20260803-foot-CBAND-PAYRESP-WAIT-TIMEOUT-EXTEND → T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ④ 로 fold / 최필경 총괄 실측)
  * ★ 값만 조정 — 성공/실패/타임아웃 판정(classify)·이중결제방지(send-lock/probeConcurrent)·전문 파싱은 불변.
  */
 export const CBAND_SEND_TIMEOUT_MS = 45_000;
