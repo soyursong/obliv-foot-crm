@@ -67,6 +67,11 @@ const REDPAY_BUSINESS_NO_ALLOW  = Deno.env.get("REDPAY_WEBHOOK_BUSINESS_NO_ALLOW
   ?? Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
+// T-20260803-...-UNREG-LINE-ALARM-DAILY-DIGEST: 미등록 회선 알람 cadence 토글(롤백레일).
+//   'digest'(기본) = accumulate 만(실시간 Slack 억제) → redpay-unreg-digest 가 하루 1회 요약.
+//   'realtime'     = 구 동작(push 당 Slack) 복귀 — 즉시 롤백 스위치.
+//   ★ 어느 모드든 accumulate 는 항상 수행(AC5 알림 유실 0 — digest 데이터원 보장).
+const REDPAY_UNREG_ALARM_MODE   = (Deno.env.get("REDPAY_UNREG_ALARM_MODE") ?? "digest").trim().toLowerCase();
 // T-20260729-...-NON2XX-ALERT-ROOTCAUSE Part B: 동일원인 dedup 창(기본 60s, 짧게 = 도달 우선).
 const REDPAY_ALERT_DEDUP_WINDOW_MS = Number(Deno.env.get("REDPAY_ALERT_DEDUP_WINDOW_MS") ?? "") || 60_000;
 
@@ -322,22 +327,52 @@ async function handleWebhook(req: Request, alertCtx: Non2xxAlertContext): Promis
   const footResolution = await resolveFootMerchantSet(Date.now());
   const center = centerForMerchantWithSet(data.merchant_id, footResolution.set);
   if (center === "unknown") {
-    // 미등록 merchant(또는 merchant_id 부재) → Slack 알림(운영 확인) + 미적재.
+    // 미등록 merchant(또는 merchant_id 부재) → 미적재.
     //   ※ merchant_id 부재로 인한 unscopable-quarantine 강화는 SILENT-PATH-HARDEN(경로A)이 담당(경계 조율).
-    await sendSlackMessage(
-      REDPAY_ALERT_CHANNEL,
-      `⚠️ [redpay-webhook] 미등록 merchant_id 수신 — 화이트리스트 확인 필요\n`
-        + `merchant_id=${data.merchant_id ?? "∅"} / merchant_name=${data.merchant_name ?? "∅"}\n`
-        + `tid=${data.tid ?? "∅"} / trxid=${data.trxid ?? "∅"} / event_id=${eventId}\n`
-        + `allowlist_source=${footResolution.source}(registry=${footResolution.registryCount})\n`
-        + `→ registry(redpay_terminal_registry) 등록 여부 확인.`,
-      REDPAY_SLACK_BOT_TOKEN,
-    );
+    //
+    // T-20260803-...-UNREG-LINE-ALARM-DAILY-DIGEST: 실시간 push-당 Slack(쿨다운 0) 이 재시도 반복으로
+    //   스팸(15:52~16:32 5회) → cadence 전환. accumulate(멱등 증분) 는 항상 수행하고(AC5 알림 유실 0),
+    //   실시간 Slack 은 REDPAY_UNREG_ALARM_MODE 로만 게이팅(digest 기본=억제 / realtime=구동작 롤백).
+    //   미등록→등록 전이 제외·하루 1회 요약 발송은 redpay-unreg-digest EF(cron) 가 담당.
+    let accumulated = false;
+    try {
+      const { error: noteErr } = await supabase.rpc("redpay_note_unregistered_line", {
+        p_merchant_id:   data.merchant_id ?? null,
+        p_merchant_name: data.merchant_name ?? null,
+        p_tid:           data.tid ?? null,
+        p_clinic_id:     null,
+      });
+      if (noteErr) throw new Error(noteErr.message);
+      accumulated = true;
+    } catch (accErr) {
+      // accumulate 실패 = digest 데이터원 유실 위험 → fail-safe 로 즉시 실시간 Slack(AC5 사수).
+      console.error(
+        `${LOG} 미등록 회선 accumulate 실패 → fail-safe 실시간 알림: `
+          + `${accErr instanceof Error ? accErr.message : String(accErr)}`,
+      );
+    }
+
+    // 실시간 Slack: (a) realtime 모드(구동작 롤백) 또는 (b) accumulate 실패 fail-safe 일 때만.
+    if (REDPAY_UNREG_ALARM_MODE === "realtime" || !accumulated) {
+      await sendSlackMessage(
+        REDPAY_ALERT_CHANNEL,
+        `⚠️ [redpay-webhook] 미등록 merchant_id 수신 — 화이트리스트 확인 필요\n`
+          + `merchant_id=${data.merchant_id ?? "∅"} / merchant_name=${data.merchant_name ?? "∅"}\n`
+          + `tid=${data.tid ?? "∅"} / trxid=${data.trxid ?? "∅"} / event_id=${eventId}\n`
+          + `allowlist_source=${footResolution.source}(registry=${footResolution.registryCount})\n`
+          + `→ registry(redpay_terminal_registry) 등록 여부 확인.`,
+        REDPAY_SLACK_BOT_TOKEN,
+      );
+    }
     console.warn(
-      `${LOG} 미등록 merchant_id=${data.merchant_id ?? "∅"} → Slack 알림 + 미적재 `
-        + `(allowlist_source=${footResolution.source}, registry=${footResolution.registryCount}).`,
+      `${LOG} 미등록 merchant_id=${data.merchant_id ?? "∅"} → 미적재 `
+        + `(mode=${REDPAY_UNREG_ALARM_MODE}, accumulated=${accumulated}, `
+        + `allowlist_source=${footResolution.source}, registry=${footResolution.registryCount}).`,
     );
-    return json(200, { ok: true, status: "unknown_merchant_alerted" });
+    return json(200, {
+      ok: true,
+      status: accumulated ? "unknown_merchant_accumulated" : "unknown_merchant_alerted",
+    });
   }
   if (center === "body") {
     // 도수(body) 단말 — foot 웹훅 스코프 밖(타 센터) → drop.
