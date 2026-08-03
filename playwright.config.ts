@@ -124,6 +124,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260803-foot-REDPAY-POLLER-DAILYFULL-RESWEEP-BACKSTOP: 저빈도 daily_full 재스윕 백스톱 인프라
+        //   불변식 락(신규 plist·전용 checkout WorkingDirectory·저빈도 스케줄·멱등키·last_daily_to 비-clobber).
+        //   백엔드 launchd 인프라(ef_only) — 순수 정적-소스 가드, auth/browser/server 불요. 진짜 게이트=supervisor 등록.
+        '**/T-20260803-foot-REDPAY-POLLER-DAILYFULL-RESWEEP-BACKSTOP.spec.ts',
         // T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG: 고객관리 담당자 표시 일관화(결정 B).
         //   담당자 resolution 미러(NULL·퇴사/부재→"미지정") + 소스 가드(Customers.tsx staffNameMap active-only·
         //   fallback "미지정" / CustomerChartPage Zone1 빈옵션 "미지정"). RED LINE assigned_consultant_id 무접촉.

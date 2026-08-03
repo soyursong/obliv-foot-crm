@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.obliv.foot.redpay-macstudio-poller-dailyfull
+  T-20260803-foot-REDPAY-POLLER-DAILYFULL-RESWEEP-BACKSTOP (P-fix1) — 저빈도 daily_full 재스윕 백스톱.
+
+  왜: 증분 폴러(com.obliv.foot.redpay-macstudio-poller, 5분·max 2h lookback, forward-only 증분커서)는
+      511→457 bizno flip 이음매(seam)·다운타임·KST 자정 걸친 정산지연에서 창을 건너뛰면 그 창을 영영
+      재조회하지 않는다(ROOTCAUSE(A)=T-20260803-...-0722-INGESTION-GAP-ROOTCAUSE 확정 RC). 07-22 단발이나
+      구조 빈틈은 차기 flip 등에서 재발 systemic 잠재. → '그날치 전수 재스윕(POLL_MODE=daily_full)' 을
+      저빈도(1일 2회)로 뒤에 깔아, 증분이 놓친 창을 뒤에서 메운다.
+
+  ★ 멱등 안전(AC-1/AC-3): redpay_raw_transactions 는 DB-강제 UNIQUE(external_trxid,external_status,amount)
+      (= redpay_raw_trx_unique, mig 20260607190000) + PostgREST upsert on_conflict=…&Prefer:resolution=
+      merge-duplicates. → 증분이 이미 적재한 거래를 daily_full 이 재조회해도 '동일 거래 이중 INSERT = 0'.
+      신규 write 는 실 누락분(증분이 놓친 seam/gap)만. 결제/수납/매칭/취소 경로 무접촉(적재 파이프 뒤단).
+
+  ★ state 격리(비-clobber): daily_full 은 updatePollerState() 에서 last_daily_to 만 갱신(poller.mjs L1017-1022).
+      get_redpay_feed_freshness() 가 소비하는 증분 heartbeat last_incremental_to 는 건드리지 않음
+      → 증분 폴러의 신선도 신호 오염 없음(백스톱은 '추가'만, 증분 동작 불변).
+
+  ★ 실행체 = 폴러 전용 checkout (AC-4, T-20260729-...-DEDICATED-CHECKOUT 선례 준수):
+      WorkingDirectory = /Users/domas/GitHub/obliv-foot-crm-redpay-poller (detached, origin/main 고정).
+      dev 피처 체크아웃(/Users/domas/GitHub/obliv-foot-crm)과 물리 분리 → non-main 브랜치 체크아웃 시에도
+      백스톱 stale 불가. 증분 플리스트와 동일 self-heal(매 사이클 진입 시 best-effort FF).
+
+  배포 (★supervisor gate — cron/launchd 인스턴스 신설, macstudio):
+    0. 전용 checkout 최신화 확인(증분 플리스트가 이미 생성·운영 중이면 공유):
+         bash scripts/redpay_poller_checkout_sync.sh --create   # 없을 때만
+    1. 시크릿 = 증분과 동일 파일 공유(신규 시크릿 없음): ~/.env.redpay-foot
+       (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / REDPAY_API_KEY / REDPAY_BUSINESS_NO=457-23-00938 …)
+       POLL_MODE 만 이 plist 의 EnvironmentVariables 로 override(=daily_full). REDPAY_DOMAIN 미설정=foot(기본).
+    2. 등록 (LaunchAgents symlink 도 전용 checkout 의 plist 로 → plist 자체도 main-고정):
+         mkdir -p ~/logs
+         ln -sf ~/GitHub/obliv-foot-crm-redpay-poller/scripts/launchd/com.obliv.foot.redpay-macstudio-poller-dailyfull.plist \
+           ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller-dailyfull.plist
+         launchctl load -w ~/Library/LaunchAgents/com.obliv.foot.redpay-macstudio-poller-dailyfull.plist
+    3. 검증:
+         launchctl list | grep redpay-macstudio-poller-dailyfull
+         tail -80 ~/logs/redpay_macstudio_poller_dailyfull.out   # 'mode=daily_full' + 'upserted=N' + 'last_daily_to' 확인
+         tail -80 ~/logs/redpay_macstudio_poller_dailyfull.err
+       멱등 무중복 실증(read-only, 레드페이 API 무호출):
+         node scripts/T-20260803-foot-REDPAY-POLLER-DAILYFULL-RESWEEP-BACKSTOP_idempotency_probe.mjs
+         # → UNIQUE 제약 존재 확인 + (external_trxid,external_status,amount) 중복 튜플 count=0 assert.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.obliv.foot.redpay-macstudio-poller-dailyfull</string>
+
+    <!--
+      DEDICATED-CHECKOUT(AC-4): 증분 플리스트와 동일한 전용 main-고정 checkout + 매 사이클 self-heal FF.
+      fetch 실패(네트워크 블립)여도 `;` 로 node 는 항상 실행되며 전용 checkout 의 정지상태가 곧 origin/main.
+      env(~/.env.redpay-foot)·registry SSOT·state 파일은 절대경로(homedir)라 WorkingDirectory 무관 동일 해석.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd /Users/domas/GitHub/obliv-foot-crm-redpay-poller &amp;&amp; { git fetch origin main --quiet &amp;&amp; git reset --hard --quiet origin/main ; } ; node scripts/redpay_macstudio_poller.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/domas/GitHub/obliv-foot-crm-redpay-poller</string>
+
+    <!-- ★ POLL_MODE=daily_full: 그날치(기본 창=어제 00:00 KST~now, ~38h 롤링) 전수 재스윕. 멱등 upsert 로 무중복. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REDPAY_POLL_MODE</key><string>daily_full</string>
+    </dict>
+
+    <!--
+      저빈도 1일 2회(05:10 / 17:10 KST). macstudio 로컬 TZ=KST(+0900) → StartCalendarInterval 은 KST.
+      · 05:10: 전일 마감·자정 걸친 정산지연분을 아침에 전수 재확보.
+      · 17:10: 당일 진행분 + 오전 이후 seam/downtime 창을 오후에 재확보.
+      각 재스윕 창(~38h)이 24h 를 넘겨 겹치므로 임의 시점의 seam/gap 은 ≤~12h 내 최소 1회 전수 재스윕에 포섭.
+      증분(5분)은 그대로 1차, 이 백스톱은 뒤에서 메우는 2차(reinforcing, 덮어쓰기 아님).
+      launchd: 슬립 중 놓친 실행은 wake 시 실행(백스톱 성격에 적합).
+    -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key><integer>5</integer>
+            <key>Minute</key><integer>10</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>17</integer>
+            <key>Minute</key><integer>10</integer>
+        </dict>
+    </array>
+
+    <!--
+      RunAtLoad=false: 백스톱은 스케줄 시각에만 전수 재스윕(등록 즉시 전수 조회로 레드페이 API 를 치지 않음).
+      스모크 검증은 supervisor 가 수동 kickstart(launchctl kickstart -k gui/$UID/<Label>)로 1회 실행해 확인.
+    -->
+    <key>RunAtLoad</key><false/>
+
+    <!--
+      KeepAlive 미설정(=스케줄 전용): 증분과 달리 daily_full 은 전수 조회(레드페이 API 부하 有)라
+      크래시 시 즉시 재기동 루프로 API 를 반복 타격하지 않게 한다. 실패분은 (a)다음 스케줄 재스윕(멱등),
+      (b)증분 폴러의 5분 1차 수집, (c)워치독/A12·자매 B(NOTXN-SCAN persist)로 silent-miss 표면화(AC-3)로 회복.
+      재기동 폭주 방지 최소 간격만 보수적으로 둔다.
+    -->
+    <key>ThrottleInterval</key><integer>120</integer>
+
+    <key>StandardOutPath</key><string>/Users/domas/logs/redpay_macstudio_poller_dailyfull.out</string>
+    <key>StandardErrorPath</key><string>/Users/domas/logs/redpay_macstudio_poller_dailyfull.err</string>
+</dict>
+</plist>
