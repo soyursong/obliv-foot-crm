@@ -151,6 +151,13 @@ const DORMANT_REPORT_DOW = ((parseInt(cfg("REDPAY_WATCHDOG_DORMANT_DOW", "1"), 1
 const SLACK_CHANNEL = cfg("REDPAY_WATCHDOG_SLACK_CHANNEL", "C0ATE5P6JTH");
 const STATE_PATH = cfg("REDPAY_WATCHDOG_STATE_PATH", join(homedir(), `.redpay-watchdog-${REDPAY_DOMAIN}-state.json`));
 const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
+// ── T-20260803-...-UNREG-LINE-ALARM-DAILY-DIGEST (FIX-REQUEST): 미등록 회선 알람 cadence 토글 ────
+//   워치독 ④ TID-grain 실시간 슬랙도 field-reaching(slack_send.sh → C0ATE5P6JTH) = 폴러와 함께 봉인해야
+//   "하루 1회 요약"이 실효(supervisor B-2: 실 발원지 경로 cadence 까지 처리). digest 모드에서는 ④ 신 TID 를
+//   슬랙 대신 accumulate(redpay_note_unregistered_line RPC) → 폴러 digest 가 하루 1회 표면화(폴러 다운 시 백스톱).
+//   폴러와 동일 상태파일(alerted_tids) 공유 → 이중 처리 방지. rollback rail: REDPAY_UNREG_ALARM_MODE=realtime.
+const UNREG_ALARM_MODE = (cfg("REDPAY_UNREG_ALARM_MODE", "digest") || "digest").toLowerCase();
+const UNREG_DIGEST_MODE = UNREG_ALARM_MODE !== "realtime";
 
 // ── RedPay 엔드포인트 가드 (폴러와 동일 — payments.php 탈락 시 throw) ──────────
 const REDPAY_ENDPOINT = {
@@ -198,6 +205,15 @@ async function restGet(pathAndQuery) {
   const body = await res.text();
   if (!res.ok) throw new Error(`REST GET 실패 ${res.status}: ${body.slice(0, 300)}`);
   return body ? JSON.parse(body) : [];
+}
+// RPC(service_role) — redpay_note_unregistered_line accumulate 용(digest 모드 백스톱, T-20260803).
+async function restRpc(fnName, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+    method: "POST", headers: restHeaders(), body: JSON.stringify(body ?? {}),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`REST RPC(${fnName}) 실패 ${res.status}: ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : null;
 }
 // raw-presence 분기(R1 부수신호): 알람 TID 가 redpay_raw_transactions 에 이미 적재돼 있는지.
 //   있음 → seed-only 소급표면화 충분(§9.5.2, view-filter drop). 없음 → 백필 필요(§7, ingestion drop).
@@ -766,9 +782,31 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
   // raw-presence 분기(R1 부수신호) — seed-only(§9.5.2) vs 백필(§7) 후속판정 즉시화
   const rawPresent = await checkRawPresence(flagged.map((g) => g.tid));
 
-  let newTidAlerts = 0, suppressed = 0;
+  let newTidAlerts = 0, suppressed = 0, accumulated = 0;
   for (const g of flagged) {
-    if (state.alerted_tids[g.tid]) { suppressed++; continue; } // dedup: 이미 알림한 TID
+    if (state.alerted_tids[g.tid]) { suppressed++; continue; } // dedup: 이미 알림한 TID(폴러와 공유)
+
+    // ── digest 모드(기본, T-20260803 FIX-REQUEST): ④ 실시간 슬랙 대신 accumulate(폴러 digest 백스톱). ──
+    //   폴러가 5분마다 이미 accumulate → 대개 위 dedup 에서 억제. 폴러 다운/09:05~09:10 신규 TID 창의
+    //   백스톱으로만 여기 도달 → 슬랙(스팸) 대신 redpay_note_unregistered_line 로 표면화(하루1회 digest 로 수렴).
+    if (UNREG_DIGEST_MODE) {
+      try {
+        await restRpc("redpay_note_unregistered_line", {
+          p_merchant_id: g.merchant_id ?? null, p_merchant_name: g.merchant_name ?? null,
+          p_tid: g.tid ?? null, p_clinic_id: null,
+        });
+        state.alerted_tids[g.tid] = {
+          merchant_id: g.merchant_id, merchant_name: g.merchant_name, trx_count: g.trx_count,
+          biznos: g.biznos, raw_present: rawPresent == null ? null : rawPresent.has(g.tid),
+          first_alerted_at: ts(), source: "watchdog-digest-accumulate",
+        };
+        accumulated++;
+        log(`④ [UNREG-ACCUMULATE] 미등록 TID digest 누적(실시간 슬랙 억제·백스톱) tid=${g.tid} merchant=${g.merchant_id} mode=digest`);
+      } catch (e) {
+        warn(`④ [UNREG-ACCUMULATE] redpay_note_unregistered_line 실패(비치명): tid=${g.tid} ${e instanceof Error ? e.message : String(e)}`);
+      }
+      continue;
+    }
     // rawPresent=null 이면 조회 실패 → 분기 미상 표기
     const inRaw = rawPresent == null ? null : rawPresent.has(g.tid);
     const branchLine =
@@ -794,8 +832,8 @@ async function runTidGrainRecon(baseUrl, now, registry, state) {
       newTidAlerts++;
     }
   }
-  log(`④ 신규 TID 감지: 신규알림 ${newTidAlerts}건 / dedup억제 ${suppressed}건`);
-  return { newTidAlerts, suppressed, flagged, items };
+  log(`④ 신규 TID 감지: 신규알림 ${newTidAlerts}건 / digest누적 ${accumulated}건 / dedup억제 ${suppressed}건 (mode=${UNREG_ALARM_MODE})`);
+  return { newTidAlerts, accumulated, suppressed, flagged, items };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

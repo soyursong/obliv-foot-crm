@@ -39,6 +39,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { whitelistFingerprint, formatFingerprintLog } from "./lib/redpay_wl_fingerprint.mjs";
+import {
+  partitionByRegistry, buildDigestText, buildEscalationText, selectLongUnprocessed,
+} from "./lib/redpay_unreg_digest_lib.mjs";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. 환경설정 로드 — process.env → ~/.env.redpay-foot → ~/.env.redpay (fallback)
@@ -175,6 +178,23 @@ const TID_ALARM_CHANNEL = cfg("REDPAY_POLLER_TID_ALARM_CHANNEL", cfg("REDPAY_WAT
 // 워치독과 동일 상태파일 공유(dedup 통일). 워치독 기본값과 정확히 동일 경로.
 const TID_ALARM_STATE_PATH = cfg("REDPAY_WATCHDOG_STATE_PATH", join(homedir(), `.redpay-watchdog-${REDPAY_DOMAIN}-state.json`));
 const SLACK_SEND_SH = cfg("SLACK_SEND_SH", join(homedir(), "scripts", "slack_send.sh"));
+
+// ── T-20260803-...-UNREG-LINE-ALARM-DAILY-DIGEST (FIX-REQUEST 재작업) ─────────────
+//   미등록 회선 알람 cadence 토글 = 스팸 억제의 실 발원지 처방.
+//   [supervisor NO-GO B-2] 현장 15:52~16:32 10분 반복 스팸의 실 발원지 = redpay-webhook EF(진단)가
+//     아니라 ★본 폴러의 fireRealtimeTidAlarms(launchd 300s → slack_send.sh → C0ATE5P6JTH, field-reaching).
+//     webhook EF 는 REDPAY_ALERT_CHANNEL(prod ABSENT) → log-only = 현장 미도달(진단 반증, prod log 확정:
+//     52256 [TID-ALARM-REALTIME] tid=1047538243 merchant=1777289007 ch=C0ATE5P6JTH). ⇒ 실 발원지 = 폴러.
+//   [supervisor NO-GO B-1] digest EF 도 동일 REDPAY_ALERT_CHANNEL(ABSENT) → 현장 미도달. EF secret
+//     프로젝트-전역 세팅은 redpay-recon(5분주기) 오발화 = 신규 스팸 위험 → 채택 불가.
+//   처방(옵션 b, proven path): 폴러가 digest 모드에서 (1) 실시간 슬랙 대신 accumulate(redpay_note_unregistered_line
+//     RPC — DA CONSULT GO 테이블/함수 재사용), (2) 하루 1회(≥09:00 KST) slack_send.sh 로 요약 발송.
+//   rollback rail: REDPAY_UNREG_ALARM_MODE=realtime → 구 실시간 per-TID 알람 즉시 복귀(digest 미발송).
+const UNREG_ALARM_MODE = (cfg("REDPAY_UNREG_ALARM_MODE", "digest") || "digest").toLowerCase(); // digest(기본) | realtime(롤백레일)
+const UNREG_DIGEST_MODE = UNREG_ALARM_MODE !== "realtime";
+const UNREG_DIGEST_HOUR = Math.min(23, Math.max(0, parseInt(cfg("REDPAY_UNREG_DIGEST_HOUR", "9"), 10) || 9)); // 발송 시각(KST hour). 현장확정=09:00.
+// digest 발송 대상은 foot 등록회선(registry domain=foot) → foot 인스턴스만 발송(body 폴러는 무접촉).
+const UNREG_DIGEST_DOMAIN = "foot";
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0c. 미등록 TID 자동 수렴 seed (T-20260728-foot-REDPAY-AUTOSEED-PROVISIONAL-TID — DA CONSULT-REPLY MSG-20260728-185221-xvx6)
@@ -487,6 +507,17 @@ async function restPatch(pathAndQuery, body) {
   if (!res.ok) throw new Error(`REST PATCH 실패 ${res.status}: ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : [];
 }
+// RPC(SECURITY DEFINER, service_role) — POST /rest/v1/rpc/{fn}. redpay_note_unregistered_line accumulate 용.
+async function restRpc(fnName, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+    method: "POST",
+    headers: restHeaders(),
+    body: JSON.stringify(body ?? {}),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`REST RPC(${fnName}) 실패 ${res.status}: ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : null;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 2. 레드페이 직접 호출 (한국 IP = 맥스튜디오. EF/pg_net 경유 절대 금지)
@@ -713,8 +744,34 @@ async function fireRealtimeTidAlarms(driftItems) {
   const distinctDriftTids = new Set(driftItems.map((it) => extractTid(it)).filter((t) => t && !tidWhitelist.has(t)));
   const suppressed = [...distinctDriftTids].filter((t) => state.alerted_tids[t]).length;
 
-  let alerted = 0;
+  let alerted = 0, accumulated = 0;
   for (const g of candidates) {
+    if (UNREG_DIGEST_MODE) {
+      // ── digest 모드(기본, T-20260803 FIX-REQUEST): 실시간 슬랙 대신 accumulate(스팸 발원지 봉인). ──
+      //   redpay_note_unregistered_line RPC(DA CONSULT GO 테이블/함수) 멱등 증분 → 하루 1회 digest 가 표면화.
+      //   dedup(state.alerted_tids) 로 cycle-level 재호출 억제 = hit_count 폭주(5분마다 +1) 방지: 같은 TID 는
+      //   최초 1회만 accumulate → digest 에서 hit_count 이 poll-cycle 로 오염되지 않음(distinct 감지 grain).
+      //   best-effort — RPC 실패 시 state 미기록 → 다음 사이클 재시도(유실 0). 적재 본업 무영향.
+      try {
+        await restRpc("redpay_note_unregistered_line", {
+          p_merchant_id: g.merchant_id ?? null,
+          p_merchant_name: g.merchant_name ?? null,
+          p_tid: g.tid ?? null,
+          p_clinic_id: null,
+        });
+        state.alerted_tids[g.tid] = {
+          merchant_id: g.merchant_id, merchant_name: g.merchant_name, trx_count: g.trx_count,
+          biznos: [REDPAY_BUSINESS_NO], raw_present: true,
+          first_alerted_at: ts(), source: "poller-digest-accumulate",
+        };
+        accumulated++;
+        log(`[UNREG-ACCUMULATE] 미등록 TID digest 누적(실시간 슬랙 억제) tid=${g.tid} merchant=${g.merchant_id} trx=${g.trx_count} mode=digest`);
+      } catch (e) {
+        warn(`[UNREG-ACCUMULATE] redpay_note_unregistered_line 실패(비치명 — 다음 사이클 재시도): tid=${g.tid} ${e instanceof Error ? e.message : String(e)}`);
+      }
+      continue;
+    }
+    // ── realtime 모드(롤백레일 REDPAY_UNREG_ALARM_MODE=realtime): 구 실시간 per-TID 슬랙 알람. ──
     // 현장 친화 언어(field_lang_dict.md §1): 개발용어 0. 워치독 ④ 문안과 통일.
     const text =
       `🚨 [레드페이 회선 감시·실시간] 이미 등록된 단말에서 새 결제회선번호(TID)가 감지되었습니다\n` +
@@ -736,11 +793,118 @@ async function fireRealtimeTidAlarms(driftItems) {
       log(`[TID-ALARM-REALTIME] 미등록 TID 즉시 알람 발송 tid=${g.tid} merchant=${g.merchant_id} trx=${g.trx_count} bizno=${REDPAY_BUSINESS_NO} ch=${TID_ALARM_CHANNEL}`);
     }
   }
-  if (alerted > 0) {
+  if (alerted > 0 || accumulated > 0) {
     try { saveAlarmStateAtomic(state); }
     catch (e) { warn(`[TID-ALARM] dedup 상태 저장 실패(비치명 — 다음 사이클 재알람 가능): ${e instanceof Error ? e.message : String(e)}`); }
   }
-  return { alerted, suppressed, skipped: 0 };
+  return { alerted, accumulated, suppressed, skipped: 0 };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3b-1. 하루 1회 미등록 회선 요약(digest) 발송 — T-20260803 FIX-REQUEST (proven path: slack_send.sh)
+//   [B-1 해소] digest EF 는 REDPAY_ALERT_CHANNEL(prod ABSENT) → 현장 미도달. 발송 경로를 폴러(이미
+//     field-reaching: slack_send.sh → C0ATE5P6JTH)로 재배선 = EF secret 의존/타 EF 오발화 위험 제거.
+//   무엇: 매 폴러 사이클에서 "오늘 09:00 KST 이후이고 오늘 아직 미발송"이면 1회 요약 발송(state.last_unreg_digest_date
+//     로 하루 1회 상한). accumulate 는 fireRealtimeTidAlarms 가 이미 수행 → 여기선 표면화만.
+//   AC2(하루1회 09:00)·AC3(등록전이 제외 — registry 재대조 resolved stamp)·AC4(포맷)·AC5(미등록≥1 반드시
+//     발송, registry 조회실패 시 전량 미등록=유실0)·AC7(3일+ 장기미처리 별도 에스컬레이션).
+//   격리: EF cron('foot-redpay-unreg-digest') 은 log-only(secret 부재)로 무해 잔존 — 폴러가 실 발송 SSOT.
+// ════════════════════════════════════════════════════════════════════════════
+function kstDateHour(d = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const g = (t) => parts.find((p) => p.type === t)?.value ?? "";
+  let hour = parseInt(g("hour"), 10); if (hour === 24) hour = 0; // hour12:false 24시 정규화
+  return { date: `${g("year")}-${g("month")}-${g("day")}`, hour };
+}
+async function dispatchUnregDigest() {
+  if (!UNREG_DIGEST_MODE) { log(`[UNREG-DIGEST] realtime 모드(롤백레일) — digest 미발송`); return { sent: false, reason: "realtime_mode" }; }
+  if (REDPAY_DOMAIN !== UNREG_DIGEST_DOMAIN) return { sent: false, reason: "non_foot_domain" }; // body 인스턴스 무접촉
+  if (tidWhitelist.size === 0) return { sent: false, reason: "no_tid_scope" };
+
+  const { date: todayKST, hour: hourKST } = kstDateHour();
+  if (hourKST < UNREG_DIGEST_HOUR) return { sent: false, reason: `before_${UNREG_DIGEST_HOUR}h` };
+
+  const state = loadAlarmStateSafe();
+  if (state == null) return { sent: false, reason: "state_unreadable" }; // 다음 사이클 재시도
+  if (state.last_unreg_digest_date === todayKST) return { sent: false, reason: "already_sent_today" };
+
+  // 1) 미등록(resolved_at NULL) 회선 조회.
+  let rows;
+  try {
+    rows = await restGet(
+      `redpay_unregistered_line_seen?resolved_at=is.null` +
+      `&select=id,merchant_id,merchant_name,tid,first_seen_at,hit_count&order=first_seen_at.asc`
+    );
+  } catch (e) {
+    warn(`[UNREG-DIGEST] 미등록 회선 조회 실패(비치명 — 다음 사이클 재시도): ${e instanceof Error ? e.message : String(e)}`);
+    return { sent: false, reason: "query_failed" };
+  }
+
+  // 2) registry(domain=foot, active) 재대조 → 등록 전이 resolved stamp(AC3). 조회 실패 시 activeSet 공집합 = 전량 미등록(AC5 유실0).
+  const activeSet = new Set();
+  try {
+    const reg = await restGet(`redpay_terminal_registry?domain=eq.foot&active=eq.true&select=merchant_id`);
+    for (const r of reg) if (r.merchant_id) activeSet.add(String(r.merchant_id).trim());
+  } catch (e) {
+    warn(`[UNREG-DIGEST] registry 재대조 실패 → 전이판정 생략(전량 미등록 취급, 유실0): ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const nowIso = new Date().toISOString();
+  const { stillUnreg, resolvedIds } = partitionByRegistry(rows, activeSet);
+
+  // 전이분 resolved stamp(best-effort — 실패해도 발송 진행).
+  if (resolvedIds.length > 0) {
+    try {
+      const patched = await restPatch(
+        `redpay_unregistered_line_seen?id=in.(${resolvedIds.join(",")})`,
+        { resolved_at: nowIso, updated_at: nowIso }
+      );
+      log(`[UNREG-DIGEST] 등록 전이 ${Array.isArray(patched) ? patched.length : "?"}건 resolved 처리(차기 digest 제외).`);
+    } catch (e) { warn(`[UNREG-DIGEST] resolved stamp 실패(무해): ${e instanceof Error ? e.message : String(e)}`); }
+  }
+
+  const nowKST = new Date().toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+
+  // 3) 미등록 0건 → no-send(빈 digest 금지) + 오늘 발송 마킹(재시도 폭주 방지).
+  if (stillUnreg.length === 0) {
+    state.last_unreg_digest_date = todayKST;
+    try { saveAlarmStateAtomic(state); } catch { /* 비치명 */ }
+    log(`[UNREG-DIGEST] 미등록 회선 0건 → digest 미발송(정상). resolved_this_run=${resolvedIds.length}.`);
+    return { sent: false, reason: "zero_unregistered", resolved: resolvedIds.length };
+  }
+
+  // 요약 1건 발송(AC4 포맷) — 검증된 발송경로(slack_send.sh → 현장 채널).
+  const digestText = buildDigestText(stillUnreg, nowKST);
+  const sent = sendSlack(TID_ALARM_CHANNEL, digestText);
+  if (sent) {
+    try {
+      await restPatch(
+        `redpay_unregistered_line_seen?id=in.(${stillUnreg.map((r) => r.id).join(",")})`,
+        { last_digest_at: nowIso, updated_at: nowIso }
+      );
+    } catch (e) { warn(`[UNREG-DIGEST] last_digest_at 갱신 실패(무해): ${e instanceof Error ? e.message : String(e)}`); }
+  }
+
+  // AC7: 3일+ 장기 미처리 → 일일 요약과 별개 에스컬레이션 1건(digest 하루 1회 → 회선당 1회/일 상한 자연 충족).
+  const nowMs = Date.now();
+  const longRows = selectLongUnprocessed(stillUnreg, nowMs);
+  let escalationSent = false;
+  if (longRows.length > 0) {
+    escalationSent = sendSlack(TID_ALARM_CHANNEL, buildEscalationText(longRows, nowKST, nowMs));
+  }
+
+  // 발송 성공 시에만 오늘 마킹(실패 시 다음 사이클 재시도 = 유실0). AC5.
+  if (sent) {
+    state.last_unreg_digest_date = todayKST;
+    try { saveAlarmStateAtomic(state); }
+    catch (e) { warn(`[UNREG-DIGEST] last_unreg_digest_date 저장 실패(비치명 — 다음 사이클 재발송 가능): ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  log(`[UNREG-DIGEST] digest 발송 sent=${sent} 미등록=${stillUnreg.length} 전이resolved=${resolvedIds.length} 장기미처리=${longRows.length} escalation_sent=${escalationSent} ch=${TID_ALARM_CHANNEL}`);
+  return { sent, unregistered: stillUnreg.length, resolved: resolvedIds.length, long_unprocessed: longRows.length, escalation_sent: escalationSent };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1282,6 +1446,10 @@ async function main() {
   //   drift(=merchant 인정 + 미등록 TID) 누적본을 즉시 알람 → 인지창 ≤폴러주기(300s). dedup 은 워치독과 공유.
   const alarmRes = await fireRealtimeTidAlarms(allDriftItems);
 
+  // ── 하루 1회 미등록 회선 요약 발송 (T-20260803 FIX-REQUEST — digest 모드, best-effort) ──────
+  //   ≥09:00 KST & 오늘 미발송이면 요약 1건 발송(proven path slack_send.sh). accumulate 후 표면화.
+  const digestRes = await dispatchUnregDigest();
+
   // ── Unscopable 거래 격리+알람 (T-20260728-...-SILENT-PATH-HARDEN AC-1 — 침묵경로 A 봉인, best-effort) ──
   //   merchant·tid 모두 부재로 판정 불가한 거래를 적재 제외(격리)한 뒤 슬랙으로 표면화(수동대사 유도).
   const quarantineRes = await fireUnscopableQuarantineAlarm(allUnscopableItems);
@@ -1290,7 +1458,8 @@ async function main() {
   log(`완료 elapsed_ms=${elapsedMs} fetched=${totalFetched} scoped_out=${totalScopedOut} ` +
       `drift=${totalDrift} unscopable=${totalUnscopable} upserted=${totalUpserted} errors=${totalErrors} ` +
       `autoseed_seeded=${seedRes.seeded} autoseed_noop=${seedRes.noop} autoseed_failed=${seedRes.failed} ` +
-      `tid_alarm_new=${alarmRes.alerted} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped} ` +
+      `unreg_mode=${UNREG_ALARM_MODE} tid_alarm_new=${alarmRes.alerted} unreg_accumulated=${alarmRes.accumulated ?? 0} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped} ` +
+      `unreg_digest_sent=${digestRes.sent} unreg_digest_reason=${digestRes.reason ?? "-"} ` +
       `unscopable_quarantined=${quarantineRes.quarantined} unscopable_suppressed=${quarantineRes.suppressed} unscopable_skipped=${quarantineRes.skipped}`);
 }
 
@@ -1496,6 +1665,35 @@ function runSelfTest() {
     // F) foot 도메인은 slug 미지정이어도 항상 허용
     assert(isCrossDomainFootWrite("foot", "", foots) === false,
       `xdomain-guard: foot+slug미지정 = 허용`);
+  }
+
+  // ── T-20260803 FIX-REQUEST: 미등록 회선 digest 순수로직 self-test (redpay_unreg_digest_lib.mjs) ──────
+  //   digest-lib.ts(EF) 와 동일 SSOT 를 Node 판으로 재현 — AC3 등록전이 제외 / AC4 포맷 / AC5 유실0 / AC7 3일+.
+  {
+    const rows = [
+      { id: "a", merchant_id: "1777289007", merchant_name: "오블리브-서울오리진점 풋(멀티)", tid: "1047538243", first_seen_at: "2026-08-03T06:32:00Z", hit_count: 3 },
+      { id: "b", merchant_id: "1777288003", merchant_name: "종로 풋(유선)", tid: "1047999088", first_seen_at: "2026-07-29T01:00:00Z", hit_count: 1 }, // 5일 경과(장기)
+      { id: "c", merchant_id: "1777274999", merchant_name: "도수(오염)", tid: "1047000001", first_seen_at: "2026-08-03T05:00:00Z", hit_count: 1 }, // 등록완료 시뮬
+    ];
+    // AC3: registry(active foot merchant) 대조 → 등록 merchant 는 resolved(digest 제외).
+    const activeSet = new Set(["1777274999"]);
+    const { stillUnreg, resolvedIds } = partitionByRegistry(rows, activeSet);
+    assert(resolvedIds.length === 1 && resolvedIds[0] === "c", `digest AC3: 등록 merchant 전이 resolved 분리 (실제 resolved=${resolvedIds.length})`);
+    assert(stillUnreg.length === 2, `digest AC3: 미등록만 잔존 2건 (실제=${stillUnreg.length})`);
+    // AC5: activeSet 공집합(registry 조회실패 시뮬) → 전량 미등록(유실0).
+    assert(partitionByRegistry(rows, new Set()).stillUnreg.length === 3, `digest AC5: registry 공집합 → 전량 미등록(유실0)`);
+    // AC4: 포맷 — 헤더 총건수 + 행별 가맹점/회선/첫감지/누적.
+    const dtext = buildDigestText(stillUnreg, "2026-08-03 09:00");
+    assert(dtext.includes("결제회선 2개") && dtext.includes("가맹점 1777289007 / 회선 1047538243") && dtext.includes("누적 3건"),
+      `digest AC4: 요약 포맷(총건수+행) 정확`);
+    assert(buildDigestText([], "x") === "", `digest AC5: 0건 → 빈 문자열(빈 digest 금지)`);
+    // AC7: 3일+ 장기 미처리만 에스컬레이션(nowMs = 2026-08-03T09:00 KST 기준).
+    const nowMs = new Date("2026-08-03T00:00:00Z").getTime();
+    const longRows = selectLongUnprocessed(stillUnreg, nowMs);
+    assert(longRows.length === 1 && longRows[0].id === "b", `digest AC7: 3일+ 장기 미처리 1건 분리(b=5일경과) (실제=${longRows.length})`);
+    const etext = buildEscalationText(longRows, "2026-08-03 09:00", nowMs);
+    assert(etext.includes("장기 미처리") && etext.includes("회선 1047999088"), `digest AC7: 에스컬레이션 문안 정확`);
+    assert(buildEscalationText([], "x", nowMs) === "", `digest AC7: 장기 0건 → 빈 문자열(발송 억제)`);
   }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);
