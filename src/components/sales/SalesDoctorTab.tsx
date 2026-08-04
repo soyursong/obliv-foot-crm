@@ -2,20 +2,27 @@
  * T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL
  * T-20260629-foot-SALESDOCTOR-INS-SPLIT (TK-ACC-2 ①)
  * T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING (A안 ADDITIVE)
- * T-20260804-foot-SALESAGG-STAFF-4METRIC-REDEFINE (②③④ 구현 / ① FOLLOWUP 대기)
+ * T-20260804-foot-SALESAGG-STAFF-4METRIC-REDEFINE (②③④ 구현)
+ * T-20260804-foot-SALESAGG-CONSULT-COUNT-SOURCE (① — 첫 컬럼 '오더 건수'→'상담 건 수', 案1)
  * 매출집계 탭4 — 담당실장별 통계
  *
+ * ── CONSULT-COUNT (① 案1, 김주연 총괄 2026-08-04 확정) ────────────────────────
+ * 첫 컬럼 라벨 '오더 건수'(payments row 카운트=구 ticketing_count, 案3 폐기) →
+ *   '상담 건 수' = assigned_staff_id별 + check_ins.consultation_done=true 방문 수.
+ *   = 담당실장이 맡은 고객 중 실제 상담이 완료된 방문 수(담당실장 grain).
+ * 案2(consultant_id 수행자 grain)·案3(ticketing_count) 폐기. 다른 컬럼(패키지·진찰료·공단)과
+ *   grain 일치(assigned_staff_id) → 별도 오독방지 UI 불요. READ-ONLY, DB 무변경.
+ *   ★4METRIC-REDEFINE(②③④)와 공존: ①만 이 커밋에서 오더→상담 치환, ②③④ 값/컬럼 불변 보존.
+ *
  * ── 4METRIC-REDEFINE (김주연 총괄 2026-08-04 지시, ②③④ 구현) ──────────────────
- * 총괄 원문 4개 항목 재정비 중 데이터소스가 명확한 3건만 반영(비파괴·SSOT 소비):
+ * 총괄 원문 4개 항목 재정비 중 데이터소스가 명확한 3건 반영(비파괴·SSOT 소비):
  *   ② 패키지 = 실장별 패키지 결제 금액 SUM = 기존 packageRevenue(tax_type='선수금' net).
  *      이미 SUM 집계 → 라벨('패키지 (선수금)')·값 불변으로 AC-2 충족(현행 톤 유지).
  *   ③ 진찰료 = 급여 본인부담금만(비급여 진찰료 제외) = 기존 insuranceCopay(tax_type='급여' net).
  *      매출 급여/비급여/공단부담 산식 SSOT 준수 → 라벨 '급여 본부금' → '진찰료'만 변경, 값 불변.
  *   ④ 총 매출 = ②패키지 결제 합산 + ③급여 본인부담금 합산 (담당실장별 섹션 grain-로컬 정의).
  *      신규 최우측 컬럼(ADDITIVE). ★섹션-로컬 정의: 비급여·공단부담은 포함하지 않음(총괄 명시 산식).
- *   ① '오더 건 수' → '상담 건 수'(상담 발생 건): 데이터소스 이중 모호(무엇=상담발생 / 귀속축)
- *      → 티켓 §57 지시대로 planner FOLLOWUP 발행 후 보류. 본 커밋에서 '오더 건수' 라벨·로직 불변.
- *      (KPI 영향 GO_WARN → 추정 착지 금지, 현장 재확인 후 후속 커밋.)
+ *   ① '오더 건 수' → '상담 건 수': 위 CONSULT-COUNT 案1로 확정 반영(4METRIC 커밋 당시 FOLLOWUP 보류분 완결).
  *
  * ── PKG-REVENUE (A안 ADDITIVE, 김주연 총괄 2026-07-27 확정) ────────────────────
  * 배경: tax_type='선수금'(패키지 선결제)이 기존 3축(급여/비급여/공단)에서 명시 제외 →
@@ -102,11 +109,23 @@ interface ManualRow {
   staff_name: string | null;
 }
 
+/**
+ * check_ins — 상담 건 수 소스 (案1, T-20260804-foot-SALESAGG-CONSULT-COUNT-SOURCE).
+ * 김주연 총괄 2026-08-04 확정: '상담 건 수' = assigned_staff_id별 + consultation_done=true 방문 수.
+ * 담당실장이 맡은 고객 중 실제 상담이 완료된 방문(check_in) 건수 = 담당실장 grain.
+ * 상담 수행자(consultant)가 아니라 customer.assigned_staff_id 위치로 일관 카운트(시나리오2).
+ */
+interface ConsultRow {
+  customer_id: string | null;
+}
+
 // 쿼리 결과 묶음
 interface StaffPayData {
   rows: PayRow[];
   charges: ChargeRow[];
   manuals: ManualRow[];
+  /** 상담 완료(consultation_done=true) 내원 — 案1 상담 건 수 소스 */
+  consults: ConsultRow[];
   /** customer_id → staff_id */
   custStaffMap: Map<string, string>;
   /** staff_id → name */
@@ -120,7 +139,12 @@ interface StaffPayData {
 interface StaffStat {
   staffId: string;     // staff UUID or '__UNASSIGNED__'
   staffName: string;   // 실명 or '미지정'
-  orderCount: number;
+  /**
+   * 상담 건 수 (案1, SALESAGG-CONSULT-COUNT-SOURCE) =
+   *   담당실장(assigned_staff_id)이 맡은 고객의 consultation_done=true 방문 수.
+   * 구 '오더 건수'(payments row 카운트, 案3 ticketing_count) 폐기 → 案1 대체.
+   */
+  consultCount: number;
   /** 비급여 순매출 = payments(과세/면세_비급여, NULL) net + closing_manual UNION */
   nonInsuranceRevenue: number;
   /** 급여 본인부담금 = payments(tax_type='급여') net */
@@ -193,10 +217,28 @@ export function SalesDoctorTab({ filter }: Props) {
       if (cmErr) throw cmErr;
       const manuals = (cmData ?? []) as ManualRow[];
 
-      // 4. customer_ids(payments ∪ service_charges) → customers(assigned_staff_id)
+      // 3b. 상담 건 수 소스 (案1) — check_ins(consultation_done=true), checked_in_at 윈도잉(KST).
+      //   T-20260804-foot-SALESAGG-CONSULT-COUNT-SOURCE: assigned_staff_id별 상담완료 방문 수.
+      //   sim 고객 제외(방어필터 동일 집합). 취소/삭제 방문은 상담완료로 서지 않으나 명시 제외.
+      const { data: ciData, error: ciErr } = await supabase
+        .from('check_ins')
+        .select('customer_id')
+        .eq('clinic_id', clinic!.id)
+        .eq('consultation_done', true)
+        .is('deleted_at', null)
+        .neq('status', 'cancelled')
+        .gte('checked_in_at', `${from}T00:00:00+09:00`)
+        .lte('checked_in_at', `${to}T23:59:59+09:00`);
+      if (ciErr) throw ciErr;
+      const consults = ((ciData ?? []) as ConsultRow[]).filter(
+        (c) => !c.customer_id || !simIds.has(c.customer_id),
+      );
+
+      // 4. customer_ids(payments ∪ service_charges ∪ 상담내원) → customers(assigned_staff_id)
       const custIds = [...new Set([
         ...rows.map((r) => r.customer_id),
         ...charges.map((c) => c.customer_id),
+        ...consults.map((c) => c.customer_id),
       ].filter(Boolean) as string[])];
 
       const custStaffMap = new Map<string, string>(); // customer_id → staff_id
@@ -224,7 +266,7 @@ export function SalesDoctorTab({ filter }: Props) {
         if (s.name) nameToStaffId.set(s.name, s.id);
       }
 
-      return { rows, charges, manuals, custStaffMap, staffNameMap, nameToStaffId };
+      return { rows, charges, manuals, consults, custStaffMap, staffNameMap, nameToStaffId };
     },
   });
 
@@ -232,7 +274,7 @@ export function SalesDoctorTab({ filter }: Props) {
   // NULL assigned_staff → key='__UNASSIGNED__', name='미지정' (DAILY-SETTLE-STAFF AC-3 일관)
   const stats = useMemo<StaffStat[]>(() => {
     const {
-      rows = [], charges = [], manuals = [],
+      rows = [], charges = [], manuals = [], consults = [],
       custStaffMap = new Map(), staffNameMap = new Map(), nameToStaffId = new Map(),
     } = data ?? {};
     const map = new Map<string, StaffStat>();
@@ -243,7 +285,7 @@ export function SalesDoctorTab({ filter }: Props) {
         stat = {
           staffId,
           staffName: staffId === UNASSIGNED ? '미지정' : (staffNameMap.get(staffId) ?? '알 수 없음'),
-          orderCount: 0,
+          consultCount: 0,
           nonInsuranceRevenue: 0,
           insuranceCopay: 0,
           insuranceCovered: 0,
@@ -255,13 +297,19 @@ export function SalesDoctorTab({ filter }: Props) {
       return stat;
     };
 
+    // 상담 건 수 (案1) — consultation_done=true 방문을 담당실장(assigned_staff_id) grain으로 카운트.
+    //   담당실장≠상담수행자 방문도 assigned_staff_id 위치로 일관 카운트(시나리오2).
+    for (const c of consults) {
+      const staffId = (c.customer_id ? custStaffMap.get(c.customer_id) : undefined) ?? UNASSIGNED;
+      ensure(staffId).consultCount += 1;
+    }
+
     // payments — 급여 본인부담금 / 비급여 (선수금 제외, SSOT §2-1 AC-4)
     for (const p of rows) {
       const staffId = (p.customer_id ? custStaffMap.get(p.customer_id) : undefined) ?? UNASSIGNED;
       const stat = ensure(staffId);
       const netAmt = p.payment_type === 'refund' ? -p.amount : p.amount;
 
-      stat.orderCount += 1;
       if (p.tax_type === '급여') {
         stat.insuranceCopay += netAmt;                 // 급여 본인부담금 [수납 권위]
       } else if (p.tax_type === '선수금') {
@@ -304,7 +352,7 @@ export function SalesDoctorTab({ filter }: Props) {
 
   const totals = useMemo(
     () => ({
-      orders: filtered.reduce((s, x) => s + x.orderCount, 0),
+      consults: filtered.reduce((s, x) => s + x.consultCount, 0),
       nonIns: filtered.reduce((s, x) => s + x.nonInsuranceRevenue, 0),
       copay: filtered.reduce((s, x) => s + x.insuranceCopay, 0),
       covered: filtered.reduce((s, x) => s + x.insuranceCovered, 0),
@@ -351,7 +399,7 @@ export function SalesDoctorTab({ filter }: Props) {
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10 bg-muted/70">
           <tr>
-            {['담당실장', '오더 건수', '비급여 순매출', '진찰료', '공단부담액 (명세)', '패키지 (선수금)', '총 매출'].map((h) => (
+            {['담당실장', '상담 건 수', '비급여 순매출', '진찰료', '공단부담액 (명세)', '패키지 (선수금)', '총 매출'].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -371,7 +419,12 @@ export function SalesDoctorTab({ filter }: Props) {
               <td className={cn('px-3 py-2 font-medium', s.staffId === UNASSIGNED && 'text-muted-foreground')}>
                 {s.staffName}
               </td>
-              <td className="px-3 py-2 tabular-nums text-center">{s.orderCount}</td>
+              <td
+                data-testid={`sales-doctor-consultcount-${s.staffId}`}
+                className="px-3 py-2 tabular-nums text-center"
+              >
+                {s.consultCount}
+              </td>
               <td
                 data-testid={`sales-doctor-nonins-${s.staffId}`}
                 className={cn(
@@ -426,10 +479,10 @@ export function SalesDoctorTab({ filter }: Props) {
           <tr className="bg-muted/40 font-semibold">
             <td className="px-3 py-2">합계</td>
             <td
-              data-testid="sales-doctor-total-orders"
+              data-testid="sales-doctor-total-consultcount"
               className="px-3 py-2 tabular-nums text-center"
             >
-              {totals.orders}
+              {totals.consults}
             </td>
             <td
               data-testid="sales-doctor-total-nonins"
@@ -470,7 +523,7 @@ export function SalesDoctorTab({ filter }: Props) {
       <p className="px-3 py-1.5 text-right text-[10px] leading-relaxed text-muted-foreground">
         * 담당실장: 고객 2번차트 지정 기준 · 공단부담액(명세)은 수가표 기준 추정값(공단 심사 전 — 실제 청구확정액과 다를 수 있음)
         <br />
-        * 진찰료 = 급여 본인부담금만(비급여 진찰료 제외) · <span className="font-medium text-teal-700">총 매출 = 패키지 결제 + 진찰료</span>(이 섹션 전용 합계 — 비급여·공단부담은 포함하지 않음)
+        * 상담 건 수 = 담당실장이 맡은 고객 중 상담완료(consultation_done) 방문 수 · 진찰료 = 급여 본인부담금만(비급여 진찰료 제외) · <span className="font-medium text-teal-700">총 매출 = 패키지 결제 + 진찰료</span>(이 섹션 전용 합계 — 비급여·공단부담은 포함하지 않음)
         <br />
         * 수기수납(closing_manual)은 결제담당 기준 귀속 · <span className="font-medium text-amber-700">할인 미반영</span>(할인/수기조정 전용 항목 미도입)
       </p>

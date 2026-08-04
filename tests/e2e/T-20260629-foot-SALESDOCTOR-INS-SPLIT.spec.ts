@@ -119,7 +119,8 @@ test.describe('T-20260629-foot-SALESDOCTOR-INS-SPLIT 공단부담액 소스 교�
     const tableEl = page.locator('[data-testid="sales-doctor-tab"]');
     // 컬럼 헤더는 columnheader role 로 한정 — 본문/푸터 주석에도 같은 단어가 등장(strict 위반 방지)
     await expect(tableEl.getByRole('columnheader', { name: '담당실장' })).toBeVisible();
-    await expect(tableEl.getByRole('columnheader', { name: '오더 건수' })).toBeVisible();
+    // T-20260804-foot-SALESAGG-CONSULT-COUNT-SOURCE: '오더 건수' → '상담 건 수'(案1)
+    await expect(tableEl.getByRole('columnheader', { name: '상담 건 수' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '비급여 순매출' })).toBeVisible();
     // T-20260804 ③: '급여 본부금' → '진찰료' 라벨 변경(값=급여 본인부담금 불변)
     await expect(tableEl.getByRole('columnheader', { name: '진찰료' })).toBeVisible();

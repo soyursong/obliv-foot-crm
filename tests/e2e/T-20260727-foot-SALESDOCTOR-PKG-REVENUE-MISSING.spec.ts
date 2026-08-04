@@ -103,7 +103,8 @@ test.describe('T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING 패키지(선수�
     const tableEl = page.locator('[data-testid="sales-doctor-tab"]');
     // 기존 컬럼 헤더 유지 (T-20260804: '급여 본부금'→'진찰료' 라벨만 변경, 값 불변)
     await expect(tableEl.getByRole('columnheader', { name: '담당실장' })).toBeVisible();
-    await expect(tableEl.getByRole('columnheader', { name: '오더 건수' })).toBeVisible();
+    // T-20260804-foot-SALESAGG-CONSULT-COUNT-SOURCE: '오더 건수' → '상담 건 수'(案1)
+    await expect(tableEl.getByRole('columnheader', { name: '상담 건 수' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '비급여 순매출' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '진찰료' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '공단부담액 (명세)' })).toBeVisible();
