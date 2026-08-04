@@ -479,8 +479,15 @@ export async function runPaymentFlow(
       }
     }
     if (healedId === null) {
+      // ★T-20260804-foot-CBAND-BLOCKED-SEND-PHANTOM-MSGTRACE-SUPPRESS (P0, 최필경 총괄 직접진단 ③):
+      //   차단 경로 = 잠금(L2 partial UNIQUE)에 막혀 **단말로 송신하지 않은** 경로다. 이 경로에서
+      //   방금 생성한 msgTrace 는 단말에 전달된 적이 없는 '팬텀 추적번호'다(시도레코드도 insert-first
+      //   throw 로 미생성). 이를 결과로 반환하면 팝업이 '거래추적 번호'로 표시 → 사고대응 무력화(가짜번호).
+      //   → 번호 억제: 차단 경로는 msgTrace='' 로 반환한다(발급·표시 억제, 레코드는 이미 미생성).
+      //   ★회귀0(AC-4): 실제 전송 경로(APPROVED/FAIL/ATTENTION-after-send)의 msgTrace 는 무접촉 —
+      //     송신된 진짜 추적번호는 계속 발급·저장·표시(PAYRESP AC-7 TRANSERIAL↔MSG_TRACE 대사 보존).
       return {
-        classification: 'ATTENTION', msgTrace, response: null, needsCheck: true,
+        classification: 'ATTENTION', msgTrace: '', response: null, needsCheck: true,
         blocked: true, blockReason: e.reason, authNo: null,
         approvalDate: null, approvalTime: null,
         userMessage: '이 환자의 카드 결제가 이미 진행 중입니다. 중복 결제를 막기 위해 요청을 보내지 않았습니다. 진행 중인 결제를 확인해 주세요. (확인 필요)',

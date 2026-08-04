@@ -503,12 +503,17 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                 <span className="text-lg font-bold">확인 필요</span>
               </div>
               <p className="text-sm text-amber-900">{result.userMessage}</p>
-              <div className="rounded bg-white/70 p-2 text-center">
-                <p className="text-xs text-gray-500">단말기 승인내역조회 번호(거래추적)</p>
-                <p className="text-xl font-mono font-bold tracking-wider text-gray-800" data-testid="cband-msgtrace">
-                  {result.msgTrace}
-                </p>
-              </div>
+              {/* ★T-20260804-foot-CBAND-BLOCKED-SEND-PHANTOM-MSGTRACE-SUPPRESS (P0): 차단 경로(잠금으로 미송신,
+                  precheck degrade-open 후 insert-first L2 백스톱 발화 포함)는 msgTrace='' → 팬텀 추적번호 억제.
+                  실제 전송된 건(진짜 추적번호 존재)만 번호 노출(회귀0·AC-4). */}
+              {result.msgTrace && (
+                <div className="rounded bg-white/70 p-2 text-center">
+                  <p className="text-xs text-gray-500">단말기 승인내역조회 번호(거래추적)</p>
+                  <p className="text-xl font-mono font-bold tracking-wider text-gray-800" data-testid="cband-msgtrace">
+                    {result.msgTrace}
+                  </p>
+                </div>
+              )}
               <p className="text-xs text-amber-700">※ 다시 결제하지 마세요. 카드가 이미 승인되었을 수 있습니다.</p>
             </div>
           )}
