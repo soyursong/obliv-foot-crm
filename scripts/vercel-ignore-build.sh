@@ -15,10 +15,31 @@
 #   → 진짜 코드 변경이 실수로 skip 되는 일은 절대 없다(AC3: deploy_flow 8단계
 #     흐름 무변경 — 의미 있는 커밋은 종전과 동일하게 자동배포).
 #   커밋의 "모든" 변경 파일이 아래 non-runtime 목록에 들 때만 skip 한다.
+#
+# ===========================================================================
+# ★ 2026-08-04 — CF-CUTOVER step2 (Ticket: T-20260531-foot-CF-CUTOVER)
+#   풋 CRM 정본 배포 = Cloudflare Pages 단독(obliv-foot-crm.pages.dev, 2026-07-16
+#   canon). Vercel 은 은퇴(suspend) 상태이며 어떤 커밋도 재빌드하지 않는다.
+#   C1(대표 URL 전환)·C3(supervisor 정책 단독화·deploy-gate 소스 pages.dev 전환,
+#   2026-07-03 완료)에도 vercel.app git 자동배포가 살아있어 builtAt 가 매 실코드
+#   커밋마다 신규 갱신(7/3·8/4 실측) = shkimact-2940 공유캡 소진 + deploy-gate
+#   vercel.app 근거 잔존의 실체였다.
+#
+#   step2 = Vercel git 자동배포를 ignoreCommand 레벨에서 원천차단(무조건 SKIP).
+#   아래 무조건 exit 0 게이트가 production/preview 모든 배포를 건너뛴다
+#   (Vercel: exit 0 => 배포 미생성 => builtAt 동결). 이하 throttle 로직(파일
+#   판정)은 롤백 여지 보존을 위해 dead-path 로 그대로 남겨둔다 — 컷오버 되돌릴
+#   시 이 게이트만 제거하면 종전 throttle 동작으로 복귀.
 # ---------------------------------------------------------------------------
 set -u
 
 log() { echo "[ignore-build] $*"; }
+
+# --- ★ CF-CUTOVER 하드 블록 (무조건 SKIP) ----------------------------------
+# 정본 = CF Pages 단독. Vercel 은 어떤 커밋도 빌드하지 않는다 → 항상 exit 0.
+log "CF-CUTOVER(T-20260531-foot-CF-CUTOVER): Vercel 은퇴 — 정본=obliv-foot-crm.pages.dev. 모든 배포 SKIP(exit 0), builtAt 동결."
+exit 0
+# --- (이하 dead-path: 롤백 시 위 게이트 제거하면 종전 throttle 로 복귀) -----
 
 # --- production vs preview 게이트 (커버리지 갭 차단) -------------------------
 # Ticket: T-20260715-foot-VERCEL-THROTTLE-COVERAGE-GAP
