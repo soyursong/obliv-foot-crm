@@ -128,6 +128,60 @@ function toDomesticKR(raw: string): string {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// T-20260804-foot-FOOTCTR-SMS-DUMMY-E2E-PRODLEAK-SEAL — 수신번호 가드 (L1/L2)
+// ──────────────────────────────────────────────────────────────────
+// RC: E2E 픽스처 phone 'DUMMY-<ts>' 가 send-notification EF 까지 흘러 toDomesticKR() 이
+//   'DUMMY-' strip + leading-0 복원으로 **가짜 017 번호**를 조립 → Solapi 가 200 수락(동기) 후
+//   async 3032 로 실패하나 DB status='sent' 로 무음 오기록. 근본은 .env.local(PROD) 환경격리
+//   갭이나, 확정적 봉합점은 **EF 레벨 수신번호 가드**(★chokepoint) — 실 SOLAPI 호출 이전에
+//   비유효 수신번호를 거부하면, E2E 가 PROD 를 때려도 실발신이 원천 차단된다.
+//
+// L2(정규화 하드닝): toDomesticKR() 은 비정규 입력에도 무조건 leading-0 을 붙여 가짜번호를
+//   조립한다(1012345678 정상 vs 1754309876543 쓰레기를 구분 못 함). → 정규화 결과가 유효
+//   KR 형식인지 **검증**하는 판정함수를 별도로 두어, 조립된 가짜번호를 걸러낸다.
+//
+// L1(수신번호 가드): validateRecipient() = (a) DB-인지 더미 sentinel(DUMMY-%) · (b) 영문
+//   마커(정상번호엔 영문 없음) · (c) 알려진 placeholder · (d) L2 유효성 미달 → 전부 거부.
+//   ★회귀 0 요건: 정상 KR 모바일(010/011/016~019) E.164/국내표기는 100% 통과(false-positive 0).
+
+// 유효 국내 발신대상 형식 (정규화된 국내표기 = digits, leading-0 포함).
+//   실발신 가능한 KR 번호만 통과시켜, toDomesticKR 이 조립한 비정상 자릿수 번호를 차단한다.
+// ⚠ toDomesticKR() 이 항상 leading-0 을 복원하므로 유효 출력은 전부 '0' 으로 시작한다.
+//   (15xx/16xx 대표번호는 SMS 수신 불가 + toDomesticKR 이 0 을 붙여 무효화 → 수신자 패턴에서 제외.)
+const KR_NUMBER_PATTERNS: RegExp[] = [
+  /^01[016789]\d{7,8}$/,   // 휴대폰 010/011/016/017/018/019 (총 10~11자리) — ★회귀 보호 대상
+  /^02\d{7,8}$/,           // 서울 유선 (9~10자리)
+  /^0[3-6][0-9]\d{6,8}$/,  // 지역 유선 (031/041/051 …)
+  /^070\d{7,8}$/,          // 070 인터넷전화
+];
+function isPlausibleKRNumber(domestic: string): boolean {
+  return KR_NUMBER_PATTERNS.some((re) => re.test(domestic));
+}
+
+// L1 수신번호 검증: 원본(raw) 레벨 sentinel/마커 선차단 + 정규화 결과 유효성 검증.
+//   reason 코드는 notification_logs.error_code / error_message 로 각인(별도 LOG-CLEANUP 조회키).
+const RECIPIENT_BLOCK_REASON = "blocked_invalid_recipient";
+function validateRecipient(raw: string): { ok: boolean; domestic: string; reason: string | null } {
+  const original = (raw ?? "").trim();
+  if (!original) return { ok: false, domestic: "", reason: "empty_recipient" };
+  // (a) DB-인지 더미 sentinel — E2E 픽스처 phone LIKE 'DUMMY-%'(is_dummy_phone 판정 대상)
+  if (/^DUMMY-/i.test(original)) return { ok: false, domestic: "", reason: "dummy_sentinel" };
+  // (b) 영문/비전화 마커 — 정상 전화번호엔 영문이 없다(TEST/문자 혼입 즉시 차단)
+  if (/[A-Za-z]/.test(original)) return { ok: false, domestic: "", reason: "non_numeric_marker" };
+  // (c) 알려진 placeholder(+821000000000 / 01000000000)
+  const digitsOnly = original.replace(/[^0-9]/g, "");
+  if (original === "+821000000000" || digitsOnly === "821000000000" || digitsOnly === "01000000000" || digitsOnly === "1000000000") {
+    return { ok: false, domestic: "", reason: "placeholder" };
+  }
+  // (d) L2 — 정규화 결과가 실발신 가능한 유효 KR 형식이 아니면 '가짜번호 조립'으로 판단해 거부.
+  const domestic = toDomesticKR(original);
+  if (!isPlausibleKRNumber(domestic)) {
+    return { ok: false, domestic, reason: `implausible_kr_number:${domestic.length}digits` };
+  }
+  return { ok: true, domestic, reason: null };
+}
+
+// ══════════════════════════════════════════════════════════════════
 // T-20260609-foot-MSG-TEMPLATE-MMS Part B: MMS(이미지 첨부) 발송 경로
 // ──────────────────────────────────────────────────────────────────
 // 발송 분기: image_path(=message-images 버킷 storage 경로)가 있으면 MMS, 없으면 종전 SMS/LMS.
@@ -206,8 +260,26 @@ async function sendSolapi(params: {
   body:         string;
   imageId?:     string | null;
   subject?:     string | null;
-}): Promise<{ success: boolean; messageId: string | null; errorMessage: string | null }> {
+}): Promise<{ success: boolean; messageId: string | null; errorMessage: string | null; blocked?: boolean }> {
   const { apiKey, apiSecret, senderNumber, recipientPhone, body, imageId, subject } = params;
+
+  // ── L1 chokepoint (T-20260804-foot-FOOTCTR-SMS-DUMMY-E2E-PRODLEAK-SEAL) ──
+  // 모든 발송 경로(test_sms / manual_send / scheduled_send / 자동발송)가 이 함수로 수렴한다.
+  // 비유효 수신번호(DUMMY-%/malformed/placeholder)는 **Solapi fetch 이전에** 거부 → 실발신 원천차단.
+  // 무음 sent 오기록 근절: blocked=true 로 반환해 호출부가 'sent' 가 아닌 차단 상태로 기록하게 한다.
+  const recipCheck = validateRecipient(recipientPhone);
+  if (!recipCheck.ok) {
+    console.warn(
+      `[send-notification][L1-GUARD] BLOCK invalid recipient reason=${recipCheck.reason} ` +
+      `raw="${String(recipientPhone ?? "").slice(0, 24)}" → Solapi 미호출(실발신 차단).`
+    );
+    return {
+      success: false,
+      messageId: null,
+      errorMessage: `${RECIPIENT_BLOCK_REASON}: ${recipCheck.reason}`,
+      blocked: true,
+    };
+  }
 
   const isMms      = Boolean(imageId);
   const msgType    = isMms ? "MMS" : (getChannel(body) === "SMS" ? "SMS" : "LMS");
@@ -520,6 +592,8 @@ Deno.serve(async (req: Request) => {
 
       // T-20260523-crm-MESSAGING-ADMIN-UI-VERIFY AC-1:
       // test_sms 결과를 notification_logs에 기록 (event_type='test_send', trigger 추적)
+      // T-20260804-…-PRODLEAK-SEAL: L1 가드 차단(blocked) 시 'failed'(retry 후보) 대신 'skipped' + error_code.
+      const testBlocked = (result as { blocked?: boolean }).blocked === true;
       await supabase.from("notification_logs").insert({
         clinic_id,
         customer_id:      null,
@@ -528,8 +602,9 @@ Deno.serve(async (req: Request) => {
         channel:          "sms",
         recipient_phone:  recipient_phone,
         body_rendered:    testBody,
-        status:           result.success ? "sent" : "failed",
+        status:           result.success ? "sent" : (testBlocked ? "skipped" : "failed"),
         solapi_message_id: result.success ? (result.messageId ?? null) : null,
+        error_code:       testBlocked ? RECIPIENT_BLOCK_REASON : null,
         error_message:    result.success ? null : (result.errorMessage ?? null),
         sent_at:          result.success ? new Date().toISOString() : null,
       });
@@ -677,6 +752,8 @@ Deno.serve(async (req: Request) => {
 
       // 발송 이력 적재 (AC-7) — event_type='manual_send', source 는 error_message 프리픽스로 추적.
       // channel: 이미지 첨부 시 'mms', 아니면 sms/lms (sendWithOptionalImage 가 판정).
+      // T-20260804-…-PRODLEAK-SEAL: L1 가드 차단 시 'failed' 대신 'skipped' + error_code(재시도 후보 제외).
+      const mBlocked = (mResult as { blocked?: boolean }).blocked === true;
       await supabase.from("notification_logs").insert({
         clinic_id,
         customer_id,
@@ -685,8 +762,9 @@ Deno.serve(async (req: Request) => {
         channel: mResult.channel,
         recipient_phone,
         body_rendered: sendBody,
-        status: mResult.success ? "sent" : "failed",
+        status: mResult.success ? "sent" : (mBlocked ? "skipped" : "failed"),
         solapi_message_id: mResult.success ? (mResult.messageId ?? null) : null,
+        error_code: mBlocked ? RECIPIENT_BLOCK_REASON : null,
         error_message: mResult.success ? `${source}` : `${source}: ${mResult.errorMessage ?? "발송 실패"}`,
         sent_at: mResult.success ? new Date().toISOString() : null,
       });
@@ -757,8 +835,10 @@ Deno.serve(async (req: Request) => {
       // 발송 실패를 scheduled_messages 에 기록하고 응답하는 헬퍼(공통).
       const finalizeSched = async (
         ok: boolean, channel: string, messageId: string | null, errMsg: string | null,
+        blocked = false,
       ): Promise<Response> => {
         // notification_logs 적재(수동발송과 동일 스키마, event_type='scheduled_send')
+        // T-20260804-…-PRODLEAK-SEAL: L1 가드 차단 시 'failed' 대신 'skipped' + error_code.
         let logId: string | null = null;
         try {
           const { data: logRow } = await supabase.from("notification_logs").insert({
@@ -769,8 +849,9 @@ Deno.serve(async (req: Request) => {
             channel,
             recipient_phone: sPhone,
             body_rendered: sBody,
-            status: ok ? "sent" : "failed",
+            status: ok ? "sent" : (blocked ? "skipped" : "failed"),
             solapi_message_id: ok ? messageId : null,
+            error_code: blocked ? RECIPIENT_BLOCK_REASON : null,
             error_message: ok ? "scheduled" : `scheduled: ${errMsg ?? "발송 실패"}`,
             sent_at: ok ? new Date().toISOString() : null,
           }).select("id").maybeSingle();
@@ -844,7 +925,10 @@ Deno.serve(async (req: Request) => {
         subject: sSubject,
       });
       console.log(`[send-notification] scheduled_send id=${sr.id} clinic=${sClinic} mms=${Boolean(sImage)} result=`, sResult);
-      return await finalizeSched(sResult.success, sResult.channel, sResult.messageId, sResult.errorMessage);
+      return await finalizeSched(
+        sResult.success, sResult.channel, sResult.messageId, sResult.errorMessage,
+        (sResult as { blocked?: boolean }).blocked === true,
+      );
     }
 
     // ── keep_warm 액션 (AC-1: EF keep-warm ping) ────────────────
@@ -998,6 +1082,35 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ skipped: "no phone" }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
+  }
+
+  // ── L1 수신번호 가드 (T-20260804-foot-FOOTCTR-SMS-DUMMY-E2E-PRODLEAK-SEAL) ──
+  // 자동발송(DB 웹훅 → customer.phone) 이 **무음 'sent' 오기록**을 낳던 정확한 벡터.
+  //   E2E 픽스처가 phone='DUMMY-<ts>' 인 고객에 예약을 만들면 resv_confirm 웹훅이 발화 →
+  //   여기서 recipientPhone='DUMMY-…' → 과거엔 그대로 Solapi 로 흘러 가짜 017 발신 → async 3032.
+  // 봉합: 유효성 미달 수신번호는 template/vault/Solapi 이전에 status='skipped' + error_code=
+  //   'blocked_invalid_recipient' 로 기록하고 종료(무음 sent 근절 + retry 인덱스(failed/pending)
+  //   미편입으로 재시도 폭주 방지). ★회귀 0: 정상 KR 모바일은 통과.
+  {
+    const recipCheck = validateRecipient(recipientPhone);
+    if (!recipCheck.ok) {
+      console.warn(
+        `[send-notification][L1-GUARD] SKIP invalid recipient event=${event_type} ` +
+        `customer=${customer_id} reason=${recipCheck.reason} → Solapi 미호출.`
+      );
+      await logNotification({
+        clinic_id, customer_id, reservation_id, event_type,
+        recipient_phone: recipientPhone, status: "skipped",
+        body_rendered: null,
+        error_code: RECIPIENT_BLOCK_REASON,
+        error_message: `${RECIPIENT_BLOCK_REASON}: ${recipCheck.reason}`,
+        retry_log_id,
+      });
+      return new Response(
+        JSON.stringify({ skipped: RECIPIENT_BLOCK_REASON, reason: recipCheck.reason }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
   }
 
   // ── 단계 3: notification_opt_outs 체크 ───────────────────────
