@@ -513,7 +513,12 @@ export default function Closing() {
           .gte('checked_in_at', start)
           .lte('checked_in_at', end)
           .then(r => (r.data ?? []).map((d: { id: string }) => d.id))
-        ));
+        ))
+        // T-20260804-foot-COSMETIC-CORRECTION-CRM (Tier-C): 비진성 soft-void 라인 제외.
+        //   DA-20260805 census C1: procedureServicesRaw = 시술별통계 표시카드(L1869)에만 feed —
+        //   마감 payload/grossTotal(payment-grain 권위총액)에 미기여 → (i-payment) 확정 → filter GO(firewall breach 아님).
+        //   net-0 phantom 라인 제거 = line-grain breakdown 을 payment 총액 방향으로 healing.
+        .is('voided_at', null);
       if (error) throw error;
       return (data ?? []) as { service_name: string; price: number; check_in_id: string | null; is_package_session?: boolean | null }[];
     },

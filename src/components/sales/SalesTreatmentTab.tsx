@@ -51,6 +51,11 @@ import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
 interface CheckInService {
   /** check_in_services.price — 시술별 청구금액. 안분 비율 산출에 사용. */
   price: number;
+  /**
+   * check_in_services.voided_at — soft-void 무효화 시각. NULL=유효, NOT NULL=비진성(집계 제외).
+   * T-20260804-foot-COSMETIC-CORRECTION-CRM (Tier-C): 비진성 라인은 안분 base·기여에서 동시 제외.
+   */
+  voided_at: string | null;
   services: {
     name: string | null;
     category: string | null;
@@ -174,7 +179,7 @@ export function SalesTreatmentTab({ filter }: Props) {
           id, amount, payment_type, status, accounting_date, customer_id,
           check_ins(
             check_in_services(
-              price,
+              price, voided_at,
               services(name, category, category_label, service_code)
             )
           )
@@ -202,7 +207,10 @@ export function SalesTreatmentTab({ filter }: Props) {
 
     for (const p of payments) {
       const netAmt = p.payment_type === 'refund' ? -p.amount : p.amount;
-      const svcs = p.check_ins?.check_in_services ?? [];
+      // T-20260804-foot-COSMETIC-CORRECTION-CRM (Tier-C): 비진성 soft-void 라인은 안분 base·기여에서 동시 제외.
+      //   DA-20260805 census C2: 이 by-service breakdown 은 payload/전령 미feed(순수 표시) → filter GO(firewall breach 아님).
+      //   voided 라인을 totalBase 에서도 빼야 잔여 genuine 라인이 결제액을 온전히 흡수(부분정정·과소귀속 방지).
+      const svcs = (p.check_ins?.check_in_services ?? []).filter((cs) => !cs.voided_at);
       if (svcs.length === 0) continue;
 
       // 안분 기준: price 합계 (0이면 균등 분배)
