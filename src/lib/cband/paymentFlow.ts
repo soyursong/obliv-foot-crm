@@ -456,10 +456,30 @@ export async function runPaymentFlow(
   //             송신하지 않고 '확인 필요' 정지로 반환(두 실장 동시결제 하드백스톱, 과금 0).
   let attemptId: string;
   try {
-    const inserted = await store.insertAttempt(baseRec);
-    attemptId = inserted.id;
+    attemptId = (await store.insertAttempt(baseRec)).id;
   } catch (e) {
-    if (e instanceof CbandConcurrentPaymentError) {
+    if (!(e instanceof CbandConcurrentPaymentError)) {
+      throw e; // 그 외 저장오류(DB down 등) = 기존 동작(상위 catch → 안전측 정지).
+    }
+    // ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY [증분-5/증분-6 · AC-10/AC-11] — 취소(0430)는
+    //   환자단위 '결제 진행 중' 잠금과 무관해야 한다(잠금 목적=중복 승인 방지 ≠ 취소). 승인 직후 취소 시
+    //   원 승인 attempt 가 terminal 미전이(updateAttempt 사일런트 실패 잔여)로 'requested' 고착 → L2 partial
+    //   UNIQUE(check_in 스코프·tran_type 무관)가 취소 insert 를 오차단(patient_in_progress). 취소 경로에 한해
+    //   고착(수납/환불 성립) 행을 heal(→approved/failed) 후 1회 재삽입 → 취소가 결제잠금에 막히지 않음(완전분리
+    //   defense-in-depth). ★결제(0210) 경로는 무변경 — 진짜 in-flight 는 계속 하드차단(AC-3, 과잉해제 0).
+    //   ※ AC-10 1차 근본해결(승인응답 시 terminal 전이·probe 정밀화)의 백스톱이다. updateAttempt 재구현 안 함.
+    let healed = false;
+    if (input.tranType === TRANTYPE_CANCEL && store.sweepStaleRequested && input.checkInId) {
+      try {
+        await store.sweepStaleRequested({ clinicId: input.clinicId, checkInId: input.checkInId });
+        attemptId = (await store.insertAttempt(baseRec)).id;
+        healed = true;
+      } catch (e2) {
+        if (!(e2 instanceof CbandConcurrentPaymentError)) throw e2;
+        // 재삽입도 충돌 = 진짜 in-flight(응답 전·미수납) 결제가 실제 존재 → 안전측 차단(과잉해제 금지).
+      }
+    }
+    if (!healed) {
       return {
         classification: 'ATTENTION', msgTrace, response: null, needsCheck: true,
         blocked: true, blockReason: e.reason, authNo: null,
@@ -467,7 +487,6 @@ export async function runPaymentFlow(
         userMessage: '이 환자의 카드 결제가 이미 진행 중입니다. 중복 결제를 막기 위해 요청을 보내지 않았습니다. 진행 중인 결제를 확인해 주세요. (확인 필요)',
       };
     }
-    throw e; // 그 외 저장오류(DB down 등) = 기존 동작(상위 catch → 안전측 정지).
   }
 
   // 2) 송신(+타임아웃). 무응답은 timedOut=true, raw=null.

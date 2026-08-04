@@ -4,12 +4,16 @@ import {
   hasLiveCompletedPayment,
   classifyConcurrency,
   precheckConcurrentPayment,
+  cancel,
   CBAND_ORPHAN_STALE_MINUTES,
+  CbandConcurrentPaymentError,
   type CbandConcurrencyRow,
   type OpenPaymentProbe,
   type AttemptStore,
+  type AttemptRecord,
 } from '../../src/lib/cband/paymentFlow';
 import { TRANTYPE_APPROVE, TRANTYPE_CANCEL } from '../../src/lib/cband/protocol';
+import type { SendResult } from '../../src/lib/cband/catClient';
 
 /**
  * T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY — 단말기 취소 후 재결제 잠금 해제 (P0 hotfix)
@@ -177,5 +181,103 @@ test.describe('precheckConcurrentPayment — sweep-heal 선행 배선 (AC-1 L2 �
     );
     expect(probed).toBe(true);
     expect(decision.blocked).toBe(false);
+  });
+});
+
+// ── 취소 heal-and-retry in-memory store: L2 UNIQUE(check_in·requested) 모사 + sweep-heal ──
+const CANCEL_OK_RESP =
+  '{"ERRCODE":"0000","TRANTYPE":"0430","TAMT":"000003000","TRANDATE":"260804",' +
+  '"TRANTIME":"140209","AUTHNO":"29258831    ","MERNO":"MER0001"}';
+const mockSender = (raw: string | null) =>
+  (async (_m: string, msgTrace: string): Promise<SendResult> => ({ raw, timedOut: false, msgTrace }));
+
+/** 고착 requested(승인·payment_id 있음) 1건을 seed → L2 UNIQUE 모사 + sweep-heal 반영. */
+function makeCancelHealStore(seedStuck: boolean) {
+  const rows: Array<AttemptRecord & { id: string; paymentId: string | null }> = [];
+  const log: string[] = [];
+  let seq = 0;
+  if (seedStuck) {
+    // 승인 성공했으나 terminal 미전이(사일런트 실패)로 status='requested' 고착 + 수납성립(payment_id).
+    rows.push({
+      id: 'stuck-approve', msgTrace: 'trace-approve', tranType: TRANTYPE_APPROVE, amount: 3000,
+      merno: 'MER0001', tid: 'TID12345678', clinicId: 'clinic-1', customerId: 'cust-1',
+      checkInId: 'ci-1', originalAuthNo: null, isSimulation: false, status: 'requested',
+      paymentId: 'pmt-approve',
+    });
+  }
+  const store: AttemptStore = {
+    async insertAttempt(rec) {
+      // L2 partial UNIQUE(clinic, check_in) WHERE status='requested' 모사(tran_type 무관 — 실 스키마 정합).
+      if (rec.checkInId && rows.some((r) => r.clinicId === rec.clinicId && r.checkInId === rec.checkInId && r.status === 'requested')) {
+        log.push('insert:BLOCKED');
+        throw new CbandConcurrentPaymentError('patient_in_progress');
+      }
+      const id = `att-${++seq}`;
+      rows.push({ ...rec, id, paymentId: null });
+      log.push(`insert:${rec.tranType}:${id}`);
+      return { id };
+    },
+    async updateAttempt(msgTrace, patch) {
+      const r = rows.find((x) => x.msgTrace === msgTrace);
+      if (r && patch.status) r.status = patch.status;
+      log.push(`update:${patch.status ?? ''}`);
+    },
+    async recordCardPayment() { log.push('payment'); },
+    // ★sweep-heal: status='requested' ∧ payment_id 있음 → 'approved'(근거게이팅). L2 자연해제.
+    async sweepStaleRequested(q) {
+      let swept = 0;
+      for (const r of rows) {
+        if (r.clinicId === q.clinicId && (!q.checkInId || r.checkInId === q.checkInId)
+          && r.status === 'requested' && r.paymentId != null) { r.status = 'approved'; swept++; }
+      }
+      log.push(`sweep:${swept}`);
+      return { swept };
+    },
+  };
+  return { store, rows, log };
+}
+
+test.describe('취소 heal-and-retry — 승인 직후 취소 무차단 (AC-10/AC-11 증분5/6)', () => {
+  test('시나리오7: 고착 requested 승인 attempt 가 있어도 취소는 heal 후 정상 전송(AC-10)', async () => {
+    const { store, log } = makeCancelHealStore(true);
+    const r = await cancel(
+      { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
+        clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1', originalAuthNo: '29258831' },
+      store, mockSender(CANCEL_OK_RESP), { trace: '480400000001' },
+    );
+    // 1차 insert BLOCKED → sweep(heal) → 재insert 성공 → 취소 승인.
+    expect(log).toContain('insert:BLOCKED');
+    expect(log).toContain('sweep:1');
+    expect(r.blocked).toBeFalsy();
+    expect(r.classification).toBe('APPROVED');
+    expect(r.authNo).toBe('29258831');
+  });
+
+  test('시나리오8: 취소는 환자단위 결제잠금 참조 없이 진행(고착 없으면 즉시, AC-11)', async () => {
+    const { store, log } = makeCancelHealStore(false);
+    const r = await cancel(
+      { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
+        clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1', originalAuthNo: '29258831' },
+      store, mockSender(CANCEL_OK_RESP), { trace: '480400000001' },
+    );
+    expect(log).not.toContain('insert:BLOCKED');
+    expect(r.classification).toBe('APPROVED');
+  });
+
+  test('과잉해제 금지: 진짜 in-flight(미수납 requested)면 heal 못 하고 취소 차단(AC-3 백스톱)', async () => {
+    const { store } = makeCancelHealStore(false);
+    // 미수납 in-flight 승인(payment_id 없음) seed — heal 대상 아님.
+    await store.insertAttempt({
+      msgTrace: 'trace-inflight', tranType: TRANTYPE_APPROVE, amount: 3000, merno: 'MER0001',
+      tid: 'TID12345678', clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1',
+      originalAuthNo: null, isSimulation: false, status: 'requested',
+    });
+    const r = await cancel(
+      { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
+        clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1', originalAuthNo: '29258831' },
+      store, mockSender(CANCEL_OK_RESP), { trace: '480400000001' },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.needsCheck).toBe(true);
   });
 });
