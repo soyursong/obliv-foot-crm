@@ -36,6 +36,7 @@ import { InlinePatientSearch, type PatientMatch } from '@/components/InlinePatie
 import { CheckInDetailSheet } from '@/components/CheckInDetailSheet';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260614-foot-CUSTLIST-CTXMENU-PARITY: 우클릭 [문자] parity — 기존 SMS 발송 경로(SendSmsDialog) 재사용
@@ -218,6 +219,8 @@ export default function Customers() {
   // T-20260516-foot-CHART2-STATE-UNIFY: chart2Id state 제거 → AdminLayout ChartContext 사용
   // LOGIC-LOCK: L-004 [CHART-LOCK-008] — openChart 호출은 useChart() 경유만. 직접 접근 금지.
   const { openChart } = useChart();
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅, openChart 게이트웨이 재사용)
+  const openChartNo = useChartNoPopup();
   // T-20260515-foot-CONTEXT-MENU-4ITEM AC-4: 진료차트 패널
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   const [medicalChartCustomerId, setMedicalChartCustomerId] = useState<string | null>(null);
@@ -712,7 +715,15 @@ export default function Customers() {
                   <td className="px-2 py-1.5 text-muted-foreground tabular-nums whitespace-nowrap" data-testid="cust-birthdate">
                     {birthMap.get(c.id) ?? (birthDateYMD(c.birth_date) || '-')}
                   </td>
-                  <td className="px-2 py-1.5 text-muted-foreground truncate" data-testid="cust-chart-number">{c.chart_number ?? '-'}</td>
+                  {/* T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 별도 팝업(행 선택동선과 분리, stopPropagation). */}
+                  <td
+                    className={`px-2 py-1.5 text-muted-foreground truncate${c.id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                    data-testid="cust-chart-number"
+                    data-chartno-popup={c.id ? '1' : undefined}
+                    role={c.id ? 'button' : undefined}
+                    title={c.id ? '차트 열기' : undefined}
+                    onClick={c.id ? (e) => openChartNo(c.id, e) : undefined}
+                  >{c.chart_number ?? '-'}</td>
                   {/* T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 담당자 — 차트2 assigned_staff_id → 이름.
                       재진=자동연동 표시 / 첫방문(NULL)·결손=미지정 안전표시(AC2/AC4).
                       T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG (Part2): NULL·퇴사/부재 staff(map miss) → '미지정' 명시.

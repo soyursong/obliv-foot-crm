@@ -24,6 +24,7 @@ import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, formatDateTimeDots } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments, effectiveNetPaid } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
 
@@ -1452,6 +1453,8 @@ function PackageDetailSheet({
   onChanged: () => void;
 }) {
   const [pkg, setPkg] = useState<PackageListItem | null>(null);
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅)
+  const openChartNo = useChartNoPopup();
   const [remaining, setRemaining] = useState<PackageRemaining | null>(null);
   const [sessions, setSessions] = useState<
     { id: string; session_number: number; session_type: string; session_date: string; status: string }[]
@@ -1511,7 +1514,13 @@ function PackageDetailSheet({
             <div className="flex items-center gap-2">
               <span className="font-medium">{pkg.customer?.name}</span>
               {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-              <span className="font-mono text-xs text-teal-600">{chartNoBadge(pkg.customer?.chart_number ?? null)}</span>
+              <span
+                className={`font-mono text-xs text-teal-600${pkg.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                data-chartno-popup={pkg.customer_id ? '1' : undefined}
+                role={pkg.customer_id ? 'button' : undefined}
+                title={pkg.customer_id ? '차트 열기' : undefined}
+                onClick={pkg.customer_id ? (e) => openChartNo(pkg.customer_id, e) : undefined}
+              >{chartNoBadge(pkg.customer?.chart_number ?? null)}</span>
             </div>
             <div className="text-xs text-muted-foreground">{formatPhone(pkg.customer?.phone)}</div>
           </div>

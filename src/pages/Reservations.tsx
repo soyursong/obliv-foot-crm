@@ -71,6 +71,7 @@ import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
 // T-20260516-foot-CHART-OPEN-UNIFY AC-1: CustomerChartSheet 직접 렌더 제거 → AdminLayout ChartContext 통합
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import { useChart } from '@/lib/chartContext';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 import { PaymentMiniWindow } from '@/components/PaymentMiniWindow';
 import type { CheckIn, Reservation, Staff, VisitType } from '@/lib/types';
 import { visitRouteOptionsFor, resolveRegistrarDisplay, resolveRegistrarProvenance } from '@/lib/types';
@@ -552,6 +553,8 @@ export default function Reservations() {
   // T-20260516-foot-CHART-OPEN-UNIFY AC-1: AdminLayout ChartContext (단일 소스)
   // LOGIC-LOCK: L-004 [CHART-LOCK-010] — openChart 호출은 useChart() 경유만. 직접 접근 금지.
   const { openChart } = useChart();
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅)
+  const openChartNo = useChartNoPopup();
   // T-20260722-foot-CTXMENU-SERYU-POPUP-OVERRIDE: 우클릭 [서류] 별도 팝업 대상 (차트 이동 대체)
   const [docPopupTarget, setDocPopupTarget] = useState<{ customerId: string; name: string | null } | null>(null);
   const location = useLocation();
@@ -2271,7 +2274,13 @@ export default function Reservations() {
             </span>
             {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
             {clipboard.resv.customer_id && (
-              <span className="ml-1 font-mono text-amber-700">{chartNoBadge(resvChartMap.get(clipboard.resv.customer_id))}</span>
+              <span
+                className={`ml-1 font-mono text-amber-700 ${CHARTNO_LINK_CLASS}`}
+                data-chartno-popup="1"
+                role="button"
+                title="차트 열기"
+                onClick={(e) => openChartNo(clipboard.resv.customer_id, e)}
+              >{chartNoBadge(resvChartMap.get(clipboard.resv.customer_id))}</span>
             )}
             {clipboardTarget
               ? ` → ${clipboardTarget.date} ${clipboardTarget.time} (Ctrl+V로 붙여넣기)`
@@ -2982,7 +2991,13 @@ export default function Reservations() {
                                           이미 차트번호를 인접 표기 → 여기서 중복 배지 제거. 취소건(plain span 분기, hovercard 미사용)에만
                                           PAIRING-AUDIT(환자명 단독노출 0) 유지용으로 별도 배지 렌더. */}
                                       {r.customer_id && r.status === 'cancelled' && (
-                                        <span className={`text-[10px] font-mono ${resvChartMap.get(r.customer_id) ? 'text-teal-600' : 'text-muted-foreground'}`}>
+                                        <span
+                                          className={`text-[10px] font-mono ${resvChartMap.get(r.customer_id) ? 'text-teal-600' : 'text-muted-foreground'} ${CHARTNO_LINK_CLASS}`}
+                                          data-chartno-popup="1"
+                                          role="button"
+                                          title="차트 열기"
+                                          onClick={(e) => openChartNo(r.customer_id, e)}
+                                        >
                                           {chartNoBadge(resvChartMap.get(r.customer_id))}
                                         </span>
                                       )}

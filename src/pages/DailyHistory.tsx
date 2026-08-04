@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 
 /* ---------- types ---------- */
 
@@ -122,6 +123,8 @@ const PAID_EXPECTED_STATUSES: CheckInStatus[] = [
 
 export default function DailyHistory() {
   const clinic = useClinic();
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅)
+  const openChartNo = useChartNoPopup();
   const [date, setDate] = useState(todayStr());
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [transitions, setTransitions] = useState<StatusTransition[]>([]);
@@ -555,7 +558,13 @@ export default function DailyHistory() {
                         <td className="py-1 tabular-nums">{r.reservation_time?.slice(0, 5)}</td>
                         <td className="py-1 font-medium">{r.customer_name ?? '—'}</td>
                         {/* T-20260612-foot-CHARTNO-B2-P2: 차트번호 인접 칼럼(미발번 명시) */}
-                        <td className="py-1 font-mono text-[10px] text-muted-foreground">{chartNoDisplay(r.customers?.chart_number ?? null)}</td>
+                        <td
+                          className={`py-1 font-mono text-[10px] text-muted-foreground${r.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                          data-chartno-popup={r.customer_id ? '1' : undefined}
+                          role={r.customer_id ? 'button' : undefined}
+                          title={r.customer_id ? '차트 열기' : undefined}
+                          onClick={r.customer_id ? (e) => openChartNo(r.customer_id, e) : undefined}
+                        >{chartNoDisplay(r.customers?.chart_number ?? null)}</td>
                         <td className="py-1 text-muted-foreground">{r.customer_phone ?? '—'}</td>
                         <td className="py-1">
                           <Badge className={`${VISIT_MONO} text-[10px] px-1.5 py-0`}>
@@ -671,7 +680,13 @@ export default function DailyHistory() {
                   <div className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{ci.customer_name}</span>
                     {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-                    <span className="shrink-0 font-mono text-[10px] text-gray-500">{chartNoBadge(ci.customers?.chart_number ?? null)}</span>
+                    <span
+                      className={`shrink-0 font-mono text-[10px] text-gray-500${ci.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                      data-chartno-popup={ci.customer_id ? '1' : undefined}
+                      role={ci.customer_id ? 'button' : undefined}
+                      title={ci.customer_id ? '차트 열기' : undefined}
+                      onClick={ci.customer_id ? (e) => openChartNo(ci.customer_id, e) : undefined}
+                    >{chartNoBadge(ci.customers?.chart_number ?? null)}</span>
                     <Badge className={`${VISIT_MONO} text-[10px] px-1.5 py-0`}>
                       {VISIT_TYPE_KO[ci.visit_type]}
                     </Badge>

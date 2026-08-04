@@ -33,6 +33,7 @@ import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/lib/format';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
 //   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
 import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
@@ -329,6 +330,9 @@ interface AssignDrillItem {
 export default function Assignments() {
   const clinic = useClinic();
   const { profile } = useAuth();
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅).
+  //   금일 배분 이력 표: 성함은 이미 window.open 링크, 차트번호(형제 span)는 비활성 → 진입점화.
+  const openChartNo = useChartNoPopup();
 
   // T-20260629-foot-STAFF-ROTATION-DEFAULT-ORDER: 기본순번 편집 권한 = admin/manager/director
   //   (staff 테이블 RLS=is_admin_or_manager(director 포함)와 정합). 그 외 역할은 버튼 비노출 + save 가드.
@@ -2065,7 +2069,13 @@ export default function Assignments() {
                         r.customerName
                       )}
                       {r.chartNumber && (
-                        <span className="ml-1 font-mono text-[11px] font-normal text-teal-600">
+                        <span
+                          className={`ml-1 font-mono text-[11px] font-normal text-teal-600${r.customerId ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                          data-chartno-popup={r.customerId ? '1' : undefined}
+                          role={r.customerId ? 'button' : undefined}
+                          title={r.customerId ? '차트 열기' : undefined}
+                          onClick={r.customerId ? (e) => openChartNo(r.customerId, e) : undefined}
+                        >
                           {chartNoBadge(r.chartNumber)}
                         </span>
                       )}
