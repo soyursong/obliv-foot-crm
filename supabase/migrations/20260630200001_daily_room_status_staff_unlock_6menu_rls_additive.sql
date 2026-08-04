@@ -1,3 +1,10 @@
+-- ★RENUMBER LINEAGE (T-20260805-foot-DRS-VERSION-COLLISION-RENUMBER): version 20260630200000 → 20260630200001.
+--   원 version 20260630200000 을 notif_tmpl_write_staff_roles_align(정당점유·created_by=dev-foot:NOTIF-TMPL-RLS-CODY-UNLOCK)이
+--   schema_migrations PK 로 점유 → daily_room_status 마이그가 원장에서 distinct 추적 불가(collision). 미충돌 free slot 20260630200001 로 renumber.
+--   ▸ content-parity: 아래 non-comment DDL body = 원본(20260630200000_...) byte-identical(무변경). 파일명 + rollback 대칭 + cross-ref 코멘트만 갱신.
+--   ▸ 내부 VERSION 상수: 본 마이그 SQL body 에 embedded version 상수 없음(version=파일명 단독) → 갱신 대상 없음.
+--   ▸ objects 이미 prod-LIVE(T-20260701 sweep apply, commit 7d386c77) → 본 renumber 는 DDL 재-apply 아님. 원장 forward-doc INSERT = supervisor exec-lane.
+--
 -- T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP — Phase 2 잔여 ADDITIVE
 -- surface: daily_room_status (④직원·공간 '방 활성/비활성 토글', Staff.tsx handleRoomToggle)
 --
@@ -20,7 +27,7 @@
 --    근거 4점(role enum 정합 / ADDITIVE·lock-out 0 / 비-PHI·비-금전 / clinic 격리) + 선례 daily_closings 1:1 동형.
 --    GO 조건 A(USING≡WITH CHECK 술어 동일)·B(rls_guard 기존 2정책 잔존 단언)·C(헬퍼 재사용, 신규정의 0) 모두 충족.
 --    → .DA_CONSULT_HOLD 접미사 제거 (apply 게이트는 supervisor DDL-diff GO 후 dev-foot 직접 apply, FE 旣패리티).
--- rollback: 20260630200000_..._rls_additive.rollback.sql
+-- rollback: 20260630200001_daily_room_status_staff_unlock_6menu_rls_additive.rollback.sql
 
 BEGIN;
 

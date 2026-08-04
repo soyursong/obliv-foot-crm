@@ -1,4 +1,5 @@
 -- ROLLBACK — T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP Phase2 daily_room_status ADDITIVE
+-- ★RENUMBER (T-20260805-foot-DRS-VERSION-COLLISION-RENUMBER): version 20260630200000 → 20260630200001 (up.sql 대칭). DDL body 무변경.
 -- 추가한 정책 1개만 제거 → 기존 2 write 정책(admin_manager_write, staff_own_write)은 무손상 잔존.
 -- coordinator/consultant/therapist 만 토글 거부 상태(=apply 전)로 복귀. 데이터 손실 0.
 
