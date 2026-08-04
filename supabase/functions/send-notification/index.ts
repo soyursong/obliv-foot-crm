@@ -840,7 +840,16 @@ Deno.serve(async (req: Request) => {
       }
 
       const sClinic = sr.clinic_id;
-      const sPhone  = (sr.recipient_phone ?? "").replace(/[^0-9]/g, "");
+      // T-20260805-xcrm-SMS-EF-SCHEDSEND-PRESTRIP-GUARD-BYPASS-SWEEP:
+      //   admin-manual(test_sms/manual_send)와 동일 RC — digit pre-strip(.replace(/[^0-9]/g,"")) 이
+      //   validateRecipient(sendSolapi L1 chokepoint) **이전에** scheduled_messages 저장행의 raw 마커
+      //   (DUMMY-<epoch> sentinel·영문마커)를 선파괴 → 남은 epoch 이 toDomesticKR 로 leading-0 복원 →
+      //   가짜 01x 조립 → isPlausibleKRNumber 통과 → 무음 실발신. 저장행이 가드 도입 이전 레거시거나
+      //   다른 삽입경로로 미검증 저장됐을 수 있어 dispatch-time pre-strip 자체가 우회 벡터.
+      //   봉합: 원본(.trim())을 그대로 가드/발신 경로(sendWithOptionalImage→sendSolapi)에 투입해 chokepoint 가
+      //   raw 마커를 보게 한다. digit 정규화(sDigits)는 opt_out 매칭·로깅 전용으로 분리(가드/발신 경로 미투입).
+      const sPhone  = (sr.recipient_phone ?? "").trim();
+      const sDigits = sPhone.replace(/[^0-9]/g, "");
       const sBody   = (sr.body ?? "").trim();
       const sImage  = sr.image_path ? String(sr.image_path).trim() : null;
 
@@ -859,7 +868,7 @@ Deno.serve(async (req: Request) => {
             reservation_id: null,
             event_type: "scheduled_send",
             channel,
-            recipient_phone: sPhone,
+            recipient_phone: sDigits,
             body_rendered: sBody,
             status: ok ? "sent" : (blocked ? "skipped" : "failed"),
             solapi_message_id: ok ? messageId : null,
@@ -915,7 +924,7 @@ Deno.serve(async (req: Request) => {
       // 수신거부 가드
       const { data: sOpt } = await supabase
         .from("notification_opt_outs")
-        .select("id").eq("clinic_id", sClinic).eq("phone", sPhone).maybeSingle();
+        .select("id").eq("clinic_id", sClinic).eq("phone", sDigits).maybeSingle();
       if (sOpt) {
         return await finalizeSched(false, "sms", null, "수신거부 고객");
       }
