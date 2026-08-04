@@ -146,6 +146,43 @@ test.describe('classifyConcurrency 통합 — probe 결과 → 배너 (RCA 시�
     };
     expect(classifyConcurrency(probe).blocked).toBe(true);
   });
+
+  // ── 시나리오9 (AC-12 · 증분-7 · fold jgpt MSG-20260804-144324) ──────────────
+  //   patient_completed 분기 발현 — 취소 후 재결제 시 '이미 결제된 환자'로 차단되던 증상.
+  //   RCA #1/#2: 취소완료 attempt 를 '완료'로 세지 않음(해제) + 미취소 진성 완료건은 안내 유지(정책 불변).
+  //   두 분기(patient_in_progress / patient_completed) 모두 취소 시 무차단으로 수렴(단일 상태머신).
+  test('시나리오9-A: 취소완료 건 재결제 → patient_completed 로 차단되지 않음(AC-12 버그해소)', () => {
+    // 결제 승인(A9) + 동일 AUTHNO 취소(환불행). in-flight 아님.
+    const rows: CbandConcurrencyRow[] = [
+      row({ status: 'approved', tranType: TRANTYPE_APPROVE, authNo: 'A9', paymentId: 'p-approve', createdAt: minAgo(30) }),
+      row({ status: 'approved', tranType: TRANTYPE_CANCEL, authNo: 'A9', paymentId: 'p-refund', createdAt: minAgo(5) }),
+    ];
+    const probe: OpenPaymentProbe = {
+      patientInProgress: rows.some((r) => isInFlightBlocking(r, NOW)),
+      patientCompleted: hasLiveCompletedPayment(rows),
+      terminalBusy: false,
+    };
+    expect(probe.patientInProgress).toBe(false);
+    expect(probe.patientCompleted).toBe(false); // 취소완료 = '완료'로 세지 않음(RCA #1)
+    expect(classifyConcurrency(probe).blocked).toBe(false);
+  });
+
+  test('시나리오9-B: 미취소 진성 완료건 → patient_completed 안내 유지(REDEFINITION 경계·정책 불변·AC-3)', () => {
+    // 취소 없는 살아있는 완료 결제 → 안내(override 허용)만, 하드차단 아님(allowOverride=true).
+    const rows: CbandConcurrencyRow[] = [
+      row({ status: 'approved', tranType: TRANTYPE_APPROVE, authNo: 'A9', paymentId: 'p-approve', createdAt: minAgo(30) }),
+    ];
+    const probe: OpenPaymentProbe = {
+      patientInProgress: rows.some((r) => isInFlightBlocking(r, NOW)),
+      patientCompleted: hasLiveCompletedPayment(rows),
+      terminalBusy: false,
+    };
+    const d = classifyConcurrency(probe);
+    expect(probe.patientCompleted).toBe(true); // 미취소 완료 = 과잉해제 금지(RCA #2·AC-3 보존)
+    expect(d.blocked).toBe(true);
+    expect(d.reason).toBe('patient_completed');
+    expect(d.allowOverride).toBe(true);
+  });
 });
 
 test.describe('precheckConcurrentPayment — sweep-heal 선행 배선 (AC-1 L2 해제)', () => {
