@@ -327,6 +327,31 @@ export function hasLiveCompletedPayment(rows: CbandConcurrencyRow[]): boolean {
 }
 
 /**
+ * ★T-20260804-foot-CBAND-BLOCKED-SEND-PHANTOM-MSGTRACE-SUPPRESS AC-7 — 차단 안내에 표시할
+ *   '차단 원인이 된 진행중 시도'의 MSG_TRACE 선별(순수·결정론·DB무관·테스트가능).
+ *   차단(patient_in_progress)을 유발한 in-flight 후보 = APPROVE ∧ status∈{requested,attention}
+ *   ∧ stale(기본 5분) 이내. listRecentAttempts(최신순 가정) 중 가장 최근 후보의 msgTrace 반환.
+ *   후보가 없으면 null → 호출측은 '번호 없이 안내'(AC-7 단서). ★새 phantom 번호는 절대 반환하지 않음(AC-1/3).
+ *   ※ CbandAttemptView 는 paymentId 미포함 → '미수납' 판정을 status(requested/attention)로 근사한다.
+ *     이는 L2 partial UNIQUE(WHERE status='requested') 차단 의미와 정합(수납 성립 시 status 는 이미 이탈).
+ */
+export function resolveBlockingMsgTrace(
+  rows: CbandAttemptView[],
+  nowMs: number,
+  staleMinutes: number = CBAND_ORPHAN_STALE_MINUTES,
+): string | null {
+  const cutoff = nowMs - staleMinutes * 60_000;
+  for (const r of rows) {
+    if (r.tranType !== TRANTYPE_APPROVE) continue;
+    if (r.status !== 'requested' && r.status !== 'attention') continue;
+    const t = Date.parse(r.createdAt);
+    if (Number.isNaN(t) || t < cutoff) continue;
+    return r.msgTrace;
+  }
+  return null;
+}
+
+/**
  * 시도 레코드 저장소(주입). 실 구현은 supabaseAttemptStore(cband_payment_attempts 테이블, DDL 게이트).
  * 상태머신은 이 인터페이스만 알면 되므로 unit 테스트에서 in-memory 스텁 주입 가능.
  */
@@ -403,6 +428,12 @@ export interface PaymentFlowResult {
   /** ★AC-6-1 서버 동시성잠금(L2 partial UNIQUE) 발화로 개시 차단됨(송신 0·과금 0). */
   blocked?: boolean;
   blockReason?: ConcurrencyReason | null;
+  /**
+   * ★T-20260804-foot-CBAND-BLOCKED-SEND-PHANTOM-MSGTRACE-SUPPRESS AC-7 — 차단 시(blocked=true)
+   *   안내에 표시할 '차단 원인이 된 진행중 시도'의 실 MSG_TRACE. 원인 시도를 특정할 수 없으면 null(번호 없이 안내).
+   *   ★차단 시 msgTrace 는 이 값(또는 '')로 세팅 — 새 phantom 번호는 어떤 경우에도 표시되지 않는다(AC-1/AC-3).
+   */
+  blockingMsgTrace?: string | null;
 }
 
 /** WS 송신부 주입 타입(테스트 시 mock). */
@@ -479,11 +510,33 @@ export async function runPaymentFlow(
       }
     }
     if (healedId === null) {
+      // ★T-20260804-foot-CBAND-BLOCKED-SEND-PHANTOM-MSGTRACE-SUPPRESS AC-1/AC-3/AC-7 —
+      //   차단(patient_in_progress)됐을 때 이 요청의 새 MSG_TRACE(방금 makeTrace 로 생성됐으나 송신·INSERT
+      //   되지 않은 phantom)를 절대 결과로 노출하지 않는다. 대신 '차단 원인이 된 진행중 시도'의 실 MSG_TRACE
+      //   (예: 이번 사례 658182408832)를 조회해 표시 → 실장이 그 번호로 단말기 조회해 실제 상태 확인 가능.
+      //   조회 실패/원인 미특정 시 null → 번호 없이 안내(가짜 새 번호 생성/표시 금지 불변).
+      let blockingMsgTrace: string | null = null;
+      if (store.listRecentAttempts && input.checkInId) {
+        try {
+          const recent = await store.listRecentAttempts({
+            clinicId: input.clinicId, checkInId: input.checkInId, limit: 10,
+          });
+          blockingMsgTrace = resolveBlockingMsgTrace(recent, Date.now());
+        } catch {
+          // 조회 실패 = degrade(번호 없이 안내). 하드백스톱(차단 자체)은 유지.
+        }
+      }
       return {
-        classification: 'ATTENTION', msgTrace, response: null, needsCheck: true,
+        classification: 'ATTENTION',
+        // ★AC-1/AC-3: phantom 신규 번호 대신 차단 원인 번호(없으면 빈값) — 새 번호 노출 0.
+        msgTrace: blockingMsgTrace ?? '',
+        blockingMsgTrace,
+        response: null, needsCheck: true,
         blocked: true, blockReason: e.reason, authNo: null,
         approvalDate: null, approvalTime: null,
-        userMessage: '이 환자의 카드 결제가 이미 진행 중입니다. 중복 결제를 막기 위해 요청을 보내지 않았습니다. 진행 중인 결제를 확인해 주세요. (확인 필요)',
+        userMessage: blockingMsgTrace
+          ? `이 환자의 카드 결제가 이미 진행 중입니다(추적번호 ${blockingMsgTrace}). 중복 결제를 막기 위해 요청을 보내지 않았습니다. 이 번호로 단말기 [승인내역조회]에서 실제 상태를 확인해 주세요. (확인 필요)`
+          : '이 환자의 카드 결제가 이미 진행 중입니다. 중복 결제를 막기 위해 요청을 보내지 않았습니다. 진행 중인 결제를 확인해 주세요. (확인 필요)',
       };
     }
     attemptId = healedId; // heal 성공 → 재삽입 attempt id 확정(definite assignment).

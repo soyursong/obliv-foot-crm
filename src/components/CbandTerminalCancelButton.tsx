@@ -248,10 +248,15 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
                 <span className="text-lg font-bold">확인 필요</span>
               </div>
               <p className="text-sm text-amber-900">{result.userMessage}</p>
-              <div className="rounded bg-white/70 p-2 text-center">
-                <p className="text-xs text-gray-500">단말기 승인내역조회 번호(거래추적)</p>
-                <p className="text-lg font-mono font-bold tracking-wider text-gray-800" data-testid="terminal-cancel-msgtrace">{result.msgTrace}</p>
-              </div>
+              {/* ★T-20260804-foot-CBAND-BLOCKED-SEND-PHANTOM-MSGTRACE-SUPPRESS AC-3/AC-7 —
+                  번호가 있을 때만 표시. 차단 시 msgTrace='차단 원인 시도의 실 번호'(AC-7) 또는 ''(원인 미특정).
+                  새 phantom 번호는 결코 표시되지 않는다(AC-1). */}
+              {result.msgTrace && (
+                <div className="rounded bg-white/70 p-2 text-center">
+                  <p className="text-xs text-gray-500">단말기 승인내역조회 번호(거래추적)</p>
+                  <p className="text-lg font-mono font-bold tracking-wider text-gray-800" data-testid="terminal-cancel-msgtrace">{result.msgTrace}</p>
+                </div>
+              )}
               <p className="text-xs text-amber-700">※ 다시 취소하지 마세요. 취소가 이미 처리되었을 수 있습니다.</p>
             </div>
           )}
