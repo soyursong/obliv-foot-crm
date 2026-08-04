@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useClinic } from '@/hooks/useClinic';
 import { format } from 'date-fns';
-import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Phone, FileText, Package, Stethoscope, Trash2, Bell, Upload, AlertTriangle } from 'lucide-react';
 import DoctorTreatmentPanel from '@/components/doctor/DoctorTreatmentPanel';
 // T-20260727-foot-REDPAY-PLANB-NOWAIT-PAYPAGE-BUILD: 비대기형 결제 진입(기능플래그 게이트, OFF 시 null 반환 → 기존 화면 무변경).
 import PlanbPaymentEntryButton from '@/components/PlanbPaymentEntryButton';
@@ -51,6 +51,8 @@ import { PaymentItemsView } from '@/components/PaymentItemsView';
 import { useCheckInPlanbBadge } from '@/hooks/useCheckInPlanbBadge';
 import { isPaymentPlanbEnabled } from '@/lib/paymentPlanb';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
+// T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN: [단말기 취소] 버튼(플랜A) + 플랜A 판별자.
+import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/CbandTerminalCancelButton';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 import { visitRouteOptionsFor } from '@/lib/types';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
@@ -147,6 +149,11 @@ interface PaymentRow {
   status?: string | null;
   check_in_id?: string | null;
   clinic_id?: string | null;
+  // T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN: 플랜A(단말기 직결) 판별 + 취소 전문 ORI 필드 근거.
+  //   payment_attempt_id NOT NULL = CAT-origin(플랜A). external_approval_no=원거래 AUTHNO(ORI_AUTHNO), accounting_date=ORI_DATE 근거.
+  payment_attempt_id?: string | null;
+  external_approval_no?: string | null;
+  accounting_date?: string | null;
 }
 
 interface VisitHistory {
@@ -553,6 +560,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
   const [payEditTarget, setPayEditTarget] = useState<PaymentRowForEdit | null>(null);
   const [payEditMode, setPayEditMode] = useState<EditMode>('edit');
+  // T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN AC-9: 플랜A 건 기존 [취소] 클릭 시 오취소 백스톱 경고 팝업 대상.
+  const [planACancelWarnTarget, setPlanACancelWarnTarget] = useState<PaymentRow | null>(null);
   // T-20260516-foot-CHART2-STATE-UNIFY: chartSheetId state 제거 (AdminLayout ChartContext로 통합)
   // T-20260513-foot-C1-SPACE-ASSIGN-RESTORE: 공간배정 이동이력
   // T-20260522-foot-SPACE-AUTOROUTE: selectedRoom/assigningRoom/rooms/dailyRoomLog 제거 (수동배정 폐지)
@@ -724,7 +733,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .order('sort_order'),
       supabase
         .from('payments')
-        .select('id, amount, method, installment, payment_type, created_at, status, check_in_id, clinic_id')
+        .select('id, amount, method, installment, payment_type, created_at, status, check_in_id, clinic_id, payment_attempt_id, external_approval_no, accounting_date')
         .eq('check_in_id', checkIn.id)
         // T-20260721-foot-CHECKIN-RECEIPT-SOFTVOID-PHANTOM: fail-closed allow-list (부모 CHARTPAGE-SOFTVOID AC1 계승). .neq 블랙리스트 재도입 금지 — cancelled 등 신규 soft-void 값 누수 방지
         .eq('status', 'active'),
@@ -2108,7 +2117,27 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             />
             {payments.length > 0 ? (
               <div className="space-y-1.5">
-                {payments.map((p) => (
+                {(() => {
+                // ── T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN AC-4(파생 표시) ──
+                //   canon: 취소 성공 = 별도 refund 행 INSERT + 원거래 payments 물리 UPDATE 없음(status='active' 유지).
+                //   원거래 '취소 상태'는 링크된 refund 행(external_approval_no 동일) 존재로 파생 표시한다.
+                //   목록에 이미 로드된 refund 행들의 원거래 AUTHNO 집합 = 취소완료 판별 소스(1회 계산).
+                const refundedAuthNos = new Set(
+                  payments
+                    .filter((r) => r.payment_type === 'refund' && r.external_approval_no?.trim())
+                    .map((r) => (r.external_approval_no as string).trim()),
+                );
+                return payments.map((p) => {
+                  // 플랜A(단말기 직결) 판별 = payment_attempt_id NOT NULL + AUTHNO 존재(refund 행 제외).
+                  //   AC-1: 플랜A 원거래에서 기존 [수정][취소][삭제] 비활성 → [단말기 취소]만 활성.
+                  //   AC-6: 수기 건은 기존 3버튼 완전 존치(회귀 0).
+                  const isPlanA = p.payment_type !== 'refund' && isPlanACardPayment(p);
+                  // AC-4: 플랜A 원거래에 링크된 refund 행 존재 → 파생 '취소' 상태(원거래 물리 UPDATE 없음).
+                  const isPlanARefunded =
+                    p.payment_type !== 'refund' &&
+                    !!p.external_approval_no?.trim() &&
+                    refundedAuthNos.has(p.external_approval_no.trim());
+                  return (
                   <div key={p.id} className="space-y-0.5">
                     <div className="flex items-center gap-1 text-xs">
                       <span className="flex-1">
@@ -2117,44 +2146,75 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                         {p.status === 'cancelled' && (
                           <span className="ml-1 text-[10px] text-amber-600 font-medium">[취소]</span>
                         )}
+                        {/* ★AC-4: 플랜A 원거래에 링크된 refund 행 존재 → 파생 '취소' 표시(물리 UPDATE 없이). */}
+                        {isPlanARefunded && (
+                          <span
+                            className="ml-1 text-[10px] text-amber-600 font-medium"
+                            data-testid={`payment-plana-cancelled-${p.id}`}
+                          >[취소]</span>
+                        )}
                       </span>
                       <span className={cn('tabular-nums mr-1', p.payment_type === 'refund' && 'text-red-600', p.status === 'cancelled' && 'line-through text-muted-foreground')}>
                         {p.payment_type === 'refund' ? '-' : ''}
                         {formatAmount(p.amount)}
                       </span>
-                      {/* 수정/취소/삭제 버튼 (T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE) */}
+                      {/* 수정/취소/삭제 버튼 (T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE)
+                          ★AC-1: 플랜A 건은 3버튼 비활성([단말기 취소]로 유도). 수기 건(AC-6)은 기존 그대로. */}
                       {p.status !== 'cancelled' && (
                         <button
                           type="button"
                           data-testid={`btn-edit-payment-${p.id}`}
-                          title="수납 수정"
+                          data-plan-a-disabled={isPlanA ? 'true' : undefined}
+                          title={isPlanA ? '단말기 직결 결제는 [단말기 취소]로 처리하세요' : '수납 수정'}
+                          disabled={isPlanA}
                           onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('edit'); }}
-                          className="rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-50 transition"
+                          className={cn('rounded px-1 py-0.5 text-[10px] transition', isPlanA ? 'text-gray-300 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50')}
                         >수정</button>
                       )}
                       {p.status !== 'cancelled' && (
                         <button
                           type="button"
                           data-testid={`btn-cancel-payment-${p.id}`}
-                          title="수납 취소"
-                          onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('cancel'); }}
-                          className="rounded px-1 py-0.5 text-[10px] text-amber-600 hover:bg-amber-50 transition"
+                          data-plan-a-disabled={isPlanA ? 'true' : undefined}
+                          title={isPlanA ? '단말기 직결 결제는 [단말기 취소]로 처리하세요' : '수납 취소'}
+                          // ★AC-1(1차): 플랜A 건 비활성 스타일. ★AC-9(2차 백스톱): 비활성 우회·렌더 타이밍 갭에서
+                          //   클릭돼도 실제 취소로 진행하지 않고 경고 팝업만 노출(오취소 방지). 두 요건 모순 없이 통합.
+                          onClick={() => {
+                            if (isPlanA) { setPlanACancelWarnTarget(p); return; }
+                            setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('cancel');
+                          }}
+                          className={cn('rounded px-1 py-0.5 text-[10px] transition', isPlanA ? 'text-gray-300' : 'text-amber-600 hover:bg-amber-50')}
                         >취소</button>
                       )}
                       <button
                         type="button"
                         data-testid={`btn-delete-payment-${p.id}`}
-                        title="수납 삭제"
+                        data-plan-a-disabled={isPlanA ? 'true' : undefined}
+                        title={isPlanA ? '단말기 직결 결제는 [단말기 취소]로 처리하세요' : '수납 삭제'}
+                        disabled={isPlanA}
                         onClick={() => { setPayEditTarget(p as PaymentRowForEdit); setPayEditMode('delete'); }}
-                        className="rounded px-1 py-0.5 text-[10px] text-red-500 hover:bg-red-50 transition"
+                        className={cn('rounded px-1 py-0.5 text-[10px] transition', isPlanA ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:bg-red-50')}
                       >삭제</button>
+                      {/* ★AC-2/3/4/5(플랜A 활성) + AC-8(수기 disabled+툴팁): [단말기 취소] 버튼.
+                          refund 행에는 미노출(취소의 취소 없음). AC-4: 이미 파생 취소된 플랜A 원거래에도 미노출(재취소 유도 차단).
+                          내부에서 플랜A/수기 분기 렌더. */}
+                      {p.status !== 'cancelled' && p.payment_type !== 'refund' && !isPlanARefunded && checkIn.clinic_id && (
+                        <CbandTerminalCancelButton
+                          payment={p}
+                          clinicId={checkIn.clinic_id}
+                          customerId={checkIn.customer_id ?? null}
+                          onDone={onUpdated}
+                        />
+                      )}
                     </div>
                     {/* T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세(있을 때만 표시) */}
                     <PaymentItemsView paymentId={p.id} />
                     {/* 수납 이력 보기 (AC-7) */}
                     <PaymentAuditLogsPanel paymentId={p.id} />
                   </div>
-                ))}
+                  );
+                });
+                })()}
               </div>
             ) : (
               <Button
@@ -2251,6 +2311,30 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
             load(); // DB 재조회로 최종 확인
           }}
         />
+        {/* ★T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN AC-9: 플랜A 건 기존 [취소] 오취소 백스톱 경고 팝업.
+            비활성(AC-1)을 우회·렌더 타이밍 갭에서 클릭돼도 실제 취소로 진행하지 않고 경고만. 닫으면 취소 미실행. */}
+        <Dialog open={!!planACancelWarnTarget} onOpenChange={(v) => { if (!v) setPlanACancelWarnTarget(null); }}>
+          <DialogContent className="max-w-md" data-testid="plana-cancel-warn-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-700">
+                <AlertTriangle className="h-5 w-5" /> 단말기 직결 결제 안내
+              </DialogTitle>
+            </DialogHeader>
+            <p className="py-2 text-sm leading-relaxed text-gray-700" data-testid="plana-cancel-warn-msg">
+              이 건은 단말기 직결로 결제된 건입니다. 기존 취소는 CRM 기록만 지우고 실제 카드 결제는 취소되지 않습니다. 카드를 취소하려면 [단말기 취소]를 사용하세요.
+            </p>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                className="h-11 w-full"
+                data-testid="btn-plana-cancel-warn-close"
+                onClick={() => setPlanACancelWarnTarget(null)}
+              >
+                닫기
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {/* T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout으로 이동 */}
         {/* T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 닫기 확인 다이얼로그 */}
         {closeConfirmDialog}

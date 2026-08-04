@@ -209,6 +209,13 @@ export const CBAND_DATA_TYPE = 'JSON' as const;
 export const CBAND_MSG_VERSION = '0002' as const;
 /** header.TCODE — 현장 정상 전문 예시 확정값("S0"). CAT 결제요청 전문형태 코드(승인/취소 구분은 body.TRANTYPE). */
 export const CBAND_TCODE = 'S0' as const;
+/**
+ * header.TCODE(취소) — T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN AC-2 확정 스펙.
+ *   최필경 총괄 08-04 12:15/12:17 확정 = 7/31 실취소 전문 원문 SSOT: 취소(0430) 전문은
+ *   승인 전문과 **동일 구조**이되 `header.TCODE`만 "S1"로 교체 + body.ORI_DATE/ORI_AUTHNO 채움.
+ *   ⚠ 승인(0210)은 S0 field-soak 성공값(11:03 실승인) 회귀 금지 → 취소일 때만 S1 로 분기(승인 무접촉).
+ */
+export const CBAND_TCODE_CANCEL = 'S1' as const;
 
 /**
  * ★body.DEVICE_TYPE — 데몬이 결제기 종류(모듈)를 라우팅하는 값. 정확히 "CAT_"(4자, 끝 밑줄) 고정.
@@ -366,7 +373,9 @@ export function buildMsg(params: BuildMsgParams): {
   const header: Record<string, string> = {
     LENGTH: bodyLength(bodyStr),                   // FIX-B: body 바이트수 4자리 zero-pad
     MSG_VERSION: CBAND_MSG_VERSION,
-    TCODE: CBAND_TCODE,
+    // ★T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN AC-2: 취소(0430)=S1, 승인(0210)=S0(회귀금지).
+    //   7/31 실취소 원문 SSOT: 취소 전문은 header.TCODE 만 S1 로 교체(body 구조 동일).
+    TCODE: isCancel ? CBAND_TCODE_CANCEL : CBAND_TCODE,
     MSG_TRACE: msgTrace,                           // 규칙#2(★header 로 이동)
     DATA_TYPE: CBAND_DATA_TYPE,                     // FIX-C: 항상 "JSON"
   };
