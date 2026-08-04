@@ -21,7 +21,9 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const MIG_BASE = 'supabase/migrations/20260630200000_daily_room_status_staff_unlock_6menu_rls_additive.sql';
+// version-collision renumber 20260630200000→200001 (commit 90103a03, T-20260805-foot-DRS-VERSION-COLLISION-RENUMBER).
+// 파일명 단독=version → 스펙 참조도 renumber lineage 따라 갱신(내용 byte-identical, ADDITIVE 무변경).
+const MIG_BASE = 'supabase/migrations/20260630200001_daily_room_status_staff_unlock_6menu_rls_additive.sql';
 const PERMS = 'src/lib/permissions.ts';
 const MATRIX = path.resolve(__dirname, '../../docs/audits/T-20260630-foot-CODY-WRITE-PERM-PARITY-SWEEP_PHASE1_MATRIX.md');
 
