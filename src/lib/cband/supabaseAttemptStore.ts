@@ -78,6 +78,66 @@ function toPersistableRaw(resp: NormalizedResponse | null | undefined): Record<s
   return safe as Record<string, unknown>;
 }
 
+/**
+ * ★T-20260804-foot-CBAND-ATTEMPT-UPDATEATTEMPT-SILENT-FAIL-AUDIT (AC-2) — 감사 write 유실 시 bounded 재시도.
+ *   RESPRECV-BANNER-RCA(8c3aa1cf)는 감사 write 유실을 rows-affected(.select('id'))로 **표면화(로그)** 하고
+ *   근본원인(raw payload PCI 트립)을 제거했다(AC-1·근본원인 = RCA에 이미 구현, 본 티켓은 중복 구현 안 함 = AC-4).
+ *   본 티켓의 신규 facet = **최종 영속 보강**: RCA가 제거한 알려진 원인 외의 일시적 실패(네트워크 순단·
+ *   경합·일시 RLS)에서도 raw_response/auth_no 가 조용히 유실되지 않도록 소량 재시도로 방어(DID-IT-PERSIST).
+ *   ★불변식: throw 하지 않는다 — 승인 성공 후 이 지점 throw 는 payments 수납기록 성립을 되돌린다(무접점·회귀0).
+ *     재시도 소진 시 큰 소리 표면화만(cross_crm_write_rowcheck 계약). 신규 DDL 0(outbox 미도입) = db_change:false.
+ */
+export const AUDIT_WRITE_MAX_ATTEMPTS = 3 as const;
+/** 시도 간 backoff(ms). RLS/가드 같은 결정론적 실패엔 무효하나 일시장애엔 유효 — 짧게(총 <1s). */
+export const AUDIT_WRITE_RETRY_DELAYS_MS = [150, 400] as const;
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 감사 write 1회 시도 결과. ok=true=영속 확정, ok=false=유실(에러 또는 0행 반영). */
+export interface AuditWriteOutcome {
+  ok: boolean;
+  detail?: string;
+}
+
+/**
+ * ★AC-2 공용 재시도 래퍼(주입 가능 = 결정론 테스트). doWrite 를 최대 maxAttempts 회 시도,
+ *   ok 되면 즉시 종료(영속 확정). 모두 실패하면 큰 소리 표면화 후 false 반환(throw 안 함).
+ *   sleep 은 테스트에서 no-op 주입해 대기 없이 검증.
+ * @returns 최종 영속 성공 여부(관측용).
+ */
+export async function persistAuditWriteWithRetry(
+  doWrite: () => Promise<AuditWriteOutcome>,
+  ctx: { label: string; msgTrace: string },
+  opts: { maxAttempts?: number; delaysMs?: readonly number[]; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<boolean> {
+  const max = opts.maxAttempts ?? AUDIT_WRITE_MAX_ATTEMPTS;
+  const delays = opts.delaysMs ?? AUDIT_WRITE_RETRY_DELAYS_MS;
+  const sleep = opts.sleep ?? defaultSleep;
+  let lastDetail = '미상';
+  for (let attempt = 1; attempt <= max; attempt++) {
+    let outcome: AuditWriteOutcome;
+    try {
+      outcome = await doWrite();
+    } catch (e) {
+      outcome = { ok: false, detail: (e as Error)?.message ?? String(e) };
+    }
+    if (outcome.ok) {
+      if (attempt > 1) {
+        console.warn(`[CBAND-AUDIT] ${ctx.label} 재시도 성공(msg_trace=${ctx.msgTrace}, ${attempt}/${max}) — 감사트레일 최종 영속.`);
+      }
+      return true;
+    }
+    lastDetail = outcome.detail ?? '미상';
+    if (attempt < max) await sleep(delays[attempt - 1] ?? delays[delays.length - 1] ?? 0);
+  }
+  // ★재시도 소진 = 감사트레일 유실 위험. throw 금지(승인/수납 성립 보존), 큰 소리 표면화만(DID-IT-PERSIST 위반 경보).
+  console.error(
+    `[CBAND-AUDIT-WRITE-FAILURE] ${ctx.label} ${max}회 재시도 모두 실패(msg_trace=${ctx.msgTrace}): ${lastDetail}` +
+      ` — raw_response/auth_no 유실 위험(cross_crm_write_rowcheck·DID-IT-PERSIST 위반).`,
+  );
+  return false;
+}
+
 export const supabaseAttemptStore: AttemptStore = {
   async insertAttempt(rec: AttemptRecord): Promise<{ id: string }> {
     // ★insert-first: 송신 전 저장. UNIQUE(clinic_id,msg_trace) 위반(중복) 시 error → 상위가 송신 중단(멱등 L1).
@@ -130,22 +190,27 @@ export const supabaseAttemptStore: AttemptStore = {
     //   ★RESPRECV-BANNER-RCA: 원본 단말 payload(resp.raw, 미마스킹 PAN 위험)를 제외해 PCI 가드 RAISE 로 인한
     //     status 미승격(고아→false 배너) 재발을 원천 차단(정규화·마스킹 감사필드는 전부 보존).
     if (patch.rawResponse !== undefined) row.raw_response = toPersistableRaw(patch.rawResponse);
-    // ★저장완전성(RCA ★인과): rows-affected 확인 — 0행/에러면 status·AUTHNO·raw 미영속 = false 배너 재발 위험.
-    //   결제 성립은 되돌리지 않으므로(수납 기록 보존) throw 하지 않되, 사일런트 유실을 큰 소리로 표면화한다.
-    const { data, error } = await supabase
-      .from('cband_payment_attempts')
-      .update(row)
-      .eq('msg_trace', msgTrace)
-      .select('id');
-    if (error) {
-      // 상태 갱신 실패는 결제 성립을 되돌리지 않는다(insert-first 레코드가 이미 추적 근거). 로그만.
-      console.error(`[CBAND-RESPRECV] 결제 시도 상태 갱신 실패(msg_trace=${msgTrace}):`, error.message);
-      return;
-    }
-    if (!data || data.length === 0) {
-      // 0행 반영 = 가드 RAISE(위 error 경로) 외의 스코프/권한 불일치. status 미승격 → 배너 재발 위험 표면화.
-      console.error(`[CBAND-RESPRECV] 결제 시도 상태 갱신 0행 반영(msg_trace=${msgTrace}) — status 미승격 위험(권한/스코프 확인).`);
-    }
+    // ★저장완전성(RCA ★인과 + SILENT-FAIL-AUDIT AC-1/AC-2): rows-affected 검증 + 유실 시 bounded 재시도.
+    //   0행/에러면 status·AUTHNO·raw 미영속 = 감사트레일 유실(+ false 배너 재발 위험). RCA(8c3aa1cf)가
+    //   근본원인(raw payload PCI 트립)을 제거하고 유실을 표면화(AC-1)했고, 본 티켓은 그 위에 **재시도로
+    //   최종 영속 보강**(AC-2)한다 — RCA가 제거한 원인 외 일시장애(순단/경합/일시 RLS)에서도 조용히 유실 안 됨.
+    //   ★throw 금지: 승인 성공 후 여기서 throw 하면 payments 수납기록 성립이 되돌아간다(무접점·회귀0).
+    await persistAuditWriteWithRetry(
+      async () => {
+        const { data, error } = await supabase
+          .from('cband_payment_attempts')
+          .update(row)
+          .eq('msg_trace', msgTrace)
+          .select('id');
+        if (error) return { ok: false, detail: error.message };
+        if (!data || data.length === 0) {
+          // 0행 반영 = 가드 RAISE(error 경로) 외의 스코프/권한 불일치(INV-W2). status 미승격 위험 → 재시도 대상.
+          return { ok: false, detail: '0행 반영(권한/스코프/가드 — INV-W2)' };
+        }
+        return { ok: true };
+      },
+      { label: '결제 시도 감사 갱신', msgTrace },
+    );
   },
 
   async recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void> {
