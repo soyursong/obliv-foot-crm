@@ -2077,30 +2077,37 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 className="overflow-auto"
                 onScroll={(e) => { scrollTopRef.current = e.currentTarget.scrollTop; }}
               >
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="py-2 px-3 text-left font-medium w-24">날짜</th>
-                      <th className="py-2 px-2 text-left font-medium w-14">시간</th>
-                      <th className="py-2 px-2 text-left font-medium w-20">차트번호</th>
-                      <th className="py-2 px-2 text-left font-medium w-20">성함</th>
-                      <th className="py-2 px-2 text-left font-medium w-20">내원경로</th>
-                      <th className="py-2 px-2 text-left font-medium w-16">초진/재진</th>
-                      <th className="py-2 px-2 text-left font-medium w-20">결제담당</th>
-                      <th className="py-2 px-2 text-right font-medium w-24">결제금액</th>
-                      <th className="py-2 px-2 text-right font-medium w-20">과세</th>
-                      <th className="py-2 px-2 text-right font-medium w-20">비과세</th>
-                      <th className="py-2 px-2 text-center font-medium w-16">현금영수증</th>
-                      <th className="py-2 px-2 text-left font-medium w-16">결제수단</th>
+                {/* ════ T-20260804-foot-DAYCLOSE-PAYHIST-LAYOUT-3CHG ════
+                    AC-1 컬럼 순서 재배치: [시간][성함|차트번호][진료구분][내원경로][담당자][결제금액]…[구분][환불].
+                      · [성함]+[차트번호] 병합(성함 상단 + 차트번호 하단, 차트번호 클릭→2번차트 팝업 보존).
+                      · [진료구분](구 초진/재진) ↔ [내원경로] 순서 스왑, [담당자](구 결제담당) 라벨 통일.
+                      · [날짜]/[과세]/[비과세]는 '삭제 아님' 원칙에 따라 보존(리포터 shorthand 생략분).
+                      · ⚠ [시술명] 컬럼은 AC-3(수납 상세 팝업·상병명/구분 신규필드, DA CONSULT-REPLY GO 대기)
+                        랜딩 시 [내원경로]-[담당자] 사이에 삽입 예정 — 본 랜딩은 view층(AC-1/AC-2)만.
+                    AC-2 레이아웃 통일: 환자별 탭(SalesPatientTab) 스타일 기준 — text-xs·py-1.5·border-collapse·hover:bg-teal-50/50. */}
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur-sm">
+                    <tr>
+                      <th className="whitespace-nowrap border-b px-3 py-1.5 text-left font-medium text-muted-foreground w-24">날짜</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-14">시간</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-28">성함 | 차트번호</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-16">진료구분</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-20">내원경로</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-20">담당자</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-right font-medium text-muted-foreground w-24">결제금액</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-right font-medium text-muted-foreground w-20">과세</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-right font-medium text-muted-foreground w-20">비과세</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-16">현금영수증</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-16">결제수단</th>
                       {/* T-20260804-foot-DAYCLOSE-PAYHIST-REFUND-BADGE-VERTICAL: 환불 시 배지 2~3개 수용 위해 w-16→w-24 */}
-                      <th className="py-2 px-2 text-center font-medium w-24">구분</th>
-                      <th className="py-2 px-2 w-16 text-center">환불</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-24">구분</th>
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-16">환불</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredEnrichedRows.length === 0 && (
                       <tr>
-                        <td colSpan={14} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={13} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
@@ -2119,7 +2126,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         data-group-index={indexInGroup}
                         data-group-size={groupSize}
                         className={cn(
-                          'border-b transition-colors',
+                          // AC-2: 환자별 탭(SalesPatientTab) hover 통일
+                          'border-b transition-colors hover:bg-teal-50/50',
                           r.payment_type === 'refund' && 'bg-red-50 text-red-700',
                           // T-20260715 REQ②: 환불된 원결제행 — 옅은 적색 틴트로 환불 표기
                           r.refunded && 'bg-red-50/40',
@@ -2130,8 +2138,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           isContinuation && 'border-l-2 border-l-emerald-300',
                         )}
                       >
-                        <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{r.pay_date}</td>
-                        <td className="py-2 px-2 tabular-nums text-xs">
+                        <td className="px-3 py-1.5 tabular-nums text-xs text-muted-foreground">{r.pay_date}</td>
+                        <td className="px-2 py-1.5 tabular-nums text-xs">
                           {r.pay_time}
                           {/* T-20260715 REQ②: 결제 업로드 시각(위) + 환불 신청 시각(아래) 각각 표기 */}
                           {r.refunded && (
@@ -2140,46 +2148,47 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             </div>
                           )}
                         </td>
-                        {/* T-20260717-foot-CLOSING-CHARTNUM-POPUP (supersedes T-20260715-CHARTNAV):
-                            차트번호 셀 클릭 → 고객 2번차트(/chart/:customerId) 별도 팝업창(window.open).
-                            일마감 화면을 유지(사라지지 않음)한 채 2번차트를 새 창으로 표출.
-                            row_customer_id 있는 행(단건·패키지결제)만 클릭/hover 활성, 수기행(row_customer_id 없음)은 비활성.
-                            (navigate → window.open, 김주연 총괄 요청 · NEW-TASK MSG-20260717-152211-ewov) */}
-                        <td
-                          className={cn(
-                            'py-2 px-2 text-xs text-muted-foreground',
-                            r.row_customer_id && 'cursor-pointer hover:text-primary hover:underline',
-                          )}
-                          onClick={
-                            r.row_customer_id
-                              ? () =>
-                                  window.open(
-                                    `${window.location.origin}/chart/${r.row_customer_id}`,
-                                    `foot-chart-${r.row_customer_id}`,
-                                    'width=1200,height=900,scrollbars=yes,resizable=yes',
-                                  )
-                              : undefined
-                          }
-                          data-testid="closing-chartno-cell"
-                        >
-                          {r.chart_number ?? '-'}
+                        {/* AC-1: [성함 | 차트번호] 병합 셀 — 성함(상단) + 차트번호(하단).
+                            PATIENT-GROUP 연속행 들여쓰기·↳ 커넥터 보존.
+                            T-20260717-foot-CLOSING-CHARTNUM-POPUP: 차트번호 클릭 → 2번차트(/chart/:customerId) 별도 팝업창(window.open)
+                              row_customer_id 있는 행만 클릭/hover 활성(수기행 비활성). 병합 후에도 팝업 동선 보존. */}
+                        <td className={cn('px-2 py-1.5', isContinuation && 'pl-5')}>
+                          <div className="font-medium">
+                            {isContinuation ? (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="text-emerald-500/70" data-testid="group-connector">↳</span>
+                                {r.customer_name}
+                              </span>
+                            ) : (
+                              r.customer_name
+                            )}
+                          </div>
+                          <div
+                            className={cn(
+                              'text-[10px] text-muted-foreground',
+                              r.row_customer_id && 'cursor-pointer hover:text-primary hover:underline',
+                            )}
+                            onClick={
+                              r.row_customer_id
+                                ? () =>
+                                    window.open(
+                                      `${window.location.origin}/chart/${r.row_customer_id}`,
+                                      `foot-chart-${r.row_customer_id}`,
+                                      'width=1200,height=900,scrollbars=yes,resizable=yes',
+                                    )
+                                : undefined
+                            }
+                            data-testid="closing-chartno-cell"
+                          >
+                            {r.chart_number ?? '-'}
+                          </div>
                         </td>
-                        {/* PATIENT-GROUP: 연속 행은 들여쓰기 + ↳ 커넥터로 동일 환자 묶음 표시 */}
-                        <td className={cn('py-2 px-2 font-medium', isContinuation && 'pl-5')}>
-                          {isContinuation ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="text-emerald-500/70" data-testid="group-connector">↳</span>
-                              {r.customer_name}
-                            </span>
-                          ) : (
-                            r.customer_name
-                          )}
-                        </td>
-                        <td className="py-2 px-2 text-xs">{r.lead_source ?? '-'}</td>
-                        <td className="py-2 px-2 text-xs">{r.visit_type_label}</td>
-                        {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' */}
-                        <td className="py-2 px-2 text-xs">{r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}</td>
-                        <td className="py-2 px-2 text-right tabular-nums font-medium">
+                        {/* AC-1: [진료구분](구 초진/재진) ↔ [내원경로] 순서 스왑 — 진료구분 먼저 */}
+                        <td className="px-2 py-1.5 text-xs">{r.visit_type_label}</td>
+                        <td className="px-2 py-1.5 text-xs">{r.lead_source ?? '-'}</td>
+                        {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' (AC-1 라벨 결제담당→담당자) */}
+                        <td className="px-2 py-1.5 text-xs">{r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                           {r.payment_type === 'refund' ? '-' : ''}{formatAmount(r.amount)}
                           {/* T-20260715 REQ②: 원결제행에 병합된 환불액(양수) 병기 */}
                           {/* T-20260713 [FOLD] AC-B2: 같은날 병합액 없을 때도 교차일 누적 환불액을 병기 */}
@@ -2194,13 +2203,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           ) : null}
                         </td>
                         {/* T-20260515-foot-RECEIPT-TAX-SPLIT AC-4: 과세/비과세/현금영수증 */}
-                        <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        <td className="px-2 py-1.5 text-right tabular-nums text-xs text-muted-foreground">
                           {r.taxable_amount != null && r.taxable_amount > 0 ? formatAmount(r.taxable_amount) : '-'}
                         </td>
-                        <td className="py-2 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        <td className="px-2 py-1.5 text-right tabular-nums text-xs text-muted-foreground">
                           {r.tax_exempt_amount != null && r.tax_exempt_amount > 0 ? formatAmount(r.tax_exempt_amount) : '-'}
                         </td>
-                        <td className="py-2 px-2 text-center">
+                        <td className="px-2 py-1.5 text-center">
                           {r.cash_receipt_issued === true ? (
                             <span className="inline-flex items-center gap-0.5 text-emerald-700 text-xs">
                               <span>✅</span>
@@ -2212,12 +2221,12 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             <span className="text-muted-foreground/40 text-xs">—</span>
                           )}
                         </td>
-                        <td className="py-2 px-2">
+                        <td className="px-2 py-1.5">
                           <Badge variant="outline" className="text-xs">
                             {METHOD_KO[r.method] ?? r.method}
                           </Badge>
                         </td>
-                        <td className="py-2 px-2 text-center">
+                        <td className="px-2 py-1.5 text-center">
                           {/* T-20260804-foot-DAYCLOSE-PAYHIST-REFUND-BADGE-VERTICAL: 환불 시 배지 2~3개가 좁은 셀에서
                               flex-shrink + CJK 문자단위 break 로 한 글자 폭까지 줄어 '환/불' 세로 쌓임 발생.
                               → 각 배지 whitespace-nowrap(문자 세로쪼갬 차단) + shrink-0(수축 차단), 컨테이너 flex-wrap(넘치면 줄내림·각 배지는 가로 유지). */}
@@ -2239,7 +2248,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             )}
                           </div>
                         </td>
-                        <td className="py-2 px-1 text-center">
+                        <td className="px-1 py-1.5 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {/* T-20260522-foot-CLOSING-REFUND: 환불 버튼 — admin/manager + 이미 환불 아닌 건 + payment/package 소스만 */}
                             {/* T-20260525-foot-ROLE-PERM-CUSTOM AC-5: canRefund(+consultant/coordinator/therapist)로 확장 */}
@@ -2283,7 +2292,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   {filteredEnrichedRows.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 bg-muted/50 font-semibold">
-                        <td colSpan={7} className="py-2 px-3 text-sm">합계{staffFilter && ` (${staffFilter})`}</td>
+                        <td colSpan={6} className="py-2 px-3 text-sm">합계{staffFilter && ` (${staffFilter})`}</td>
                         <td className="py-2 px-2 text-right tabular-nums text-sm text-emerald-700">
                           {formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}
                         </td>
