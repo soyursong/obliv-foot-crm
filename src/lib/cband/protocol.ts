@@ -58,9 +58,16 @@ export const ATTENTION_CODES: ReadonlySet<string> = new Set(['C011', '8003', '85
  *   ★분류 관점: -14 는 '카드가 이미 꽂혀 있어 진행 불가' = 과금 미발생(재시도 안전) → classify 는
  *   기존대로 FAIL 로 판정된다(코드가 0000 아님·ATTENTION 집합 아님). 여기서는 그 FAIL 화면의 문구만
  *   자명한 안내로 바꾼다(자동 재시도/이중결제 방지 로직 무접촉).
+ *
+ *   ★-2 추가(T-20260804-foot-CBAND-PAY-CABLE-DISCONNECT-ERRMSG): 데몬이 뱉는 [-2]
+ *   ('POS Serial 포트 연결 실패') = 단말↔PC 케이블 미연결(직렬 포트 연결 실패) = 과금 미발생.
+ *   형제 PAYBTN-DISABLED-TOOLTIP[deployed] 가 사전 버튼 비활성으로 걸러주나, 그 판정 우회로
+ *   실제 결제까지 도달해 데몬이 [-2] 를 뱉는 경우의 최종 화면 문구. raw '[-2]'/'POS Serial 포트 연결
+ *   실패' 원문은 노출하지 않고 케이블 확인 안내로 치환한다(수신·분류 로직 무접촉·표시 전용).
  */
 export const DLL_RET_MESSAGES: Readonly<Record<string, string>> = {
   '-14': '단말기에 IC(칩) 카드가 이미 꽂혀 있습니다. 카드를 뺀 뒤 다시 결제해 주세요.',
+  '-2': '단말기와 통신할 수 없습니다. 단말기와 PC를 연결한 케이블을 확인해 주세요. (단말기 후면 POS 단자)',
 };
 
 /** DLL_RET 코드로 표시 문구 조회(없으면 null). trim 정규화 후 비교. */
@@ -68,6 +75,17 @@ export function dllRetMessage(code: string | null | undefined): string | null {
   if (code == null) return null;
   const k = String(code).trim();
   return k in DLL_RET_MESSAGES ? DLL_RET_MESSAGES[k] : null;
+}
+
+/**
+ * ★T-20260804-foot-CBAND-PAY-CABLE-DISCONNECT-ERRMSG: ERRCODE=9999 실패 시 데몬 ResultMessage 는
+ *   '[-N] 원문…'([-2] POS Serial 포트 연결 실패 등) 형태로 코드를 대괄호로 실어 보낸다(§실측 정본 주석 참조).
+ *   메시지 문자열에서 그 선두 [-N] 토큰의 안쪽 코드('-2' 등)만 추출한다(없으면 null). 표시 매핑 전용·추출만.
+ */
+export function bracketRetCode(message: string | null | undefined): string | null {
+  if (message == null) return null;
+  const m = String(message).match(/\[\s*(-?\d+)\s*\]/);
+  return m ? m[1] : null;
 }
 
 // ── 요청 전문 파라미터 ───────────────────────────────────────────────────────
@@ -535,7 +553,13 @@ export function responseMessageForUser(cls: PaymentClassification, resp: Normali
   // FAIL
   // ⑤ DLL_RET 표시 매핑(additive) — dllRet 또는 responseCode 가 DLL_RET 표에 있으면 자명한 안내로 치환.
   //    (예: -14 = 단말기에 IC 카드 이미 꽂힘). 표에 없으면 기존 폴백(메시지 → 코드 → 일반문구) 유지.
-  const dllMsg = dllRetMessage(resp?.dllRet) ?? dllRetMessage(resp?.responseCode);
+  //    ★[-2] 케이블 미연결(T-20260804-...-CABLE-DISCONNECT-ERRMSG): 데몬이 코드를 dllRet/responseCode
+  //    필드가 아니라 ResultMessage 의 '[-N]' 토큰으로 실어 보내는 경로도 커버 → bracketRetCode 로 추출해
+  //    같은 표로 조회. 표에 없는 [-N] 은 null → 기존 폴백 유지(회귀 없음, raw 원문 미노출).
+  const dllMsg =
+    dllRetMessage(resp?.dllRet) ??
+    dllRetMessage(resp?.responseCode) ??
+    dllRetMessage(bracketRetCode(resp?.responseMessage));
   if (dllMsg) return dllMsg;
   const msg = resp?.responseMessage;
   if (msg) return `결제가 처리되지 않았습니다: ${msg}`;
