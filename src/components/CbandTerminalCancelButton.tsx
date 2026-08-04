@@ -16,8 +16,9 @@
  *   AC-5  : 재취소 가드 — 원거래 AUTHNO 로 링크된 refund 행이 이미 있으면 전문 미전송(멱등).
  *   AC-8  : 수기 건(플랜A 아님 = MSG_TRACE/AUTHNO 없음)에서는 [단말기 취소] disabled + 툴팁.
  *
- * ※ AC-7(BETA 배지) = 별 티켓 T-20260804-foot-CBAND-TERMINAL-CANCEL-BETA-BADGE 가 canonical 소유.
- *   본 컴포넌트에서 배지 재구현 금지 → 배지 span 없이 버튼만 렌더(go-live 08-05 번들 시 배지 티켓이 부착).
+ * ※ AC-7(BETA 배지) = T-20260804-foot-CBAND-TERMINAL-CANCEL-BETA-BADGE 가 canonical 소유(본 부착).
+ *   배지 재구현 금지 → 공유 <CbandBetaBadge/>(단일 지점 토글, DIRECTPAY 룩앤필 계승) 를 [단말기 취소]
+ *   버튼 라벨 옆 + 취소 다이얼로그 제목에 부착. 안정화 후 CBAND_BETA=false 로 일괄 제거.
  *
  * 태블릿 UX: teal-emerald · 큰 버튼 · 천단위 콤마 · 한국어. (풋센터 표준)
  */
@@ -33,6 +34,7 @@ import { cancel, isCbandPayEnabled, type PaymentFlowResult } from '@/lib/cband/p
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { getTerminalConfig } from '@/lib/cband/config';
 import { supabase } from '@/lib/supabase';
+import { CbandBetaBadge } from '@/components/CbandBetaBadge';
 
 /** AC-8 툴팁/안내 문구(티켓 전문) — 수기 건에서 [단말기 취소] 비활성 사유. */
 export const TERMINAL_CANCEL_MANUAL_TOOLTIP =
@@ -191,6 +193,8 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
         className="rounded px-1 py-0.5 text-[10px] font-medium text-rose-600 hover:bg-rose-50 transition"
       >
         단말기 취소
+        {/* T-20260804-foot-CBAND-TERMINAL-CANCEL-BETA-BADGE AC-1: 도입 중 시범 표시. 안정화 후 CBAND_BETA=false. */}
+        <CbandBetaBadge testid={`cband-beta-badge-terminal-cancel-${payment.id}`} />
       </button>
 
       <Dialog open={open} onOpenChange={(v) => { if (ui !== 'sending') setOpen(v); }}>
@@ -198,6 +202,8 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RotateCcw className="h-5 w-5 text-rose-600" /> 카드 단말기 취소
+              {/* T-20260804-foot-CBAND-TERMINAL-CANCEL-BETA-BADGE AC-1: 시범 표시(버튼과 동일 맥락). */}
+              <CbandBetaBadge testid="cband-beta-badge-terminal-cancel-dialog" className="ml-0" />
             </DialogTitle>
           </DialogHeader>
 

@@ -554,6 +554,11 @@ export default defineConfig({
         //   probe==="ok" 노출경로 격리 + 기존 [결제 등록] 존치(플래그 무결선, 잠금 ON 후 병존) + 플래그OFF 게이트 보존.
         //   플래그/probe 런타임 분기는 부모 BUILD spec §F 커버. auth/server/page 불요, 결정론. unit 전용.
         '**/T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE.spec.ts',
+        // T-20260804-foot-CBAND-TERMINAL-CANCEL-BETA-BADGE: 코밴 [단말기 취소] 버튼 'BETA' 표기(도입 중 시범).
+        //   순수 additive FE(취소 동선·S1 전문·이중취소 가드 무접촉, db_change=false). 정적 소스 가드 —
+        //   공유 <CbandBetaBadge/> 단일 지점 토글(CBAND_BETA) + 활성 버튼/다이얼로그 배지 + DIRECTPAY 룩앤필 계승 +
+        //   기존 [수정][취소][삭제] 존치(플랜A 비활성≠제거) + DIRECTPAY(deployed) 인라인 무접촉. auth/server 불요, 결정론.
+        '**/T-20260804-foot-CBAND-TERMINAL-CANCEL-BETA-BADGE.spec.ts',
         // T-20260803-foot-CBAND-PAYBTN-DISABLED-TOOLTIP: 코밴 직결결제(BETA) 버튼 미연결 시 숨김→비활성+툴팁+1줄사유.
         //   6-상태 문구 SSOT(lib/cband/gateCopy) 결정론 검증 + 게이트 dispatch/disabled/툴팁 래퍼 소스 가드.
         //   TID미등록·연결실패(두 조치 함께)·연결됨(활성) 커버. 결제/이중결제방지 무변경(FE 렌더 조건만). unit 전용.
