@@ -215,6 +215,36 @@ export const CBAND_TCODE = 'S0' as const;
 export const CBAND_DEVICE_TYPE = 'CAT_' as const;
 
 /**
+ * ★body.HALBU — 할부 개월수. "00" = 일시불(기본).
+ *   근거: 7/31 실승인 응답 원문 echo "HALBU":"00"(일시불). 현재 결제경로는 일시불만 → "00" 고정 기본값.
+ *   (할부 지원 확장 시 이 값만 개월수로 치환. 필드 존재는 언제나 보장.)
+ */
+export const CBAND_HALBU_LUMPSUM = '00' as const;
+
+/**
+ * ★body.CAT_BAUDRATE — CAT 시리얼 통신속도. "38400" 고정(현장 단말 세팅 SSOT,
+ *   T-…-TERMINAL-TID-COMPORT-PERSEAT-SETTINGS "baud 38400 고정").
+ */
+export const CBAND_CAT_BAUDRATE = '38400' as const;
+
+/**
+ * ★★ 데몬 필수 body 필드 전집합(T-20260804-foot-CBAND-BODY-FIELDS-NULLREF-COMPLETE, AC1/AC3).
+ *   근거 = 7/31 실승인 전문 원문 body 20필드(DIAGNOSE §ROOT-CAUSE, AUTHORITATIVE CAT/VAN 프로토콜 SSOT).
+ *   현장(최필경 총괄)이 20필드를 하나씩 제거하며 전수 재현 → 아래 필드 각각 단독 누락만으로
+ *   데몬 HandleMessageAsync 가 NullReferenceException 반환(키 누락/null 참조).
+ *   ⇒ buildMsg 는 이 전집합을 **항상**(모든 결제경로에서) body 에 포함하고,
+ *      값 없는 필드는 null/undefined 가 아닌 **빈 문자열 ""**(AC2)로 직렬화한다.
+ *   순서 = 실승인 전문 원문 나열 순서(대조 편의). DEVICE_TYPE 은 여기 포함(선행 CAT_ 고정축과 정합).
+ */
+export const CBAND_REQUIRED_BODY_FIELDS: readonly string[] = [
+  'TID', 'HALBU', 'TAMT', 'ORI_DATE', 'ORI_AUTHNO', 'IDNO', 'AMT_FLAG',
+  'TAX_AMT', 'SVC_AMT', 'NONTAX_AMT', 'FILLER',
+  'SET_QR_DATA_512', 'SET_QR_DATA_256', 'DEVICE_TYPE',
+  'SET_PG_TYPE', 'SET_PG_DATA_LEN', 'SET_PG_DATA',
+  'CAT_PORT', 'CAT_BAUDRATE', 'CAT_TERMINAL_RECEIPT',
+] as const;
+
+/**
  * UTF-8 바이트 길이 — header.LENGTH 산출용. TextEncoder 우선(브라우저·Node), 미지원 시 수동 폴백.
  * ASCII(코드·숫자) 위주라 대개 문자수와 동일하나, 정확성을 위해 UTF-8 바이트로 계산.
  */
@@ -283,21 +313,38 @@ export function buildMsg(params: BuildMsgParams): {
   }
 
   // ── body(데이터부) = 실 거래필드. MSG_TRACE 는 header 로 이동(7/31 실승인 20필드 body 부재 정합). ──
+  //   ★★ BODY-FIELDS-NULLREF-COMPLETE(AC1/AC2): 데몬 필수 body 필드 **전집합을 항상 포함**하고,
+  //      값 없는 필드는 null/undefined 가 아닌 **빈 문자열 ""** 로 채운다(데몬 null-ref 차단).
+  //      필드명·순서·기본값은 7/31 실승인 전문 원문(DIAGNOSE §ROOT-CAUSE 20필드)과 대조 확정(AC3, 추측 금지).
+  //      취소(0430)의 원거래 참조는 authoritative 필드명 ORI_AUTHNO/ORI_DATE 에 착지(구 AUTHNO/AUTHDATE=CRM 발명, 폐기).
+  const isCancel = tranType === TRANTYPE_CANCEL;
   const body: Record<string, string> = {
-    TRANTYPE: tranType,            // ★body 유지: 응답도 flat TRANTYPE echo·승인/취소 discriminator
-    TID: tid.trim(),
-    CAT_PORT: pad2Port(catPort),   // 규칙#4
-    TAMT: pad9(amount),            // 규칙#3
-    DEVICE_TYPE: CBAND_DEVICE_TYPE, // ★FIX-A(DEVICETYPE-CAT-FIXED): 정확히 "CAT_" 고정 → 데몬 CAT 모듈 라우팅(9998 차단)
+    TRANTYPE: tranType,                                   // ★body 유지: 응답도 flat TRANTYPE echo·승인/취소 discriminator (필수20 외 discriminator)
+    TID: tid.trim(),                                      // #1  실측#1: 비우면 거부(위에서 throw 강제)
+    HALBU: CBAND_HALBU_LUMPSUM,                           // #2  할부개월 — 일시불 "00"(응답 echo 근거)
+    TAMT: pad9(amount),                                   // #3  규칙#3 9자리 zero-pad
+    ORI_DATE: isCancel ? (originalAuthDate?.trim() ?? '') : '',   // #4  원거래일자(취소 시) / 승인 시 ""
+    ORI_AUTHNO: isCancel ? (originalAuthNo as string).trim() : '', // #5  실측#2: 원거래 승인번호(취소 시) / 승인 시 ""
+    IDNO: '',                                             // #6  무기명(값 없음 → "")
+    AMT_FLAG: '',                                         // #7  값 없음 → "" (AC2)
+    TAX_AMT: '',                                          // #8  부가세액 — 값 없음 → ""
+    SVC_AMT: '',                                          // #9  봉사료 — 값 없음 → ""
+    NONTAX_AMT: '',                                       // #10 비과세금액 — 값 없음 → ""
+    FILLER: '',                                           // #11 예비영역 — ""
+    SET_QR_DATA_512: '',                                  // #12 QR(512) — 미사용 → ""
+    SET_QR_DATA_256: '',                                  // #13 QR(256) — 미사용 → ""
+    DEVICE_TYPE: CBAND_DEVICE_TYPE,                       // #14 ★FIX-A(DEVICETYPE-CAT-FIXED): 정확히 "CAT_" 고정
+    SET_PG_TYPE: '',                                      // #15 PG유형 — 미사용 → ""
+    SET_PG_DATA_LEN: '',                                  // #16 PG데이터길이 — 미사용 → ""
+    SET_PG_DATA: '',                                      // #17 PG데이터 — 미사용 → ""
+    CAT_PORT: pad2Port(catPort),                          // #18 규칙#4 2자리 zero-pad
+    CAT_BAUDRATE: CBAND_CAT_BAUDRATE,                     // #19 통신속도 "38400" 고정
+    CAT_TERMINAL_RECEIPT: '',                             // #20 단말영수증 — 값 없음 → ""
   };
-  // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청에 주입하지 않는다(7/31 실승인 20필드 부재).
-  //   값이 명시적으로 있을 때만 계승해 실어 보내고, 빈값(정상)은 전문에서 제외한다.
+  // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청 필수 전집합에 없다(7/31 실승인 20필드 부재).
+  //   값이 명시적으로 있을 때만 계승해 실어 보내고, 빈값(정상)은 전문에서 제외한다(필수20 무영향).
   if (merno && merno.trim()) {
     body.MERNO = merno.trim();
-  }
-  if (tranType === TRANTYPE_CANCEL) {
-    body.AUTHNO = (originalAuthNo as string).trim();     // 실측#2: 원거래 동일 AUTHNO
-    if (originalAuthDate && originalAuthDate.trim()) body.AUTHDATE = originalAuthDate.trim();
   }
 
   // ── header(머리말) — 데몬이 먼저 읽는 전문형태(DATA_TYPE). 필드값은 현장 정상 전문 예시로 확정(§상수). ──
@@ -327,6 +374,14 @@ export function buildMsg(params: BuildMsgParams): {
   //   현장 케이스 ②(누락)③(빈값)④("CAT")⑤("VPOS") 전부 발생 불가 — 어긋나면 데몬 VPOS 분기(9998) 차단.
   if (body.DEVICE_TYPE !== CBAND_DEVICE_TYPE) {
     throw new Error('body.DEVICE_TYPE 는 정확히 "CAT_" 여야 합니다 — 데몬이 VPOS 모듈로 오라우팅되어 결제 실패(9998).');
+  }
+  // ★★ BODY-FIELDS-NULLREF-COMPLETE 방어(AC1/AC2): 필수 전집합 20필드가 모두 존재하고
+  //    값이 string(null/undefined 아님)인지 조립 단계에서 강제 → 데몬 HandleMessageAsync NullReferenceException 재발 차단.
+  //    (현장 "필드 단독 누락 → NullRef" 전수 재현 케이스가 조립 단계에서 발생 불가.)
+  for (const f of CBAND_REQUIRED_BODY_FIELDS) {
+    if (typeof body[f] !== 'string') {
+      throw new Error(`body 필수 필드 누락/비문자: ${f} — 데몬 null-ref 위험(전집합 20필드 항상 채울 것).`);
+    }
   }
   // fields = body alias(하위호환: 기존 테스트/소비자가 fields.TID/TAMT/MERNO 참조).
   return { message, fields: body, header, body, envelope };

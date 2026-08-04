@@ -136,14 +136,15 @@ test.describe('AC-3 LENGTH 산출', () => {
 // 회귀 — 취소 봉투 + TID throw + 응답(flat) 파싱 불변
 // ══════════════════════════════════════════════════════════════════════════
 test.describe('회귀 (취소·throw·응답 flat 불변)', () => {
-  test('취소(0430)도 header.DATA_TYPE 포함 + body.AUTHNO(원거래) 유지', () => {
+  test('취소(0430)도 header.DATA_TYPE 포함 + body.ORI_AUTHNO(원거래) 유지', () => {
     const { header, body, message } = buildMsg({
       tranType: TRANTYPE_CANCEL, tid: BASE.tid, amount: 1002, catPort: 3,
       msgTrace: makeTrace(), originalAuthNo: '28102510',
     });
     expect(header.DATA_TYPE).toBe('JSON');
     expect(body.TRANTYPE).toBe('0430');
-    expect(body.AUTHNO).toBe('28102510');
+    // ★BODY-FIELDS-NULLREF-COMPLETE: 취소 원거래 승인번호는 authoritative 필드명 ORI_AUTHNO 에 착지(구 AUTHNO 폐기).
+    expect(body.ORI_AUTHNO).toBe('28102510');
     expect(message).not.toMatch(/:\s/);
   });
 

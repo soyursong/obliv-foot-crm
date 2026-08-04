@@ -214,7 +214,8 @@ test.describe('전문 조립 4대 규칙', () => {
       amount: 1001, catPort: 3, msgTrace: makeTrace(), originalAuthNo: '28102510',
     });
     expect(fields.TRANTYPE).toBe('0430');
-    expect(fields.AUTHNO).toBe('28102510');
+    // ★BODY-FIELDS-NULLREF-COMPLETE: 취소 원거래 참조는 authoritative 필드명 ORI_AUTHNO 에 착지(구 AUTHNO=CRM 발명, 폐기).
+    expect(fields.ORI_AUTHNO).toBe('28102510');
   });
 });
 
