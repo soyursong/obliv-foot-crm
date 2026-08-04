@@ -38,7 +38,7 @@ import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS } from '@/lib/phot
 import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
-import { formatAmount, formatPhone, formatDateTimeDots, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
+import { formatAmount, formatPhone, formatDateTimeDots, formatDateTimeSeconds, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
@@ -2214,6 +2214,16 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                           onDone={onUpdated}
                         />
                       )}
+                    </div>
+                    {/* ★T-20260804-foot-SUSU-PAYHIST-ROW-DATETIME-DISPLAY: 결제승인/취소 각 행 처리시각(초 단위) 표시.
+                        다건 나열 시 최신 구분(선후) 가능. 승인 = 결제행 created_at, 취소 = refund행 created_at.
+                        표시 전용 — 금액/상태/로직 무변경(AC-4). 결측 시 '-'로 레이아웃 유지(AC-5). */}
+                    <div
+                      className="text-[10px] leading-tight text-muted-foreground tabular-nums"
+                      data-testid={`payment-datetime-${p.id}`}
+                    >
+                      {p.payment_type === 'refund' ? '취소 ' : '승인 '}
+                      {formatDateTimeSeconds(p.created_at) || '-'}
                     </div>
                     {/* T-20260707-foot-PAYMENT-ITEMIZED-CHARGE-ENTRY: 항목별 명세(있을 때만 표시) */}
                     <PaymentItemsView paymentId={p.id} />

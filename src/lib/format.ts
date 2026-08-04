@@ -166,6 +166,25 @@ export function formatDateTimeDots(input: string | number | Date | null | undefi
 }
 
 /**
+ * T-20260804-foot-SUSU-PAYHIST-ROW-DATETIME-DISPLAY: 결제승인/취소 이력 행 처리시각 표시용
+ * SSOT — 'YYYY.MM.DD HH:mm:ss'(서울 기준, 24h, **초 단위까지**).
+ * formatDateTimeDots(분까지)로는 같은 분 내 다건(승인·취소 연속)의 선후 구분이 불가 → 초 단위 확장.
+ * 구분자는 앱 전역 날짜 표시 정책(T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE, 점 표기·하이픈 0)을
+ *   따라 점(.)을 유지한다(요구된 초 단위 순서구분 = 충족, 앱 표기 일관성 유지).
+ * null/빈값/파싱불가 → '' (호출부가 '-' 등 자체 표기). presentation only — 저장값·정렬·쿼리 무관.
+ */
+export function formatDateTimeSeconds(input: string | number | Date | null | undefined): string {
+  if (input === null || input === undefined || input === '') return '';
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '.');
+  const time = d.toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  return `${date} ${time}`;
+}
+
+/**
  * T-20260612-foot-PATIENT-CHARTNO-PAIRING-AUDIT: 환자명↔차트번호 무조건 세트 표시 헬퍼.
  * 환자명이 노출되는 모든 surface에서 차트번호를 항상 인접 표시(동명이인 오인=의료안전).
  * 미발번(null/빈값)이면 환자명 단독 노출 금지 → '(미발번)' 명시(AC3).
