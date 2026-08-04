@@ -2092,7 +2092,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <th className="py-2 px-2 text-right font-medium w-20">비과세</th>
                       <th className="py-2 px-2 text-center font-medium w-16">현금영수증</th>
                       <th className="py-2 px-2 text-left font-medium w-16">결제수단</th>
-                      <th className="py-2 px-2 text-center font-medium w-16">구분</th>
+                      {/* T-20260804-foot-DAYCLOSE-PAYHIST-REFUND-BADGE-VERTICAL: 환불 시 배지 2~3개 수용 위해 w-16→w-24 */}
+                      <th className="py-2 px-2 text-center font-medium w-24">구분</th>
                       <th className="py-2 px-2 w-16 text-center">환불</th>
                     </tr>
                   </thead>
@@ -2217,21 +2218,24 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           </Badge>
                         </td>
                         <td className="py-2 px-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                          {/* T-20260804-foot-DAYCLOSE-PAYHIST-REFUND-BADGE-VERTICAL: 환불 시 배지 2~3개가 좁은 셀에서
+                              flex-shrink + CJK 문자단위 break 로 한 글자 폭까지 줄어 '환/불' 세로 쌓임 발생.
+                              → 각 배지 whitespace-nowrap(문자 세로쪼갬 차단) + shrink-0(수축 차단), 컨테이너 flex-wrap(넘치면 줄내림·각 배지는 가로 유지). */}
+                          <div className="flex flex-wrap items-center justify-center gap-1">
                             <Badge
                               variant={r.payment_type === 'refund' ? 'destructive' : r.source === 'manual' ? 'default' : 'secondary'}
-                              className="text-xs"
+                              className="text-xs whitespace-nowrap shrink-0"
                             >
                               {r.payment_type === 'refund' ? '환불' : r.source === 'manual' ? '수기' : r.source === 'package' ? '패키지' : '단건'}
                             </Badge>
                             {/* T-20260715 REQ②: 환불된 원결제행 — '환불' 표기(새 빨간 행 대신 기존 행 annotate) */}
                             {/* T-20260713 [FOLD] AC-B2: 교차일 환불(같은날 병합 미발생)도 배지 노출 */}
                             {(r.refunded || refundedTotalForRow(r) > 0) && (
-                              <Badge variant="destructive" className="text-xs" data-testid="refunded-badge">환불</Badge>
+                              <Badge variant="destructive" className="text-xs whitespace-nowrap shrink-0" data-testid="refunded-badge">환불</Badge>
                             )}
                             {/* AC-B1: 완전환불(잔여 0) 시각 표시 */}
                             {isFullyRefunded(r) && (
-                              <Badge variant="outline" className="text-[10px] border-red-300 text-red-500" data-testid="fully-refunded-badge">완료</Badge>
+                              <Badge variant="outline" className="text-[10px] whitespace-nowrap shrink-0 border-red-300 text-red-500" data-testid="fully-refunded-badge">완료</Badge>
                             )}
                           </div>
                         </td>
