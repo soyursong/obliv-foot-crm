@@ -502,7 +502,14 @@ Deno.serve(async (req: Request) => {
     // ── test_sms 액션 ──────────────────────────────────────────
     if (action === "test_sms") {
       const clinic_id       = String(bodyJson.clinic_id ?? "");
-      const recipient_phone = String(bodyJson.recipient_phone ?? "").replace(/[^0-9]/g, "");
+      // T-20260805-xcrm-SMS-EF-ADMINMANUAL-PRESTRIP-GUARD-BYPASS-SWEEP:
+      //   과거 digit pre-strip(.replace(/[^0-9]/g,"")) 이 validateRecipient(sendSolapi L1 chokepoint) **이전에**
+      //   raw 마커(DUMMY-<epoch> sentinel·영문마커)를 선파괴 → 남은 epoch digit 이 toDomesticKR 로 leading-0
+      //   복원되어 가짜 01x 조립 → isPlausibleKRNumber 통과 → 실발신(무음 sent). 봉합: 원본 보존(.trim()만) 후
+      //   가드/발신 경로에 raw 그대로 투입해 chokepoint 가 마커를 보게 한다. digit 정규화는 로깅 전용으로 분리
+      //   (recipient_digits) — 가드/발신 경로엔 절대 재투입하지 않는다(pre-strip→guard 경로 0).
+      const recipient_phone  = String(bodyJson.recipient_phone ?? "").trim();
+      const recipient_digits = recipient_phone.replace(/[^0-9]/g, "");
 
       if (!clinic_id || !recipient_phone) {
         return new Response(
@@ -600,7 +607,7 @@ Deno.serve(async (req: Request) => {
         reservation_id:   null,
         event_type:       "test_send",
         channel:          "sms",
-        recipient_phone:  recipient_phone,
+        recipient_phone:  recipient_digits,
         body_rendered:    testBody,
         status:           result.success ? "sent" : (testBlocked ? "skipped" : "failed"),
         solapi_message_id: result.success ? (result.messageId ?? null) : null,
@@ -628,7 +635,12 @@ Deno.serve(async (req: Request) => {
     if (action === "manual_send") {
       const clinic_id       = String(bodyJson.clinic_id ?? "");
       const customer_id     = bodyJson.customer_id ? String(bodyJson.customer_id) : null;
-      const recipient_phone = String(bodyJson.recipient_phone ?? "").replace(/[^0-9]/g, "");
+      // T-20260805-xcrm-SMS-EF-ADMINMANUAL-PRESTRIP-GUARD-BYPASS-SWEEP:
+      //   test_sms 와 동일 RC — digit pre-strip 이 validateRecipient(sendSolapi L1 chokepoint) 이전에 raw 마커를
+      //   선파괴 → DUMMY/영문/조립번호 실발신. 봉합: 발신/가드 경로엔 raw(원본 .trim())를 투입하고, opt_out 매칭·
+      //   로깅은 digit 정규화(recipient_digits)로 분리(가드/발신 경로 미투입).
+      const recipient_phone  = String(bodyJson.recipient_phone ?? "").trim();
+      const recipient_digits = recipient_phone.replace(/[^0-9]/g, "");
       const sendBody        = String(bodyJson.body ?? "").trim();
       const source          = String(bodyJson.source ?? "manual_dashboard");
       // T-20260609-foot-MSG-TEMPLATE-MMS Part B: 이미지 첨부(MMS) — message-images 버킷 storage 경로.
@@ -708,13 +720,13 @@ Deno.serve(async (req: Request) => {
         .from("notification_opt_outs")
         .select("id")
         .eq("clinic_id", clinic_id)
-        .eq("phone", recipient_phone)
+        .eq("phone", recipient_digits)
         .maybeSingle();
       if (mOpt) {
         await supabase.from("notification_logs").insert({
           clinic_id, customer_id, reservation_id: null,
           event_type: "manual_send", channel: "sms",
-          recipient_phone, body_rendered: sendBody, status: "opt_out",
+          recipient_phone: recipient_digits, body_rendered: sendBody, status: "opt_out",
           error_message: `${source}: opt_out`, sent_at: null,
         });
         return new Response(
@@ -760,7 +772,7 @@ Deno.serve(async (req: Request) => {
         reservation_id: null,
         event_type: "manual_send",
         channel: mResult.channel,
-        recipient_phone,
+        recipient_phone: recipient_digits,
         body_rendered: sendBody,
         status: mResult.success ? "sent" : (mBlocked ? "skipped" : "failed"),
         solapi_message_id: mResult.success ? (mResult.messageId ?? null) : null,
