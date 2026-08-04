@@ -578,6 +578,9 @@ export default function Reservations() {
   const jumpConsumedNonceRef = useRef<number | null>(null);
   // 점프 대상 예약 카드로 스크롤을 대기시키는 id(해당 날짜 rows 렌더 후 scrollIntoView). 소비 후 null.
   const [pendingJumpScrollId, setPendingJumpScrollId] = useState<string | null>(null);
+  // T-20260804-foot-RESVDEEPLINK-RESERVATIONID-HIGHLIGHT: URL ?reservationId=<id> 딥링크 1회 소비 가드(값 단위).
+  //   같은 reservationId 값으로 searchParams가 재평가돼도 중복 점프하지 않도록 마지막 소비값 저장.
+  const deeplinkResvConsumedRef = useRef<string | null>(null);
   // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-4: 마운트 자동로드 중복 방지.
   // StrictMode 이중 마운트(dev) / 동일 파라미터 재렌더 시 fetchWeek 중복 실행 → RPC N+1 차단.
   const lastAutoFetchKeyRef = useRef<string | null>(null);
@@ -917,6 +920,35 @@ export default function Reservations() {
     setPendingJumpScrollId(upcoming.id); // 해당 날짜 rows 렌더 후 스크롤 대기
   }, [clinic]);
 
+  // T-20260804-foot-RESVDEEPLINK-RESERVATIONID-HIGHLIGHT: 도파민TM 상단 고객검색 CRM예약 뱃지 딥링크 수신부.
+  //   /admin/reservations?from=dopamine&reservationId=<id>&phone=<digits> 로 착지 시, 그 예약을 자기 CRM
+  //   (obliv-foot-crm 자기 auth/RLS 범위 — 신규 cross-CRM 접근 아님) 조회 → 해당 예약 날짜의 일간 뷰로 이동 +
+  //   하이라이트(ring-teal-500) + 스크롤. 부모 T-20260724-dopamine-CRMBADGE-DEEPLINK-ALLBRANCH-FANOUT RC-2(e04f7e94)가
+  //   URL에 부착한 reservationId의 타깃-CRM(foot) 측 '하이라이트-온-어라이벌' 구현.
+  //   param 'reservationId' = 자매 crmDeeplinkRegistry(TM 사이드바 CRM 수정/취소 딥링크)와 동일 표준 → 그 경로도 함께 pin-point 승격.
+  //   ⚠ 회귀안전: reservationId 부재/미상/미해석(잘못된 uuid·타 CRM id·삭제됨) 시 조용히 no-op → 기존 목록/캘린더 랜딩(phone 힌트) 유지.
+  //   jumpToNearestUpcoming 패턴 미러(신규 메커니즘 0 — selectedDay/weekStart/setSelectedResvId/setPendingJumpScrollId 재사용).
+  const jumpToReservationById = useCallback(async (reservationId: string) => {
+    if (!clinic) return;
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, reservation_date, status')
+      .eq('clinic_id', clinic.id)
+      .eq('id', reservationId)
+      .maybeSingle();
+    // 미상/미해석(조회 실패·행 없음·잘못된 uuid 문법 등) → 조용히 목록 랜딩 유지(회귀 안전, AC2).
+    if (error || !data) return;
+    const row = data as { id: string; reservation_date: string | null };
+    if (!row.reservation_date) return;
+    const target = new Date(`${row.reservation_date}T00:00:00`);
+    if (isNaN(target.getTime())) return;
+    setSelectedDay(target);
+    setWeekStart(startOfWeek(target, { weekStartsOn: 1 }));
+    setViewMode('day');
+    setSelectedResvId(row.id); // 하이라이트(ring-teal-500)
+    setPendingJumpScrollId(row.id); // 해당 날짜 rows 렌더 후 스크롤 대기
+  }, [clinic]);
+
   // 예약관리 헤더 검색 선택 → AdminLayout이 navigate(state:{jumpToNearestResvCustomerId, jumpNonce})로 넘긴 요청 소비.
   useEffect(() => {
     const state = location.state as { jumpToNearestResvCustomerId?: string; jumpNonce?: number } | null;
@@ -959,6 +991,18 @@ export default function Reservations() {
     //    의도와 충돌. weekStart 는 위에서 갱신해두므로 사용자가 수동 주간 전환 시 해당 주가 그대로 노출.)
     setViewMode('day');
   }, [dateParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-20260804-foot-RESVDEEPLINK-RESERVATIONID-HIGHLIGHT: URL ?reservationId=<id> 감지 → 해당 예약으로 점프+하이라이트.
+  //   dateParam(?date=) 수신부 패턴 미러 — searchParams 변경 즉시 감지. clinic 준비 후 값당 1회 소비(중복 점프 방지).
+  //   딥링크 URL(?from=dopamine&reservationId=&phone=)엔 date param이 없어 위 dateParam 효과와 충돌 없음.
+  const reservationIdParam = searchParams.get('reservationId');
+  useEffect(() => {
+    if (!reservationIdParam) return;
+    if (!clinic) return;
+    if (deeplinkResvConsumedRef.current === reservationIdParam) return;
+    deeplinkResvConsumedRef.current = reservationIdParam;
+    void jumpToReservationById(reservationIdParam);
+  }, [reservationIdParam, clinic, jumpToReservationById]);
 
   const fetchWeek = useCallback(async () => {
     if (!clinic) return;
