@@ -80,6 +80,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { isSuspectedTruncationClobber } from '../_shared/resv-memo.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -118,12 +119,28 @@ async function syncReservationMemoToTimeline(
   //   — RPC 55f3f62d 의 ON CONFLICT DO UPDATE 와 동일 결과. race(23505) 시 update 폴백.
   const { data: existingMemo } = await admin
     .from('reservation_memo_history')
-    .select('id')
+    .select('id, content')
     .eq('reservation_id', reservationId)
     .eq('source_system', sourceSystem)
     .maybeSingle();
 
   if (existingMemo) {
+    // ── T-20260804-RESVSIDEBAR-MEMO-CRMSYNC (lane B) INTERIM preserve 가드 (code-only, no-DDL) ──
+    //   [RC] 지배적 원인 = READ 방향 부재: 도파민 사이드바가 CRM 실 예약메모 대신 stale/공란 로컬 mirror 를
+    //     seed 표시 → TM 이 축약("테스트")으로 replace → 여기서 기존 dopamine-source 행 content 를 무조건
+    //     UPDATE(clobber) → 예약시 쓴 메모 소실(최경옥 repro, resv f744fbcc… 실증). 08-03 VANISH 가
+    //     "rmh no-op skip 으로 clobber 불가" 라 한 것은 EMPTY push 에만 참 — 비-empty 재push 는 동일
+    //     (reservation_id, source_system) 행 content 를 in-place 로 교체하므로 dopamine-source 행 메모는 실제 소실.
+    //   [GUARD] 기존 content 가 non-empty 인데 유입 content 가 (a) 그 기존을 포함(superset/append)하지도 않고
+    //     (b) 더 짧으면 = 축약(truncation) 의심 → 파괴적 replace 를 억제하고 기존 보존(fail-safe). log 남김.
+    //     idempotent(동일값)·superset·확장(더 김) 편집은 정상 replace 통과.
+    //   ★ INTERIM: 최종 해소 = READ-first(사이드바가 full 실메모 표시 → 편집=superset → replace 자연 preserve)
+    //     + AC-2 APPEND/MERGE(READ 착지 의존, lane A 주도). 본 가드는 그때까지의 forward 데이터소실 차단용.
+    const oldContent = ((existingMemo as { content?: string | null }).content ?? '').trim();
+    if (isSuspectedTruncationClobber(oldContent, content)) {
+      console.warn(`[reservation-ingest] memo preserve-guard: suspected truncation clobber suppressed rid=${reservationId} src=${sourceSystem} old_len=${oldContent.length} new_len=${content.length} — existing memo preserved (INTERIM, READ-first pending)`);
+      return;
+    }
     const { error } = await admin
       .from('reservation_memo_history')
       .update({ content })

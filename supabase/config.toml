@@ -38,6 +38,15 @@ verify_jwt = false
 [functions.reservation-ingest-from-dopamine]
 verify_jwt = false
 
+# T-20260804-dopamine-RESVSIDEBAR-MEMO-CRMSYNC-BIDIR-ALLBRANCH (lane B / dev-foot):
+#   foot-reservation-memo-read 는 도파민 예약상세 사이드바 '메모' tab(AC-3 READ)에 풋CRM 예약메모를
+#   되돌려주는 read-only cross-CRM surface. X-Foot-Read-Secret(=FOOT_CALENDAR_READ_SECRET) 헤더로
+#   인증한다(Supabase JWT 아님, foot-calendar-read 동일 read-only trust-tier). 게이트웨이 기본 verify_jwt=true 면
+#   EF 코드 도달 전 401 → 사이드바 read fetch 매번 거부. verify_jwt=false 로 게이트웨이 JWT 검사를 끄고
+#   인증은 EF 내부 X-Foot-Read-Secret 검증(index.ts §Auth, 불일치/누락 → 401)에 위임 = 단일 인증 관문.
+[functions.foot-reservation-memo-read]
+verify_jwt = false
+
 # T-20260714-dopamine-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (reopen / runtime-plumbing fix):
 #   dopamine-visitcall-receiver 는 도파민 TM 내원콜 결과(reachable/absent) push 를 X-Callback-Secret
 #   (=DOPAMINE_CALLBACK_SECRET) 헤더로 인증한다(Supabase JWT 아님). 게이트웨이 기본 verify_jwt=true 면
