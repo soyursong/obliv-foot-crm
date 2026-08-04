@@ -4,6 +4,7 @@ import os from 'os';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { isTruthyFlag, mapDevIsolationEnv, DEV_ISOLATION_REF } from './tests/devIsolationEnv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,68 @@ if (!process.env.TEST_PASSWORD && !process.env.TEST_USER_PASSWORD) {
         '      (b) 정본 체크아웃(~/GitHub/obliv-foot-crm)에 .env.local 이 실재하는지.',
     );
   }
+}
+
+// ── L3 근본격리: E2E/dev DB 격리 컷오버 (opt-in, 점진 전환) ──────────────────────────
+//   T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER
+//     (SMS-DUMMY-SEAL e9f8fb7c 의 L3 leg — L1/L2(EF chokepoint)로 bleed 는 이미 정지.
+//      본 leg = defense-in-depth 근본격리: E2E write 자체를 prod 가 아닌 dev DB 로 돌린다.)
+//
+//   기존 배선: 위에서 .env.local(=PROD ref rxlomoozakkjesdqjtvd)을 override 로드 →
+//     E2E/dev 러너가 실환자 DB(prod)에 fixture write. bleed 근원.
+//   본 컷오버: FOOT_E2E_DEV_ISOLATION 플래그가 켜지면 .env.dev-isolation.local(=DEV ref
+//     kcdqtyivtqcjmcrdjkqi, obliv-foot-dev, PHI-0)을 로드하고 DEV_SUPABASE_* → 하네스가
+//     읽는 표준 키(VITE_SUPABASE_URL / _ANON_KEY / SUPABASE_SERVICE_ROLE_KEY)로 매핑한다.
+//     그리고 EXPECT_DEV_DB_REF 를 dev ref 로 자동 세팅 → PRODREF-HARDGUARD(global-setup/
+//     teardown 의 assertExpectedDbTarget) 활성 + 본 config 진입점 즉시 fail-closed 검문.
+//
+//   ★고회귀 방지(빅뱅 금지): 플래그 기본값 = OFF → 현행 CI/로컬(prod 타깃) 완전 무파손.
+//     점진 전환은 "어느 spec 그룹을 격리 러너로 돌리느냐"로 제어한다 —
+//       FOOT_E2E_DEV_ISOLATION=1 npx playwright test tests/e2e/<group>/…
+//     그룹별로 DEV DB seed/fixture 정합을 확보하며 하나씩 넘긴 뒤, 최종에 CI 기본값으로 승격.
+//   fail-closed 원칙: 플래그 ON 인데 (a).env.dev-isolation.local 부재 (b)dev URL/ref 부재
+//     (c)resolved URL 이 prod ref 를 가리킴 → 조용히 prod 로 흐르지 않고 즉시 abort.
+if (isTruthyFlag(process.env.FOOT_E2E_DEV_ISOLATION)) {
+  // 1) .env.dev-isolation.local 위치 확인 — gitignored 라 fresh 워크트리엔 부재.
+  //    .env.local 폴백과 동일한 후보 순서(env override → macstudio → macbook).
+  const selfDev = path.join(__dirname, '.env.dev-isolation.local');
+  const devCandidates = [
+    process.env.FOOT_DEV_ISOLATION_ENV,
+    selfDev,
+    path.join(os.homedir(), 'GitHub', 'obliv-foot-crm', '.env.dev-isolation.local'),
+    path.join(os.homedir(), 'Documents', 'GitHub', 'obliv-foot-crm', '.env.dev-isolation.local'),
+  ].filter((p): p is string => !!p);
+  const devHit = devCandidates.find((p) => fs.existsSync(p));
+  if (!devHit) {
+    throw new Error(
+      '[E2E-DEVDB-ISOLATION] FOOT_E2E_DEV_ISOLATION 활성인데 .env.dev-isolation.local 을 찾지 못했습니다.\n' +
+        `    후보=${devCandidates.join(', ')}\n` +
+        '    → fail-closed abort (prod DB 로 흐르지 않도록 차단). ' +
+        'supervisor provisioning 핸드오프 파일(gitignored)을 배치하거나 FOOT_DEV_ISOLATION_ENV 로 경로를 지정하세요.\n' +
+        '    참조: docs/ENV-MATRIX.md §테스트/E2E 격리 DB.',
+    );
+  }
+  // 2) DEV_SUPABASE_* → 하네스 표준 키 매핑 + fail-closed 검문(mapDevIsolationEnv, 순수 로직).
+  //    dotenv.parse 로 읽어 명시 매핑(자동 주입은 DEV_ 접두 그대로라 하네스가 못 읽음).
+  const parsed = dotenv.parse(fs.readFileSync(devHit));
+  const mapped = mapDevIsolationEnv(parsed, devHit); // url/ref 부재·prod 오배선 시 throw
+  process.env.VITE_SUPABASE_URL = mapped.VITE_SUPABASE_URL; // override → prod .env.local 을 이김
+  if (mapped.VITE_SUPABASE_ANON_KEY) process.env.VITE_SUPABASE_ANON_KEY = mapped.VITE_SUPABASE_ANON_KEY;
+  if (mapped.SUPABASE_SERVICE_ROLE_KEY)
+    process.env.SUPABASE_SERVICE_ROLE_KEY = mapped.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.EXPECT_DEV_DB_REF = mapped.EXPECT_DEV_DB_REF; // → PRODREF-HARDGUARD 활성
+  const devRef = mapped.EXPECT_DEV_DB_REF;
+  if (devRef !== DEV_ISOLATION_REF) {
+    // 문서상 dev ref 와 불일치 — 오배선 가능성 경고(치명은 아님: 실제 dev 프로젝트 교체 가능).
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[E2E-DEVDB-ISOLATION] ⚠ dev ref('${devRef}')가 문서 기준(${DEV_ISOLATION_REF})과 다릅니다. docs/ENV-MATRIX.md 확인.`,
+    );
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[E2E-DEVDB-ISOLATION] ✓ 격리 활성 — E2E/dev 러너 → DEV DB(${devRef}) 로 전환 (prod 무접점). src=${devHit}`,
+  );
 }
 
 const AUTH_FILE = path.join(__dirname, '.auth', 'user.json');
@@ -568,6 +631,11 @@ export default defineConfig({
         //   GO_WARN 회귀 고정: classify 3분기(성공/실패/무응답=ATTENTION) 불변. auth/server/page 불요. unit 전용.
         //   (②TID/COM 팝업 이관은 총괄 스크린샷 확정 대기 → 후속. ①③ 실렌더·활성카드결제 = supervisor QA/field-soak.)
         '**/T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX.spec.ts',
+        // T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER: E2E/dev DB 근본격리(L3) 로직 회귀.
+        //   isTruthyFlag(OFF 기본=현행 CI 무파손) + mapDevIsolationEnv(DEV_SUPABASE_*→표준키 매핑,
+        //   EXPECT_DEV_DB_REF 자동세팅=PRODREF-HARDGUARD 활성) + fail-closed(prod 오배선 abort) 순수 검증.
+        //   브라우저/DB/auth/server 불요·결정론. 실 격리 컷오버 관측 = supervisor(env-diff).
+        '**/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -589,6 +657,9 @@ export default defineConfig({
         // T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG: unit 전용(담당자 resolution 미러 + 정적 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG.spec.ts',
+        // T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER: unit 전용(순수 격리 로직) →
+        //   무-project 실행 시 desktop-chrome 매칭→setup 유입 차단. unit 에서만 실행.
+        '**/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts',
         // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: unit 전용 정적 소스 가드+순수 함수 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',

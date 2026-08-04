@@ -62,6 +62,28 @@
 - **하드가드 존치**: 부모 AC-3 REGISTRY teardown / PRODREF-HARDGUARD 제거 금지(defense-in-depth). dev 전환 후에도 leak 위생 가드 유지.
 - 재게이트 트리거 2개뿐: ①prod 스키마 변경 발생 ②Supabase Pro 승급 비용 발생 → planner FOLLOWUP.
 
+### L3 근본격리 컷오버 스위치 — T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER (SMS-DUMMY-SEAL L3 leg)
+
+> SMS-DUMMY-SEAL(e9f8fb7c)의 L1/L2(EF chokepoint)로 prod bleed 는 이미 정지. 본 leg = defense-in-depth 근본격리:
+> E2E/dev 러너의 **write 대상 자체**를 prod(.env.local) → dev(.env.dev-isolation.local)로 돌린다.
+
+- **활성 방법(opt-in)**: 러너 앞에 `FOOT_E2E_DEV_ISOLATION=1` 을 붙이면 `playwright.config.ts` 부팅 블록이
+  `.env.dev-isolation.local`(gitignored)을 로드하고 `DEV_SUPABASE_*` → 하네스 표준 키
+  (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY`)로 매핑 + `EXPECT_DEV_DB_REF`
+  자동 세팅(→ PRODREF-HARDGUARD 활성).
+  ```bash
+  FOOT_E2E_DEV_ISOLATION=1 npx playwright test tests/e2e/<그룹>/…   # 그 그룹만 dev DB 로
+  ```
+  - 파일 탐색 후보: `FOOT_DEV_ISOLATION_ENV`(경로 override) → self → `~/GitHub` → `~/Documents/GitHub`.
+- **★빅뱅 금지(고회귀 방지)**: 플래그 **기본값 OFF** → 현행 CI/로컬(prod 타깃) 완전 무파손. 전환은 spec 그룹별로
+  DEV DB seed/fixture 정합을 확보하며 하나씩 넘긴 뒤, 최종에만 CI 기본 env 로 승격(빅뱅 전면 cutover 금지).
+- **fail-closed**: 플래그 ON 인데 (a)dev env 파일 부재 (b)`DEV_SUPABASE_URL/PROJECT_REF` 부재 (c)resolved URL 이
+  prod ref(`rxlomoozakkjesdqjtvd`)를 가리킴 → 조용히 prod 로 흐르지 않고 **config 진입점에서 즉시 abort**.
+  순수 로직 = `tests/devIsolationEnv.ts`(`isTruthyFlag`/`mapDevIsolationEnv`), 회귀 spec =
+  `tests/e2e/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts`.
+- **CI 최종 승격(그룹 전수 GREEN 후, supervisor)**: `FOOT_E2E_DEV_ISOLATION=1` 을 CI env 로 상시 주입 →
+  §컷오버 step 2b(EXPECT_DEV_DB_REF)가 이 경로로 자동 충족. prod 무접점(db_change=false).
+
 ## 변경 이력
 - 2026-07-19: **obliv-foot-dev(kcdqtyivtqcjmcrdjkqi, Seoul) provisioning 완료** — T-20260719-foot-HARNESS-TESTDB-ISOLATION.
   격리 dev Supabase 신설(PHI-0). 스키마 적재·컷오버는 supervisor 협업(위 §테스트/E2E 격리 DB). prod 무접점(db_change=false).
