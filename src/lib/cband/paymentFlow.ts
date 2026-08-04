@@ -164,6 +164,21 @@ export async function precheckConcurrentPayment(
   q: { clinicId: string; checkInId: string | null; merno: string | null },
   store: AttemptStore,
 ): Promise<ConcurrencyDecision> {
+  // ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY (RCA 확정 · AC-1/AC-2):
+  //   재결제 정밀검사 직전, 자기 check_in 의 고착 'requested' 를 기회주의 스윕으로 해소한다.
+  //   RCA(prod 실증): 취소(0430) 성공 시도가 payment_id(환불행) 는 남겼으나 status='requested' 로
+  //   고착(updateAttempt 승격 유실) → (a) probeConcurrent 가 '진행 중'으로 오인 (b) insert-first
+  //   L2 partial UNIQUE(status='requested') 가 재결제 INSERT 를 23505 로 차단. sweepStaleRequested 의
+  //   HEAL(status='requested' ∧ payment_id IS NOT NULL → 'approved', 근거게이팅·오승격 0)이 이 고착을
+  //   terminal 로 승격 → L2 자연 해제 + 아래 probe 에서 자연 제외. payments 무생성(이중수납 0).
+  //   ★실패는 무시(로그만) — 스윕이 재결제 진입을 막지 않는다(degrade-open, 하드백스톱 L2 여전 유효).
+  if (store.sweepStaleRequested && q.checkInId) {
+    try {
+      await store.sweepStaleRequested({ clinicId: q.clinicId, checkInId: q.checkInId });
+    } catch (e) {
+      console.error('동시결제 재확인 前 고착 스윕 실패(무시, 재결제 진행):', (e as Error)?.message);
+    }
+  }
   if (!store.probeConcurrent) return { blocked: false, reason: null, allowOverride: false, userMessage: '' };
   try {
     const probe = await store.probeConcurrent(q);
@@ -253,6 +268,64 @@ export function isSweepableOrphan(
   return !Number.isNaN(t) && t < nowMs - staleMinutes * 60_000;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY — 동시성 잠금 술어(순수·결정론·테스트가능)
+//   RCA(prod 실증): 취소(0430) 성공 시도가 status='requested' 로 고착 → probeConcurrent 의
+//   patientInProgress(status='requested' 단독, tran_type/payment_id/시각 무필터)가 in-flight 로 오인
+//   → 취소 후 재결제가 '결제 진행 중'으로 영구 차단. 아래 순수 술어로 '진짜 in-flight' 만 잠근다.
+//   ★불변식(AC-3/AC-4): 진짜 응답 전 in-flight(요청/확인필요·미수납·최근) 는 계속 차단(이중결제 방어 유지).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** probeConcurrent 판정 입력 행(순수 함수용 subset). */
+export interface CbandConcurrencyRow {
+  status: AttemptStatus;
+  tranType: TranType;
+  authNo: string | null;
+  paymentId: string | null;
+  /** ISO8601(created_at). */
+  createdAt: string;
+}
+
+/**
+ * ★AC-1/AC-3/AC-6/AC-7 — 이 시도가 '결제 진행 중'(patient_in_progress) 하드잠금을 유발하는
+ *   '진짜 in-flight' 인가(순수·결정론). 아래 4조건을 모두 만족해야만 잠금.
+ *   · tranType===APPROVE  : 취소(0430)는 '결제 진행 중'이 아니다 → 취소 시도는 결코 재결제를 막지 않음(AC-1/AC-6).
+ *   · status∈{requested,attention} : 응답 전 in-flight(requested) 또는 불확실(attention='확인 필요',
+ *       C011/8003/8555/무응답)만. 이중결제 방어 장치는 유지(AC-6 '유지'). failed/approved 는 종료 → 해제.
+ *   · paymentId==null     : 이미 수납(payments)이 성립한 시도는 '진행 중'이 아니다(취소 환불행 포함 → 제외, AC-1).
+ *   · createdAt≥now-stale  : staleMinutes(기본 5분) 초과 시도는 자동 만료 → 잠금 해제(AC-7 5분 자동만료).
+ */
+export function isInFlightBlocking(
+  row: CbandConcurrencyRow,
+  nowMs: number,
+  staleMinutes: number = CBAND_ORPHAN_STALE_MINUTES,
+): boolean {
+  if (row.tranType !== TRANTYPE_APPROVE) return false;
+  if (row.status !== 'requested' && row.status !== 'attention') return false;
+  if (row.paymentId != null) return false;
+  const t = Date.parse(row.createdAt);
+  return !Number.isNaN(t) && t >= nowMs - staleMinutes * 60_000;
+}
+
+/**
+ * ★patient_completed(재결제 confirm 유도) 판정 — 취소(환불)로 상쇄되지 않은 '살아있는 완료 결제'가 있는가(순수).
+ *   승인(approved·APPROVE·수납성립) 중, 그 AUTHNO 로 링크된 취소(CANCEL, auth_no 동일)가 없는 건만.
+ *   → 결제→취소 후 재결제 시 '이미 결제된 환자' soft 안내가 뜨지 않고 매끄럽게 진행(AC-1 정합, 시나리오1).
+ *   미취소 완료 건은 기존대로 confirm 유도(시나리오3 — 정책 무변경).
+ */
+export function hasLiveCompletedPayment(rows: CbandConcurrencyRow[]): boolean {
+  const cancelledAuthNos = new Set(
+    rows.filter((r) => r.tranType === TRANTYPE_CANCEL && r.authNo).map((r) => r.authNo),
+  );
+  return rows.some(
+    (r) =>
+      r.tranType === TRANTYPE_APPROVE &&
+      r.status === 'approved' &&
+      r.paymentId != null &&
+      !(r.authNo && cancelledAuthNos.has(r.authNo)),
+  );
+}
+
 /**
  * 시도 레코드 저장소(주입). 실 구현은 supabaseAttemptStore(cband_payment_attempts 테이블, DDL 게이트).
  * 상태머신은 이 인터페이스만 알면 되므로 unit 테스트에서 in-memory 스텁 주입 가능.
@@ -289,6 +362,14 @@ export interface AttemptStore {
    *   실패는 상위가 삼킴(재표시/시트를 막지 않음). 반환 = 승격 건수.
    */
   sweepStaleRequested?(q: { clinicId: string; checkInId?: string; staleMinutes?: number }): Promise<{ swept: number }>;
+  /**
+   * ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY AC-8 수동 종료 처리 — 실장이 단말 영수증 대조 후
+   *   '확인 필요'(attention) 시도를 직접 terminal 로 해제(잠금 해제 → 재결제 가능). 기존 UPDATE RLS·스키마 무변.
+   *   ★근거게이팅: payment_id IS NOT NULL(수납/환불 성립) → 'approved'(실제 승인이었음), 아니면 'failed'
+   *     (미성립 종료). 어느 쪽이든 'requested'/'attention' 이탈 → L2 partial UNIQUE·probe 에서 자연 해제.
+   *   구현 없으면 UI 는 버튼 미노출(degrade). 반환 = 해제된 terminal status(관측용).
+   */
+  releaseAttempt?(id: string): Promise<{ status: 'approved' | 'failed' }>;
 }
 
 export interface PaymentFlowInput {

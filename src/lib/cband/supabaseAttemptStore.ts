@@ -35,9 +35,11 @@
 import { supabase } from '@/lib/supabase';
 import {
   CbandConcurrentPaymentError, CBAND_ORPHAN_STALE_MINUTES,
+  isInFlightBlocking, hasLiveCompletedPayment,
   type AttemptRecord, type AttemptStore, type CbandAttemptView, type OpenPaymentProbe,
+  type CbandConcurrencyRow,
 } from './paymentFlow';
-import { TRANTYPE_APPROVE, TRANTYPE_CANCEL, type NormalizedResponse } from './protocol';
+import { TRANTYPE_CANCEL, type NormalizedResponse } from './protocol';
 
 /**
  * ★3-way canon: 코밴 CAT 결제의 채널 식별은 provider 컬럼이 아니라 **payments.payment_attempt_id IS NOT NULL**(FK)로 한다.
@@ -285,39 +287,80 @@ export const supabaseAttemptStore: AttemptStore = {
   },
 
   async probeConcurrent(q: { clinicId: string; checkInId: string | null; merno: string | null }): Promise<OpenPaymentProbe> {
-    // ★AC-6-2 버튼 순간 서버 재확인(순수 read, no-DDL). 스키마 무접촉 — cband_payment_attempts SELECT(count/head) 만.
+    // ★AC-6-2 버튼 순간 서버 재확인(순수 read, no-DDL). 스키마 무접촉 — cband_payment_attempts SELECT 만.
     //   조회 실패는 상위(precheckConcurrentPayment)가 degrade-open 처리(L2 하드백스톱 유효).
-    const clinicId = q.clinicId;
-    async function existsAttempt(
-      filter: Record<string, string>,
-      label: string,
-    ): Promise<boolean> {
-      let query = supabase
-        .from('cband_payment_attempts')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinic_id', clinicId);
-      for (const [col, val] of Object.entries(filter)) query = query.eq(col, val);
-      const { count, error } = await query;
-      if (error) throw new Error(`동시결제 재확인 실패(${label}): ${error.message}`);
-      return (count ?? 0) > 0;
-    }
+    // ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY(RCA 확정): 잠금 술어를 'status=requested 단독'에서
+    //   '진짜 in-flight'(isInFlightBlocking: APPROVE ∧ requested/attention ∧ 미수납 ∧ 5분 이내)로 정밀화.
+    //   취소(0430)·수납성립(payment_id)·5분 경과 시도는 자연 제외 → 취소 후 재결제 무차단(AC-1). 진짜
+    //   in-flight/확인필요(미수납·최근)만 계속 차단(AC-3/AC-6). 시각 비교는 문자열 아닌 ms 로(포맷 혼용 안전).
+    const cutoffMs = Date.now();
+    const cutoffIso = new Date(cutoffMs - CBAND_ORPHAN_STALE_MINUTES * 60_000).toISOString();
 
     let patientInProgress = false;
     let patientCompleted = false;
     let terminalBusy = false;
 
     if (q.checkInId) {
-      patientInProgress = await existsAttempt({ check_in_id: q.checkInId, status: 'requested' }, '환자 진행중');
-      // 완료(승인 0210)만 confirm 유도 대상 — 취소(0430)/실패는 재결제 경고 아님.
-      patientCompleted = await existsAttempt(
-        { check_in_id: q.checkInId, status: 'approved', tran_type: TRANTYPE_APPROVE },
-        '환자 완료',
-      );
+      // 이 체크인의 최근 시도들을 1회 fetch → 순수 술어(paymentFlow)로 판정(취소 상쇄·미수납·만료 반영).
+      const { data, error } = await supabase
+        .from('cband_payment_attempts')
+        .select('status, tran_type, auth_no, payment_id, created_at')
+        .eq('clinic_id', q.clinicId)
+        .eq('check_in_id', q.checkInId);
+      if (error) throw new Error(`동시결제 재확인 실패(환자): ${error.message}`);
+      const rows: CbandConcurrencyRow[] = (data ?? []).map((r) => ({
+        status: r.status as CbandConcurrencyRow['status'],
+        tranType: r.tran_type as CbandConcurrencyRow['tranType'],
+        authNo: (r.auth_no as string | null) ?? null,
+        paymentId: (r.payment_id as string | null) ?? null,
+        createdAt: r.created_at as string,
+      }));
+      patientInProgress = rows.some((r) => isInFlightBlocking(r, cutoffMs));
+      patientCompleted = hasLiveCompletedPayment(rows);
     }
     if (q.merno) {
-      terminalBusy = await existsAttempt({ merno: q.merno, status: 'requested' }, '단말 사용중');
+      // 단말(MERNO) 사용중 = 응답 전 in-flight('requested')·미수납·최근(5분 이내)만. 고착/수납성립/만료 제외.
+      const { count, error } = await supabase
+        .from('cband_payment_attempts')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', q.clinicId)
+        .eq('merno', q.merno)
+        .eq('status', 'requested')
+        .is('payment_id', null)
+        .gte('created_at', cutoffIso);
+      if (error) throw new Error(`동시결제 재확인 실패(단말): ${error.message}`);
+      terminalBusy = (count ?? 0) > 0;
     }
     return { patientInProgress, patientCompleted, terminalBusy };
+  },
+
+  async releaseAttempt(id: string): Promise<{ status: 'approved' | 'failed' }> {
+    // ★AC-8 수동 종료 처리 — '확인 필요' 시도를 실장이 영수증 대조 후 직접 terminal 로 해제.
+    //   근거게이팅: payment_id 존재(수납/환불 성립) → 'approved'(실제 승인), 아니면 'failed'(미성립 종료).
+    //   'requested'/'attention' 이탈 → L2 partial UNIQUE·probe 에서 자연 해제(재결제 가능). payments 무변경(멱등).
+    const { data: cur, error: readErr } = await supabase
+      .from('cband_payment_attempts')
+      .select('id, payment_id, status')
+      .eq('id', id)
+      .limit(1);
+    if (readErr) throw new Error(`시도 종료 처리 조회 실패: ${readErr.message}`);
+    const row = cur?.[0];
+    if (!row) throw new Error('시도 종료 처리 실패: 대상 시도를 찾을 수 없습니다.');
+    const next: 'approved' | 'failed' = row.payment_id != null ? 'approved' : 'failed';
+    // 이미 terminal(approved/failed)이면 멱등 no-op 반환(재클릭 안전).
+    if (row.status === 'approved' || row.status === 'failed') {
+      return { status: row.status as 'approved' | 'failed' };
+    }
+    const { data, error } = await supabase
+      .from('cband_payment_attempts')
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id');
+    if (error) throw new Error(`시도 종료 처리 실패: ${error.message}`);
+    if (!data || data.length === 0) {
+      throw new Error('시도 종료 처리 실패: 0행 반영(권한/스코프 확인 필요).');
+    }
+    return { status: next };
   },
 
   async listRecentAttempts(q: { clinicId: string; checkInId: string; limit?: number }): Promise<CbandAttemptView[]> {
