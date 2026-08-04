@@ -57,6 +57,13 @@ import {
   type CisInsertRow,
   applyExamFlagsToReinsert,
 } from '@/lib/examFlagPreserve';
+// T-20260805-foot-CHARTRESAVE-CIS-RETAIL-PRESERVE-FIX: 재저장 DELETE-all→reinsert 시 매칭실패
+//   (비활성/NULL service_id) orphan·voided 라인을 3-way MECE partition 으로 preserve-reinsert(silent-drop 봉합).
+import {
+  type CisSnapshotRow,
+  partitionCisSnapshot,
+  assertPartitionMece,
+} from '@/lib/cisPreserve';
 // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1 경로B): 교부번호 14자리 발번(UUID-slice 폐기).
 // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 연번호(visit_no) 발번 = buildDocSerial/docSerialPrefix
 //   (수납창 경로 발번 미배선 divergence 해소 — DocumentPrintPanel handleBatchPrint SSOT 동형).
@@ -2140,6 +2147,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   (no-DDL — 旣존 컬럼만 사용. RPC 밖 별도 UPDATE 없이 단일 INSERT 로 보존.)
     const examFlags = await snapshotExamFlags(checkIn.id);
 
+    // ── T-20260805-foot-CHARTRESAVE-CIS-RETAIL-PRESERVE-FIX (preserve-reinsert) ──
+    //   DELETE 前 full snapshot(select('*')). load 재구성이 버린 orphan(비활성/NULL service_id)·voided
+    //   라인을 3-way MECE partition 으로 preserve — silent-drop→결제-라인 unlink 봉합. select('*') 이므로
+    //   voided_* 컬럼 부재 prod(soft-void HELD)에서도 안전(voided_at-absence-robust · B3=∅).
+    const { data: cisSnapshot } = await supabase
+      .from('check_in_services')
+      .select('*')
+      .eq('check_in_id', checkIn.id);
+
     const { error: delError } = await supabase
       .from('check_in_services')
       .delete()
@@ -2177,13 +2193,35 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       });
     });
 
-    // Surface B: 피검사/KOH 치료신청 플래그를 재저장 행에 복원(clobber 방지) — 프로덕션·테스트 공용 SSOT.
+    // ── preserve-reinsert: orphan(B2)·voided(B3) 라인을 재삽입 배열에 append(B1 = 위 selectedItems rebuild).
+    //   orphan 술어 = load 재구성 drop 술어(svcs.find 실패)의 정확한 역. activeServiceIds = load 재구성 svcs
+    //   와 동일 predicate(services state). examFlag-marker 는 partition 이 제외(중복 삽입 방지).
+    const activeServiceIds = new Set(services.map((s) => s.id));
+    const partition = partitionCisSnapshot((cisSnapshot ?? []) as CisSnapshotRow[], activeServiceIds);
+    if (!assertPartitionMece(partition)) {
+      // MECE 위반(구조상 불가 — 방어) → 부분 저장으로 인한 데이터 유실 방지 위해 중단.
+      toast.error('저장 중단: 라인 분류 검증 실패(관리자 문의)');
+      return false;
+    }
+    rows.push(...partition.orphanRows, ...partition.voidedRows);
+
+    // Surface B: 피검사/KOH 치료신청 플래그를 재저장 행에 복원(clobber 방지). preserve 행까지 포함한
+    //   결합 배열에 적용 → orphan KOH 라인과 마커 이중생성 0(applyExamFlagsToReinsert marker 재구성 단일화).
     applyExamFlagsToReinsert(rows, checkIn.id, examFlags);
 
     if (rows.length > 0) {
-      const { error } = await supabase.from('check_in_services').insert(rows);
+      // DID-IT-PERSIST(cross_crm_write_rowcheck_standard): rows-affected == 의도행수 assert.
+      //   RLS 등으로 0/부분 삽입(error=null) 시 silent 유실 → 성공오인 금지.
+      const { data: inserted, error } = await supabase
+        .from('check_in_services')
+        .insert(rows)
+        .select('id');
       if (error) {
         toast.error('저장 실패: ' + error.message);
+        return false;
+      }
+      if ((inserted?.length ?? 0) !== rows.length) {
+        toast.error(`저장 실패: 예상 ${rows.length}행 중 ${inserted?.length ?? 0}행만 저장됨(관리자 문의)`);
         return false;
       }
     }
@@ -2667,6 +2705,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
           preservedQueue.set(r.service_id, pq);
         }
         const examFlags = await snapshotExamFlags(checkIn.id);
+        // ③ preserve-reinsert(T-20260805-foot-CHARTRESAVE-CIS-RETAIL-PRESERVE-FIX): DELETE 前 full
+        //   snapshot → orphan/voided 라인 보존(save 경로 동형). select('*') = voided_at-absence-robust.
+        const { data: cisSnapshot } = await supabase
+          .from('check_in_services')
+          .select('*')
+          .eq('check_in_id', checkIn.id);
         await supabase
           .from('check_in_services')
           .delete()
@@ -2689,12 +2733,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
             } as CisInsertRow;
           }),
         );
-        // ② Surface B: 같은 rows 배열에 피검사/KOH 플래그 복원(package_session_id 는 불변 — clobber 없음).
+        // ③ preserve-reinsert: orphan(B2)·voided(B3) append(save 경로 동형 MECE partition).
+        const activeServiceIds = new Set(services.map((s) => s.id));
+        const partition = partitionCisSnapshot((cisSnapshot ?? []) as CisSnapshotRow[], activeServiceIds);
+        if (!assertPartitionMece(partition)) {
+          // MECE 위반 방어 → 부분 저장 유실 방지 위해 자동저장 스킵(draft 보존, 창만 닫음).
+          onClose();
+          return;
+        }
+        rows.push(...partition.orphanRows, ...partition.voidedRows);
+        // ② Surface B: 결합 배열(B1+B2+B3)에 피검사/KOH 플래그 복원(마커 이중생성 0).
         applyExamFlagsToReinsert(rows, checkIn.id, examFlags);
         if (rows.length > 0) {
-          const { error: insertErr } = await supabase.from('check_in_services').insert(rows);
-          // INSERT 실패(RLS 등) 시 draft를 보존하고 창만 닫음 — localStorage 삭제 금지
-          if (insertErr) {
+          // DID-IT-PERSIST: rows-affected == 의도행수 assert(silent 부분삽입 시 draft 보존·창 유지).
+          const { data: inserted, error: insertErr } = await supabase
+            .from('check_in_services')
+            .insert(rows)
+            .select('id');
+          // INSERT 실패(RLS 등) 또는 부분삽입 시 draft를 보존하고 창만 닫음 — localStorage 삭제 금지
+          if (insertErr || (inserted?.length ?? 0) !== rows.length) {
             onClose();
             return;
           }

@@ -119,3 +119,56 @@ audit-preserve 로 **공동설계**. dev-foot 코드컨텍스트 leaning = **(b)
 
 > ★정합 필수: soft-void 가 추가할 감사행(voided_at NOT NULL)을 현행 delete-all→reinsert 가 hard-wipe 하면
 > void 감사·정정이 소실 + service_id 매칭 시 부활(un-void→phantom 재출현). 두 변경은 반드시 공동정합.
+
+---
+
+## 5. 구현 완료 (DA GO 수신 후 — DA-20260805-foot-CHARTRESAVE-CIS-PRESERVE, MSG-20260805-040247-7yom)
+
+> DA verdict = GO(조건부). 잔여 게이트 = dev(MECE partition + voided_at-absence-robust + inbound cis.id
+> census + rows-affected assert) → supervisor(write-correctness). 본 절 = dev 잔여 이행 기록.
+
+### 5.1 inbound cis.id reference census (HARD — DA Q1(i) a/b/c)
+prod(rxlomoozakkjesdqjtvd, Management API postgres role) + 코드 전수.
+
+- **(a) DB FK confrelid=check_in_services = 0** ✅ — `pg_constraint contype='f' AND confrelid=check_in_services` → `[]`.
+  추가: `check_in_service_id`/`cis_id`/`check_in_services_id` 명 컬럼 = 전 스키마 0.
+- **(b) app-level cis.id 영속 참조 = 0(load-bearing 부재)** ✅ — 코드 전수 grep 결과 cis.id 참조는
+  **KOH 검사 워크플로 단 1곳**(`ExamTargetsSection.tsx`: `exam_targets` 쿼리가 `koh_requested=true` cis 행의
+  `id` 를 **fresh 조회** → `set_koh_nail_sites`/`publish_koh_result` RPC 에 즉시 전달). 이는 **ephemeral
+  read-then-act**(mutation 후 `invalidateQueries` 로 재조회 — 어디에도 durable 저장 안 함). 또한 KOH 라인은
+  ① 활성 서비스(B1 — 현행도 매 저장 새 PK 발번 → load-bearing 이면 이미 관측가능하게 파손됐을 것 = DA
+  current-behavior evidence) 또는 ② service_id NULL 마커(applyExamFlagsToReinsert 재구성). ∴ orphan preserve
+  가 도입하는 **NEW reference-integrity class = 0**. (`koh_nail_sites` 는 cis 행 컬럼 — 활성라인 재저장 시
+  현행도 clobber되는 기존 이슈로 본 fix 범위 밖 · orphan 은 verbatim carry 하므로 회귀 0.)
+- **(c) cosmetic-correction 4-PK freeze** = cross-ticket(DA-20260805-foot-COSMETIC-VOID-SEMANTIC). 본 fix 의
+  PK churn 은 그 freeze 를 stale 화 → 해소는 **apply-time re-freeze**(void UPDATE 직전 fresh PK snapshot +
+  drift-ABORT). 이는 COSMETIC apply 측 책임(AFTER, 시퀀싱). 본 fix 는 선행 forward-seal — blocking 아님.
+
+→ **census 결과 = preserve-reinsert SAFE**(재-CONSULT trigger (a) load-bearing FK/캐시 = 미발견). DIFF-upsert
+강제 불요. new-PK 재삽입 진행.
+
+### 5.2 NULL service_id 라인 실체 확인(exam-marker 제외 근거)
+prod probe: `service_id IS NULL` 2행 **전부 `KOH 진균검사(요청)` price 0 마커**(econ_null=0, marker_null=2).
+∴ partition 은 exam-marker(service_id NULL & price 0 & original_price 0)를 **B2 에서 제외**(applyExamFlags-
+Reinsert 가 재구성 → preserve 시 phantom 중복). 진성 economic orphan = 38 비활성-서비스 라인.
+
+### 5.3 구현
+- **신규 SSOT**: `src/lib/cisPreserve.ts` — `partitionCisSnapshot`(3-way MECE), `toPreserveRow`,
+  `isExamMarkerRow`, `assertPartitionMece`. voided_at-absence-robust(select('*') 키 부재 → B3=∅).
+- **배선**: `PaymentMiniWindow.tsx` `saveCheckInServices()` + `handleClose()` 2 경로 대칭.
+  DELETE 前 `select('*')` snapshot → partition → B1(selectedItems rebuild)에 B2 orphan + B3 voided append →
+  `applyExamFlagsToReinsert`(결합배열, 마커 이중생성 0) → `insert().select('id')` **rows-affected==의도행수
+  assert**(DID-IT-PERSIST, cross_crm_write_rowcheck_standard). 불일치/MECE 위반 시 성공오인 금지(중단/draft보존).
+- **change-class = WRITE_PATH_LOGIC(write-path behavior fix)** · DDL 0 · db_change=false · 신규 컬럼/enum 0.
+
+### 5.4 검증
+- `tsc --noEmit` = exit 0 · `npm run build` = ✓ built(exit 0).
+- E2E/Unit: `tests/e2e/T-20260805-foot-CHARTRESAVE-CIS-RETAIL-PRESERVE-FIX.spec.ts` — **11/11 pass**
+  (orphan preserve · exam-marker 제외 · MECE 완전분할 · 멱등 · voided_at-absence-robust · voided carry-forward ·
+  new-PK · seller/psid verbatim). 회귀: examFlagPreserve 형제 spec 9/9 pass.
+
+### 5.5 잔여(supervisor / AFTER)
+- supervisor: write-correctness/DID-IT-PERSIST 재확인 + MECE assertion + census landing + phantom-dup 0.
+  (money-adjacent = payments unlink → supervisor 게이트 필수, §3.1 대표게이트는 면제.)
+- AFTER(비블로킹): soft-void mig(20260805110000, HELD) landing 시 load 재구성에 `voided_at IS NULL` 필터
+  co-design(voided 부활 방지) + cosmetic 4-PK apply-time re-freeze. canonical DIFF-upsert = follow-up(NOT-NOW).
