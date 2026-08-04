@@ -34,6 +34,8 @@ export default function CbandAttemptRecap({ checkInId, clinicId }: Props) {
   const enabled = isCbandPayEnabled();
   const [items, setItems] = useState<CbandRecapItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // ★AC-8 수동 종료 처리 중인 시도 id(중복클릭 방지).
+  const [releasingId, setReleasingId] = useState<string | null>(null);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -61,6 +63,22 @@ export default function CbandAttemptRecap({ checkInId, clinicId }: Props) {
       if (mounted.current) setLoading(false);
     }
   }, [enabled, clinicId, checkInId]);
+
+  // ★AC-8 수동 종료 처리 — 실장이 단말 [승인내역조회] 영수증 대조 후 이 시도를 직접 종료(잠금 해제).
+  //   releaseAttempt: payment_id 있으면 'approved'(실제 승인), 없으면 'failed'(미성립). 어느 쪽이든
+  //   'requested'/'attention' 이탈 → 재결제 차단 해소. 성공/실패 무관 재조회(load)로 목록 갱신.
+  const release = useCallback(async (id: string) => {
+    if (!supabaseAttemptStore.releaseAttempt) return;
+    setReleasingId(id);
+    try {
+      await supabaseAttemptStore.releaseAttempt(id);
+    } catch (e) {
+      console.error('코밴 시도 종료 처리 실패:', (e as Error)?.message);
+    } finally {
+      if (mounted.current) setReleasingId(null);
+      await load();
+    }
+  }, [load]);
 
   useEffect(() => {
     mounted.current = true;
@@ -119,6 +137,21 @@ export default function CbandAttemptRecap({ checkInId, clinicId }: Props) {
                 </span>
               </span>
             </div>
+            {/* ★AC-8 수동 종료 처리 — 영수증 대조 후 이 시도를 종료(잠금 해제 → 재결제 가능). 큰 버튼(태블릿). */}
+            {supabaseAttemptStore.releaseAttempt && (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  className="rounded-md border border-amber-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  data-testid={`btn-cband-recap-release-${view.id}`}
+                  onClick={() => release(view.id)}
+                  disabled={releasingId === view.id}
+                  title="단말기 영수증으로 확인한 뒤, 이 시도를 종료됨으로 처리해 재결제를 진행할 수 있게 합니다."
+                >
+                  {releasingId === view.id ? '처리 중…' : '이 시도는 종료됨으로 처리'}
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ul>
