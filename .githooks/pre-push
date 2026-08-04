@@ -91,4 +91,29 @@ else
   echo "⚠️  [pre-push] deploy_order_gate.sh 부재 — deploy-order 게이트 skip (fail-open, watch 사후 감시)" >&2
 fi
 
+
+# ── ④ main non-FF stomp 가드 (refs/heads/main push 한정, fail-closed) ──
+#   T-20260804-meta-BODY-MAIN-NONFF-STOMP-GUARD (supervisor 소유, deploy_flow.md §3-E ANCESTRY GATE v1.1)
+#   2026-08-04 obliv-body-crm main 이 구base fix-branch tip b29df8ed 의 raw force-push 로 stomp
+#   (4커밋 lineage 소실, supervisor union 3fc939fc 복원). GitHub 서버 branch protection = 플랜티어
+#   403 불가 확정(무료/비공개) → 클라-side pre-push 가 유일 경로. 원격 main tip 이 push 대상의
+#   ancestor 아님(=non-FF/force) → BLOCK. 정상 FF push(merge lane C14 green)는 정의상 통과 = 오탐 0.
+#   축 C(본 게이트)=push-시점 1차 차단선, deploy-precheck C13(축 B)=QA-시점 이중 안전망.
+#   로직 SSOT = ~/claude-sync/scripts/main_nonff_guard.sh (부재=fail-open+경고, 워처 사후 감시).
+#   탈출구: MAIN_NONFF_OVERRIDE="사유" git push (의도적 롤백 한정 — bus 기록+경보, 티켓 evidence 의무)
+NONFF_GUARD="$HOME/claude-sync/scripts/main_nonff_guard.sh"
+if [ -x "$NONFF_GUARD" ]; then
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    [ "$local_sha" = "$Z40" ] && continue
+    if [ "$remote_ref" = "refs/heads/main" ]; then
+      if ! bash "$NONFF_GUARD" --repo "$REPO_ROOT" --local "$local_sha" --remote "$remote_sha"; then
+        rc=1
+      fi
+    fi
+  done <<< "$PUSH_REFS"
+else
+  echo "⚠️  [pre-push] main_nonff_guard.sh 부재 — main non-FF 게이트 skip (fail-open, 워처 사후 감시)" >&2
+fi
+
 exit "$rc"
