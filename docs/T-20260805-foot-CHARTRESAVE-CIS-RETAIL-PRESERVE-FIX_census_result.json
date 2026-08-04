@@ -1,0 +1,69 @@
+{
+  "ran_at_utc": "2026-08-04T18:49:05.712Z",
+  "target": "https://rxlomoozakkjesdqjtvd.supabase.co",
+  "ctx": "service_role",
+  "out": [
+    {
+      "section": "§1 재저장 지문 집계 (delete-all→reinsert after payment)",
+      "rows": [
+        {
+          "resave_after_payment_checkins": 34,
+          "homogeneous_ct_checkins": 163,
+          "total_paid_checkins_with_cis": 163
+        }
+      ]
+    },
+    {
+      "section": "§2 결제-라인 unlink census (payment_items witness)",
+      "rows": [
+        {
+          "unlink_checkins": 0,
+          "unlink_customers": 0,
+          "unlink_cosmetic_amount": "0",
+          "no_pi_witness_checkins": 163
+        }
+      ]
+    },
+    {
+      "section": "§3 화장품 매출 line-item 정합 (cis vs payment_items, 월별)",
+      "rows": [
+        {
+          "month": "2026-06-01 00:00:00+00",
+          "cis_cosmetic_lines": 7,
+          "pi_cosmetic_lines": 0,
+          "lines_delta": -7,
+          "amount_delta": -277000
+        },
+        {
+          "month": "2026-07-01 00:00:00+00",
+          "cis_cosmetic_lines": 24,
+          "pi_cosmetic_lines": 1,
+          "lines_delta": -23,
+          "amount_delta": -923000
+        },
+        {
+          "month": "2026-08-01 00:00:00+00",
+          "cis_cosmetic_lines": 8,
+          "pi_cosmetic_lines": 0,
+          "lines_delta": -8,
+          "amount_delta": -214000
+        }
+      ]
+    },
+    {
+      "section": "§4 forward-risk: 비활성/NULL/부재 service 를 가리키는 현행 cis 라인",
+      "rows": [
+        {
+          "null_service_id_lines": 2,
+          "missing_service_lines": 0,
+          "inactive_service_lines": 38,
+          "inactive_cosmetic_lines": 0
+        }
+      ]
+    },
+    {
+      "section": "§5 (추가) soft-void 정합 프로브 — voided 컬럼 실재 시 현행 voided cis 규모",
+      "error": "HTTP 400: {\"message\":\"Failed to run sql query: ERROR:  42703: column \\\"voided_at\\\" does not exist\\nLINE 7:        AND voided_at IS NOT NULL) AS voided_cis_rows;\\n                   ^\\n\"}"
+    }
+  ]
+}
