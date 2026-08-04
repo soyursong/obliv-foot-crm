@@ -5,11 +5,19 @@ import { toast } from '@/lib/toast';
 import { useAuth } from '@/lib/auth';
 import {
   achievementRate,
+  fetchCurrentStaffId,
   fetchMonthRevenueNet,
   fetchMonthlyTarget,
   monthScope,
   upsertMonthlyTarget,
 } from '@/lib/monthlyTarget';
+
+/**
+ * 목표 매출 write 권한 role (RLS is_admin_or_manager 미러).
+ * DA MSG-20260804-101213-0xck Q2: INSERT/UPDATE = manager/admin(write-role) 한정.
+ * 비-write role 은 등록/수정 버튼 미노출(RLS 사일런트 거부 오인 방지) — 값·달성률은 전 staff 열람.
+ */
+const TARGET_WRITE_ROLES: ReadonlyArray<string> = ['admin', 'manager', 'director'];
 
 /**
  * T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT
@@ -34,6 +42,7 @@ function parseAmount(raw: string): number | null {
 
 export default function MonthlyTargetSection({ clinicId, refISO }: Props) {
   const { profile } = useAuth();
+  const canWrite = TARGET_WRITE_ROLES.includes(profile?.role ?? '');
   const scope = refISO ? monthScope(refISO) : null;
   const yearMonth = scope?.yearMonth ?? '';
 
@@ -78,7 +87,9 @@ export default function MonthlyTargetSection({ clinicId, refISO }: Props) {
     }
     setSaving(true);
     try {
-      await upsertMonthlyTarget(clinicId, scope.yearMonth, amount, profile?.id ?? null);
+      // updated_by = staff.id(엔티티 귀속) — auth.uid() 아님(DA MSG-20260804-101213-0xck).
+      const staffId = await fetchCurrentStaffId(clinicId);
+      await upsertMonthlyTarget(clinicId, scope.yearMonth, amount, staffId);
       setTarget(amount);
       setEditing(false);
       toast.success(`${scope.yearMonth} 목표 매출을 저장했습니다.`);
@@ -150,14 +161,17 @@ export default function MonthlyTargetSection({ clinicId, refISO }: Props) {
                 >
                   {loading ? '…' : target !== null ? formatAmount(target) : '목표 미설정'}
                 </span>
-                <button
-                  onClick={startEdit}
-                  disabled={loading || !clinicId}
-                  data-testid="monthly-target-edit"
-                  className="rounded-md border border-teal-300 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:opacity-50"
-                >
-                  {target !== null ? '수정' : '목표 등록'}
-                </button>
+                {/* write=manager/admin 한정(RLS 미러) — 비-write role 은 버튼 미노출, 값만 열람 */}
+                {canWrite && (
+                  <button
+                    onClick={startEdit}
+                    disabled={loading || !clinicId}
+                    data-testid="monthly-target-edit"
+                    className="rounded-md border border-teal-300 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:opacity-50"
+                  >
+                    {target !== null ? '수정' : '목표 등록'}
+                  </button>
+                )}
               </div>
             )}
           </div>

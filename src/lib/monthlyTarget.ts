@@ -8,7 +8,10 @@
  *    그대로 소비하며 새 매출 산식을 창작하지 않는다. MTM-RESTRUCTURE curMonthTotal과 동일 산식(정합).
  *    (planner FOLLOWUP MSG-20260804-101002-yms2 앵커 통지)
  *  - 목표금액 보존소 = 신규 monthly_sales_targets (ADDITIVE, clinic_id+year_month UNIQUE upsert).
- *    ★DA CONSULT MSG-20260804-100941-2sku GO 확정 후 마이그 적용 — deploy-ready는 그 전까지 보류.
+ *    ★DA CONSULT-REPLY MSG-20260804-101213-0xck GO(조건부·ADDITIVE) 확정.
+ *      · write(INSERT/UPDATE) = manager/admin 한정(RLS is_admin_or_manager). SELECT = 승인 staff 전원.
+ *      · target_amount basis = CRM 누적매출(순)과 동일 = VAT 포함(부가세 포함) — 달성률 apples-to-apples.
+ *      · updated_by = staff.id(엔티티 귀속) — auth.uid() 아님(fetchCurrentStaffId로 해석).
  *  - 월 스코프: 화면 선택기간(refISO)이 속한 '달' 기준(YYYY-MM). 기본 '이번 달'.
  */
 
@@ -29,6 +32,27 @@ export function monthScope(refISO: string): {
     from: `${y}-${mm}-01`,
     to: `${y}-${mm}-${String(daysInMonth).padStart(2, '0')}`,
   };
+}
+
+/**
+ * 현재 로그인 사용자의 staff.id 해석.
+ * ⚠️ updated_by 는 staff 엔티티 귀속축(DA MSG-20260804-101213-0xck) — auth.uid()/user_profiles.id 아님.
+ *   staff.id 는 별도 PK, staff.user_id = auth.uid() 로 연결(clinic_events RC 교훈).
+ *   해석 실패 시 null(컬럼 nullable·ON DELETE SET NULL) — write 자체는 진행(telemetry 결손만).
+ */
+export async function fetchCurrentStaffId(clinicId: string): Promise<string | null> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) return null;
+  const { data, error } = await supabase
+    .from('staff')
+    .select('id')
+    .eq('user_id', uid)
+    .eq('clinic_id', clinicId)
+    .eq('active', true)
+    .maybeSingle();
+  if (error) return null;
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 /** 해당 월의 목표 매출 조회. 미설정 → null (0과 구분 — 달성률 '-' 처리 근거). */

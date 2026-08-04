@@ -89,6 +89,41 @@ test.describe('정적 소스 불변식 (SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT)', 
     expect(mig).toMatch(/drop policy if exists "monthly_sales_targets_select"/);
     expect(mig).toMatch(/execute function public\.set_updated_at\(\)/);
   });
+
+  // ── DA CONSULT-REPLY MSG-20260804-101213-0xck 조건 불변식 ──────────────────
+  test('DA-Q2(write-role 가드): INSERT·UPDATE = manager/admin 한정(is_admin_or_manager) — 전 staff write REJECT', () => {
+    // INSERT 정책 = is_admin_or_manager() + clinic 스코프
+    const ins = mig.slice(mig.indexOf('monthly_sales_targets_insert'));
+    expect(ins).toMatch(/is_admin_or_manager\(\)/);
+    // UPDATE 정책 = is_admin_or_manager() (USING+WITH CHECK)
+    const upd = mig.slice(mig.indexOf('for update'));
+    expect(upd).toMatch(/is_admin_or_manager\(\)/);
+    // SELECT = 승인 staff 전원(is_approved_user), 관리자 한정 아님
+    const sel = mig.slice(mig.indexOf('monthly_sales_targets_select'), mig.indexOf('monthly_sales_targets_insert'));
+    expect(sel).toMatch(/is_approved_user\(\)/);
+    // 비정규 신원 소스(staff.id=auth.uid) 폐기 — clinic_events RC 재발 금지
+    expect(mig).not.toMatch(/staff\s+where\s+id\s*=\s*auth\.uid\(\)/i);
+    expect(mig).toMatch(/current_user_clinic_id\(\)/);
+  });
+
+  test('DA-Q2(FE write 게이트): 목표 등록/수정 버튼 = write-role(admin/manager/director) 한정 노출', () => {
+    expect(section).toMatch(/TARGET_WRITE_ROLES/);
+    expect(section).toMatch(/'admin',\s*'manager',\s*'director'/);
+    expect(section).toMatch(/canWrite\s*&&/);
+  });
+
+  test('DA-schema(updated_by): staff.id FK — auth.uid() 아님(fetchCurrentStaffId 해석)', () => {
+    expect(mig).toMatch(/updated_by\s+uuid references public\.staff\(id\)/);
+    expect(lib).toMatch(/export async function fetchCurrentStaffId/);
+    expect(lib).toMatch(/\.from\('staff'\)[\s\S]*?\.eq\('user_id'/);
+    // 컴포넌트가 profile.id(auth.uid) 대신 staff.id 를 updated_by 로 전달
+    expect(section).toMatch(/fetchCurrentStaffId\(clinicId\)/);
+  });
+
+  test('DA-forward②(VAT basis): target_amount VAT 포함 basis 문서화 — 배선 전 pin', () => {
+    expect(mig).toMatch(/VAT 포함/);
+    expect(lib).toMatch(/VAT 포함/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
