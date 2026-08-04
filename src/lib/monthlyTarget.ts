@@ -1,0 +1,102 @@
+/**
+ * T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT
+ * 통계 > "01 매출통계" 최상단 — 이번 달 목표 매출(월별 저장/수정) + 목표 대비 달성률(%).
+ *
+ * 원칙:
+ *  - 달성률 분자(당월 실매출) = **누적매출(순)** = pkg + single − refund (net, accounting_date).
+ *    기존 매출통계 '총 매출(순)'/'누적매출(순)' SSOT(fetchRevenue = foot_stats_revenue RPC)를
+ *    그대로 소비하며 새 매출 산식을 창작하지 않는다. MTM-RESTRUCTURE curMonthTotal과 동일 산식(정합).
+ *    (planner FOLLOWUP MSG-20260804-101002-yms2 앵커 통지)
+ *  - 목표금액 보존소 = 신규 monthly_sales_targets (ADDITIVE, clinic_id+year_month UNIQUE upsert).
+ *    ★DA CONSULT MSG-20260804-100941-2sku GO 확정 후 마이그 적용 — deploy-ready는 그 전까지 보류.
+ *  - 월 스코프: 화면 선택기간(refISO)이 속한 '달' 기준(YYYY-MM). 기본 '이번 달'.
+ */
+
+import { supabase } from '@/lib/supabase';
+import { fetchRevenue } from '@/lib/stats';
+
+/** refISO('YYYY-MM-DD')가 속한 달의 키/경계. day-of-month 계산만 사용 → TZ 안전. */
+export function monthScope(refISO: string): {
+  yearMonth: string; // 'YYYY-MM'
+  from: string;      // 'YYYY-MM-01'
+  to: string;        // 'YYYY-MM-<말일>'
+} {
+  const [y, m] = refISO.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate(); // m(1-based) 말일. TZ 무관.
+  const mm = String(m).padStart(2, '0');
+  return {
+    yearMonth: `${y}-${mm}`,
+    from: `${y}-${mm}-01`,
+    to: `${y}-${mm}-${String(daysInMonth).padStart(2, '0')}`,
+  };
+}
+
+/** 해당 월의 목표 매출 조회. 미설정 → null (0과 구분 — 달성률 '-' 처리 근거). */
+export async function fetchMonthlyTarget(
+  clinicId: string,
+  yearMonth: string,
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('monthly_sales_targets')
+    .select('target_amount')
+    .eq('clinic_id', clinicId)
+    .eq('year_month', yearMonth)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const v = (data as { target_amount: number | null }).target_amount;
+  return v === null || v === undefined ? null : Number(v);
+}
+
+/** 목표 매출 upsert(월별 저장/수정). (clinic_id, year_month) UNIQUE 충돌 시 갱신. */
+export async function upsertMonthlyTarget(
+  clinicId: string,
+  yearMonth: string,
+  targetAmount: number,
+  updatedBy: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('monthly_sales_targets')
+    .upsert(
+      {
+        clinic_id: clinicId,
+        year_month: yearMonth,
+        target_amount: targetAmount,
+        updated_by: updatedBy,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'clinic_id,year_month' },
+    );
+  if (error) throw error;
+}
+
+/**
+ * 당월 실매출(누적매출 순) = 해당 월 1일~말일 net 합.
+ * net = package_amount + single_amount − refund_amount (기존 '총 매출(순)' 정의 불변).
+ * 미래일(현재월)은 데이터 0이므로 합산에 영향 없음.
+ */
+export async function fetchMonthRevenueNet(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<number> {
+  const rows = await fetchRevenue(clinicId, from, to);
+  let net = 0;
+  for (const r of rows) {
+    net += (r.package_amount ?? 0) + (r.single_amount ?? 0) - (r.refund_amount ?? 0);
+  }
+  return net;
+}
+
+/**
+ * 달성률(%) = 당월 실매출 ÷ 목표매출 × 100.
+ * 목표 미설정(null)·0·음수 → null(화면 '-'). 0 나눗셈·0% 오도 방지(AC-3).
+ * 100% 초과는 상한 캡 없이 그대로 반환(시나리오 2-4).
+ */
+export function achievementRate(
+  actualNet: number,
+  target: number | null,
+): number | null {
+  if (target === null || !(target > 0)) return null;
+  return (actualNet / target) * 100;
+}

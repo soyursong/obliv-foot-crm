@@ -36,6 +36,8 @@ import { toast } from '@/lib/toast';
 import { Download } from 'lucide-react';
 import RevenueSection from '@/components/stats/RevenueSection';
 import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSection';
+// T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT: 01 매출통계 최상단 목표매출/달성률.
+import MonthlyTargetSection from '@/components/stats/MonthlyTargetSection';
 import CategorySection from '@/components/stats/CategorySection';
 import ConsultantSection from '@/components/stats/ConsultantSection';
 import NoshowReturningSection from '@/components/stats/NoshowReturningSection';
@@ -308,6 +310,8 @@ export default function Stats() {
       {tab === 'revenue' ? (
         <>
           {/* 01 매출통계 → 02 전월비교 → 03 시술별 → 04 실장별 → 05 노쇼/재방문 (현장 지정 순서) */}
+          {/* T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT: 01 매출통계 맨 상단 목표/달성률 (AC-5: RevenueSection 바로 위) */}
+          <MonthlyTargetSection clinicId={clinic?.id} refISO={rangeFrom} />
           <RevenueSection rows={revenue} loading={loading} metrics={mtmMetrics} projectedMonthly={projectedMonthly} />
           <MonthlyComparisonSection data={monthlyCompare} loading={loading} />
           <CategorySection rows={categories} loading={loading} />
