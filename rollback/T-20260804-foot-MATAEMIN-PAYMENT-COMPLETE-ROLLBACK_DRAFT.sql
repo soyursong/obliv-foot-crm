@@ -1,0 +1,80 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- T-20260804-foot-MATAEMIN-PAYMENT-COMPLETE-ROLLBACK  ·  롤백 초안 (DRAFT)
+-- ⚠️ 미실행. Phase A(READ-ONLY 진단) 산출물. 실행 금지.
+-- 실제 적용은 planner GATE-1(최필경 목표상태 확정) + GATE-2(supervisor dry-run) 후.
+-- Cross-CRM Data-Correction Backfill SOP 봉투: 단일행 freeze·archive-first·롤백SQL·원장 net 대사.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── 대상 freeze 셋 (Group A = 08-04 00:57 UTC 생성, check_in-linked, consult_writepath_v1) ──
+--   결제완료(중복 수납) 후보 3행. Group B(08-03, 영수증/외부카드 승인·마감완료)는 미대상.
+--   9d8c6f77-dbe0-40c1-a024-5b33b23fb035  amount 261700  (비급여)
+--   d05b5a95-4de3-4f71-a018-932e1ef11adf  amount   3100  (급여 copay, sc=41e53d2f)
+--   4385ba22-be39-48f4-9386-ddcc7086c22a  amount   5600  (급여 copay, sc=d797d024)
+--   합계 270,400 = v_daily_revenue 08-04 single_revenue 전액. 08-04 미마감(open).
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- STEP 0. ARCHIVE-FIRST 스냅샷 (판정근거 보존. 대상행 현재값 그대로 캡처)
+-- ───────────────────────────────────────────────────────────────────────────
+-- CREATE TABLE IF NOT EXISTS _archive_matamin_payment_rollback_20260804 AS
+-- SELECT *, now() AS _archived_at
+-- FROM payments
+-- WHERE id IN (
+--   '9d8c6f77-dbe0-40c1-a024-5b33b23fb035',
+--   'd05b5a95-4de3-4f71-a018-932e1ef11adf',
+--   '4385ba22-be39-48f4-9386-ddcc7086c22a'
+-- );
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- STEP 1. FREEZE 재검증 (실행 직전 대상셋 불변 확인 — 3행·active·미마감 확인)
+--   기대: 3 rows, 전부 status='active', accounting_date='2026-08-04', 합계 270400
+-- ───────────────────────────────────────────────────────────────────────────
+-- SELECT id, amount, status, accounting_date, check_in_id
+-- FROM payments
+-- WHERE id IN ('9d8c6f77-dbe0-40c1-a024-5b33b23fb035','d05b5a95-4de3-4f71-a018-932e1ef11adf','4385ba22-be39-48f4-9386-ddcc7086c22a');
+-- ↑ 3행·전부 active 아니면 ABORT.
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- STEP 2. 롤백 UPDATE (소프트 void — 비파괴. 행 보존, 매출집계 제외)
+--   ※ 목표상태 = '결제대기(미수납)로 환원' 가정 시. 총괄 확정 후 확정.
+--   ※ cancelled_by 는 실제 실행 스태프/시스템 계정으로 치환.
+-- ───────────────────────────────────────────────────────────────────────────
+-- UPDATE payments
+-- SET status        = 'cancelled',
+--     cancelled_at  = now(),
+--     cancelled_by  = '<supervisor-or-staff-id>',
+--     cancel_reason = 'T-20260804 마태민 결제완료 오클릭 롤백(중복수납 정정) — 최필경 총괄 확인'
+-- WHERE id IN (
+--   '9d8c6f77-dbe0-40c1-a024-5b33b23fb035',
+--   'd05b5a95-4de3-4f71-a018-932e1ef11adf',
+--   '4385ba22-be39-48f4-9386-ddcc7086c22a'
+-- )
+-- AND status = 'active';   -- 멱등 가드: 이미 취소된 행 재취소 방지
+-- ↑ 기대 rows-affected = 3. 3 아니면 즉시 ROLLBACK(트랜잭션).
+
+-- 감사 이력 동봉(선택 — payment_audit_logs):
+-- INSERT INTO payment_audit_logs (payment_id, clinic_id, check_in_id, action, before_data, after_data, actor, reason)
+-- SELECT id, clinic_id, check_in_id, 'cancel',
+--        jsonb_build_object('status','active'),
+--        jsonb_build_object('status','cancelled'),
+--        '<actor>', 'T-20260804 마태민 결제완료 오클릭 롤백'
+-- FROM payments WHERE id IN ('9d8c6f77-...','d05b5a95-...','4385ba22-...');
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- STEP 3. 롤백-포워드 (재롤백 = 되돌린 것을 원복. 잘못 취소했을 때 복구)
+-- ───────────────────────────────────────────────────────────────────────────
+-- UPDATE payments
+-- SET status = 'active', cancelled_at = NULL, cancelled_by = NULL, cancel_reason = NULL
+-- WHERE id IN (
+--   '9d8c6f77-dbe0-40c1-a024-5b33b23fb035',
+--   'd05b5a95-4de3-4f71-a018-932e1ef11adf',
+--   '4385ba22-be39-48f4-9386-ddcc7086c22a'
+-- )
+-- AND status = 'cancelled';
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 원장 net 대사 (롤백 후 기대):
+--   · v_daily_revenue 08-04 single_revenue 270400 → 0 (Group A 전액이 08-04 유일 매출).
+--   · 08-03(마감완료)·Group B(외부카드 승인·reconciled) 무접점.
+--   · check_ins.status='payment_waiting' 무변경(이미 결제대기, done 전환 이력 없음).
+--   · 실 수납액(현장 실제 받은 돈) = Group B 270400 유지(순소실 0).
+-- ───────────────────────────────────────────────────────────────────────────
