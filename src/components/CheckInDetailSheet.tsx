@@ -53,6 +53,8 @@ import { isPaymentPlanbEnabled } from '@/lib/paymentPlanb';
 import type { EditMode, PaymentRowForEdit, PaymentDonePayload } from '@/components/PaymentEditDialog';
 // T-20260804-foot-CBAND-TERMINAL-CANCEL-S1-BTN: [단말기 취소] 버튼(플랜A) + 플랜A 판별자.
 import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/CbandTerminalCancelButton';
+// T-20260804-foot-CBAND-CANCEL-RESV-STATUS-RESTORE-REPAY: '결제완료' 배지 순납부액(환불 차감) SSOT 재사용.
+import { netPaidFromPayments } from '@/lib/footBilling';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 import { visitRouteOptionsFor } from '@/lib/types';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
@@ -1229,9 +1231,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId, ts: Date.now() }));
   };
 
-  const totalPaid = payments
-    .filter((p) => p.payment_type === 'payment')
-    .reduce((s, p) => s + p.amount, 0);
+  // ★T-20260804-foot-CBAND-CANCEL-RESV-STATUS-RESTORE-REPAY (AC-2/AC-4) — '결제완료' 배지 파생값에
+  //   취소(환불) 상쇄를 반영한다. S1 단말기 취소 성공 = payment_type='refund' 행 INSERT(원거래 payments 물리
+  //   UPDATE 없음 = 3-way canon AC-4). 순납부액(Σpayment − Σrefund)으로 재계산하지 않으면 원 'payment' 행이
+  //   그대로 남아 취소 후에도 '결제완료'가 잔존 → concurrency 배너(patient_completed)와 화면 상태가 불일치.
+  //   전액 취소 시 net=0 → '미결제'(수납 이전 표시)로 자동 복원. 부분취소/미취소 완료건은 잔액이 남아 계속
+  //   '결제완료'(과잉복원 0·AC-4). 취소 실패(refund 행 미생성)는 net 불변 → 상태 유지(AC-3).
+  //   ★forward-only·display 파생만(DB/매출집계 무접촉). netPaidFromPayments = 잔금 산출 SSOT(footBilling)
+  //   재사용 — CustomerChartPage(5605)·패키지 잔금과 동일 규약(payment_type='refund' → 음수). 신규 추상화 0.
+  const totalPaid = netPaidFromPayments(payments);
 
   // ── 레드페이 플랜B OPT3 §④ — [미결제] 배지 확장 (T-20260730-foot-REDPAY-PLANB-OPT3-V3-BUILD) ──
   //   기능플래그(VITE_PAYMENT_PLANB) ON 일 때만 조회 — OFF 면 요청 자체 없음(기존 배지 로직 무변경, 회귀 0).
