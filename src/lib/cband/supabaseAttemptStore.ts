@@ -37,7 +37,7 @@ import {
   CbandConcurrentPaymentError, CBAND_ORPHAN_STALE_MINUTES,
   type AttemptRecord, type AttemptStore, type CbandAttemptView, type OpenPaymentProbe,
 } from './paymentFlow';
-import { TRANTYPE_APPROVE, TRANTYPE_CANCEL } from './protocol';
+import { TRANTYPE_APPROVE, TRANTYPE_CANCEL, type NormalizedResponse } from './protocol';
 
 /**
  * ★3-way canon: 코밴 CAT 결제의 채널 식별은 provider 컬럼이 아니라 **payments.payment_attempt_id IS NOT NULL**(FK)로 한다.
@@ -60,6 +60,22 @@ function yymmddToISODate(yymmdd: string | null | undefined): string | null {
 function isUniqueViolation(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   return error.code === '23505' || /duplicate key|unique constraint/i.test(error.message ?? '');
+}
+
+/**
+ * ★T-20260804-foot-CBAND-RESPRECV-BANNER-RCA — raw_response PCI-safe 투영(원본 payload 제외).
+ *   normalize() 의 NormalizedResponse 는 `raw`(단말 원본 payload 전체)를 임베드한다. 단말이 CARDNO 를
+ *   미마스킹(평문 PAN)으로 반환하면 원본 payload 에 PAN 이 실려, 이를 그대로 raw_response 로 write 시
+ *   BEFORE UPDATE PCI 가드(trg_cband_pa_pci_guard, Rule B: Luhn 13~19자리)가 RAISE → UPDATE 거부 →
+ *   status='approved' 미승격(고아) → sweep→attention→false '확인 필요' 배너(수납은 정상 영속인데도).
+ *   → 원본 payload(`raw`)만 제외하고 정규화·마스킹 감사필드는 전부 보존한다(저장완전성 유지).
+ *     컬럼 계약(raw_response='정규화 응답 보존(PCI 가드)')상 원본 full payload 저장은 애초 계약 위반이었다.
+ *   ★in-memory resp(`raw` 포함)는 classify 등에서 이미 소비 완료 — 여기(영속 경계)에서만 제외한다.
+ */
+function toPersistableRaw(resp: NormalizedResponse | null | undefined): Record<string, unknown> | null {
+  if (!resp) return null;
+  const { raw: _omitFullPayload, ...safe } = resp;  // ★단말 원본 payload(미마스킹 PAN/SAD 위험) 제외.
+  return safe as Record<string, unknown>;
 }
 
 export const supabaseAttemptStore: AttemptStore = {
@@ -111,14 +127,24 @@ export const supabaseAttemptStore: AttemptStore = {
     //   요청 시점 merno 는 빈값 → 응답 확정 후 이 경로로만 채워진다. null/부재는 그대로 둠(스킵).
     if (patch.merno !== undefined) row.merno = patch.merno;
     // ★K2: raw(정규화·PCI-safe) 를 raw_response(jsonb)에 보존. DB BEFORE INSERT/UPDATE PCI 가드가 2차 방어.
-    if (patch.rawResponse !== undefined) row.raw_response = patch.rawResponse;
-    const { error } = await supabase
+    //   ★RESPRECV-BANNER-RCA: 원본 단말 payload(resp.raw, 미마스킹 PAN 위험)를 제외해 PCI 가드 RAISE 로 인한
+    //     status 미승격(고아→false 배너) 재발을 원천 차단(정규화·마스킹 감사필드는 전부 보존).
+    if (patch.rawResponse !== undefined) row.raw_response = toPersistableRaw(patch.rawResponse);
+    // ★저장완전성(RCA ★인과): rows-affected 확인 — 0행/에러면 status·AUTHNO·raw 미영속 = false 배너 재발 위험.
+    //   결제 성립은 되돌리지 않으므로(수납 기록 보존) throw 하지 않되, 사일런트 유실을 큰 소리로 표면화한다.
+    const { data, error } = await supabase
       .from('cband_payment_attempts')
       .update(row)
-      .eq('msg_trace', msgTrace);
+      .eq('msg_trace', msgTrace)
+      .select('id');
     if (error) {
       // 상태 갱신 실패는 결제 성립을 되돌리지 않는다(insert-first 레코드가 이미 추적 근거). 로그만.
-      console.error(`결제 시도 상태 갱신 실패(msg_trace=${msgTrace}):`, error.message);
+      console.error(`[CBAND-RESPRECV] 결제 시도 상태 갱신 실패(msg_trace=${msgTrace}):`, error.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      // 0행 반영 = 가드 RAISE(위 error 경로) 외의 스코프/권한 불일치. status 미승격 → 배너 재발 위험 표면화.
+      console.error(`[CBAND-RESPRECV] 결제 시도 상태 갱신 0행 반영(msg_trace=${msgTrace}) — status 미승격 위험(권한/스코프 확인).`);
     }
   },
 
@@ -261,11 +287,29 @@ export const supabaseAttemptStore: AttemptStore = {
     //   실패는 삼킴(로그만) — 재표시/상세시트를 막지 않는다(soft 강화).
     const staleMs = (q.staleMinutes ?? CBAND_ORPHAN_STALE_MINUTES) * 60_000;
     const cutoffIso = new Date(Date.now() - staleMs).toISOString();
+    // ★T-20260804-foot-CBAND-RESPRECV-BANNER-RCA 힐(HEAL): status='requested' 인데 payment_id 가 있는 행은
+    //   이미 수납 영속됨(recordCardPayment 성공 → 백링크). PCI 가드로 approved 승격 UPDATE 만 거부돼 생긴 desync →
+    //   'approved' 로 자가치유한다. payment_id NOT NULL ⟺ recordCardPayment 성공 ⟺ 승인(근거 게이팅·오승격 0·멱등).
+    //   이렇게 하면 (a) 기왕 고착된 행이 재표시 진입 시 스스로 해소되고 (b) 아래 승격에서 자연 제외된다.
+    {
+      let healQ = supabase
+        .from('cband_payment_attempts')
+        .update({ status: 'approved' })
+        .eq('clinic_id', q.clinicId)
+        .eq('status', 'requested')
+        .not('payment_id', 'is', null);
+      if (q.checkInId) healQ = healQ.eq('check_in_id', q.checkInId);
+      const { error: healErr } = await healQ.select('id');
+      if (healErr) console.error(`코밴 수납-영속 desync 힐 실패(clinic=${q.clinicId}):`, healErr.message);
+    }
+    // 승격(PROMOTE): 진짜 고아(payment_id 없음 + stale)만 'attention'. ★수납된 행(payment_id IS NOT NULL)은
+    //   위 힐로 이미 approved 이거나 아래 .is('payment_id', null) 로 제외 — 수납완료 결제를 false 로 확인필요 표시하지 않음.
     let query = supabase
       .from('cband_payment_attempts')
       .update({ status: 'attention' })
       .eq('clinic_id', q.clinicId)
       .eq('status', 'requested')
+      .is('payment_id', null)
       .lt('created_at', cutoffIso);
     if (q.checkInId) query = query.eq('check_in_id', q.checkInId);
     const { data, error } = await query.select('id');
