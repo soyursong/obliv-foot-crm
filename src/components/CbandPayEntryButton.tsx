@@ -50,6 +50,8 @@ import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { probeTerminal, cancelProbe, type ProbeResult } from '@/lib/cband/catClient';
 import { getTerminalConfig, getTerminalConfigRaw, saveTerminalConfig } from '@/lib/cband/config';
 import { cbandGateCopy, type CbandGateKind } from '@/lib/cband/gateCopy';
+// ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value 파생 SSOT(순수·≤0 스킵).
+import { resolveCbandDefaultAmount } from '@/lib/cband/prefillAmount';
 
 interface Props {
   checkInId: string;
@@ -63,6 +65,13 @@ interface Props {
   disabled?: boolean;
   /** disabled=true 일 때 버튼 아래 상시 노출할 사유 1줄. */
   disabledReason?: string;
+  /**
+   * ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL — 결제 팝업 금액칸 default value(미납잔액=수납잔액).
+   *   상위(PaymentMiniWindow)가 SUSU/수납 팝업 잔액 계산(displayAmount=수납잔액) 값을 그대로 내려준다.
+   *   팝업 open 시 금액칸에 자동 세팅(오기입 방지). 편집(override) 허용 — 결제·전문·payments write 무접촉(초기값만).
+   *   ≤0(또는 미전달) → 자동입력 스킵(빈칸 유지, 기존 수동입력 동작 그대로).
+   */
+  defaultAmount?: number;
 }
 
 /**
@@ -224,7 +233,11 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
 
-export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason }: Props) {
+export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount }: Props) {
+  // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value(팝업 open/reset 시 금액칸 초기값).
+  //   >0 일 때만 자동입력, ≤0/미전달 → 빈칸(수동입력) 유지. resolveCbandDefaultAmount = 쉼표없는 raw 정수문자열
+  //   (AmountInput 이 표시 포맷 담당). 결제·payments write 로직 무접촉(초기값만).
+  const defaultAmountStr = resolveCbandDefaultAmount(defaultAmount);
   // ★U3: probe 결과 3분기 (null=탐지중 / 'ok' / 'awaiting' / 'blocked').
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [open, setOpen] = useState(false);
@@ -341,7 +354,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   function reset() {
     setUi('idle');
     setResult(null);
-    setAmount('');
+    // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 팝업 open(onEntryClick)/재시도 시 금액칸 = 미납잔액 default.
+    //   ≤0/미전달이면 defaultAmountStr='' → 기존 빈칸(수동입력) 동작 그대로. 편집(override) 가능(readonly 아님).
+    setAmount(defaultAmountStr);
     setConcurrency(null);
     setPayBlock(null);
   }

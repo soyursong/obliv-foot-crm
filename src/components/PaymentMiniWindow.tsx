@@ -3949,6 +3949,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                       customerId={checkIn.customer_id ?? null}
                       disabled={splitMode}
                       disabledReason="분할결제(복수 결제수단)에서는 카드 단말 결제를 사용할 수 없습니다. 카드 단일 결제로 진행해 주세요."
+                      // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 코밴 팝업 금액칸 default = 이 수납의 미납잔액(수납잔액).
+                      //   displayAmount = SUSU/수납 팝업 잔액 계산 SSOT(deductMode ? deductAmount : payableTotalWithSurcharge).
+                      //   재사용(신규 산출 금지) — 오기입 방지 초기값만. ≤0 이면 컴포넌트가 자동입력 스킵.
+                      defaultAmount={displayAmount}
                     />
                   )}
                 </div>

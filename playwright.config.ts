@@ -124,6 +124,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 코밴 CAT 직결결제 팝업 금액칸 default=미납잔액 자동세팅.
+        //   자동입력 default 파생 순수함수(resolveCbandDefaultAmount) SSOT + 컴포넌트/부모 배선 정적 가드.
+        //   ①정상 자동입력 ②편집 override(readonly/disabled 아님) ③잔액0·음수 가드(빈칸 스킵). auth/server 불요, 결정론.
+        '**/T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL.spec.ts',
         // T-20260803-foot-REDPAY-POLLER-DAILYFULL-RESWEEP-BACKSTOP: 저빈도 daily_full 재스윕 백스톱 인프라
         //   불변식 락(신규 plist·전용 checkout WorkingDirectory·저빈도 스케줄·멱등키·last_daily_to 비-clobber).
         //   백엔드 launchd 인프라(ef_only) — 순수 정적-소스 가드, auth/browser/server 불요. 진짜 게이트=supervisor 등록.
