@@ -149,6 +149,10 @@ export const supabaseAttemptStore: AttemptStore = {
         //   파싱한 값(rec.rawResponse.merno, normalize 가 MERNO/MERCHANTNO/MID 관대 추출)을 저장한다.
         //   응답에 MERNO 부재 시 null 저장(결제는 성공 처리 — AC-3). DA canonical('선택 payments.merchant_no', 응답 파생) 정합.
         merchant_no: rec.rawResponse?.merno ?? null,  // mig190500 착지 컬럼(ADDITIVE·DDL무변). A11/A12 대사 조인 + DEDUP(K5) MERNO 축.
+        // ★CARDNO(마스킹) — DA-20260804-FOOT-CBAND-CARDNO-MASKED-PLACEMENT(§7-1 PRIMARY): payments.card_no_masked 착지.
+        //   normalize(extractMaskedCardNo)가 마스킹 마커(*/X) 있는 값만 verbatim 캡처(평문 PAN 은 null). DB BEFORE 가드가 2차 방어.
+        //   mig 20260804193000(card_no_masked + payments-scoped PCI 가드) 착지 컬럼. attempt read-through 아님(§7-1 REJECT: attempt lossy).
+        card_no_masked: rec.rawResponse?.cardNoMasked ?? null,
         payment_attempt_id: rec.attemptId,    // ★K1 CAT-origin 판별자(FK) + L2 이중수납 2차방어(partial UNIQUE).
         // external_trxid 미기입(NULL 유지) = RedPay 예약 매칭키.
         is_simulation: rec.isSimulation,      // ★C6 테스트금액 격리(payments 패리티).

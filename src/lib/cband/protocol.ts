@@ -125,8 +125,32 @@ export interface NormalizedResponse {
   tranTime: string | null;
   /** 카드 관련 부가정보(카드사·할부 등, 있으면 원문 유지). */
   cardName: string | null;
+  /**
+   * ★마스킹 카드번호(CARDNO) — 단말이 이미 마스킹해 반환한 값을 **verbatim** 만 캡처(예: '55318440****364*').
+   *   DA-20260804-FOOT-CBAND-CARDNO-MASKED-PLACEMENT(§7-3): 재-mask/재-derive/un-mask 금지·평문 PAN 저장 절대 금지.
+   *   착지홈 = payments.card_no_masked(§7-1 PRIMARY). 마스킹 마커(별표/X) 없는 값은 캡처하지 않음(null) — 평문 PAN 유입 차단.
+   */
+  cardNoMasked: string | null;
   /** 파싱 원본(감사/디버그용). */
   raw: Record<string, unknown>;
+}
+
+/** 마스킹 카드번호 마커(*, X/x). 단말이 마스킹한 CARDNO 는 연속숫자열이 이 문자로 끊긴다. */
+const CARD_MASK_MARKER = /[*Xx]/;
+
+/**
+ * ★CARDNO(마스킹) verbatim 추출 — DA §7-3. 마스킹 마커(별표/X)가 있는 값만 as-is(trim) 캡처.
+ *   · 마스킹 마커 없는 순수 숫자열 = 평문 PAN 위험 → 캡처하지 않음(null). payments.card_no_masked 평문 유입 구조 차단.
+ *   · 재-mask/재-derive/un-mask 안 함(as-is). DB BEFORE 가드(payments-scoped, foot_is_luhn)가 2차 방어.
+ */
+export function extractMaskedCardNo(raw: Record<string, unknown>): string | null {
+  const v = pick(raw, ['CARDNO', 'CARD_NO', 'CARDNUM', 'CARDNUMBER', 'MASKEDCARD', 'MASKED_CARD']);
+  if (v == null) return null;
+  const s = v.trim();
+  if (!s) return null;
+  // 마스킹 마커(*/X)가 있어야만 캡처(평문 PAN 저장 방지 — DA §7-3 "마스킹 CARDNO 문자열만 캡처").
+  if (!CARD_MASK_MARKER.test(s)) return null;
+  return s;
 }
 
 // ── zero-pad 헬퍼 ────────────────────────────────────────────────────────────
@@ -474,6 +498,8 @@ export function normalize(parsed: Record<string, unknown> | null): NormalizedRes
     tranTime: pick(raw, ['TRANTIME', 'TRAN_TIME']),
     // ★ISSUECARD(발급사)/PURCHASECARD(매입사)가 실측 정본. 종전 추정 별칭도 폴백.
     cardName: pick(raw, ['ISSUECARD', 'PURCHASECARD', 'CARDNAME', 'ISSUER', 'CARD_NM', 'CARDCO']),
+    // ★CARDNO(마스킹) verbatim 캡처 — payments.card_no_masked 착지(DA §7). 평문 PAN 은 null(캡처 안 함).
+    cardNoMasked: extractMaskedCardNo(raw),
     raw,
   };
 }
