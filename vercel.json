@@ -11,6 +11,11 @@
       "source": "/checkin/jongno-foot",
       "destination": "https://foot-checkin.pages.dev/jongno-foot",
       "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "destination": "https://obliv-foot-crm.pages.dev/$1",
+      "permanent": true
     }
   ],
   "rewrites": [
