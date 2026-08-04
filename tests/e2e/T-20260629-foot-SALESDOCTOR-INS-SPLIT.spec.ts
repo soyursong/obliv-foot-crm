@@ -108,7 +108,7 @@ test.describe('T-20260629-foot-SALESDOCTOR-INS-SPLIT 공단부담액 소스 교�
   });
 
   // ── 시나리오 2 & AC-3/AC-4: 5개 컬럼(비급여 UNION 반영 후에도 구조 유지) ───
-  test('AC-3/4: 헤더 5컬럼(담당실장·오더건수·비급여·급여본부금·공단부담액) 구조 유지', async ({ page }) => {
+  test('AC-3/4: 헤더 컬럼(담당실장·오더건수·비급여·진찰료·공단부담액) 구조 유지', async ({ page }) => {
     await gotoDoctorTab(page);
 
     if (!(await hasTable(page))) {
@@ -121,7 +121,8 @@ test.describe('T-20260629-foot-SALESDOCTOR-INS-SPLIT 공단부담액 소스 교�
     await expect(tableEl.getByRole('columnheader', { name: '담당실장' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '오더 건수' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '비급여 순매출' })).toBeVisible();
-    await expect(tableEl.getByRole('columnheader', { name: '급여 본부금' })).toBeVisible();
+    // T-20260804 ③: '급여 본부금' → '진찰료' 라벨 변경(값=급여 본인부담금 불변)
+    await expect(tableEl.getByRole('columnheader', { name: '진찰료' })).toBeVisible();
     await expect(tableEl.getByRole('columnheader', { name: '공단부담액 (명세)' })).toBeVisible();
 
     // 비급여/공단부담 합계 셀 동시 존재 (UNION·명세 병합 후 집계)

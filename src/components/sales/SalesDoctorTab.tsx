@@ -2,7 +2,20 @@
  * T-20260515-foot-SALES-TAB-DOCTOR / T-20260522-foot-SETTLE-STAFF-LABEL
  * T-20260629-foot-SALESDOCTOR-INS-SPLIT (TK-ACC-2 ①)
  * T-20260727-foot-SALESDOCTOR-PKG-REVENUE-MISSING (A안 ADDITIVE)
+ * T-20260804-foot-SALESAGG-STAFF-4METRIC-REDEFINE (②③④ 구현 / ① FOLLOWUP 대기)
  * 매출집계 탭4 — 담당실장별 통계
+ *
+ * ── 4METRIC-REDEFINE (김주연 총괄 2026-08-04 지시, ②③④ 구현) ──────────────────
+ * 총괄 원문 4개 항목 재정비 중 데이터소스가 명확한 3건만 반영(비파괴·SSOT 소비):
+ *   ② 패키지 = 실장별 패키지 결제 금액 SUM = 기존 packageRevenue(tax_type='선수금' net).
+ *      이미 SUM 집계 → 라벨('패키지 (선수금)')·값 불변으로 AC-2 충족(현행 톤 유지).
+ *   ③ 진찰료 = 급여 본인부담금만(비급여 진찰료 제외) = 기존 insuranceCopay(tax_type='급여' net).
+ *      매출 급여/비급여/공단부담 산식 SSOT 준수 → 라벨 '급여 본부금' → '진찰료'만 변경, 값 불변.
+ *   ④ 총 매출 = ②패키지 결제 합산 + ③급여 본인부담금 합산 (담당실장별 섹션 grain-로컬 정의).
+ *      신규 최우측 컬럼(ADDITIVE). ★섹션-로컬 정의: 비급여·공단부담은 포함하지 않음(총괄 명시 산식).
+ *   ① '오더 건 수' → '상담 건 수'(상담 발생 건): 데이터소스 이중 모호(무엇=상담발생 / 귀속축)
+ *      → 티켓 §57 지시대로 planner FOLLOWUP 발행 후 보류. 본 커밋에서 '오더 건수' 라벨·로직 불변.
+ *      (KPI 영향 GO_WARN → 추정 착지 금지, 현장 재확인 후 후속 커밋.)
  *
  * ── PKG-REVENUE (A안 ADDITIVE, 김주연 총괄 2026-07-27 확정) ────────────────────
  * 배경: tax_type='선수금'(패키지 선결제)이 기존 3축(급여/비급여/공단)에서 명시 제외 →
@@ -297,6 +310,8 @@ export function SalesDoctorTab({ filter }: Props) {
       covered: filtered.reduce((s, x) => s + x.insuranceCovered, 0),
       pkg: filtered.reduce((s, x) => s + x.packageRevenue, 0),
       pkgCount: filtered.reduce((s, x) => s + x.packageCount, 0),
+      // ④ 총 매출(섹션-로컬) = 패키지 결제 합산 + 급여 본인부담금 합산 (비급여·공단 제외).
+      sectionTotal: filtered.reduce((s, x) => s + x.packageRevenue + x.insuranceCopay, 0),
     }),
     [filtered],
   );
@@ -336,7 +351,7 @@ export function SalesDoctorTab({ filter }: Props) {
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10 bg-muted/70">
           <tr>
-            {['담당실장', '오더 건수', '비급여 순매출', '급여 본부금', '공단부담액 (명세)', '패키지 (선수금)'].map((h) => (
+            {['담당실장', '오더 건수', '비급여 순매출', '진찰료', '공단부담액 (명세)', '패키지 (선수금)', '총 매출'].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
@@ -366,7 +381,11 @@ export function SalesDoctorTab({ filter }: Props) {
               >
                 {formatAmount(Math.round(s.nonInsuranceRevenue))}원
               </td>
-              <td className="px-3 py-2 tabular-nums text-right">
+              {/* 진찰료 = 급여 본인부담금(payments tax_type='급여' net). T-20260804 ③ 라벨 '진찰료'. */}
+              <td
+                data-testid={`sales-doctor-jinchalryo-${s.staffId}`}
+                className="px-3 py-2 tabular-nums text-right"
+              >
                 {formatAmount(Math.round(s.insuranceCopay))}원
               </td>
               <td
@@ -389,6 +408,16 @@ export function SalesDoctorTab({ filter }: Props) {
                     ({s.packageCount}건)
                   </span>
                 )}
+              </td>
+              {/* T-20260804 ④ 총 매출(섹션-로컬) = 패키지 결제 + 급여 본인부담금(진찰료). 비급여·공단 제외. */}
+              <td
+                data-testid={`sales-doctor-sectiontotal-${s.staffId}`}
+                className={cn(
+                  'px-3 py-2 tabular-nums text-right font-semibold',
+                  (s.packageRevenue + s.insuranceCopay) < 0 && 'text-red-600',
+                )}
+              >
+                {formatAmount(Math.round(s.packageRevenue + s.insuranceCopay))}원
               </td>
             </tr>
           ))}
@@ -428,11 +457,20 @@ export function SalesDoctorTab({ filter }: Props) {
                 </span>
               )}
             </td>
+            {/* T-20260804 ④ 총 매출 합계 = 패키지 결제 합산 + 급여 본인부담금 합산 */}
+            <td
+              data-testid="sales-doctor-total-sectiontotal"
+              className="px-3 py-2 tabular-nums text-right font-semibold text-teal-700"
+            >
+              {formatAmount(Math.round(totals.sectionTotal))}원
+            </td>
           </tr>
         </tfoot>
       </table>
       <p className="px-3 py-1.5 text-right text-[10px] leading-relaxed text-muted-foreground">
         * 담당실장: 고객 2번차트 지정 기준 · 공단부담액(명세)은 수가표 기준 추정값(공단 심사 전 — 실제 청구확정액과 다를 수 있음)
+        <br />
+        * 진찰료 = 급여 본인부담금만(비급여 진찰료 제외) · <span className="font-medium text-teal-700">총 매출 = 패키지 결제 + 진찰료</span>(이 섹션 전용 합계 — 비급여·공단부담은 포함하지 않음)
         <br />
         * 수기수납(closing_manual)은 결제담당 기준 귀속 · <span className="font-medium text-amber-700">할인 미반영</span>(할인/수기조정 전용 항목 미도입)
       </p>
