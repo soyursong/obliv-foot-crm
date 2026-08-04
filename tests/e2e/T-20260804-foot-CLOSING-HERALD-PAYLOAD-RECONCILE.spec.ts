@@ -157,6 +157,80 @@ test('AC-6: 원장(payments/package_payments) 스키마 무접촉 — 결합은 
   expect(trg.length, 'enqueue 트리거 소실(pilot 배선 파손)').toBe(1);
 });
 
+// ─── AC-8: reemit self-supersede 결함 회귀 가드(FIX MSG-20260804-195718-bxx1) ───
+//   결함: enqueue 가 신규 outbox 행을 superseded=(NEW.revision>0) 로 세팅 → rev≥1(재emit) 신규 행이 자기 자신을
+//   superseded=true 로 마킹 → 리더(WHERE superseded=false) 가 영구 불가시. 구본(rev0)만 가시(의미 역전).
+//   가드: enqueue 정의에 (a)supersede-UPDATE(revision<NEW.revision→true) 실재 (b)신규 행 self-supersede 부재.
+test('AC-8: enqueue 는 신규 행을 self-supersede 하지 않고 구 rev 를 UPDATE supersede 한다', async ({ request }) => {
+  test.skip(!process.env.SUPABASE_ACCESS_TOKEN, 'SUPABASE_ACCESS_TOKEN not set');
+  const enq = await fnDef(request, 'public.enqueue_closing_confirmed()');
+  // (a) 구 rev supersede-UPDATE 실재
+  expect(enq, 'supersede-UPDATE(revision<NEW.revision) 부재 — 구 rev 미수렴').toContain('revision < NEW.revision');
+  expect(enq, 'superseded=true UPDATE 부재').toMatch(/SET\s+superseded\s*=\s*true/);
+  // (b) self-supersede 결함식 `(NEW.revision > 0)` 잔재 0 (버그 재현식이 정의에서 완전 제거)
+  expect(enq, 'self-supersede 결함식 (NEW.revision > 0) 잔재 — supersede 방향 역전 재발').not.toContain('NEW.revision > 0');
+});
+
+// ─── AC-9: reader-visibility 불변식(FIX item 4) — 재emit 후 신 rev 가시 / 구 rev 전건 supersede ───
+//   ①신 rev superseded=false ②read_closing_confirmed_events 반환 포함 ③구 rev 전건 superseded=true.
+//   ★post-apply + post-reemit 회귀. 각 (clinic_id, close_date) 그룹에서 최대 revision 만 가시(superseded=false,
+//   dlq=false)이며 리더 RPC 반환집합과 정확히 일치. 하위 revision 전건 superseded=true.
+test('AC-9: 재emit 후 각 마감 그룹에서 최신 rev 만 리더 가시·구 rev 전건 supersede', async ({ request }) => {
+  test.skip(!process.env.SUPABASE_ACCESS_TOKEN, 'SUPABASE_ACCESS_TOKEN not set');
+
+  // (1) multi-revision 그룹: 최신 rev 는 superseded=false, 구 rev 는 전건 superseded=true 여야 함
+  const groups = await dbQuery(request, `
+    WITH g AS (
+      SELECT clinic_id, close_date, MAX(revision) AS max_rev, COUNT(*) AS n
+      FROM public.closing_confirmed_outbox
+      GROUP BY clinic_id, close_date
+    )
+    SELECT o.clinic_slug, o.close_date::text AS close_date, o.revision, o.superseded, o.dlq,
+           g.max_rev, g.n
+    FROM public.closing_confirmed_outbox o
+    JOIN g ON g.clinic_id=o.clinic_id AND g.close_date=o.close_date
+    WHERE g.n > 1
+    ORDER BY o.close_date DESC, o.revision;
+  `) as Array<{ clinic_slug: string; close_date: string; revision: number; superseded: boolean; dlq: boolean; max_rev: number; n: number }>;
+
+  for (const r of groups) {
+    if (Number(r.revision) === Number(r.max_rev)) {
+      // ① 신(최대) rev = superseded=false (dlq=false 인 정상 emit 에 한함)
+      if (!r.dlq) {
+        expect(r.superseded, `③역전: 최신 rev${r.revision} @${r.clinic_slug}/${r.close_date} 가 superseded=true(리더 불가시)`).toBe(false);
+      }
+    } else {
+      // ③ 구 rev = 전건 superseded=true
+      expect(r.superseded, `③미수렴: 구 rev${r.revision} @${r.clinic_slug}/${r.close_date} 가 superseded=false(구본 잔존)`).toBe(true);
+    }
+  }
+
+  // (2) ② 리더 RPC 반환집합 = 가시행(superseded=false AND dlq=false)과 정확 일치 (skip0/dup0)
+  const recon = await dbQuery(request, `
+    WITH visible AS (
+      SELECT event_id FROM public.closing_confirmed_outbox
+      WHERE COALESCE(superseded,false)=false AND dlq=false
+    ),
+    reader AS (
+      SELECT event_id FROM public.read_closing_confirmed_events(NULL, NULL, 1000)
+    )
+    SELECT
+      (SELECT COUNT(*) FROM visible) AS visible_n,
+      (SELECT COUNT(*) FROM reader)  AS reader_n,
+      (SELECT COUNT(*) FROM visible v WHERE NOT EXISTS (SELECT 1 FROM reader r WHERE r.event_id=v.event_id)) AS visible_not_read,
+      (SELECT COUNT(*) FROM reader r WHERE NOT EXISTS (SELECT 1 FROM visible v WHERE v.event_id=r.event_id)) AS read_not_visible;
+  `) as Array<{ visible_n: number; reader_n: number; visible_not_read: number; read_not_visible: number }>;
+
+  const c = recon[0];
+  // 리더가 못 읽는 가시행 0(영구 불가시 결함 재발 방지) + 리더가 읽는데 superseded/dlq 인 행 0
+  expect(Number(c.visible_not_read), '가시행인데 리더 미반환(영구 불가시 결함 재발)').toBe(0);
+  expect(Number(c.read_not_visible), '리더 반환인데 superseded/dlq(필터 파손)').toBe(0);
+  // 단, reader LIMIT 1000 미만일 때만 정확 일치(과도 데이터 시 페이지네이션 — 실측 소규모라 일치 기대)
+  if (Number(c.visible_n) <= 1000) {
+    expect(Number(c.reader_n), '가시행 수 ≠ 리더 반환 수').toBe(Number(c.visible_n));
+  }
+});
+
 // ─── AC-7: SECDEF grant-seal 회귀 가드(C23) — 4함수 전건 anon/authenticated EXECUTE = false, service_role = true ───
 //   FIX-REQUEST MSG-20260804-084254-pa6t: CREATE OR REPLACE 는 기존 ACL(PUBLIC EXECUTE) 보존 → 봉인 없으면
 //   미인증 anon 이 SECDEF 매출집계 함수를 RLS 우회 실행 가능(C23-2 급성 anon축). 4함수 backend-only 봉인 상시 검증.
