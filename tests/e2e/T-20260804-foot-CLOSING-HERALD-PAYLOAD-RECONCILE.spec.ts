@@ -156,3 +156,29 @@ test('AC-6: 원장(payments/package_payments) 스키마 무접촉 — 결합은 
   `) as Array<{ tgname: string }>;
   expect(trg.length, 'enqueue 트리거 소실(pilot 배선 파손)').toBe(1);
 });
+
+// ─── AC-7: SECDEF grant-seal 회귀 가드(C23) — 4함수 전건 anon/authenticated EXECUTE = false, service_role = true ───
+//   FIX-REQUEST MSG-20260804-084254-pa6t: CREATE OR REPLACE 는 기존 ACL(PUBLIC EXECUTE) 보존 → 봉인 없으면
+//   미인증 anon 이 SECDEF 매출집계 함수를 RLS 우회 실행 가능(C23-2 급성 anon축). 4함수 backend-only 봉인 상시 검증.
+test('AC-7: SECDEF grant-seal — 4함수 anon/authenticated EXECUTE 봉인(backend-only), service_role만 허용', async ({ request }) => {
+  test.skip(!process.env.SUPABASE_ACCESS_TOKEN, 'SUPABASE_ACCESS_TOKEN not set');
+  const rows = await dbQuery(request, `
+    SELECT p.proname,
+      p.prosecdef,
+      has_function_privilege('anon', p.oid, 'EXECUTE')          AS anon_exec,
+      has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_exec,
+      has_function_privilege('service_role', p.oid, 'EXECUTE')  AS svc_exec
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public'
+      AND p.proname IN ('closing_source_split','closing_insurance_split','closing_month_projection','enqueue_closing_confirmed')
+    ORDER BY p.proname;
+  `) as Array<{ proname: string; prosecdef: boolean; anon_exec: boolean; auth_exec: boolean; svc_exec: boolean }>;
+
+  expect(rows.length, 'SECDEF 4함수 census 불일치').toBe(4);
+  for (const r of rows) {
+    expect(r.prosecdef, `${r.proname}: SECURITY DEFINER 아님(전제 붕괴)`).toBe(true);
+    expect(r.anon_exec, `${r.proname}: anon EXECUTE 노출(C23-2 급성 이빨 미봉인)`).toBe(false);
+    expect(r.auth_exec, `${r.proname}: authenticated EXECUTE 잔차(C23 미봉인)`).toBe(false);
+    expect(r.svc_exec, `${r.proname}: service_role EXECUTE 부재(backend 호출 파손)`).toBe(true);
+  }
+});

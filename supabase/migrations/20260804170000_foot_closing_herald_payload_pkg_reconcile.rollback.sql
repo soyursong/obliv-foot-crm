@@ -4,6 +4,8 @@
 --   · enqueue_closing_confirmed → 20260718140000(herald pilot) 정본
 -- ⚠ 복원 후 payload 는 다시 payments-only(패키지 누락 undercount 판본) + INV5 미적용 soft-log 로 되돌아감.
 --   shadow 모드 전제(현장 무영향). live 운영 중 롤백 시 전령 총액이 undercount 로 하락함에 유의.
+-- ★grant-seal 대칭(FIX-REQUEST item 3): 정본 산식으로 되돌리되 SECDEF 봉인(REVOKE PUBLIC/anon/authenticated +
+--   GRANT service_role)은 유지한다. 현 PUBLIC EXECUTE 상태로 되돌리지 않음 = 봉인 유지가 정상 역전(anon 재노출 금지).
 
 BEGIN;
 
@@ -337,5 +339,29 @@ COMMENT ON FUNCTION public.enqueue_closing_confirmed() IS
   'T-CLOSING-HERALD: 확정 전이(open→closed) → payload(schema_version 2) 빌드 + INV1~5 self-test → outbox 적재. '
   'INV1 유입=total / INV2 급여=total / INV3 공단 total밖·>=0 / INV4 각 split>=0 / INV5 유니버스 S 동일. '
   'source 실패→v1 / insurance 실패→graceful 생략(Q4). clinic_slug 필수. 멱등 ON CONFLICT.';
+
+-- ─── grant-seal 대칭 유지 (봉인 원복 아님·유지) — anon 재노출 금지(FIX-REQUEST item 3) ───
+DO $seal$
+DECLARE
+  v_fn   TEXT;
+  v_fns  TEXT[] := ARRAY[
+    'public.closing_source_split(uuid,date)',
+    'public.closing_insurance_split(uuid,date)',
+    'public.closing_month_projection(uuid,date)',
+    'public.enqueue_closing_confirmed()'
+  ];
+BEGIN
+  FOREACH v_fn IN ARRAY v_fns LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC;', v_fn);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon;', v_fn);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM authenticated;', v_fn);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role;', v_fn);
+    IF has_function_privilege('anon', v_fn::regprocedure, 'EXECUTE') THEN
+      RAISE EXCEPTION 'rollback grant-seal FAIL: anon 이 여전히 % EXECUTE 가능', v_fn;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'rollback grant-seal(C23): 4 함수 backend-only 봉인 유지 + anon-EXEC=0 assert 통과';
+END
+$seal$;
 
 COMMIT;

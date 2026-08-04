@@ -62,6 +62,16 @@
 --   magnitude-awareness(non-blocking): 전령 총액 정당 상향(누락 패키지 편입) = undercount 교정, 신규매출 아님.
 -- AXIS-DATAPATH-GUARD 유지: payload-time 산식(Silver 미경유). 롱레 전령 무영향(foot fork-local 함수, 회귀0).
 --
+-- ─── C23-1 intended-caller-tier 선언 (SECDEF grant-seal, §15-5-10) ─────────────────
+--   4함수 전부 SECURITY DEFINER. CREATE OR REPLACE 는 기존 ACL(PUBLIC EXECUTE) 보존 → 봉인 없으면 미인증
+--   anon 이 SECDEF 매출집계 함수를 RLS 우회 실행 가능(C23-2 급성 anon축, §15-5 불변). 실 호출부 grep 결과:
+--     · closing_source_split(uuid,date)     = emit-시점 헬퍼. FE(src/**)·EF(functions/**) 직접 RPC 호출부 0건 → backend-only
+--     · closing_insurance_split(uuid,date)  = emit-시점 헬퍼. 직접 호출부 0건 → backend-only
+--     · closing_month_projection(uuid,date) = emit-시점 헬퍼. 직접 호출부 0건 → backend-only
+--     · enqueue_closing_confirmed()         = 트리거 함수(직접 RPC 호출 없음) → backend-only (확정)
+--   ∴ 전 4함수 = backend-only → 하단 §Y grant-seal 로 per-fn REVOKE PUBLIC/anon/authenticated + GRANT service_role.
+--   (모호 함수 없음 → §15-5-10 DA CONSULT 불요. anon 봉인은 분류 무관 무조건.) blanket ALTER DEFAULT PRIVILEGES 금지(C23-4).
+--
 -- 멱등: 전부 CREATE OR REPLACE(시그니처 불변) → DROP 불요·42P13 불가·즉시 역전. 테이블/데이터/스키마 변경 0.
 -- rollback: 20260804170000_foot_closing_herald_payload_pkg_reconcile.rollback.sql (직전 정본 함수 복원)
 -- dryrun  : 20260804170000_foot_closing_herald_payload_pkg_reconcile.dryrun.sql (No-Persistence sentinel)
@@ -504,5 +514,37 @@ COMMENT ON FUNCTION public.enqueue_closing_confirmed() IS
   'source 실패→v1 / insurance 실패→graceful 생략(Q4). 마감확정 절대 비차단. clinic_slug 필수. 멱등 ON CONFLICT.';
 
 -- confirm_guard(BEFORE)가 revision 확정 후 → enqueue(AFTER)가 최종 revision으로 적재 (트리거 재생성 불요, 함수만 교체)
+
+-- ══════════════════════════════════════════════════════════════════
+-- Y) SECURITY DEFINER grant-seal (C23 · FIX-REQUEST MSG-20260804-084254-pa6t item 2 · §15-5-10)
+--    ★intended-caller-tier = backend-only (전 4함수, 위 C23-1 선언 참조). 실 호출부 grep = 0건.
+--    ★근본: CREATE OR REPLACE 는 기존 ACL(PUBLIC EXECUTE) 보존 → anon 이 SECDEF 매출집계 함수를 RLS
+--      우회 실행 가능(C23-2 급성 anon축, §15-5 불변). per-fn REVOKE + service_role GRANT 로 봉인.
+--    형제 선례: scalp2 20260925000000_scalp2_closing_herald_emit_build.sql §Y(동일 형식). blanket 금지(C23-4).
+-- ══════════════════════════════════════════════════════════════════
+DO $seal$
+DECLARE
+  v_fn   TEXT;
+  v_fns  TEXT[] := ARRAY[
+    'public.closing_source_split(uuid,date)',      -- 매출 반환(유입경로축) · SECDEF · backend-only
+    'public.closing_insurance_split(uuid,date)',   -- 매출 반환(급여구분축) · SECDEF · backend-only
+    'public.closing_month_projection(uuid,date)',  -- 매출 반환(MTD) · SECDEF · backend-only
+    'public.enqueue_closing_confirmed()'           -- 트리거 · SECDEF · backend-only
+  ];
+BEGIN
+  FOREACH v_fn IN ARRAY v_fns LOOP
+    -- intended-caller-tier: backend-only (REVOKE PUBLIC/anon/authenticated + GRANT service_role)
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC;', v_fn);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon;', v_fn);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM authenticated;', v_fn);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role;', v_fn);
+    -- post-seal assert: anon EXECUTE = false (C23-2 급성 이빨 봉인 확인 · self-verify in prod apply)
+    IF has_function_privilege('anon', v_fn::regprocedure, 'EXECUTE') THEN
+      RAISE EXCEPTION 'grant-seal FAIL: anon 이 여전히 % EXECUTE 가능(봉인 미착지)', v_fn;
+    END IF;
+  END LOOP;
+  RAISE NOTICE 'grant-seal(C23): 4 함수 backend-only 봉인(REVOKE PUBLIC/anon/authenticated + GRANT service_role) + anon-EXEC=0 assert 4/4 통과';
+END
+$seal$;
 
 COMMIT;

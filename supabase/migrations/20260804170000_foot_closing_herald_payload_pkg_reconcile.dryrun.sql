@@ -13,6 +13,8 @@
 --   5) 세 split 함수 정의에 created_at KST 윈도잉 실재                                          → PASS
 --   6) membership 여전히 미포함(Q5 불변 — 오확장 방지)                                           → PASS
 --   7) 함수 실행 스모크(임의 clinic·date) — 예외 없이 JSONB 반환(구조 무결)                       → PASS
+--   8) grant-seal 적용 후 anon-EXEC=0 (C23-2 급성축 봉인, 4/4 전건)                              → PASS
+--      has_function_privilege('anon', fn, 'EXECUTE') = false (4 함수 전건, 무영속 unwind)
 --
 -- ── POST-PROBE (무영속 재확인, 별도 read-only 세션) ───────────────────────────
 --   SELECT position('package_payments' IN pg_get_functiondef('public.closing_source_split(uuid,date)'::regprocedure)); -- 0 기대(무영속)
@@ -25,6 +27,13 @@ DECLARE
   v_def    text;
   v_clinic uuid;
   v_json   jsonb;
+  v_fn     text;
+  v_fns    text[] := ARRAY[
+    'public.closing_source_split(uuid,date)',
+    'public.closing_insurance_split(uuid,date)',
+    'public.closing_month_projection(uuid,date)',
+    'public.enqueue_closing_confirmed()'
+  ];
 BEGIN
   -- ── up.sql 함수 4건 적용(무영속: 블록 말미 RAISE 로 unwind) ──
   -- 1) closing_source_split
@@ -107,6 +116,22 @@ BEGIN
   ELSE
     v_result := v_result || '(7) clinics 부재 — 실행 스모크 skip(구조검증만)' || E'\n';
   END IF;
+
+  -- ── (8) grant-seal 적용 + anon-EXEC=0 assert (C23, 4/4) — 무영속(블록 말미 sentinel unwind) ──
+  --   3·4 함수는 prod 실재(pre-existing SECDEF·PUBLIC EXECUTE), 1·2 는 위에서 재정의됨 → 4함수 전건 REVOKE/GRANT 적용 가능.
+  --   Management API(postgres owner)로 실행되므로 REVOKE/GRANT 권한 있음. 결과는 sentinel 로 unwind → 무영속.
+  FOREACH v_fn IN ARRAY v_fns LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC;', v_fn);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon;', v_fn);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM authenticated;', v_fn);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role;', v_fn);
+    IF has_function_privilege('anon', v_fn::regprocedure, 'EXECUTE') THEN
+      v_all_ok := false;
+      v_result := v_result || '(8) grant-seal FAIL: anon 여전히 EXECUTE 가능 '||v_fn || E'\n';
+    ELSE
+      v_result := v_result || '(8) grant-seal anon-EXEC=0 assert: PASS '||v_fn || E'\n';
+    END IF;
+  END LOOP;
 
   RAISE NOTICE E'\n===== DRY-RUN 결과 (무영속) =====\n%all_ok=%', v_result, v_all_ok;
   IF NOT v_all_ok THEN
