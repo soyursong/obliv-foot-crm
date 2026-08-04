@@ -1,0 +1,84 @@
+{
+  "ticket": "T-20260804-foot-PAYMENT-DUP-ENTANGLED-SET-RECONCILE",
+  "mode": "READ-ONLY dry-run",
+  "drift": [
+    {
+      "id": "46821230-d76e-49ab-b5c3-a9e69a5a5255",
+      "tag": "target#1 7/30단건중복",
+      "drift": "OK(no drift)"
+    },
+    {
+      "id": "e0dc5d36-6530-44ec-b848-10b1b590b2d2",
+      "tag": "target#1 undo(linked)",
+      "drift": "OK(no drift)"
+    },
+    {
+      "id": "fa509f09-48bb-4859-a470-589e15df1868",
+      "tag": "팬텀 단건(pkg=NULL)",
+      "drift": "OK(no drift)"
+    },
+    {
+      "id": "73e604cf-9b78-4f86-b5c9-a09f204cf086",
+      "tag": "중복 의심(박민지 confirm 토글)",
+      "drift": "OK(no drift)"
+    },
+    {
+      "id": "38b5c660-787a-4beb-9da6-a2bc32f12f65",
+      "tag": "target#2 완납패키지 중복",
+      "drift": "OK(no drift)"
+    },
+    {
+      "id": "5182ecea-d124-419b-94e9-742e04d9b944",
+      "tag": "target#2 undo",
+      "drift": "OK(no drift)"
+    }
+  ],
+  "oracle": {
+    "current": {
+      "single_net_now": 1417600,
+      "pkg_net_now": 2400000,
+      "paid_cache_now": 3800000,
+      "pkg_total": 2400000
+    },
+    "projected": {
+      "73_HOLD(default)": {
+        "single_net": 17600,
+        "expect": 17600
+      },
+      "73_REMOVE(confirmed)": {
+        "single_net": 8800,
+        "expect": 8800
+      },
+      "pkg_net_after": 2400000,
+      "paid_cache_after": 2400000,
+      "balance_after": 0
+    }
+  },
+  "outbox": [
+    {
+      "close_date": "2026-07-30",
+      "revision": 0,
+      "superseded": false,
+      "dlq": false,
+      "total_krw": "0",
+      "created_at": "2026-07-29 15:05:49.2914+00"
+    },
+    {
+      "close_date": "2026-07-31",
+      "revision": 0,
+      "superseded": false,
+      "dlq": false,
+      "total_krw": "0",
+      "created_at": "2026-07-31 01:03:58.368578+00"
+    },
+    {
+      "close_date": "2026-08-01",
+      "revision": 0,
+      "superseded": false,
+      "dlq": false,
+      "total_krw": "0",
+      "created_at": "2026-07-31 16:01:48.919451+00"
+    }
+  ],
+  "verdict": "NO-DRIFT (freeze 유효)"
+}
