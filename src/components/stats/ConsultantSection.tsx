@@ -65,7 +65,7 @@ export default function ConsultantSection({ rows, loading, totalNetRevenue }: Pr
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-sm font-semibold text-muted-foreground">3. 상담실장 티켓팅 실적</h2>
+      <h2 className="text-sm font-semibold text-muted-foreground">4. 상담실장 티켓팅 실적</h2>
 
       {/* T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE:
           by-design 안내 문구 — '상담실장에게 귀속된 매출만' 합산한 값이라 일마감 총액과 다를 수 있음.

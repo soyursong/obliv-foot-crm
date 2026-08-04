@@ -31,7 +31,7 @@ export default function CategorySection({ rows: rawRows, loading }: Props) {
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-sm font-semibold text-muted-foreground">2. 시술 종류별 매출</h2>
+      <h2 className="text-sm font-semibold text-muted-foreground">3. 시술 종류별 매출</h2>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

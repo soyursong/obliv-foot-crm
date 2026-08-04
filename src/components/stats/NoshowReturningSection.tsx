@@ -11,13 +11,26 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { NoshowReturningRow } from '@/lib/stats';
+import type { NoshowPrevCompare } from '@/lib/mtmSales';
 
 interface Props {
   rows: NoshowReturningRow[];
   loading: boolean;
+  // T-20260804-foot-MTM-SALES-DASH-RESTRUCTURE (05, AC-D): 전월 평균 노쇼율/재방문율 병기.
+  //   전월 데이터 없음(신규 오픈 첫 달) → '-'/'전월 데이터 없음' (0 오도 금지).
+  prev?: NoshowPrevCompare | null;
 }
 
-export default function NoshowReturningSection({ rows, loading }: Props) {
+// 증감(당월 평균 − 전월 평균) 병기 헬퍼. 전월 값 없으면 '-'.
+function prevDeltaLabel(cur: number, prevVal: number | null): { text: string; tone: string } {
+  if (prevVal === null) return { text: '전월 -', tone: 'text-muted-foreground' };
+  const diff = cur - prevVal;
+  const sign = diff > 0 ? '+' : '';
+  const tone = diff > 0 ? 'text-rose-600' : diff < 0 ? 'text-emerald-600' : 'text-muted-foreground';
+  return { text: `전월 ${prevVal.toFixed(1)}% (${sign}${diff.toFixed(1)}%p)`, tone };
+}
+
+export default function NoshowReturningSection({ rows, loading, prev }: Props) {
   const data = useMemo(
     () =>
       rows.map((r) => ({
@@ -37,7 +50,14 @@ export default function NoshowReturningSection({ rows, loading }: Props) {
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-sm font-semibold text-muted-foreground">4. 노쇼율 / 재방문율</h2>
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        5. 노쇼율 / 재방문율
+        {prev && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            전월({prev.prevLabel}) 비교{!prev.prevHasData && ' · 전월 데이터 없음'}
+          </span>
+        )}
+      </h2>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Card>
@@ -46,6 +66,14 @@ export default function NoshowReturningSection({ rows, loading }: Props) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tabular-nums text-rose-700">{avg.noshow.toFixed(1)}%</div>
+            {prev && (
+              <div
+                data-testid="noshow-prev"
+                className={`mt-1 text-xs tabular-nums ${prevDeltaLabel(avg.noshow, prev.prevNoshow).tone}`}
+              >
+                {prev.prevHasData ? prevDeltaLabel(avg.noshow, prev.prevNoshow).text : '전월 데이터 없음'}
+              </div>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -56,6 +84,16 @@ export default function NoshowReturningSection({ rows, loading }: Props) {
             <div className="text-2xl font-bold tabular-nums text-emerald-700">
               {avg.returning.toFixed(1)}%
             </div>
+            {prev && (
+              <div
+                data-testid="returning-prev"
+                className={`mt-1 text-xs tabular-nums ${prevDeltaLabel(avg.returning, prev.prevReturning).tone}`}
+              >
+                {prev.prevHasData
+                  ? prevDeltaLabel(avg.returning, prev.prevReturning).text
+                  : '전월 데이터 없음'}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

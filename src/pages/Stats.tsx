@@ -22,10 +22,20 @@ import {
   type VisitRouteResvRow,
   type StatsRangePreset,
 } from '@/lib/stats';
+import {
+  fetchMtmCardMetrics,
+  fetchMonthlyComparison,
+  fetchNoshowReturningPrev,
+  projectMonthlyRevenue,
+  type MtmCardMetrics,
+  type MonthlyComparison,
+  type NoshowPrevCompare,
+} from '@/lib/mtmSales';
 import { downloadConsultantSalesReport } from '@/lib/consultantSalesExport';
 import { toast } from '@/lib/toast';
 import { Download } from 'lucide-react';
 import RevenueSection from '@/components/stats/RevenueSection';
+import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSection';
 import CategorySection from '@/components/stats/CategorySection';
 import ConsultantSection from '@/components/stats/ConsultantSection';
 import NoshowReturningSection from '@/components/stats/NoshowReturningSection';
@@ -97,6 +107,10 @@ export default function Stats() {
   const [categories, setCategories]                 = useState<CategoryRow[]>([]);
   const [consultants, setConsultants]               = useState<ConsultantRow[]>([]);
   const [noshowReturning, setNoshowReturning]       = useState<NoshowReturningRow[]>([]);
+  // T-20260804-foot-MTM-SALES-DASH-RESTRUCTURE: 01 카드 확장지표 · 02 전월비교 · 05 전월노쇼.
+  const [mtmMetrics, setMtmMetrics]                 = useState<MtmCardMetrics | null>(null);
+  const [monthlyCompare, setMonthlyCompare]         = useState<MonthlyComparison | null>(null);
+  const [noshowPrev, setNoshowPrev]                 = useState<NoshowPrevCompare | null>(null);
   const [therapistSummary, setTherapistSummary]     = useState<TherapistSummaryRow[]>([]);
   const [therapistServices, setTherapistServices]   = useState<TherapistServiceRow[]>([]);
   const [tmData, setTmData]                         = useState<TmAggregateData | null>(null);
@@ -116,17 +130,25 @@ export default function Stats() {
       setError(null);
       try {
         if (tab === 'revenue') {
-          const [rev, cat, cons, nsr] = await Promise.all([
+          // MTM 5섹션: 기존 4종(매출/시술별/실장/노쇼) + MTM 확장 3종(01 카드지표·02 전월비교·05 전월노쇼).
+          //   refISO=from 기준 달의 1일~말일 경계로 전월 비교를 계산(선택 기간과 무관하게 월 단위).
+          const [rev, cat, cons, nsr, mtm, cmp, nprev] = await Promise.all([
             fetchRevenue(clinic.id, from, to),
             fetchCategoryRevenue(clinic.id, from, to),
             fetchConsultantPerf(clinic.id, from, to),
             fetchNoshowReturning(clinic.id, from, to),
+            fetchMtmCardMetrics(clinic.id, from, to),
+            fetchMonthlyComparison(clinic.id, from),
+            fetchNoshowReturningPrev(clinic.id, from),
           ]);
           if (aborted) return;
           setRevenue(rev);
           setCategories(cat);
           setConsultants(cons);
           setNoshowReturning(nsr);
+          setMtmMetrics(mtm);
+          setMonthlyCompare(cmp);
+          setNoshowPrev(nprev);
         } else if (tab === 'tm') {
           const data = await fetchTmAggregate(clinic.id, from, to);
           if (aborted) return;
@@ -171,6 +193,13 @@ export default function Stats() {
   const revenueNetTotal = useMemo(
     () => revenue.reduce((s, r) => s + (r.package_amount ?? 0) + (r.single_amount ?? 0) - (r.refund_amount ?? 0), 0),
     [revenue],
+  );
+
+  // T-20260804-foot-MTM-SALES-DASH-RESTRUCTURE (01, AC-B): 예상월매출(추정) — 산식 미정의 잔여 1건.
+  //   임시 = 당월 경과일 일평균 × 해당월 총일수(현재월만, 과거/커스텀월은 null → '-'). planner FOLLOWUP 대상.
+  const projectedMonthly = useMemo(
+    () => (monthlyCompare && rangeFrom ? projectMonthlyRevenue(monthlyCompare.monthToDateNet, rangeFrom) : null),
+    [monthlyCompare, rangeFrom],
   );
 
   // T-20260622-foot-SALES-STATS-TAB-EXPORT-LEADREVENUE:
@@ -278,10 +307,12 @@ export default function Stats() {
 
       {tab === 'revenue' ? (
         <>
-          <RevenueSection rows={revenue} loading={loading} />
+          {/* 01 매출통계 → 02 전월비교 → 03 시술별 → 04 실장별 → 05 노쇼/재방문 (현장 지정 순서) */}
+          <RevenueSection rows={revenue} loading={loading} metrics={mtmMetrics} projectedMonthly={projectedMonthly} />
+          <MonthlyComparisonSection data={monthlyCompare} loading={loading} />
           <CategorySection rows={categories} loading={loading} />
           <ConsultantSection rows={consultants} loading={loading} totalNetRevenue={revenueNetTotal} />
-          <NoshowReturningSection rows={noshowReturning} loading={loading} />
+          <NoshowReturningSection rows={noshowReturning} loading={loading} prev={noshowPrev} />
         </>
       ) : tab === 'tm' ? (
         <TmAggregateSection
