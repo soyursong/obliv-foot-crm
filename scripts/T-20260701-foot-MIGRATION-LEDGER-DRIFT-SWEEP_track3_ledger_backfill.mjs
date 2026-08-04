@@ -68,6 +68,7 @@ for (const c of todo) {
     fail++;
     console.error(`  ✗ ${c.version}: ${e.message}`);
   }
+  await new Promise((r) => setTimeout(r, 350)); // Management API throttle 회피(109행 순차)
 }
 console.log(`\n완료: 기록 ${ok} / 실패 ${fail}`);
 // 사후 검증

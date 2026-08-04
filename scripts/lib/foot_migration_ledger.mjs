@@ -40,17 +40,28 @@ function loadToken() {
   return t;
 }
 
-/** Management API /database/query — raw SQL 실행 (read/write 공용). */
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Management API /database/query — raw SQL 실행 (read/write 공용).
+ *  429 ThrottlerException 지수 백오프 재시도 내장(전 apply SQL idempotent → 재시도 안전). */
 export async function query(sql, { token } = {}) {
   const TOKEN = token || loadToken();
-  const r = await fetch(`https://api.supabase.com/v1/projects/${PROJ_REF}/database/query`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: sql }),
-  });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`${r.status} ${JSON.stringify(body)}`);
-  return body;
+  let delay = 3000;
+  for (let attempt = 0; attempt < 7; attempt++) {
+    const r = await fetch(`https://api.supabase.com/v1/projects/${PROJ_REF}/database/query`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: sql }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) return body;
+    const txt = JSON.stringify(body);
+    if (r.status === 429 || /Too Many Requests|Throttler/i.test(txt)) {
+      if (attempt < 6) { await _sleep(delay); delay = Math.min(delay * 2, 30000); continue; }
+    }
+    throw new Error(`${r.status} ${txt}`);
+  }
+  throw new Error('429 재시도 소진');
 }
 
 /** SQL 리터럴 이스케이프 ($$ dollar-quote 회피용 안전 처리). */

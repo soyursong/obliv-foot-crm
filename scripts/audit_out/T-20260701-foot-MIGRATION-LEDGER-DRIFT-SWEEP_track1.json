@@ -968,6 +968,16 @@
     ]
   },
   {
+    "file": "20260615180000_rls_clinic_isolation_anon_revoke.sql",
+    "version": "20260615180000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
     "file": "20260615190000_koh_lifecycle_publish.sql",
     "version": "20260615190000",
     "in_ledger": false,
@@ -1336,60 +1346,60 @@
   {
     "file": "20260618200000_staff_attendance_ssot.sql",
     "version": "20260618200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 6,
+    "verdict": "APPLIED",
+    "present": 6,
+    "absent": 0,
     "objects": [
       {
         "kind": "table",
         "name": "staff_attendance",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "staff_attendance_select",
         "table": "staff_attendance",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "staff_attendance_insert",
         "table": "staff_attendance",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "staff_attendance_update",
         "table": "staff_attendance",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "staff_attendance_delete",
         "table": "staff_attendance",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "index",
         "name": "staff_attendance_clinic_date_idx",
-        "exists": false
+        "exists": true
       }
     ]
   },
   {
-    "file": "20260619010000_foot_stats_by_category_pkg_created.sql",
-    "version": "20260619010000",
-    "in_ledger": false,
-    "security": true,
+    "file": "20260618201000_attendance_sync_cron.sql",
+    "version": "20260618201000",
+    "in_ledger": true,
+    "security": false,
     "verdict": "APPLIED",
     "present": 1,
     "absent": 0,
     "objects": [
       {
         "kind": "function",
-        "name": "foot_stats_by_category",
+        "name": "trigger_attendance_sync",
         "exists": true
       }
     ]
@@ -1403,22 +1413,6 @@
     "present": 0,
     "absent": 0,
     "objects": []
-  },
-  {
-    "file": "20260619020000_foot_stats_consultant_session_presence.sql",
-    "version": "20260619020000",
-    "in_ledger": false,
-    "security": true,
-    "verdict": "APPLIED",
-    "present": 1,
-    "absent": 0,
-    "objects": [
-      {
-        "kind": "function",
-        "name": "foot_stats_consultant",
-        "exists": true
-      }
-    ]
   },
   {
     "file": "20260620120000_phrase_templates_staff_write_staffarea.sql",
@@ -1546,6 +1540,34 @@
     "present": 0,
     "absent": 0,
     "objects": []
+  },
+  {
+    "file": "20260621003000_medical_charts_soft_delete_sameday_unique.sql",
+    "version": "20260621003000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "medical_charts_body_audit",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "medical_charts",
+        "name": "is_deleted",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "mc_deleted_rows_director_only",
+        "table": "medical_charts",
+        "exists": true
+      }
+    ]
   },
   {
     "file": "20260622120000_foot_therapist_stats_staff_source_filter.sql",
@@ -2074,17 +2096,17 @@
   {
     "file": "20260625140000_foreign_lang_save_customers_language.sql",
     "version": "20260625140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 1,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
     "objects": [
       {
         "kind": "column",
         "table": "customers",
         "name": "language",
-        "exists": false
+        "exists": true
       }
     ]
   },
@@ -2132,9 +2154,19 @@
     "objects": []
   },
   {
+    "file": "20260628140000_anon_revoke_payments_only.sql",
+    "version": "20260628140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
     "file": "20260628160000_anon_upsert_customer_resolve_v2.sql",
     "version": "20260628160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2150,7 +2182,7 @@
   {
     "file": "20260628160000_reservations_created_via.sql",
     "version": "20260628160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -2167,49 +2199,49 @@
   {
     "file": "20260628200000_waiting_board_projection.sql",
     "version": "20260628200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 6,
+    "verdict": "APPLIED",
+    "present": 6,
+    "absent": 0,
     "objects": [
       {
         "kind": "function",
         "name": "mask_display_name",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "function",
         "name": "sync_waiting_board",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "table",
         "name": "waiting_board",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "waiting_board_select",
         "table": "waiting_board",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "index",
         "name": "idx_waiting_board_clinic_queue",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "trigger",
         "name": "trg_sync_waiting_board",
-        "exists": false
+        "exists": true
       }
     ]
   },
   {
     "file": "20260629120000_foot_consent_sensitive.sql",
     "version": "20260629120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2236,17 +2268,17 @@
   {
     "file": "20260629120000_staff_assign_sort_order.sql",
     "version": "20260629120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 1,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
     "objects": [
       {
         "kind": "column",
         "table": "staff",
         "name": "assign_sort_order",
-        "exists": false
+        "exists": true
       }
     ]
   },
@@ -2305,7 +2337,7 @@
   {
     "file": "20260629160000_anon_upsert_customer_resolve_v3.sql",
     "version": "20260629160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2321,43 +2353,43 @@
   {
     "file": "20260629170000_medical_charts_check_in_id_fk.sql",
     "version": "20260629170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 2,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
     "objects": [
       {
         "kind": "column",
         "table": "medical_charts",
         "name": "check_in_id",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "index",
         "name": "idx_mc_check_in_id",
-        "exists": false
+        "exists": true
       }
     ]
   },
   {
     "file": "20260629180000_foot_calendar_read_surface.sql",
     "version": "20260629180000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 2,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
     "objects": [
       {
         "kind": "function",
         "name": "foot_calendar_read_direct",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "table",
         "name": "foot_calendar_read_access_log",
-        "exists": false
+        "exists": true
       }
     ]
   },
@@ -2437,20 +2469,20 @@
     "version": "20260630120000",
     "in_ledger": false,
     "security": true,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 2,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
     "objects": [
       {
         "kind": "function",
         "name": "issue_foot_doc_serial",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "column",
         "table": "form_submissions",
         "name": "doc_serial_seq",
-        "exists": false
+        "exists": true
       }
     ]
   },
@@ -2459,14 +2491,14 @@
     "version": "20260630120001",
     "in_ledger": false,
     "security": false,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 1,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
     "objects": [
       {
         "kind": "index",
         "name": "uq_form_submissions_clinic_doc_serial_seq",
-        "exists": false
+        "exists": true
       }
     ]
   },
@@ -2567,7 +2599,7 @@
   {
     "file": "20260630181500_health_q_create_token_canonical_identity.sql",
     "version": "20260630181500",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2649,7 +2681,7 @@
   {
     "file": "20260630200000_daily_room_status_staff_unlock_6menu_rls_additive.sql",
     "version": "20260630200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "MISSING",
     "present": 0,
@@ -2666,11 +2698,11 @@
   {
     "file": "20260630200000_notif_tmpl_write_staff_roles_align.sql",
     "version": "20260630200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
-    "verdict": "APPLIED",
-    "present": 2,
-    "absent": 0,
+    "verdict": "DRIFT",
+    "present": 1,
+    "absent": 1,
     "objects": [
       {
         "kind": "policy",
@@ -2682,6 +2714,58 @@
         "kind": "policy",
         "name": "notif_optout_write",
         "table": "notification_opt_outs",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260630210000_register_unlock_3roles_rls_additive.sql",
+    "version": "20260630210000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "customers_register_unlock_insert",
+        "table": "customers",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "reservations_register_unlock_insert",
+        "table": "reservations",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "check_ins_register_unlock_insert",
+        "table": "check_ins",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260630220000_staff_coordinator_crud_rls_additive.sql",
+    "version": "20260630220000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "staff_coordinator_insert_staffcrud",
+        "table": "staff",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "staff_coordinator_update_staffcrud",
+        "table": "staff",
         "exists": true
       }
     ]
@@ -2710,6 +2794,5287 @@
         "kind": "index",
         "name": "uq_rmh_resv_source",
         "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260701031000_optout_soft_delete_legal_guard.sql",
+    "version": "20260701031000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "notification_opt_outs",
+        "name": "deleted_at",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "notif_optout_insert",
+        "table": "notification_opt_outs",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "notif_optout_update",
+        "table": "notification_opt_outs",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_notif_optout_clinic_phone_active",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260701040000_phrase_templates_staffarea_write_7role_unified.sql",
+    "version": "20260701040000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "staffarea_write_phrases",
+        "table": "phrase_templates",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260701120000_foot_chart_treatment_requests.sql",
+    "version": "20260701120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "chart_treatment_requests",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "approved_clinic_chart_treatment_requests_all",
+        "table": "chart_treatment_requests",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_ctr_clinic_axis_code",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_ctr_checkin",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260701130000_foot_therapist_capabilities.sql",
+    "version": "20260701130000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "therapist_capabilities",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "approved_clinic_therapist_capabilities_all",
+        "table": "therapist_capabilities",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_therapist_capabilities_clinic",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260702200000_clinicmgmt_3tab_director_write_rls_canonical.sql",
+    "version": "20260702200000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "admin_write_super_phrases",
+        "table": "super_phrases",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "admin_write_document_templates",
+        "table": "document_templates",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "admin_write_phrase_templates",
+        "table": "phrase_templates",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260703040000_foot_pkg_triple_defect_transfer_deduct.sql",
+    "version": "20260703040000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "transfer_package_atomic",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "consume_package_sessions_for_checkin",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260703160000_anon_reservation_read_scopedown_today_confirmed.sql",
+    "version": "20260703160000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "MISSING",
+    "present": 0,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "anon_reservation_read",
+        "table": "reservations",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260703170000_foot_treatment_photos_staff_capture.sql",
+    "version": "20260703170000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "DRIFT",
+    "present": 7,
+    "absent": 3,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "treatment_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_photos_read_clinic",
+        "table": "treatment_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_photos_insert_staff",
+        "table": "treatment_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_photos_update_staff",
+        "table": "treatment_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_photos_obj_read",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_photos_obj_insert",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_photos_obj_update",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "index",
+        "name": "idx_treatment_photos_customer_live",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_treatment_photos_checkin_live",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_treatment_photos_clinic_live",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260703170500_foot_treatment_photos_legacy_copy.sql",
+    "version": "20260703170500",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260703183000_foot_pos_schema_align_pci_guard.sql",
+    "version": "20260703183000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "DRIFT",
+    "present": 1,
+    "absent": 5,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_is_luhn",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_pos_response_pci_guard",
+        "exists": false
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "pos_provider",
+        "exists": false
+      },
+      {
+        "kind": "column",
+        "table": "package_payments",
+        "name": "pos_provider",
+        "exists": false
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_payments_pos_pci_guard",
+        "exists": false
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_package_payments_pos_pci_guard",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260706140000_koh_publish_birth_server_derive.sql",
+    "version": "20260706140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "publish_koh_result",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260706170000_foot_docform_jeungmyeong_category_membership_affirm.sql",
+    "version": "20260706170000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260707120500_foot_reservations_dopamine_call_cols_landing.sql",
+    "version": "20260707120500",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "prevention_call_done",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "cancellation_call_done",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "no_show_clicked_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260707160000_customers_insurance_cert_no.sql",
+    "version": "20260707160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "customers",
+        "name": "insurance_cert_no",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260707180000_duty_roster_coordinator_write_additive.sql",
+    "version": "20260707180000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "duty_roster_insert_coordinator",
+        "table": "duty_roster",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "duty_roster_update_coordinator",
+        "table": "duty_roster",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "duty_roster_delete_coordinator",
+        "table": "duty_roster",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260708000000_foot_payment_items_additive.sql",
+    "version": "20260708000000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "payment_items",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "payment_items_clinic_isolation",
+        "table": "payment_items",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payment_items_payment_id",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payment_items_check_in_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260708150000_foot_ingest_brief_note_wiring.sql",
+    "version": "20260708150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "upsert_reservation_from_source",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260708210000_foot_treating_doctor_additive.sql",
+    "version": "20260708210000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "treating_doctor_id",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "clinic_doctors",
+        "name": "staff_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260708220000_foot_pkg_treatment_type_reference_price.sql",
+    "version": "20260708220000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_pkg_discount_by_consultant",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_stats_pkg_avg_by_treatment",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "treatment_standard_prices",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "packages",
+        "name": "treatment_type",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "packages",
+        "name": "reference_price",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "treatment_standard_prices_clinic_isolation",
+        "table": "treatment_standard_prices",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_treatment_standard_prices_clinic",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260708230000_redpay_recon_daily_view.sql",
+    "version": "20260708230000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_redpay_feed_freshness",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_daily",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260709120000_foot_customers_phone_dummy_add_trigger.sql",
+    "version": "20260709120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "is_dummy_phone",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "customers_set_phone_dummy",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "customers",
+        "name": "phone_dummy",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_customers_set_phone_dummy",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710120000_ocr_receipt_redpay_match.sql",
+    "version": "20260710120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_receipt_settlement_daily",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "image_url",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "receipt_ocr_results",
+        "name": "parsed_approval_no",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "payments_ocr_receipt_idempotent_idx",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710163000_prescription_codes_read_rls_canonical.sql",
+    "version": "20260710163000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "prescription_codes_approved_read",
+        "table": "prescription_codes",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710170000_rrn_decrypt_version_aware_multikey.sql",
+    "version": "20260710170000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "rrn_decrypt",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_customer_birthdates",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710180000_fn_customer_birthdates_version_aware_vault.sql",
+    "version": "20260710180000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_customer_birthdates",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710190000_redpay_reconcile_cron.sql",
+    "version": "20260710190000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "trigger_redpay_reconcile",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710223000_secdef_anon_execute_revoke_allowlist.sql",
+    "version": "20260710223000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260710224000_prescreen_searchpath_pin_harden.dryrun.sql",
+    "version": "20260710224000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_prescreen_start",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_complete_prescreen_checklist",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260710224000_prescreen_searchpath_pin_harden.sql",
+    "version": "20260710224000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_prescreen_start",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_complete_prescreen_checklist",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260711120000_selfcheckin_today_reservations_server_masking.dryrun.sql",
+    "version": "20260711120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260711120000_selfcheckin_today_reservations_server_masking.sql",
+    "version": "20260711120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_today_reservations",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260711140000_redpay_terminal_registry_ssot.dryrun.sql",
+    "version": "20260711140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "redpay_terminal_registry",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260711140000_redpay_terminal_registry_ssot.sql",
+    "version": "20260711140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_redpay_feed_freshness",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "redpay_terminal_registry",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_daily",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_receipt_settlement_daily",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_redpay_unclassified_merchants",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "redpay_terminal_registry_read_all",
+        "table": "redpay_terminal_registry",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_redpay_terminal_registry_domain_active",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260713120000_selfcheckin_writepath_harden_masked_reject.sql",
+    "version": "20260713120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "self_checkin_with_reservation_link",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260713140000_wsc_oxrow_merge_reanchor_remove.sql",
+    "version": "20260713140000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260713150000_foot_rpc_upsert_name_never_downgrade_guard.dryrun.sql",
+    "version": "20260713150000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "upsert_reservation_from_source",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260713150000_foot_rpc_upsert_name_never_downgrade_guard.sql",
+    "version": "20260713150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "upsert_reservation_from_source",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260713160000_foot_phone_e164_chk_expr_fix.dryrun.sql",
+    "version": "20260713160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260713160000_foot_phone_e164_chk_expr_fix.sql",
+    "version": "20260713160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260713170000_foot_staff_auth_action_audit.dryrun.sql",
+    "version": "20260713170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "record_auth_action",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "stamp_auth_action_outcome",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "staff_auth_action_audit",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "saaa_admin_read",
+        "table": "staff_auth_action_audit",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260713170000_foot_staff_auth_action_audit.sql",
+    "version": "20260713170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 8,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "record_auth_action",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "stamp_auth_action_outcome",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "staff_auth_action_audit",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "saaa_admin_read",
+        "table": "staff_auth_action_audit",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_saaa_actor_user",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_saaa_target_user",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_saaa_actor_staff",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_saaa_occurred",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714020000_foot_customers_mask_contam_backfill.sql",
+    "version": "20260714020000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "MISSING",
+    "present": 0,
+    "absent": 3,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "_backfill_mask_contam_customers_bak",
+        "exists": false
+      },
+      {
+        "kind": "table",
+        "name": "_backfill_mask_contam_fkmoves",
+        "exists": false
+      },
+      {
+        "kind": "table",
+        "name": "_backfill_mask_contam_denorm",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260714110000_clinics_hira_unit_value_2026_governed.sql",
+    "version": "20260714110000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260714120000_selfcheckin_upsert_masked_pii_reject_guard.sql",
+    "version": "20260714120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 5,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "_fn_is_masked_pii",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_upsert_customer",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_upsert_customer_resolve_v2",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_upsert_customer_resolve_v3",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "self_checkin_create",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714120500_calc_copayment_hira_governed_elderly_tiers.sql",
+    "version": "20260714120500",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "calc_copayment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714133000_calc_copayment_elderly_floor_rounding.sql",
+    "version": "20260714133000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "calc_copayment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714160000_clinics_representative_name.sql",
+    "version": "20260714160000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "clinics",
+        "name": "representative_name",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714170000_paylog_center_column.dryrun.sql",
+    "version": "20260714170000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "payment_reconciliation_log",
+        "name": "center",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "recon_log_clinic_center_created_idx",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714170000_paylog_center_column.sql",
+    "version": "20260714170000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "payment_reconciliation_log",
+        "name": "center",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "recon_log_clinic_center_created_idx",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714170100_redpay_dohsu_registry_seed.sql",
+    "version": "20260714170100",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260714180000_clinics_hira_institution_name_axis.sql",
+    "version": "20260714180000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "clinics",
+        "name": "hira_institution_name",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714190000_closing_manual_payments_softvoid.sql",
+    "version": "20260714190000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "closing_manual_payments",
+        "name": "voided_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "closing_manual_payments",
+        "name": "voided_reason",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "closing_manual_payments",
+        "name": "voided_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714200000_foot_refund_package_payment_rpc.dryrun.sql",
+    "version": "20260714200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_package_payment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714200000_foot_refund_package_payment_rpc.sql",
+    "version": "20260714200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_package_payment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714210000_redpay_body_recon_view_grant.dryrun.sql",
+    "version": "20260714210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_body",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payment_reconciliation_log",
+        "name": "center",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260714210000_redpay_body_recon_view_grant.sql",
+    "version": "20260714210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_body",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715120000_maskreject_writepath_rescope_2paths.sql",
+    "version": "20260715120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_dashboard_reissue_health_q_token",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "upsert_reservation_from_source",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715123000_foot_visit_call_result_receive.sql",
+    "version": "20260715123000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "visit_call_result",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_reservations_visit_call_event_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715130000_customers_maskreject_table_trigger.sql",
+    "version": "20260715130000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "_trg_customers_reject_masked_pii",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_customers_reject_masked_pii",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715130000_foot_anon_write_grant_hygiene_sweep.sql",
+    "version": "20260715130000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "payment_audit_logs_open",
+        "table": "payment_audit_logs",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715140000_foot_stats_revenue_attrib_axis_unify.sql",
+    "version": "20260715140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_revenue",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_stats_by_category",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715150000_calc_copayment_general_floor_rounding.sql",
+    "version": "20260715150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "calc_copayment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715160000_foot_consultfee_writepath_insurance.sql",
+    "version": "20260715160000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "record_insurance_consult_payment",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "service_charge_id",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "service_charges",
+        "name": "hira_unit_value_year",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_service_charge",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715180000_foot_docfee_bill_receipt_new_seed.sql",
+    "version": "20260715180000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260715190000_foot_pkg_orphan_credit_freeze.report.sql",
+    "version": "20260715190000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260715190000_foot_pkg_regen_credit_ledger_fklink.dryrun.sql",
+    "version": "20260715190000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "package_credit_balance",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "package_credit_ledger",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "package_amendments",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "package_id",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "packages",
+        "name": "superseded_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_package",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_packages_superseded_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715190000_foot_pkg_regen_credit_ledger_fklink.sql",
+    "version": "20260715190000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 14,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "package_credit_balance",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "package_credit_ledger",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "package_amendments",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "package_id",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "packages",
+        "name": "superseded_by",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pkg_credit_ledger_read",
+        "table": "package_credit_ledger",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pkg_credit_ledger_insert",
+        "table": "package_credit_ledger",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pkg_amendments_read",
+        "table": "package_amendments",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pkg_amendments_insert",
+        "table": "package_amendments",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_package",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_packages_superseded_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pkg_credit_ledger_account",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pkg_credit_ledger_customer",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pkg_amendments_package",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260715191000_foot_pkg_orphan_credit_reanchor.backfill.dryrun.sql",
+    "version": "20260715191000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260715191000_foot_pkg_orphan_credit_reanchor.backfill.sql",
+    "version": "20260715191000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716120000_foot_pkg_treatment_type_add_exppass.sql",
+    "version": "20260716120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716140000_foot_dopamine_reschedule_emit.dryrun.sql",
+    "version": "20260716140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_dopamine_reschedule",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_dopamine_cb_resv_reschedule",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260716140000_foot_dopamine_reschedule_emit.sql",
+    "version": "20260716140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_dopamine_reschedule",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_dopamine_cb_resv_reschedule",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260716140100_rxset_hira_provenance_columns.sql",
+    "version": "20260716140100",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "prescription_codes",
+        "name": "hira_verified_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260716140500_rxset_flunacoem_map_apply.sql",
+    "version": "20260716140500",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716160000_foot_visit_route_gonghom_add.dryrun.sql",
+    "version": "20260716160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716160000_foot_visit_route_gonghom_add.sql",
+    "version": "20260716160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716180000_foot_rpc_anon_exec_hygiene_sweep_batch1.sql",
+    "version": "20260716180000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716210000_foot_rpc_anon_exec_hygiene_sweep_batch2.sql",
+    "version": "20260716210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260716220000_foot_insgrade_resettle_marker_and_rpc.dryrun.sql",
+    "version": "20260716220000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "resettle_reason",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_resettle_reason",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260716220000_foot_insgrade_resettle_marker_and_rpc.sql",
+    "version": "20260716220000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "resettle_insurance_grade",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "resettle_reason",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_resettle_reason",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260717140000_foot_payments_created_by_processor.dryrun.sql",
+    "version": "20260717140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_single_payment",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "created_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_created_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260717140000_foot_payments_created_by_processor.sql",
+    "version": "20260717140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_single_payment",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "created_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_created_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260717160000_foot_stats_consultant_pkg_attr_reconstruct.sql",
+    "version": "20260717160000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_consultant",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260717170000_foot_stats_consultant_arpu_consulted_denom.sql",
+    "version": "20260717170000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_consultant",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260717190000_foot_stats_by_category_pkg_created_reconcile.sql",
+    "version": "20260717190000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_by_category",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718120000_foot_checkin_visited_stage_emit.dryrun.sql",
+    "version": "20260718120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_dopamine_visited_stage",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_dopamine_cb_checkin_stage",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718120000_foot_checkin_visited_stage_emit.sql",
+    "version": "20260718120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_dopamine_visited_stage",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_dopamine_cb_checkin_stage",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718120000_foot_clinic_doctor_staff_bridge_backfill.sql",
+    "version": "20260718120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718130000_foot_outbox_worker_http_post_jsonb_fix.dryrun.sql",
+    "version": "20260718130000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "process_dopamine_callback_outbox",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "alert_dopamine_callback_dlq",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718130000_foot_outbox_worker_http_post_jsonb_fix.sql",
+    "version": "20260718130000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "process_dopamine_callback_outbox",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "alert_dopamine_callback_dlq",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718140000_foot_closing_herald_pilot.dryrun.sql",
+    "version": "20260718140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718140000_foot_closing_herald_pilot.sql",
+    "version": "20260718140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 19,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_payment_snapshot",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "daily_closing_confirm_guard",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_month_projection",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_config_stamp_live_since",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "enqueue_closing_confirmed",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "alert_closing_confirmed_dlq",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "process_closing_confirmed_outbox",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_closing_herald_preflight",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "closing_confirmed_outbox",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "closing_confirmed_config",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "daily_closings",
+        "name": "confirmed_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_foot_closing_outbox_key",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_foot_closing_outbox_due",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_foot_closing_outbox_dlq_unalerted",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_daily_closing_confirm_guard",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_closing_config_stamp_live_since",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_enqueue_closing_confirmed",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718150000_daewoong_pluranazole_remove.dryrun.sql",
+    "version": "20260718150000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718150000_daewoong_pluranazole_remove.sql",
+    "version": "20260718150000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718150000_foot_prescription_code_allowlist.dryrun.sql",
+    "version": "20260718150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "prescription_code_allowlist",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "prescription_code_allowlist_approved_read",
+        "table": "prescription_code_allowlist",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "prescription_code_allowlist_admin_all",
+        "table": "prescription_code_allowlist",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718150000_foot_prescription_code_allowlist.sql",
+    "version": "20260718150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "prescription_code_allowlist",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "prescription_code_allowlist_approved_read",
+        "table": "prescription_code_allowlist",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "prescription_code_allowlist_admin_all",
+        "table": "prescription_code_allowlist",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718160000_rxset_custom_drug_hira_map_batch16_apply.sql",
+    "version": "20260718160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718170000_foot_rx_issue_no_daily_counter.dryrun.sql",
+    "version": "20260718170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "issue_foot_rx_issue_no",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "foot_rx_issue_counter",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "form_submissions",
+        "name": "rx_issue_seq",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718170000_foot_rx_issue_no_daily_counter.sql",
+    "version": "20260718170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "issue_foot_rx_issue_no",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "foot_rx_issue_counter",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "form_submissions",
+        "name": "rx_issue_seq",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718200000_foot_vdailyrev_active_filter_anon_revoke.dryrun.sql",
+    "version": "20260718200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_daily_revenue",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718200000_foot_vdailyrev_active_filter_anon_revoke.sql",
+    "version": "20260718200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_daily_revenue",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718210000_foot_progress_result_images.dryrun.sql",
+    "version": "20260718210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "DRIFT",
+    "present": 7,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "progress_results_admin_all",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "policy",
+        "name": "pri_admin_select",
+        "table": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pri_admin_insert",
+        "table": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pri_own_delete",
+        "table": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pri_customer",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pri_clinic",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pri_chart",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718210000_foot_progress_result_images.sql",
+    "version": "20260718210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "DRIFT",
+    "present": 7,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "progress_results_admin_all",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "policy",
+        "name": "pri_admin_select",
+        "table": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pri_admin_insert",
+        "table": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pri_own_delete",
+        "table": "progress_result_images",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pri_customer",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pri_clinic",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_pri_chart",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718210000_rxset_ogmento_map_apply.sql",
+    "version": "20260718210000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718220000_foot_selfreg_handle_new_user_canon.sql",
+    "version": "20260718220000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "handle_new_user",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "on_auth_user_created",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718230000_foot_noshow_divergence_backfill.dryrun.sql",
+    "version": "20260718230000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718230000_foot_noshow_divergence_backfill.sql",
+    "version": "20260718230000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260718240000_foot_pkg_consultant_id_capture.sql",
+    "version": "20260718240000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "set_package_consultant_id",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "packages",
+        "name": "consultant_id",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_packages_consultant_id",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_pkg_consultant_capture",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260718241000_foot_pkg_consultant_id_backfill.sql",
+    "version": "20260718241000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260719010000_foot_counselor_stats_rpc.sql",
+    "version": "20260719010000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_counselor_stats",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260719100000_foot_pkg_consultant_id_backfill_reconcile.sql",
+    "version": "20260719100000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260719120000_selfcheckin_v3_reservlink_createdby_stamp.sql",
+    "version": "20260719120000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_upsert_customer_resolve_v3",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "self_checkin_with_reservation_link",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260719140000_foot_stats_revenue_filter_sim_status.sql",
+    "version": "20260719140000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_revenue",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260720170000_redpay_foot_registry_expand_26.sql",
+    "version": "20260720170000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260720193000_calc_copayment_grade_flat_exempt.sql",
+    "version": "20260720193000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "calc_copayment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260720230000_foot_aicc_phonematch_revoke_anon.sql",
+    "version": "20260720230000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260720231000_foot_selfcheckin_resolve_custid_rpc.sql",
+    "version": "20260720231000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_resolve_customer_id_by_phone",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260720232000_foot_customers_anon_select_lockdown.sql",
+    "version": "20260720232000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260721120000_selfcheckin_today_reservations_nfc_normalize_mask.dryrun.sql",
+    "version": "20260721120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_today_reservations",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260721120000_selfcheckin_today_reservations_nfc_normalize_mask.sql",
+    "version": "20260721120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_today_reservations",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260721140000_customers_name_nfd_nfc_backfill.dryrun.sql",
+    "version": "20260721140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260721140000_customers_name_nfd_nfc_backfill.sql",
+    "version": "20260721140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260721150000_name_nfc_writeguard_trigger.dryrun.sql",
+    "version": "20260721150000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_name_nfc_writeguard",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_name_nfc_writeguard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260721150000_name_nfc_writeguard_trigger.sql",
+    "version": "20260721150000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_name_nfc_writeguard",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_name_nfc_writeguard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260721150001_foot_reservations_customer_real_phone_add.sql",
+    "version": "20260721150001",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "upsert_reservation_from_source",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "customer_real_phone",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723170000_foot_selfcheckin_prior_visit_add.sql",
+    "version": "20260723170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_selfcheckin_prior_visit",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723180000_foot_redpay_planb_pending_payment.sql",
+    "version": "20260723180000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 5,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "pending_payment",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "pending_payment_rw_own_clinic",
+        "table": "pending_payment",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "pending_payment_open_uq",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "pending_payment_match_idx",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "pending_payment_updated_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723180100_foot_redpay_raw_received_at.sql",
+    "version": "20260723180100",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "redpay_raw_transactions",
+        "name": "received_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723190000_foot_pkgsession_link_unwired_widened.sql",
+    "version": "20260723190000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "consume_package_sessions_for_checkin",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723200000_foot_cancel_reservation_from_source_rpc.sql",
+    "version": "20260723200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "cancel_reservation_from_source",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723210000_foot_cancel_outbox_distinct_per_event_keying.dryrun.sql",
+    "version": "20260723210000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "ensure_reservation_cancelled_at",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "enqueue_dopamine_callback",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_ensure_reservation_cancelled_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260723210000_foot_cancel_outbox_distinct_per_event_keying.sql",
+    "version": "20260723210000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "ensure_reservation_cancelled_at",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "enqueue_dopamine_callback",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_ensure_reservation_cancelled_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724120000_foot_data_correction_hold_registry_guard.dryrun.sql",
+    "version": "20260724120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_data_correction_hold_guard",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "data_correction_hold_registry",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_hold_active",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_data_correction_hold_guard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724120000_foot_data_correction_hold_registry_guard.seed.sql",
+    "version": "20260724120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260724120000_foot_data_correction_hold_registry_guard.sql",
+    "version": "20260724120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_data_correction_hold_guard",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "data_correction_hold_registry",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_hold_active",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_data_correction_hold_guard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724130000_foot_stats_consultant_singlepay_customer_attr.sql",
+    "version": "20260724130000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_consultant",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724140000_foot_nhis_lookup_audit_rpc.dryrun.sql",
+    "version": "20260724140000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "log_nhis_eligibility_lookup",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724140000_foot_nhis_lookup_audit_rpc.sql",
+    "version": "20260724140000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "log_nhis_eligibility_lookup",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724170000_redpay_foot_registry_0723gap_optbprime.sql",
+    "version": "20260724170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_redpay_feed_freshness",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_daily",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_receipt_settlement_daily",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "redpay_terminal_registry",
+        "name": "superseded_tids",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260724210000_foot_juyeon_director_1wk_tempgrant.sql",
+    "version": "20260724210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_juyeon_tempgrant_tick",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725050000_redpay_foot_registry_0724gap_remap.sql",
+    "version": "20260725050000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260725120000_foot_check_in_services_seller_staff.dryrun.sql",
+    "version": "20260725120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_in_services",
+        "name": "seller_staff_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725120000_foot_check_in_services_seller_staff.sql",
+    "version": "20260725120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_in_services",
+        "name": "seller_staff_id",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "check_in_services_seller_staff_id_idx",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725120000_foot_update_insurance_grade_secdef_rpc.dryrun.sql",
+    "version": "20260725120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "update_insurance_grade",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725120000_foot_update_insurance_grade_secdef_rpc.sql",
+    "version": "20260725120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "update_insurance_grade",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725140000_redpay_dosu_contam_delete.dryrun.sql",
+    "version": "20260725140000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260725140000_redpay_dosu_contam_delete.sql",
+    "version": "20260725140000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260725160000_foot_check_ins_soft_hide.dryrun.sql",
+    "version": "20260725160000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "deleted_at",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_check_ins_live_clinic_checkedin",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725160000_foot_check_ins_soft_hide.sql",
+    "version": "20260725160000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_consultant",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_stats_noshow_returning",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "deleted_at",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_check_ins_live_clinic_checkedin",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725170000_foot_juyeon_tempgrant_disable_autorevert.sql",
+    "version": "20260725170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_juyeon_tempgrant_tick",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_juyeon_tempgrant_revert",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725180000_foot_consultfee_surcharge_servicecharge_persist.sql",
+    "version": "20260725180000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "calc_copayment",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "record_insurance_consult_payment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260725190000_foot_stats_experience_include_pkg_trial.sql",
+    "version": "20260725190000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_therapist_summary",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260726130000_foot_consult_autoassign_ranking_v1.dryrun.sql",
+    "version": "20260726130000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 6,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "assignment_ranking_weights",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "assignment_daily_target_config",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "assignment_leadsource_policy",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "assignment_pointer_state",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff",
+        "name": "auto_assign_enabled",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff",
+        "name": "slack_user_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260726130000_foot_consult_autoassign_ranking_v1.sql",
+    "version": "20260726130000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 13,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "assignment_ranking_weights",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "assignment_daily_target_config",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "assignment_leadsource_policy",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "assignment_pointer_state",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff",
+        "name": "auto_assign_enabled",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff",
+        "name": "slack_user_id",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "arw_select",
+        "table": "assignment_ranking_weights",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "arw_write",
+        "table": "assignment_ranking_weights",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "adtc_select",
+        "table": "assignment_daily_target_config",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "adtc_write",
+        "table": "assignment_daily_target_config",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "alp_select",
+        "table": "assignment_leadsource_policy",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "alp_write",
+        "table": "assignment_leadsource_policy",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "aps_all",
+        "table": "assignment_pointer_state",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260726170000_foot_assign_ranking_weight_b.sql",
+    "version": "20260726170000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260727090000_foot_drop_orphan_payment_preempts.dryrun.sql",
+    "version": "20260727090000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260727090000_foot_drop_orphan_payment_preempts.sql",
+    "version": "20260727090000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260727100000_foot_redpay_planb_pending_payment_ttl.sql",
+    "version": "20260727100000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "pending_payment",
+        "name": "expires_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "pending_payment",
+        "name": "locked_until",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "pending_payment",
+        "name": "fail_reason",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260727100000_redpay_foot_registry_0725gap_remap.sql",
+    "version": "20260727100000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260727120000_foot_stats_consultant_admin_gate.sql",
+    "version": "20260727120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_stats_consultant_admin",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260727210000_foot_package_payments_created_by.dryrun.sql",
+    "version": "20260727210000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_package_payment",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "package_payments",
+        "name": "created_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_package_payments_created_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260727210000_foot_package_payments_created_by.sql",
+    "version": "20260727210000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_package_payment",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "package_payments",
+        "name": "created_by",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_package_payments_created_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260727213000_foot_resettle_provisional_floor_align.dryrun.sql",
+    "version": "20260727213000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260727213000_foot_resettle_provisional_floor_align.sql",
+    "version": "20260727213000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "resettle_insurance_grade",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260728170000_redpay_foot_registry_0728gap_remap.sql",
+    "version": "20260728170000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260729090000_foot_docform_first_visit_mgmt_record_seed.sql",
+    "version": "20260729090000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260729120000_foot_redpay_planb_expires_default_5min.sql",
+    "version": "20260729120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260729130000_foot_redpay_planb_match_cron.sql",
+    "version": "20260729130000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "trigger_redpay_planb_match",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260729140000_foot_consult_notify_confirm_gate.sql",
+    "version": "20260729140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "consult_notify_status",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "consult_notify_sent_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "consult_notify_by",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "consult_notify_slack_ts",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260729193000_foot_mgmtrecord_7field_revise_fieldmap.sql",
+    "version": "20260729193000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260730120000_foot_assign_leadsource_6path_split.dryrun.sql",
+    "version": "20260730120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260730120000_foot_assign_leadsource_6path_split.sql",
+    "version": "20260730120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260730120000_foot_status_transitions_room_id_backfill.sql",
+    "version": "20260730120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260730160000_foot_closing_reader_provision.sql",
+    "version": "20260730160000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "read_closing_confirmed_events",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260730190000_foot_rrn_clipboard_copy_audit_rpc.dryrun.sql",
+    "version": "20260730190000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "log_rrn_clipboard_copy",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260730190000_foot_rrn_clipboard_copy_audit_rpc.sql",
+    "version": "20260730190000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "log_rrn_clipboard_copy",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260730200000_foot_payment_sync_outbox_emit.dryrun.sql",
+    "version": "20260730200000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_payment_sync_from_payments",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "payment_sync_outbox",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_enqueue_payment_sync_from_payments",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260730200000_foot_payment_sync_outbox_emit.sql",
+    "version": "20260730200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_payment_sync_from_payments",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "alert_payment_sync_dlq",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "payment_sync_drain",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "payment_sync_outbox",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payment_sync_outbox_due",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payment_sync_outbox_dlq_unalerted",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_enqueue_payment_sync_from_payments",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731113000_foot_testpay_sandbox_exclude_is_simulation.dryrun.sql",
+    "version": "20260731113000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 9,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "stamp_is_simulation_from_customer",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "is_simulation",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "service_charges",
+        "name": "is_simulation",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "package_payments",
+        "name": "is_simulation",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_payments_sim_stamp_insert",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_service_charges_sim_stamp_insert",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_package_payments_sim_stamp_insert",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731113000_foot_testpay_sandbox_exclude_is_simulation.sql",
+    "version": "20260731113000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 12,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "stamp_is_simulation_from_customer",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "is_simulation",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "service_charges",
+        "name": "is_simulation",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "package_payments",
+        "name": "is_simulation",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_payments_simulation",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_service_charges_simulation",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_package_payments_simulation",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_payments_sim_stamp_insert",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_service_charges_sim_stamp_insert",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_package_payments_sim_stamp_insert",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731150000_foot_healthq_photo_upload.dryrun.sql",
+    "version": "20260731150000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "DRIFT",
+    "present": 5,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_health_q_submit",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "health_q_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "health_q_photos_select_clinic",
+        "table": "health_q_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "health_q_photos_obj_read",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "index",
+        "name": "idx_health_q_photos_result",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_health_q_photos_clinic",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731150000_foot_healthq_photo_upload.sql",
+    "version": "20260731150000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "DRIFT",
+    "present": 5,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_health_q_submit",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "health_q_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "health_q_photos_select_clinic",
+        "table": "health_q_photos",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "health_q_photos_obj_read",
+        "table": "storage",
+        "exists": false
+      },
+      {
+        "kind": "index",
+        "name": "idx_health_q_photos_result",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_health_q_photos_clinic",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731190000_foot_cband_payment_attempts.sql",
+    "version": "20260731190000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 14,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "cband_pa_touch_updated_at",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "cband_pa_sim_stamp",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_is_luhn",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "cband_pa_pci_guard",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "cband_payment_attempts",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "cband_pa_read_own_clinic",
+        "table": "cband_payment_attempts",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "cband_pa_insert_own_clinic",
+        "table": "cband_payment_attempts",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "cband_pa_update_own_clinic",
+        "table": "cband_payment_attempts",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ux_cband_pa_clinic_msgtrace",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ux_cband_pa_inflight_checkin",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ix_cband_pa_payment_id",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_cband_pa_touch_updated_at",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_cband_pa_sim_stamp",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_cband_pa_pci_guard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731190500_foot_payments_payment_attempt_id_fk.sql",
+    "version": "20260731190500",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "payment_attempt_id",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ux_payments_payment_attempt_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731200000_foot_healthq_photo_foot_side.sql",
+    "version": "20260731200000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_health_q_submit",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "health_q_photos",
+        "name": "foot_side",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_health_q_photos_result_side",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731210000_foot_fvmr_content_draft_publish.sql",
+    "version": "20260731210000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "publish_first_visit_mgmt_record",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "form_submissions",
+        "name": "source_submission_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260731210000_foot_treatment_photos_firstvisit_2slot.sql",
+    "version": "20260731210000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "treatment_photos",
+        "name": "foot_side",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_treatment_photos_checkin_source_side",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260801090000_foot_admin_approve_confirm_email.sql",
+    "version": "20260801090000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "admin_approve_and_confirm_user",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260801093000_foot_admin_reset_password_confirm_email.sql",
+    "version": "20260801093000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "admin_reset_user_password",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260801230000_foot_inflow_channel_intake_lane.sql",
+    "version": "20260801230000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 10,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_inflow_channels",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "system_codes",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "code_availability",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "inflow_channel",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "inflow_channel",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "customers",
+        "name": "first_inflow_channel",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "customers",
+        "name": "first_inflow_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "customers",
+        "name": "first_inflow_source_ref",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "system_codes_select",
+        "table": "system_codes",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "code_availability_select",
+        "table": "code_availability",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260802050000_foot_redpay_approvalno_backfill_405.dryrun.sql",
+    "version": "20260802050000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260802050000_foot_redpay_approvalno_backfill_405.sql",
+    "version": "20260802050000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "MISSING",
+    "present": 0,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "_backup",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260802061500_foot_record_planb_card_payment_rpc.sql",
+    "version": "20260802061500",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "record_planb_card_payment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260802120000_customers_designated_therapist_writeguard.sql",
+    "version": "20260802120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_designated_therapist_writeguard",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_designated_therapist_writeguard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260802140000_foot_examfee_seedscore_197_latent_correct.dryrun.sql",
+    "version": "20260802140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260802140000_foot_examfee_seedscore_197_latent_correct.sql",
+    "version": "20260802140000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "MISSING",
+    "present": 0,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "_backup",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260802150000_foot_form_submissions_softdelete_audit.sql",
+    "version": "20260802150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 12,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "form_submissions_body_audit",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "form_submissions_published_immutable_guard",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "form_submissions_audit_log",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "form_submissions",
+        "name": "deleted_at",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "fsal_select_director_admin",
+        "table": "form_submissions_audit_log",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "fsal_insert_approved",
+        "table": "form_submissions_audit_log",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "fs_deleted_rows_director_only",
+        "table": "form_submissions",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_form_submissions_active",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_fsal_submission_id",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_fsal_clinic_date",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_form_submissions_body_audit",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_form_submissions_published_immutable",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260802160000_foot_pmw_reconcile_autopromote_forwardfix.sql",
+    "version": "20260802160000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "count_stuck_reconciled_payment_waiting",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "promote_reconciled_payment_waiting",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260802160001_foot_closing_confirmed_edit.dryrun.sql",
+    "version": "20260802160001",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260802160001_foot_closing_confirmed_edit.sql",
+    "version": "20260802160001",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 5,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_confirmed_edit",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "closing_edit_log",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "closing_edit_log_read",
+        "table": "closing_edit_log",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_closing_edit_log_clinic_date",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_closing_edit_log_closing",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260802170000_foot_status_transitions_room_id_backfill_remainder.sql",
+    "version": "20260802170000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260802180000_attendance_qr_port.sql",
+    "version": "20260802180000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "DRIFT",
+    "present": 24,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_vault_secret",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "set_staff_phone",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_attendance_verdict",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "fn_attendance_record_punch",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "approve_attendance_device",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "revoke_attendance_device",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "attendance_otp",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "attendance_punch",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "attendance_audit",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "attendance_device",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_attendance_reconcile",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff",
+        "name": "phone",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff_attendance",
+        "name": "scheduled_start_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "staff_attendance",
+        "name": "scheduled_end_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "clinics",
+        "name": "attendance_late_grace_min",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "clinics",
+        "name": "attendance_absent_cutoff",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "attendance_punch_select_mgr",
+        "table": "attendance_punch",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "attendance_audit_select_mgr",
+        "table": "attendance_audit",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "attendance_device_select_mgr",
+        "table": "attendance_device",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_attendance_otp_phone",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_attendance_punch_clinic_date",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_attendance_audit_clinic",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_attendance_device_clinic_status",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_attendance_device_token",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_attendance_device_active_staff",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260803090000_foot_check_ins_assignment_consult_type.dryrun.sql",
+    "version": "20260803090000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260803090000_foot_check_ins_assignment_consult_type.sql",
+    "version": "20260803090000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "assignment_consult_type",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803120000_dopamine_outbound_log_cancelled_callbacktype.sql",
+    "version": "20260803120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260803160000_redpay_unregistered_line_digest.sql",
+    "version": "20260803160000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 5,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "redpay_note_unregistered_line",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "trigger_redpay_unreg_digest",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "redpay_unregistered_line_seen",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "redpay_unregistered_line_seen_read_all",
+        "table": "redpay_unregistered_line_seen",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_redpay_unreg_line_unresolved",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803230000_foot_visit_nature_intake_lane.sql",
+    "version": "20260803230000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "get_visit_natures",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "system_codes",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "code_availability",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "visit_nature",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "visit_nature",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "system_codes_select",
+        "table": "system_codes",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "code_availability_select",
+        "table": "code_availability",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803230500_foot_visit_nature_derive_seed_backfill.dryrun.sql",
+    "version": "20260803230500",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260803230500_foot_visit_nature_derive_seed_backfill.sql",
+    "version": "20260803230500",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "archive_visit_nature_deriveseed_20260803",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803234500_foot_redpay_ingestion_gap_log_modeb.dryrun.sql",
+    "version": "20260803234500",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_redpay_ingestion_gap_persist",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "redpay_ingestion_gap_log",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_redpay_gap_open",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803234500_foot_redpay_ingestion_gap_log_modeb.sql",
+    "version": "20260803234500",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_redpay_ingestion_gap_persist",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "redpay_ingestion_gap_log",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "redpay_gap_select_admin",
+        "table": "redpay_ingestion_gap_log",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_redpay_gap_open",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ix_redpay_gap_merchant",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ix_redpay_gap_bizdate",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ix_redpay_gap_open_bizdate",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803235500_foot_redpay_installverify_classify.dryrun.sql",
+    "version": "20260803235500",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_redpay_installverify_pairs",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_daily",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260803235500_foot_redpay_installverify_classify.sql",
+    "version": "20260803235500",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "v_redpay_installverify_pairs",
+        "exists": true
+      },
+      {
+        "kind": "view",
+        "name": "v_redpay_reconciliation_daily",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804010000_redpay_foot_registry_tidmap_swap_backfill.sql",
+    "version": "20260804010000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260804020000_foot_hira_drug_name_index_ac8.dryrun.sql",
+    "version": "20260804020000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "hira_drug_name_index",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "hira_drug_name_index_approved_read",
+        "table": "hira_drug_name_index",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "hira_drug_name_index_name_norm_trgm",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804020000_foot_hira_drug_name_index_ac8.sql",
+    "version": "20260804020000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "hira_drug_name_index",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "hira_drug_name_index_approved_read",
+        "table": "hira_drug_name_index",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "hira_drug_name_index_name_norm_trgm",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804090000_foot_payments_method_health_maintenance.dryrun.sql",
+    "version": "20260804090000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804090000_foot_payments_method_health_maintenance.sql",
+    "version": "20260804090000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_month_projection",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804100000_foot_attendance_device_multi_active_reapproval_loop_fix.dryrun.sql",
+    "version": "20260804100000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "approve_attendance_device",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_attendance_device_token_hash",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804100000_foot_attendance_device_multi_active_reapproval_loop_fix.sql",
+    "version": "20260804100000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "approve_attendance_device",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "uq_attendance_device_token_hash",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804110000_foot_monthly_sales_targets.dryrun.sql",
+    "version": "20260804110000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 5,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "monthly_sales_targets_select",
+        "table": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "monthly_sales_targets_insert",
+        "table": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "monthly_sales_targets_update",
+        "table": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "monthly_sales_targets_updated_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804110000_foot_monthly_sales_targets.sql",
+    "version": "20260804110000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 5,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "table",
+        "name": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "monthly_sales_targets_select",
+        "table": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "monthly_sales_targets_insert",
+        "table": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "monthly_sales_targets_update",
+        "table": "monthly_sales_targets",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "monthly_sales_targets_updated_at",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804170000_foot_closing_herald_payload_pkg_reconcile.dryrun.sql",
+    "version": "20260804170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804170000_foot_closing_herald_payload_pkg_reconcile.sql",
+    "version": "20260804170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_month_projection",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "enqueue_closing_confirmed",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804193000_foot_payments_card_no_masked.sql",
+    "version": "20260804193000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_is_luhn",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "payments_card_no_masked_pci_guard",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "payments",
+        "name": "card_no_masked",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_payments_card_no_masked_pci_guard",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804200000_foot_closing_reemit_supersede_fix.dryrun.sql",
+    "version": "20260804200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_closing_confirmed",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260804200000_foot_closing_reemit_supersede_fix.sql",
+    "version": "20260804200000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_closing_confirmed",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260805030000_foot_partner_ro_masked_views.dryrun.sql",
+    "version": "20260805030000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "MISSING",
+    "present": 0,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "partner_ro",
+        "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260805030000_foot_partner_ro_masked_views.sql",
+    "version": "20260805030000",
+    "in_ledger": false,
+    "security": true,
+    "verdict": "MISSING",
+    "present": 0,
+    "absent": 1,
+    "objects": [
+      {
+        "kind": "view",
+        "name": "partner_ro",
+        "exists": false
       }
     ]
   }
