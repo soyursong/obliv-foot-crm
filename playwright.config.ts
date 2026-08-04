@@ -124,6 +124,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 결제완료 버튼 오클릭 안전장치 — '정말 결제완료 처리하시겠습니까?'
+        //   확인 팝업. 결제완료 트리거 2경로([수납]btn-settle→handleSettle / '결제 완료'btn-payment-submit→handleSubmit)
+        //   앞단 confirm 게이트 소스레벨 락(①확인→정상완료 ②취소→무처리 ③바깥/ESC→무처리) + CBAND 무충돌 + AC-3/4 회귀가드.
+        //   결제·수납·매출 로직 무변경(FE-only). auth/server 불요, 결정론. 실 UI 관측=supervisor field-soak.
+        '**/T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD.spec.ts',
         // T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 코밴 CAT 직결결제 팝업 금액칸 default=미납잔액 자동세팅.
         //   자동입력 default 파생 순수함수(resolveCbandDefaultAmount) SSOT + 컴포넌트/부모 배선 정적 가드.
         //   ①정상 자동입력 ②편집 override(readonly/disabled 아님) ③잔액0·음수 가드(빈칸 스킵). auth/server 불요, 결정론.

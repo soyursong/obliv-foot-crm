@@ -44,6 +44,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -994,6 +995,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState<{ method: PayMethod; amount: number }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 수납(결제완료) 오클릭 안전장치 — [수납] 버튼 클릭 시
+  //   즉시 handleSettle 하지 않고 확인 모달을 먼저 띄운다. [확인]에서만 기존 handleSettle 호출,
+  //   [취소]/ESC/바깥클릭 = 무처리(상태 무변경). 결제·수납·매출 로직 무변경(순수 앞단 confirm 게이트).
+  //   마태민 고객 오처리(08-03 19:36) 재발 방지 forward 가드.
+  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: [수납] 성공 여부(창 유지 모드에서 재클릭 이중수납 차단용).
   //   창이 닫히지 않고 유지되므로 [수납] 버튼을 계속 누를 수 있음 → payments 이중 INSERT/회차 이중 consume 위험.
   //   settled=true 이후엔 handleSettle 을 조기 차단하고 버튼을 비활성('수납 완료')한다. checkIn 전환 시 리셋(아래 useEffect).
@@ -3004,6 +3010,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
+    <>
     <Dialog
       open={!!checkIn}
       onOpenChange={(open) => {
@@ -3920,7 +3927,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                           ? 'bg-emerald-600 hover:bg-emerald-600'
                           : 'bg-purple-600 hover:bg-purple-700',
                       )}
-                      onClick={handleSettle}
+                      // T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 즉시 handleSettle 대신 확인 모달 게이트를 먼저 연다.
+                      onClick={() => setShowSettleConfirm(true)}
                       // T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN: settled 시 비활성 → 재클릭 이중수납 차단(창 유지 모드).
                       disabled={submitting || settled || !splitValid}
                       data-testid="btn-settle"
@@ -4315,5 +4323,46 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         )}
       </DialogContent>
     </Dialog>
+
+    {/* T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 수납(결제완료) 오클릭 안전장치 확인 모달.
+        [확인]만 기존 handleSettle(결제완료 처리) 호출 / [취소]·ESC·바깥클릭 = 무처리(상태 무변경).
+        기존 Dialog 컴포넌트 재사용(신규 npm X). 결제·수납·매출 로직 무변경(순수 앞단 게이트).
+        ★코밴 직접결제(CbandPayEntryButton '결제 요청')는 별도 컴포넌트/버튼 → 이 게이트 무접촉(이중팝업 없음). */}
+    <Dialog open={showSettleConfirm} onOpenChange={(o) => { if (!o) setShowSettleConfirm(false); }}>
+      <DialogContent className="max-w-sm" hideClose data-testid="settle-complete-confirm">
+        <DialogHeader>
+          <DialogTitle>정말 결제완료 처리하시겠습니까?</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-1 text-sm text-muted-foreground">
+          {checkIn && (
+            <p data-testid="settle-complete-confirm-target">
+              <span className="font-medium text-foreground">{checkIn.customer_name}</span>
+              {displayAmount > 0 && (
+                <> · 수납금액 <span className="font-medium text-foreground">{formatAmount(displayAmount)}원</span></>
+              )}
+            </p>
+          )}
+          <p>확인을 누르면 결제완료로 처리됩니다.</p>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            data-testid="btn-settle-complete-cancel"
+            onClick={() => setShowSettleConfirm(false)}
+          >
+            취소
+          </Button>
+          <Button
+            className="bg-purple-600 hover:bg-purple-700 text-white"
+            data-testid="btn-settle-complete-confirm"
+            disabled={submitting || settled || !splitValid}
+            onClick={() => { setShowSettleConfirm(false); handleSettle(); }}
+          >
+            확인
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

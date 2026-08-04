@@ -82,6 +82,11 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
   const [splitCashStr, setSplitCashStr] = useState('');
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 결제완료 오클릭 안전장치 — '결제 완료' 버튼 클릭 시
+  //   즉시 handleSubmit 하지 않고 확인 모달을 먼저 띄운다. [확인]에서만 기존 handleSubmit 호출,
+  //   [취소]/ESC/바깥클릭 = 무처리(상태 무변경). 결제·수납·매출 로직 무변경(순수 앞단 confirm 게이트).
+  //   마태민 고객 오처리(08-03 19:36) 재발 방지 forward 가드.
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   // T-20260515-foot-RECEIPT-TAX-SPLIT AC-1: 현금영수증
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
   const [cashReceiptType, setCashReceiptType] = useState<'income_deduction' | 'expense_proof'>('income_deduction');
@@ -1186,7 +1191,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
             </Button>
             <Button
               data-testid="btn-payment-submit"
-              onClick={handleSubmit}
+              onClick={() => setShowCompleteConfirm(true)}
               disabled={submitting}
             >
               {submitting
@@ -1196,6 +1201,45 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
                   : paymentMode === 'package'
                     ? '패키지 결제 완료'
                     : '결제 완료'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 결제완료 오클릭 안전장치 확인 모달.
+          [확인]만 기존 handleSubmit(결제완료 처리) 호출 / [취소]·ESC·바깥클릭 = 무처리(상태 무변경).
+          기존 Dialog 컴포넌트 재사용(신규 npm X). 결제·수납·매출 로직 무변경(순수 앞단 게이트). */}
+      <Dialog open={showCompleteConfirm} onOpenChange={(o) => { if (!o) setShowCompleteConfirm(false); }}>
+        <DialogContent className="max-w-sm" hideClose data-testid="payment-complete-confirm">
+          <DialogHeader>
+            <DialogTitle>정말 결제완료 처리하시겠습니까?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1 text-sm text-muted-foreground">
+            {checkIn && (
+              <p data-testid="payment-complete-confirm-target">
+                <span className="font-medium text-foreground">{checkIn.customer_name}</span>
+                {totalPayment > 0 && (
+                  <> · 결제금액 <span className="font-medium text-foreground">{formatAmount(totalPayment)}원</span></>
+                )}
+              </p>
+            )}
+            <p>확인을 누르면 결제완료로 처리됩니다.</p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-testid="btn-payment-complete-cancel"
+              onClick={() => setShowCompleteConfirm(false)}
+            >
+              취소
+            </Button>
+            <Button
+              className="bg-teal-600 hover:bg-teal-700"
+              data-testid="btn-payment-complete-confirm"
+              disabled={submitting}
+              onClick={() => { setShowCompleteConfirm(false); handleSubmit(); }}
+            >
+              확인
             </Button>
           </DialogFooter>
         </DialogContent>
