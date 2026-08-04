@@ -111,6 +111,7 @@ import { CustomerHoverCard } from '@/components/CustomerHoverCard';
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 // T-20260515-foot-CONTEXT-MENU-4ITEM: 진료차트 패널
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 // T-20260611-foot-CTXMENU-UNIFY-CANONICAL: 대시보드 타임라인 예약 박스 우클릭 메뉴를
@@ -473,6 +474,10 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
   const chartNumberMap = useContext(ChartNumberMapCtx);
   const chartNum = checkIn.customer_id ? chartNumberMap.get(checkIn.customer_id) : undefined;
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅).
+  //   카드 body 클릭=상세시트, 우클릭=고객차트와 별개로 차트번호 자체를 2번차트 진입점화.
+  //   stopPropagation(훅 내부) → 카드 onClick(상세)·dnd 드래그와 충돌 방지.
+  const openChartNo = useChartNoPopup();
   // T-20260522-foot-PKG-BOX-INDICATOR: 활성 패키지 보유 여부
   const pkgHolderSet = useContext(PkgHolderCtx);
   const hasPkg = !!(checkIn.customer_id && pkgHolderSet.has(checkIn.customer_id));
@@ -577,7 +582,14 @@ const DraggableCard = memo(function DraggableCard({
             )}
             {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
                 T-20260612-foot-CHARTNO-B2-P1: 미발번도 '#미발번' 명시 — 환자명 단독 노출 0(AC2). 조건부 → always-on. */}
-            <span className="text-[10px] font-mono text-teal-600 shrink-0" data-testid="waiting-card-chartno">
+            <span
+              className={`text-[10px] font-mono text-teal-600 shrink-0${checkIn.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+              data-testid="waiting-card-chartno"
+              data-chartno-popup={checkIn.customer_id ? '1' : undefined}
+              role={checkIn.customer_id ? 'button' : undefined}
+              title={checkIn.customer_id ? '차트 열기' : undefined}
+              onClick={checkIn.customer_id ? (e) => openChartNo(checkIn.customer_id, e) : undefined}
+            >
               {chartNoBadge(chartNum ?? null)}
             </span>
             {checkIn.queue_number != null && (
@@ -782,7 +794,14 @@ const DraggableCard = memo(function DraggableCard({
           )}
           {/* T-20260514-foot-CHART-NO-VISIBLE: AC-1 차트번호 상시 표시
               T-20260612-foot-CHARTNO-B2-P1: 미발번도 '#미발번' 명시 — 환자명 단독 노출 0(AC2). 조건부 → always-on. */}
-          <span className="text-[10px] font-mono text-teal-600 shrink-0" data-testid="waiting-card-chartno">
+          <span
+            className={`text-[10px] font-mono text-teal-600 shrink-0${checkIn.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+            data-testid="waiting-card-chartno"
+            data-chartno-popup={checkIn.customer_id ? '1' : undefined}
+            role={checkIn.customer_id ? 'button' : undefined}
+            title={checkIn.customer_id ? '차트 열기' : undefined}
+            onClick={checkIn.customer_id ? (e) => openChartNo(checkIn.customer_id, e) : undefined}
+          >
             {chartNoBadge(chartNum ?? null)}
           </span>
           {checkIn.queue_number != null && (

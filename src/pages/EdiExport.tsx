@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useEdiExport';
 import { HIRA_CATEGORY_LABELS, type HiraCategory } from '@/lib/insurance';
 import type { EdiExportResult } from '@/lib/ediExport';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 
 function categoryLabel(cat: string | null): string {
   if (!cat) return '-';
@@ -42,6 +43,8 @@ function categoryLabel(cat: string | null): string {
 export default function EdiExport() {
   const { profile } = useAuth();
   const clinicId = profile?.clinic_id ?? null;
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅)
+  const openChartNo = useChartNoPopup();
   const { rows, loading, error, refresh } = useExportableClaims(clinicId);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -132,7 +135,13 @@ export default function EdiExport() {
                       {r.customer_name ?? '(이름없음)'}
                     </span>
                     {r.chart_number && (
-                      <span className="text-xs text-slate-400">#{r.chart_number}</span>
+                      <span
+                        className={`text-xs text-slate-400${r.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                        data-chartno-popup={r.customer_id ? '1' : undefined}
+                        role={r.customer_id ? 'button' : undefined}
+                        title={r.customer_id ? '차트 열기' : undefined}
+                        onClick={r.customer_id ? (e) => openChartNo(r.customer_id, e) : undefined}
+                      >#{r.chart_number}</span>
                     )}
                     {r.export_status === 'exported' && (
                       <Badge

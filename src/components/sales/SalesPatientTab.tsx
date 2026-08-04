@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
 
@@ -148,6 +149,8 @@ function PatientDetailModal({
   onClose: () => void;
 }) {
   const ci = row.check_ins;
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅)
+  const openChartNo = useChartNoPopup();
   const services = ci?.check_in_services ?? [];
   const isRefund = row.payment_type === 'refund';
   const netAmt = isRefund ? -row.amount : row.amount;
@@ -162,7 +165,13 @@ function PatientDetailModal({
           <DialogTitle className="text-base flex items-center gap-2 flex-wrap">
             <span>수납 상세 — {ci?.customer_name ?? '—'}</span>
             {/* T-20260612-foot-CHARTNO-B2-P2: 환자명 단독 노출 0 — 차트번호 인접(미발번 명시) */}
-            <span className="text-xs font-mono font-normal text-teal-600">{chartNoBadge(ci?.customers?.chart_number ?? null)}</span>
+            <span
+              className={`text-xs font-mono font-normal text-teal-600${row.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+              data-chartno-popup={row.customer_id ? '1' : undefined}
+              role={row.customer_id ? 'button' : undefined}
+              title={row.customer_id ? '차트 열기' : undefined}
+              onClick={row.customer_id ? (e) => openChartNo(row.customer_id, e) : undefined}
+            >{chartNoBadge(ci?.customers?.chart_number ?? null)}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -279,6 +288,8 @@ export function SalesPatientTab({ filter }: Props) {
   const [selected, setSelected] = useState<PatientRow | null>(null);
   const { from, to } = filter.dateRange;
   const q = filter.searchQuery.trim().toLowerCase();
+  // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅)
+  const openChartNo = useChartNoPopup();
 
   const { data: rows = [], isLoading } = useQuery<PatientRow[]>({
     queryKey: ['sales-patient', clinic?.id, from, to],
@@ -387,8 +398,14 @@ export function SalesPatientTab({ filter }: Props) {
                   <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
                     {row.accounting_date}
                   </td>
-                  {/* 차트번호 */}
-                  <td className="px-2 py-1.5 font-mono">
+                  {/* 차트번호 — T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 셀 클릭 → 2번차트 팝업(행 선택동선과 분리) */}
+                  <td
+                    className={`px-2 py-1.5 font-mono${row.customer_id ? ' ' + CHARTNO_LINK_CLASS : ''}`}
+                    data-chartno-popup={row.customer_id ? '1' : undefined}
+                    role={row.customer_id ? 'button' : undefined}
+                    title={row.customer_id ? '차트 열기' : undefined}
+                    onClick={row.customer_id ? (e) => openChartNo(row.customer_id, e) : undefined}
+                  >
                     {ci?.customers?.chart_number ?? '—'}
                   </td>
                   {/* 환자명 */}
