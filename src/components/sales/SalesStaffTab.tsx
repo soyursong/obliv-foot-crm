@@ -351,6 +351,10 @@ export function SalesStaffTab({ filter }: Props) {
         .eq('check_ins.clinic_id', clinic!.id)
         .gte('check_ins.checked_in_at', `${from}T00:00:00+09:00`)
         .lte('check_ins.checked_in_at', `${to}T23:59:59+09:00`)
+        // T-20260804-foot-COSMETIC-CORRECTION-CRM (Tier-C): 비진성(net cash-in 0) soft-void 라인 제외.
+        //   DA-20260805-foot-COSMETIC-VOID-SEMANTIC read-path 계약 = AND NOT COALESCE(void,false) ≡ voided_at IS NULL.
+        //   ⚠ DDL(check_in_services.voided_at ADD)→FE 원자 co-deploy 선행(MIG-GATE). 미배포 시 PostgREST column-not-exist.
+        .is('voided_at', null)
         .gt('price', 0);
       if (error) throw error;
 
