@@ -5,6 +5,7 @@ import {
   classifyConcurrency,
   precheckConcurrentPayment,
   cancel,
+  approve,
   CBAND_ORPHAN_STALE_MINUTES,
   CbandConcurrentPaymentError,
   type CbandConcurrencyRow,
@@ -33,6 +34,9 @@ import type { SendResult } from '../../src/lib/cband/catClient';
  *  · 시나리오4(애매/무응답 '확인 필요' 유지): AC-6 — 최근 attention(미수납)은 계속 차단.
  *  · 시나리오5(5분 자동만료): AC-7 — 5분 경과 requested/attention 은 잠금 해제.
  *  · precheck 가 sweep-heal 을 선행 호출하는지(AC-1 L2 해제 배선) 계약 고정.
+ *  · 시나리오7/8(취소 = 결제잠금 완전 분리): 증분-6/AC-11 — mig 20260804210000 으로 L2 partial UNIQUE 를
+ *      승인(tran_type='0210') 전용으로 narrowing → 취소(0430)는 인덱스 미참여 → 같은 환자 진짜 in-flight
+ *      승인이 있어도 취소는 무차단. 이중결제 방어(승인 vs 승인)는 무회귀(AC-3/AC-4).
  */
 
 const NOW = Date.parse('2026-08-04T05:10:00.000Z');
@@ -207,8 +211,13 @@ function makeCancelHealStore(seedStuck: boolean) {
   }
   const store: AttemptStore = {
     async insertAttempt(rec) {
-      // L2 partial UNIQUE(clinic, check_in) WHERE status='requested' 모사(tran_type 무관 — 실 스키마 정합).
-      if (rec.checkInId && rows.some((r) => r.clinicId === rec.clinicId && r.checkInId === rec.checkInId && r.status === 'requested')) {
+      // ★AC-11(mig 20260804210000): L2 partial UNIQUE 를 승인(tran_type='0210') 전용으로 narrowing 한 실 스키마 모사.
+      //   승인(0210) 'requested' 끼리만 충돌(이중결제 방어). 취소(0430)는 인덱스 미참여 → 결코 L2 로 차단되지 않음(완전 분리).
+      if (
+        rec.checkInId &&
+        rec.tranType === TRANTYPE_APPROVE &&
+        rows.some((r) => r.clinicId === rec.clinicId && r.checkInId === rec.checkInId && r.status === 'requested' && r.tranType === TRANTYPE_APPROVE)
+      ) {
         log.push('insert:BLOCKED');
         throw new CbandConcurrentPaymentError('patient_in_progress');
       }
@@ -237,45 +246,54 @@ function makeCancelHealStore(seedStuck: boolean) {
   return { store, rows, log };
 }
 
-test.describe('취소 heal-and-retry — 승인 직후 취소 무차단 (AC-10/AC-11 증분5/6)', () => {
-  test('시나리오7: 고착 requested 승인 attempt 가 있어도 취소는 heal 후 정상 전송(AC-10)', async () => {
+test.describe('취소 = 환자단위 결제잠금 완전 분리 (증분-6 / AC-11 · mig 20260804210000)', () => {
+  test('시나리오7: 결제 승인 직후(고착 requested 승인 존재) 즉시 취소 → L2 미참여로 무차단 전송(AC-10+AC-11)', async () => {
     const { store, log } = makeCancelHealStore(true);
     const r = await cancel(
       { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
         clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1', originalAuthNo: '29258831' },
       store, mockSender(CANCEL_OK_RESP), { trace: '480400000001' },
     );
-    // 1차 insert BLOCKED → sweep(heal) → 재insert 성공 → 취소 승인.
-    expect(log).toContain('insert:BLOCKED');
-    expect(log).toContain('sweep:1');
+    // ★AC-11: 취소는 승인(0210) 전용 L2 인덱스에 참여하지 않으므로, 고착 승인 requested 가 있어도 결코 BLOCKED 되지 않는다.
+    //   heal-retry 백스톱조차 발화 불요(구조적 분리) → 취소 즉시 승인.
+    expect(log).not.toContain('insert:BLOCKED');
     expect(r.blocked).toBeFalsy();
     expect(r.classification).toBe('APPROVED');
     expect(r.authNo).toBe('29258831');
   });
 
-  test('시나리오8: 취소는 환자단위 결제잠금 참조 없이 진행(고착 없으면 즉시, AC-11)', async () => {
+  test('시나리오8: 같은 환자 진짜 in-flight(미수납 requested 승인)여도 다른 완료건 취소는 무차단(AC-11 핵심)', async () => {
     const { store, log } = makeCancelHealStore(false);
-    const r = await cancel(
-      { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
-        clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1', originalAuthNo: '29258831' },
-      store, mockSender(CANCEL_OK_RESP), { trace: '480400000001' },
-    );
-    expect(log).not.toContain('insert:BLOCKED');
-    expect(r.classification).toBe('APPROVED');
-  });
-
-  test('과잉해제 금지: 진짜 in-flight(미수납 requested)면 heal 못 하고 취소 차단(AC-3 백스톱)', async () => {
-    const { store } = makeCancelHealStore(false);
-    // 미수납 in-flight 승인(payment_id 없음) seed — heal 대상 아님.
+    // 같은 check_in 에 '진짜 in-flight' 승인(payment_id 없음·최근) seed — 실제 결제 진행 중.
     await store.insertAttempt({
       msgTrace: 'trace-inflight', tranType: TRANTYPE_APPROVE, amount: 3000, merno: 'MER0001',
       tid: 'TID12345678', clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1',
       originalAuthNo: null, isSimulation: false, status: 'requested',
     });
+    // 다른 완료 건(원거래 AUTHNO 29258831)에 대한 취소 → in-flight 승인과 무관하게 전송되어야 한다.
     const r = await cancel(
       { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
         clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1', originalAuthNo: '29258831' },
-      store, mockSender(CANCEL_OK_RESP), { trace: '480400000001' },
+      store, mockSender(CANCEL_OK_RESP), { trace: '480400000002' },
+    );
+    expect(log).not.toContain('insert:BLOCKED');   // ★취소는 환자단위 결제잠금을 '참조하지 않음'(완전 분리).
+    expect(r.blocked).toBeFalsy();
+    expect(r.classification).toBe('APPROVED');
+  });
+
+  test('이중결제 방어 무회귀(AC-3/AC-4): 같은 환자 진짜 in-flight 승인은 두 번째 승인(결제)을 계속 하드차단', async () => {
+    const { store } = makeCancelHealStore(false);
+    // 미수납 in-flight 승인(payment_id 없음) seed.
+    await store.insertAttempt({
+      msgTrace: 'trace-inflight', tranType: TRANTYPE_APPROVE, amount: 3000, merno: 'MER0001',
+      tid: 'TID12345678', clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1',
+      originalAuthNo: null, isSimulation: false, status: 'requested',
+    });
+    // 같은 환자에 대한 '결제(승인)' 재시도 → L2(승인 전용) 로 여전히 차단(이중결제 방지 불변식 보존).
+    const r = await approve(
+      { tid: 'TID12345678', merno: 'MER0001', catPort: 'COM3', amount: 3000,
+        clinicId: 'clinic-1', customerId: 'cust-1', checkInId: 'ci-1' },
+      store, mockSender(CANCEL_OK_RESP), { trace: '021000000009' },
     );
     expect(r.blocked).toBe(true);
     expect(r.needsCheck).toBe(true);

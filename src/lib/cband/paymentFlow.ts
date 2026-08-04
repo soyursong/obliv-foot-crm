@@ -461,13 +461,14 @@ export async function runPaymentFlow(
     if (!(e instanceof CbandConcurrentPaymentError)) {
       throw e; // 그 외 저장오류(DB down 등) = 기존 동작(상위 catch → 안전측 정지).
     }
-    // ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY [증분-5/증분-6 · AC-10/AC-11] — 취소(0430)는
-    //   환자단위 '결제 진행 중' 잠금과 무관해야 한다(잠금 목적=중복 승인 방지 ≠ 취소). 승인 직후 취소 시
-    //   원 승인 attempt 가 terminal 미전이(updateAttempt 사일런트 실패 잔여)로 'requested' 고착 → L2 partial
-    //   UNIQUE(check_in 스코프·tran_type 무관)가 취소 insert 를 오차단(patient_in_progress). 취소 경로에 한해
-    //   고착(수납/환불 성립) 행을 heal(→approved/failed) 후 1회 재삽입 → 취소가 결제잠금에 막히지 않음(완전분리
-    //   defense-in-depth). ★결제(0210) 경로는 무변경 — 진짜 in-flight 는 계속 하드차단(AC-3, 과잉해제 0).
-    //   ※ AC-10 1차 근본해결(승인응답 시 terminal 전이·probe 정밀화)의 백스톱이다. updateAttempt 재구현 안 함.
+    // ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY [증분-6 · AC-11] — 취소(0430)는 환자단위
+    //   '결제 진행 중' 잠금과 구조적으로 무관해야 한다(잠금 목적=중복 승인 방지 ≠ 취소). ★1차 근본해결 =
+    //   mig 20260804210000: L2 partial UNIQUE 를 승인(tran_type='0210') 전용으로 narrowing → 취소 insert 는
+    //   애초에 L2 에 참여하지 않아 '진짜 in-flight 승인'과도 충돌 0(완전 분리, 시나리오8). 그 마이그 적용 후엔
+    //   이 catch 는 취소 경로에서 (L1 msg_trace 충돌 외) 사실상 도달하지 않는다.
+    //   아래 heal-then-reinsert 는 **마이그 미적용 시점의 잔여 백스톱**(고착 'requested' 행 오차단 완화) — 고착
+    //   (수납/환불 성립) 행을 heal(→approved/failed) 후 1회 재삽입. ★결제(0210) 경로는 무변경 — 진짜 in-flight 는
+    //   계속 하드차단(AC-3, 과잉해제 0). ※ AC-10(승인응답 시 terminal 전이·probe 정밀화)와 병행 백스톱. updateAttempt 재구현 안 함.
     let healedId: string | null = null;
     if (input.tranType === TRANTYPE_CANCEL && store.sweepStaleRequested && input.checkInId) {
       try {

@@ -164,8 +164,9 @@ export const supabaseAttemptStore: AttemptStore = {
       })
       .select('id');
     if (error) {
-      // ★AC-6-1 동시성 잠금: L2 partial UNIQUE(clinic_id, check_in_id) WHERE status='requested' 위반(23505)
-      //   = 동일 환자 in-flight 존재(두 실장 다른 PC 동시결제) → CbandConcurrentPaymentError 로 승격.
+      // ★AC-6-1 동시성 잠금: L2 partial UNIQUE(clinic_id, check_in_id) WHERE status='requested' AND tran_type='0210'
+      //   위반(23505) = 동일 환자 승인(0210) in-flight 존재(두 실장 다른 PC 동시결제) → CbandConcurrentPaymentError 승격.
+      //   ★AC-11(mig 20260804210000): 취소(0430)는 이 인덱스 미참여 → 취소 insert 는 L2 로 오차단되지 않음(완전 분리).
       //   runPaymentFlow 가 잡아 송신하지 않고 '확인 필요' 정지(과금 0). L1(msg_trace) 충돌도 동일 안전처리(송신 금지).
       if (isUniqueViolation(error)) {
         throw new CbandConcurrentPaymentError('patient_in_progress', `이미 진행 중인 결제가 있습니다(insert-first 잠금): ${error.message}`);
