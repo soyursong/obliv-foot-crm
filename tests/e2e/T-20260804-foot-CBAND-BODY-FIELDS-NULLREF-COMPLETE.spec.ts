@@ -85,12 +85,15 @@ test.describe('CBAND body 필수 필드 완전성 (NULLREF-COMPLETE)', () => {
       catPort: BASE.catPort, msgTrace: makeTrace(),
     });
     // 값 없는 필드(승인 경로) = "".
+    // ★CAT_TERMINAL_RECEIPT 는 제외 — T-20260804-CATRECEIPT-REALPAY-Y 재정의로 빈문자 아닌 Y/N(별도 spec 커버).
     const emptyOnApprove = [
       'ORI_DATE', 'ORI_AUTHNO', 'IDNO', 'AMT_FLAG', 'TAX_AMT', 'SVC_AMT',
       'NONTAX_AMT', 'FILLER', 'SET_QR_DATA_512', 'SET_QR_DATA_256',
-      'SET_PG_TYPE', 'SET_PG_DATA_LEN', 'SET_PG_DATA', 'CAT_TERMINAL_RECEIPT',
+      'SET_PG_TYPE', 'SET_PG_DATA_LEN', 'SET_PG_DATA',
     ];
     for (const f of emptyOnApprove) expect(body[f]).toBe('');
+    // CAT_TERMINAL_RECEIPT 는 실결제(기본)에서 "Y"(빈문자 아님) — 재정의 회귀 가드.
+    expect(body.CAT_TERMINAL_RECEIPT).toBe('Y');
     // 직렬화 문자열에 null/undefined 리터럴 부재(데몬 null-ref 유발 형태 차단).
     expect(message).not.toContain(':null');
     expect(message).not.toContain('undefined');

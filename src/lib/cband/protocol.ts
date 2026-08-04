@@ -92,6 +92,13 @@ export interface BuildMsgParams {
   originalAuthNo?: string;
   /** 취소(0430) 시 원거래 승인일자(YYMMDD, 선택 — 단말/밴 요구 시). */
   originalAuthDate?: string;
+  /**
+   * ★통신 테스트(돈 안 나가는 점검) 여부 — T-20260804-foot-CBAND-CATRECEIPT-REALPAY-Y.
+   *   false(기본)/미지정 = 실결제·실취소(실금전 전문) → CAT_TERMINAL_RECEIPT="Y"(단말기 영수증 출력).
+   *   true = 돈이 오가지 않는 통신 점검 전문 → CAT_TERMINAL_RECEIPT="N".
+   *   어느 경우에도 빈값("")/누락 금지(NULLREF-COMPLETE AC2 의 CAT_TERMINAL_RECEIPT 한정 재정의).
+   */
+  commTest?: boolean;
 }
 
 // ── 정규화된 응답 ────────────────────────────────────────────────────────────
@@ -234,6 +241,8 @@ export const CBAND_CAT_BAUDRATE = '38400' as const;
  *   데몬 HandleMessageAsync 가 NullReferenceException 반환(키 누락/null 참조).
  *   ⇒ buildMsg 는 이 전집합을 **항상**(모든 결제경로에서) body 에 포함하고,
  *      값 없는 필드는 null/undefined 가 아닌 **빈 문자열 ""**(AC2)로 직렬화한다.
+ *   ★예외 1건: CAT_TERMINAL_RECEIPT 는 빈문자 아님 — T-20260804-CATRECEIPT-REALPAY-Y 재정의로
+ *      실결제/실취소="Y"·통신테스트="N"(빈값 금지). 나머지 19필드의 null-ref 방지(빈문자 치환)는 불변.
  *   순서 = 실승인 전문 원문 나열 순서(대조 편의). DEVICE_TYPE 은 여기 포함(선행 CAT_ 고정축과 정합).
  */
 export const CBAND_REQUIRED_BODY_FIELDS: readonly string[] = [
@@ -292,7 +301,7 @@ export function buildMsg(params: BuildMsgParams): {
   body: Record<string, string>;
   envelope: { header: Record<string, string>; body: Record<string, string> };
 } {
-  const { tranType, tid, merno, amount, catPort, msgTrace, originalAuthNo, originalAuthDate } = params;
+  const { tranType, tid, merno, amount, catPort, msgTrace, originalAuthNo, originalAuthDate, commTest } = params;
 
   // 실측#1: TID 비우면 실제 거부 → 강제 채움.
   if (!tid || !tid.trim()) {
@@ -315,6 +324,7 @@ export function buildMsg(params: BuildMsgParams): {
   // ── body(데이터부) = 실 거래필드. MSG_TRACE 는 header 로 이동(7/31 실승인 20필드 body 부재 정합). ──
   //   ★★ BODY-FIELDS-NULLREF-COMPLETE(AC1/AC2): 데몬 필수 body 필드 **전집합을 항상 포함**하고,
   //      값 없는 필드는 null/undefined 가 아닌 **빈 문자열 ""** 로 채운다(데몬 null-ref 차단).
+  //      ★단 CAT_TERMINAL_RECEIPT 만 예외(CATRECEIPT-REALPAY-Y): 빈문자 아닌 결제구분 Y/N(아래 #20).
   //      필드명·순서·기본값은 7/31 실승인 전문 원문(DIAGNOSE §ROOT-CAUSE 20필드)과 대조 확정(AC3, 추측 금지).
   //      취소(0430)의 원거래 참조는 authoritative 필드명 ORI_AUTHNO/ORI_DATE 에 착지(구 AUTHNO/AUTHDATE=CRM 발명, 폐기).
   const isCancel = tranType === TRANTYPE_CANCEL;
@@ -339,7 +349,10 @@ export function buildMsg(params: BuildMsgParams): {
     SET_PG_DATA: '',                                      // #17 PG데이터 — 미사용 → ""
     CAT_PORT: pad2Port(catPort),                          // #18 규칙#4 2자리 zero-pad
     CAT_BAUDRATE: CBAND_CAT_BAUDRATE,                     // #19 통신속도 "38400" 고정
-    CAT_TERMINAL_RECEIPT: '',                             // #20 단말영수증 — 값 없음 → ""
+    // #20 단말영수증 — ★T-20260804-CATRECEIPT-REALPAY-Y: NULLREF-COMPLETE 의 빈문자("") default 를
+    //   이 필드 한정 재정의(policy_superseded, reporter 최필경 총괄 명시). 실결제/실취소(실금전)=출력 위해 "Y",
+    //   돈 안 나가는 통신 테스트=미출력 "N". 빈값("")/누락 절대 금지(어느 경로에서도 Y|N 확정 세팅).
+    CAT_TERMINAL_RECEIPT: commTest ? 'N' : 'Y',
   };
   // ★FIX-1(MERNO-REQFIELD-BUG): MERNO 는 요청 필수 전집합에 없다(7/31 실승인 20필드 부재).
   //   값이 명시적으로 있을 때만 계승해 실어 보내고, 빈값(정상)은 전문에서 제외한다(필수20 무영향).
