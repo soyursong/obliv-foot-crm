@@ -29,7 +29,7 @@
   {
     "file": "20260609235500_selfcheckin_personal_info_postal_code.sql",
     "version": "20260609235500",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -45,7 +45,7 @@
   {
     "file": "20260610090000_sms_display_name.sql",
     "version": "20260610090000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -67,7 +67,7 @@
   {
     "file": "20260610100000_reservation_dup_guard_fn.sql",
     "version": "20260610100000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -83,7 +83,7 @@
   {
     "file": "20260610100010_reservations_customer_daily_unique.sql",
     "version": "20260610100010",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -99,7 +99,7 @@
   {
     "file": "20260610110000_resv_registrar_route_fields.sql",
     "version": "20260610110000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 10,
@@ -166,7 +166,7 @@
   {
     "file": "20260611100000_selfcheckin_personal_info_consolidate.sql",
     "version": "20260611100000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -188,7 +188,7 @@
   {
     "file": "20260611140000_selfcheckin_rrn_match_consent_sync.sql",
     "version": "20260611140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -210,7 +210,7 @@
   {
     "file": "20260611150000_health_q_rls_canonical_identity.sql",
     "version": "20260611150000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -233,7 +233,7 @@
   {
     "file": "20260611160000_clinic_events_select_rls_canonical.sql",
     "version": "20260611160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -250,7 +250,7 @@
   {
     "file": "20260611190000_clinic_events_write_rls_canonical.sql",
     "version": "20260611190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -279,7 +279,7 @@
   {
     "file": "20260611200000_closing_workflow_read_canonical.sql",
     "version": "20260611200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -302,50 +302,50 @@
   {
     "file": "20260611210000_rx_audit_log.sql",
     "version": "20260611210000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 6,
+    "verdict": "APPLIED",
+    "present": 6,
+    "absent": 0,
     "objects": [
       {
         "kind": "table",
         "name": "rx_audit_log",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "rx_audit_log_insert",
         "table": "rx_audit_log",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "policy",
         "name": "rx_audit_log_select",
         "table": "rx_audit_log",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "index",
         "name": "idx_rx_audit_log_check_in",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "index",
         "name": "idx_rx_audit_log_clinic_date",
-        "exists": false
+        "exists": true
       },
       {
         "kind": "index",
         "name": "idx_rx_audit_log_actor",
-        "exists": false
+        "exists": true
       }
     ]
   },
   {
     "file": "20260611220000_room_assignments_staff_write_scoped.sql",
     "version": "20260611220000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 4,
@@ -388,7 +388,7 @@
   {
     "file": "20260612000000_form_templates_write_rls_canonical.sql",
     "version": "20260612000000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -405,7 +405,7 @@
   {
     "file": "20260612010000_checkin_doctor_status_realtime.sql",
     "version": "20260612010000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -422,7 +422,7 @@
   {
     "file": "20260612060000_progress_plans_tier_model.sql",
     "version": "20260612060000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -503,7 +503,7 @@
   {
     "file": "20260612140000_pkg_session_soft_delete_restore.sql",
     "version": "20260612140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 4,
@@ -536,7 +536,7 @@
   {
     "file": "20260612150000_medical_charts_body_audit.sql",
     "version": "20260612150000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 7,
@@ -584,7 +584,7 @@
   {
     "file": "20260612160000_koh_nail_sites.sql",
     "version": "20260612160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -606,7 +606,7 @@
   {
     "file": "20260613120000_customer_birthdate_derive_rpc.sql",
     "version": "20260613120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -622,7 +622,7 @@
   {
     "file": "20260613120000_rxset_namedesc_migrate.sql",
     "version": "20260613120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -638,7 +638,7 @@
   {
     "file": "20260614120000_rxset_bundle_drugfolder.sql",
     "version": "20260614120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -654,7 +654,7 @@
   {
     "file": "20260614130000_reservation_is_healer_intent.sql",
     "version": "20260614130000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -671,7 +671,7 @@
   {
     "file": "20260614230000_check_in_services_checkin_idx.sql",
     "version": "20260614230000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -687,7 +687,7 @@
   {
     "file": "20260615120000_rxset_tag_meta.sql",
     "version": "20260615120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -704,7 +704,7 @@
   {
     "file": "20260615160000_rls_clinic_isolation_patient_tables.sql",
     "version": "20260615160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 35,
@@ -924,7 +924,7 @@
   {
     "file": "20260615170000_rls_clinic_isolation_anon_rpc_additive.sql",
     "version": "20260615170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 7,
@@ -980,7 +980,7 @@
   {
     "file": "20260615190000_koh_lifecycle_publish.sql",
     "version": "20260615190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 5,
@@ -1017,7 +1017,7 @@
   {
     "file": "20260616000000_callist_manual_order.sql",
     "version": "20260616000000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1034,7 +1034,7 @@
   {
     "file": "20260616010000_phi_anon_grant_revoke_hardening.sql",
     "version": "20260616010000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "UNKNOWN",
     "present": 0,
@@ -1080,7 +1080,7 @@
   {
     "file": "20260616160000_opinion_doc_form_stack.sql",
     "version": "20260616160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 5,
@@ -1117,7 +1117,7 @@
   {
     "file": "20260616180000_koh_specimen_no_format.sql",
     "version": "20260616180000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -1138,7 +1138,7 @@
   {
     "file": "20260617000000_blood_test_requested.sql",
     "version": "20260617000000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -1160,7 +1160,7 @@
   {
     "file": "20260617000000_selfcheckin_composite_key_3key.sql",
     "version": "20260617000000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1176,7 +1176,7 @@
   {
     "file": "20260617120000_koh_request_for_customer.sql",
     "version": "20260617120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1192,7 +1192,7 @@
   {
     "file": "20260617120000_pkg_consultation_fee_and_payment_feekind.sql",
     "version": "20260617120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -1215,7 +1215,7 @@
   {
     "file": "20260617120000_rxset_hide_name.sql",
     "version": "20260617120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1242,7 +1242,7 @@
   {
     "file": "20260617150000_prescription_codes_write_rls_canonical.sql",
     "version": "20260617150000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1259,7 +1259,7 @@
   {
     "file": "20260618120000_assignment_autoassign.sql",
     "version": "20260618120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 6,
@@ -1302,7 +1302,7 @@
   {
     "file": "20260618130000_prescription_codes_description.sql",
     "version": "20260618130000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1319,7 +1319,7 @@
   {
     "file": "20260618140000_prescription_codes_service_id_unify.sql",
     "version": "20260618140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -1475,7 +1475,7 @@
   {
     "file": "20260620120100_rrn_decrypt_a2_role_restore.sql",
     "version": "20260620120100",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 6,
@@ -1517,7 +1517,7 @@
   {
     "file": "20260620163000_user_profiles_exempt_from_restrictions_additive.sql",
     "version": "20260620163000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1544,7 +1544,7 @@
   {
     "file": "20260621003000_medical_charts_soft_delete_sameday_unique.sql",
     "version": "20260621003000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -1572,7 +1572,7 @@
   {
     "file": "20260622120000_foot_therapist_stats_staff_source_filter.sql",
     "version": "20260622120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -1593,7 +1593,7 @@
   {
     "file": "20260622170000_foot_assign_consultant_daily_cumulative.sql",
     "version": "20260622170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1698,7 +1698,7 @@
   {
     "file": "20260622200000_reservations_updated_by.sql",
     "version": "20260622200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1715,7 +1715,7 @@
   {
     "file": "20260622210000_foot_stats_consultant_total_amount.sql",
     "version": "20260622210000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1731,7 +1731,7 @@
   {
     "file": "20260623120000_foot_therapist_stats_designated_on_roster.sql",
     "version": "20260623120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1747,7 +1747,7 @@
   {
     "file": "20260623130000_foot_therapist_stats_treatment_exit_window.sql",
     "version": "20260623130000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -1773,7 +1773,7 @@
   {
     "file": "20260623150000_patient_file_records.sql",
     "version": "20260623150000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 6,
@@ -1817,7 +1817,7 @@
   {
     "file": "20260623160000_blood_request_for_customer.sql",
     "version": "20260623160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -1833,7 +1833,7 @@
   {
     "file": "20260623160000_clinics_email.sql",
     "version": "20260623160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1850,7 +1850,7 @@
   {
     "file": "20260623170000_customers_customer_note.sql",
     "version": "20260623170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1867,7 +1867,7 @@
   {
     "file": "20260623180000_patient_past_history.sql",
     "version": "20260623180000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 6,
@@ -1911,7 +1911,7 @@
   {
     "file": "20260624100000_resvmgmt_overhaul2_w2.sql",
     "version": "20260624100000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1928,7 +1928,7 @@
   {
     "file": "20260624130000_chartno_race_atomicity.sql",
     "version": "20260624130000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -1944,7 +1944,7 @@
   {
     "file": "20260624160000_memo_soft_delete_role_manage.sql",
     "version": "20260624160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 6,
@@ -1991,7 +1991,7 @@
   {
     "file": "20260624170000_staff_temp_off.sql",
     "version": "20260624170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2018,7 +2018,7 @@
   {
     "file": "20260624180000_bundlerx_director_write_rls.sql",
     "version": "20260624180000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2047,7 +2047,7 @@
   {
     "file": "20260625120000_health_q_lang.sql",
     "version": "20260625120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2074,7 +2074,7 @@
   {
     "file": "20260625130000_passport_port_nationalities_foreign_fields.sql",
     "version": "20260625130000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -2113,7 +2113,7 @@
   {
     "file": "20260625150000_selfcheckin_token_lang.sql",
     "version": "20260625150000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2129,7 +2129,7 @@
   {
     "file": "20260628000000_rrn_stage2a_audit_columns_precreate.sql",
     "version": "20260628000000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -2285,7 +2285,7 @@
   {
     "file": "20260629140000_anon_pii_leak_revoke_phase1.sql",
     "version": "20260629140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "UNKNOWN",
     "present": 0,
@@ -2295,7 +2295,7 @@
   {
     "file": "20260629143000_health_q_create_token_searchpath_permanent_fix.sql",
     "version": "20260629143000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2311,7 +2311,7 @@
   {
     "file": "20260629150000_foot_resv_status_noshow_to_no_show.sql",
     "version": "20260629150000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 3,
@@ -2396,7 +2396,7 @@
   {
     "file": "20260629190000_calc_copayment_nullfix_default_deny.sql",
     "version": "20260629190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2412,7 +2412,7 @@
   {
     "file": "20260629200000_edi_export_additive.sql",
     "version": "20260629200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -2434,7 +2434,7 @@
   {
     "file": "20260629210000_form_service_bridge_additive.sql",
     "version": "20260629210000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 4,
@@ -2467,7 +2467,7 @@
   {
     "file": "20260630120000_foot_doc_serial_seq_harden.sql",
     "version": "20260630120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -2489,7 +2489,7 @@
   {
     "file": "20260630120001_foot_doc_serial_seq_unique_idx.sql",
     "version": "20260630120001",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -2562,7 +2562,7 @@
   {
     "file": "20260630170000_foot_companion_extid_text_realname_rpc17.sql",
     "version": "20260630170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2615,7 +2615,7 @@
   {
     "file": "20260630184500_handover_notes_delete_role_canon.sql",
     "version": "20260630184500",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -2638,7 +2638,7 @@
   {
     "file": "20260630190000_foot_tm_edit_cancel_superset_rpc.sql",
     "version": "20260630190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2665,7 +2665,7 @@
   {
     "file": "20260630193000_foot_tm_edit_cancel_lifecycle_guard.sql",
     "version": "20260630193000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2683,15 +2683,15 @@
     "version": "20260630200000",
     "in_ledger": true,
     "security": true,
-    "verdict": "MISSING",
-    "present": 0,
-    "absent": 1,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
     "objects": [
       {
         "kind": "policy",
         "name": "daily_room_status_staff_unlock_6menu",
         "table": "daily_room_status",
-        "exists": false
+        "exists": true
       }
     ]
   },
@@ -2721,7 +2721,7 @@
   {
     "file": "20260630210000_register_unlock_3roles_rls_additive.sql",
     "version": "20260630210000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2773,7 +2773,7 @@
   {
     "file": "20260701020000_foot_resv_memo_timeline_retarget_provenance.sql",
     "version": "20260701020000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -2834,7 +2834,7 @@
   {
     "file": "20260701040000_phrase_templates_staffarea_write_7role_unified.sql",
     "version": "20260701040000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -2910,7 +2910,7 @@
   {
     "file": "20260702200000_clinicmgmt_3tab_director_write_rls_canonical.sql",
     "version": "20260702200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -3318,7 +3318,7 @@
   {
     "file": "20260708230000_redpay_recon_daily_view.sql",
     "version": "20260708230000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -3421,7 +3421,7 @@
   {
     "file": "20260710170000_rrn_decrypt_version_aware_multikey.sql",
     "version": "20260710170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -3442,7 +3442,7 @@
   {
     "file": "20260710180000_fn_customer_birthdates_version_aware_vault.sql",
     "version": "20260710180000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -3881,7 +3881,7 @@
   {
     "file": "20260714160000_clinics_representative_name.sql",
     "version": "20260714160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -3969,7 +3969,7 @@
   {
     "file": "20260714190000_closing_manual_payments_softvoid.sql",
     "version": "20260714190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 3,
@@ -4089,7 +4089,7 @@
   {
     "file": "20260715123000_foot_visit_call_result_receive.sql",
     "version": "20260715123000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -4186,7 +4186,7 @@
   {
     "file": "20260715160000_foot_consultfee_writepath_insurance.sql",
     "version": "20260715160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 4,
@@ -4632,7 +4632,7 @@
   {
     "file": "20260717170000_foot_stats_consultant_arpu_consulted_denom.sql",
     "version": "20260717170000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -5276,7 +5276,7 @@
   {
     "file": "20260719120000_selfcheckin_v3_reservlink_createdby_stamp.sql",
     "version": "20260719120000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -5349,7 +5349,7 @@
   {
     "file": "20260720231000_foot_selfcheckin_resolve_custid_rpc.sql",
     "version": "20260720231000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -5561,7 +5561,7 @@
   {
     "file": "20260723190000_foot_pkgsession_link_unwired_widened.sql",
     "version": "20260723190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -5717,7 +5717,7 @@
   {
     "file": "20260724130000_foot_stats_consultant_singlepay_customer_attr.sql",
     "version": "20260724130000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -5733,7 +5733,7 @@
   {
     "file": "20260724140000_foot_nhis_lookup_audit_rpc.dryrun.sql",
     "version": "20260724140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -5749,7 +5749,7 @@
   {
     "file": "20260724140000_foot_nhis_lookup_audit_rpc.sql",
     "version": "20260724140000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -5914,7 +5914,7 @@
   {
     "file": "20260725160000_foot_check_ins_soft_hide.dryrun.sql",
     "version": "20260725160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -5936,7 +5936,7 @@
   {
     "file": "20260725160000_foot_check_ins_soft_hide.sql",
     "version": "20260725160000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 4,
@@ -5989,7 +5989,7 @@
   {
     "file": "20260725180000_foot_consultfee_surcharge_servicecharge_persist.sql",
     "version": "20260725180000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 2,
@@ -6010,7 +6010,7 @@
   {
     "file": "20260725190000_foot_stats_experience_include_pkg_trial.sql",
     "version": "20260725190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -6239,7 +6239,7 @@
   {
     "file": "20260727210000_foot_package_payments_created_by.dryrun.sql",
     "version": "20260727210000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 3,
@@ -6266,7 +6266,7 @@
   {
     "file": "20260727210000_foot_package_payments_created_by.sql",
     "version": "20260727210000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -6293,7 +6293,7 @@
   {
     "file": "20260727213000_foot_resettle_provisional_floor_align.dryrun.sql",
     "version": "20260727213000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "UNKNOWN",
     "present": 0,
@@ -6303,7 +6303,7 @@
   {
     "file": "20260727213000_foot_resettle_provisional_floor_align.sql",
     "version": "20260727213000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -6456,7 +6456,7 @@
   {
     "file": "20260730190000_foot_rrn_clipboard_copy_audit_rpc.dryrun.sql",
     "version": "20260730190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -6472,7 +6472,7 @@
   {
     "file": "20260730190000_foot_rrn_clipboard_copy_audit_rpc.sql",
     "version": "20260730190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -6779,7 +6779,7 @@
   {
     "file": "20260731190000_foot_cband_payment_attempts.sql",
     "version": "20260731190000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 14,
@@ -6863,7 +6863,7 @@
   {
     "file": "20260731190500_foot_payments_payment_attempt_id_fk.sql",
     "version": "20260731190500",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 2,
@@ -6885,7 +6885,7 @@
   {
     "file": "20260731200000_foot_healthq_photo_foot_side.sql",
     "version": "20260731200000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 3,
@@ -6956,7 +6956,7 @@
   {
     "file": "20260801090000_foot_admin_approve_confirm_email.sql",
     "version": "20260801090000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -7082,7 +7082,7 @@
   {
     "file": "20260802061500_foot_record_planb_card_payment_rpc.sql",
     "version": "20260802061500",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 1,
@@ -7771,7 +7771,7 @@
   {
     "file": "20260804090000_foot_payments_method_health_maintenance.dryrun.sql",
     "version": "20260804090000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 1,
@@ -7787,7 +7787,7 @@
   {
     "file": "20260804090000_foot_payments_method_health_maintenance.sql",
     "version": "20260804090000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": false,
     "verdict": "APPLIED",
     "present": 3,
@@ -7855,7 +7855,7 @@
   {
     "file": "20260804110000_foot_monthly_sales_targets.dryrun.sql",
     "version": "20260804110000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 5,
@@ -7894,7 +7894,7 @@
   {
     "file": "20260804110000_foot_monthly_sales_targets.sql",
     "version": "20260804110000",
-    "in_ledger": false,
+    "in_ledger": true,
     "security": true,
     "verdict": "APPLIED",
     "present": 5,
