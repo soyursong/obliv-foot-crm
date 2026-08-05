@@ -51,6 +51,8 @@ import { ReceiptUpload } from '@/components/ReceiptUpload';
 // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위 '레드페이' 하위탭 (카드단말기 자동수집 대조)
 import { RedpayReconcileTab } from '@/components/closing/RedpayReconcileTab';
 import { ReceiptSettlementTab } from '@/components/closing/ReceiptSettlementTab';
+// T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 셀 클릭 → 수납 상세 팝업(view-layer only)
+import { PaymentSusuDetailModal } from '@/components/closing/PaymentSusuDetailModal';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -335,6 +337,8 @@ export default function Closing() {
    *  T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 단일행 → 고객의 환불 가능 행 묶음(배열).
    *    환불창이 유형별(패키지/진료비/단건) 구분 표기 + 항목 선택(체크박스) UI 로 확장됨. */
   const [refundTarget, setRefundTarget] = useState<EnrichedRow[] | null>(null);
+  // T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 셀 클릭 시 수납 상세 팝업 대상 payment_id
+  const [susuDetailPaymentId, setSusuDetailPaymentId] = useState<string | null>(null);
 
   /** T-20260525-foot-CLOSING-NAV-BUG AC-4: 결제내역 테이블 스크롤 위치 보존 */
   const paymentsTableRef = useRef<HTMLDivElement>(null);
@@ -564,6 +568,22 @@ export default function Closing() {
       return (data ?? []) as { service_name: string; price: number; check_in_id: string | null; is_package_session?: boolean | null }[];
     },
   });
+
+  // ── [시술명] 컬럼 소스 (T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP) ────────────
+  //   결제내역(CRM 수납) 행의 [시술명] = 그 결제의 check_in 에 매인 시술 항목명(중복 제거, 콤마).
+  //   procedureServicesRaw(당일 check_in_services) 를 check_in_id 기준으로 그룹핑(read-only, no db change).
+  const serviceNamesByCheckIn = useMemo<Map<string, string>>(() => {
+    const byCheckIn = new Map<string, string[]>();
+    for (const row of procedureServicesRaw) {
+      if (!row.check_in_id || !row.service_name) continue;
+      const list = byCheckIn.get(row.check_in_id) ?? [];
+      if (!list.includes(row.service_name)) list.push(row.service_name);
+      byCheckIn.set(row.check_in_id, list);
+    }
+    const joined = new Map<string, string>();
+    for (const [id, names] of byCheckIn) joined.set(id, names.join(', '));
+    return joined;
+  }, [procedureServicesRaw]);
 
   // ── 실수납/결제 confirmed 체크인 집합 (net>0) ────────────────
   // T-20260715-foot-DAYCLOSE-STAT-PAYONLY (A안, 김주연 총괄 결정):
@@ -2166,6 +2186,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-28">성함 | 차트번호</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-16">진료구분</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-20">내원경로</th>
+                      {/* T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 컬럼(신규) — [내원경로]-[담당자] 사이 삽입(AC-1 예정 위치). 셀 클릭 → 수납 상세 팝업. */}
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-28">시술명</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-left font-medium text-muted-foreground w-20">담당자</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-right font-medium text-muted-foreground w-24">결제금액</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-right font-medium text-muted-foreground w-20">과세</th>
@@ -2180,7 +2202,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   <tbody>
                     {filteredEnrichedRows.length === 0 && (
                       <tr>
-                        <td colSpan={13} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={14} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
@@ -2259,6 +2281,28 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         {/* AC-1: [진료구분](구 초진/재진) ↔ [내원경로] 순서 스왑 — 진료구분 먼저 */}
                         <td className="px-2 py-1.5 text-xs">{r.visit_type_label}</td>
                         <td className="px-2 py-1.5 text-xs">{r.lead_source ?? '-'}</td>
+                        {/* T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 셀 — 클릭 시 수납 상세 팝업(payment 소스 + payment_id 有 행만 활성).
+                            시술명 = 그 결제 check_in 의 시술 항목명(serviceNamesByCheckIn). 패키지/수기 행은 '-' 비활성. */}
+                        {(() => {
+                          const svcName = (r.source === 'payment' && r.pay_check_in_id)
+                            ? (serviceNamesByCheckIn.get(r.pay_check_in_id) ?? null)
+                            : null;
+                          const clickable = r.source === 'payment' && !!r.payment_id;
+                          return (
+                            <td
+                              className={cn(
+                                'px-2 py-1.5 text-xs max-w-[160px] truncate',
+                                clickable && 'cursor-pointer text-teal-700 hover:underline',
+                              )}
+                              data-testid="closing-service-name-cell"
+                              title={clickable ? '수납 상세 보기' : undefined}
+                              role={clickable ? 'button' : undefined}
+                              onClick={clickable ? () => setSusuDetailPaymentId(r.payment_id!) : undefined}
+                            >
+                              {svcName ?? '-'}
+                            </td>
+                          );
+                        })()}
                         {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' (AC-1 라벨 결제담당→담당자) */}
                         {/* T-20260805-foot-CLOSING-PAYDETAIL-REFUND-PROCESSOR-DISPLAY: 환불 행에 '환불처리 직원명'(created_by) 병기.
                             매출집계>환자별 탭(SalesPatientTab '처리 직원명') parity. staff_name(배정담당)과 별개 축 — 라벨로 명시 구분. 미기록 '—'. */}
@@ -2378,7 +2422,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   {filteredEnrichedRows.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 bg-muted/50 font-semibold">
-                        <td colSpan={6} className="py-2 px-3 text-sm">합계{staffFilter && ` (${staffFilter})`}</td>
+                        {/* T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 컬럼 삽입으로 6→7 (날짜·시간·성함차트·진료구분·내원경로·시술명·담당자) */}
+                        <td colSpan={7} className="py-2 px-3 text-sm">합계{staffFilter && ` (${staffFilter})`}</td>
                         <td className="py-2 px-2 text-right tabular-nums text-sm text-emerald-700">
                           {formatAmount(filteredEnrichedRows.reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0))}
                         </td>
@@ -2545,6 +2590,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             setManualEditTarget(null);
             qc.invalidateQueries({ queryKey: ['closing-manual', clinic.id, date] });
           }}
+        />
+      )}
+
+      {/* T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 셀 클릭 → 수납 상세 팝업(view-layer only, read-only) */}
+      {susuDetailPaymentId && (
+        <PaymentSusuDetailModal
+          paymentId={susuDetailPaymentId}
+          onClose={() => setSusuDetailPaymentId(null)}
         />
       )}
 
