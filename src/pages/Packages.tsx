@@ -1830,6 +1830,9 @@ function PackagePaymentAdd({ packageId, customerId, clinicId, onAdded }: {
         clinic_id: clinicId,
         check_in_id: null, // 패키지관리 추가결제는 내원 비종속 — payments.check_in_id NULLABLE
         customer_id: customerId,
+        // 회수1 단건 패키지 추가결제 = 원천 package 컨텍스트(packageId) 보유 → payments.package_id 링크
+        //   (T-20260805-foot-REPAY-PKGLINK-REVTRANSITION-FWDFIX §1: cross-ledger status 트리거 가시화).
+        package_id: packageId,
         amount, method, installment: inst, payment_type: 'payment',
         memo: '패키지 추가결제(회수1·단건)',
       });

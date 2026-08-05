@@ -44,11 +44,15 @@ export interface ManualPayCheckIn {
   customer_id: string | null;
 }
 
-/** 옵션A 귀속 대상 */
+/** 옵션A 귀속 대상.
+ *  checkin/single 분기의 `packageId?`(선택) = 결제수단-변경 재결제 등 '패키지 관련' 수납이
+ *  payments(원장②)에 착지할 때 원천 package 컨텍스트를 payments.package_id 로 링크한다
+ *  (T-20260805-foot-REPAY-PKGLINK-REVTRANSITION-FWDFIX §1). caller 가 package 컨텍스트를
+ *  실제 보유할 때만 세팅 — fabricate/guess-match 금지(VG3). 미보유 시 미지정(NULL, 종전 동작). */
 export type ManualPayAttribution =
   | { kind: 'package'; packageId: string }
-  | { kind: 'checkin'; checkIn: ManualPayCheckIn }
-  | { kind: 'single' };
+  | { kind: 'checkin'; checkIn: ManualPayCheckIn; packageId?: string | null }
+  | { kind: 'single'; packageId?: string | null };
 
 export interface RecordManualPaymentInput {
   clinicId: string;
@@ -146,6 +150,9 @@ export async function recordManualPayment(
   if (attribution.kind === 'checkin') {
     const ci = attribution.checkIn;
     // 분할결제: 행 별 payments 1행씩(동일 check_in_id 귀속). 2번차트 수납내역에 행 별 표시.
+    // package 관련 재결제 링크(§1): caller 가 원천 package 컨텍스트 보유 시에만 payments.package_id 세팅.
+    //   미보유 → 필드 자체를 payload 에서 제외(NULL, 종전 동작). guess-match/fabricate 금지(VG3).
+    const ciPkgLink = attribution.packageId ? { package_id: attribution.packageId } : {};
     const { data: insertedCheckin, error: pErr } = await supabase.from('payments').insert(
       splits.map((s) => ({
         clinic_id: clinicId,
@@ -156,6 +163,7 @@ export async function recordManualPayment(
         installment: 0,
         payment_type: 'payment',
         memo: memo ?? '영수증 수납',
+        ...ciPkgLink,
         ...createdAtField,
       })),
     ).select('id'); // 역방향 매칭 훅 트리거용 id 회수(behavior-preserving — INSERT 동일, 반환값만 추가).
@@ -195,6 +203,8 @@ export async function recordManualPayment(
 
   // ── 'single' — 단건 결제(귀속 없음) ─────────────────────────────────────
   // 분할결제: 행 별 payments 1행씩(check_in_id NULL). 각 행 canonical 1회 → 이중계상 없음.
+  // package 관련 단건 재결제(§1): caller 원천 package 컨텍스트 보유 시에만 payments.package_id 링크.
+  const singlePkgLink = attribution.packageId ? { package_id: attribution.packageId } : {};
   const { data: insertedSingle, error: sErr } = await supabase.from('payments').insert(
     splits.map((s) => ({
       clinic_id: clinicId,
@@ -205,6 +215,7 @@ export async function recordManualPayment(
       installment: 0,
       payment_type: 'payment',
       memo: memo ?? '영수증 수납(단건)',
+      ...singlePkgLink,
       ...createdAtField,
     })),
   ).select('id'); // 역방향 매칭 훅 트리거용 id 회수(behavior-preserving).

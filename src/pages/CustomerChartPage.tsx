@@ -1034,6 +1034,10 @@ function ReceiptUploadSection({
             clinic_id: clinicId,
             check_in_id: null, // 영수증 업로드는 내원(check_in) 비종속 — payments.check_in_id NULLABLE
             customer_id: customerId,
+            // 회수1 단건 패키지 결제 = 원천 package 컨텍스트(packageId) 보유 → payments.package_id 링크
+            //   (T-20260805-foot-REPAY-PKGLINK-REVTRANSITION-FWDFIX §1: 원장② 재결제가 status 파생
+            //    cross-ledger 트리거에 보이도록 원장연결 확립. F-4717 오펀 방지).
+            package_id: packageId,
             amount: s.amount,
             method: s.method,
             installment: 0,
