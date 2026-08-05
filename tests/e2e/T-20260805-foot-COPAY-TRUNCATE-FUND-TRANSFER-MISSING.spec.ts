@@ -1,9 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { detectSurchargeKind, computeSurcharge } from '../../src/lib/nightHolidaySurcharge';
+import {
+  detectSurchargeKind,
+  computeSurcharge,
+  applyNightHolidaySurcharge,
+} from '../../src/lib/nightHolidaySurcharge';
 import {
   floorOutpatientCopayment,
   absorbBillReceiptNewCopayFloorRemainder,
   applyBillReceiptNewLiveTotals,
+  computeBillDetailRounding,
 } from '../../src/lib/footBilling';
 
 /**
@@ -129,5 +134,111 @@ test.describe('AC-6 인쇄·명세 SSOT — absorbBillReceiptNewCopayFloorRemain
     expect(amt(v.copayment)).toBe(s.copayment);
     expect(amt(v.insurance_covered)).toBe(s.covered);
     expect(amt(v.copayment) + amt(v.insurance_covered)).toBe(11440);
+  });
+});
+
+// ── REOPEN item #8 — 세부산정내역서(bill_detail) 경로 (이은상 팀장 최종확정 s5kh, applyNightHolidaySurcharge) ──
+//   버그(80원 실종)가 이 문서 경로에만 잔존했음: bump('subtotal_copayment', sc.copay)가 절사 전 raw 로 표기.
+//   fix: 가산 fold 후 ①본인 floor100 + ②공단 끝수 흡수 + 계/합계(detail_subtotal/total/rounding) 재정합.
+const noopRow = () => ''; // buildDetailRow 스텁(순수 계산만 검증, items_html 불요)
+const billDetail = (base: Record<string, string>, refDate: Date, isHoliday = false) => {
+  applyNightHolidaySurcharge(base, 'bill_detail', isHoliday, new Set<string>(), refDate, noopRow);
+  return base;
+};
+
+test.describe('item #8 — 세부산정내역서 공단부담 열 끝수 이전 (bill_detail 경로 보존식)', () => {
+  test('★가산 케이스: 본인 3,380→3,300 · 공단 8,060→8,140 (수납·영수증과 동일 보존식, AC-6 3경로)', () => {
+    // 공휴일(토 7/25) 급여 진찰료 8,800(본인 2,600 / 공단 6,200) — 가산 fold 후 rawCopay 3,380(끝수 80).
+    const b = billDetail(
+      {
+        subtotal_copayment: '2,600', total_copayment: '2,600',
+        subtotal_fund: '6,200', total_fund: '6,200',
+        subtotal_amount: '8,800', total_amount: '8,800',
+        detail_subtotal: '2,600', detail_total: '2,600', detail_rounding: '0',
+        visit_date: '2026-07-25',
+      },
+      at(2026, 7, 25, 10),
+    );
+    expect(b.subtotal_copayment).toBe('3,300');          // ① floor100
+    expect(b.subtotal_fund).toBe('8,140');               // ② 끝수 80원 공단 흡수 (구버그 8,060 아님)
+    expect(b.subtotal_fund).not.toBe('8,060');           // 회귀 가드: 80원 실종 재발 금지
+    // ★보존식: 본인(floor後) + 공단 == 급여 총액 11,440
+    expect(amt(b.subtotal_copayment) + amt(b.subtotal_fund)).toBe(11440);
+    // 계/합계 = 본인 + 비급여(공단 제외). 비급여 0 → detail_total == 본인 3,300 == 영수증 ⑧(payable) parity.
+    expect(b.detail_total).toBe('3,300');
+    const s = settle(8800, 2600, 0, at(2026, 7, 25, 10));
+    expect(amt(b.detail_total)).toBe(s.payable);         // 세부내역서 합계 == 영수증 ⑧
+    // subtotal_amount/total_amount(진료비 총액, 공단 포함) 불변.
+    expect(b.subtotal_amount).toBe('11,440');            // 8,800 + 가산 2,640
+    expect(b.total_amount).toBe('11,440');
+  });
+
+  test('★이은상 팀장 검산 예시(무가산 평일, base 본인부담 자체 끝수): 11,440→11,400 / 26,750→26,790 / 계·합계 271,440→271,400', () => {
+    // 평일(kind=null, sc.amount=0)이라도 base 본인부담(11,440)에 끝수가 있으면 이전(영수증 absorb 가산무관 적용과 동일 grain).
+    const b = billDetail(
+      {
+        subtotal_copayment: '11,440', total_copayment: '11,440',
+        subtotal_fund: '26,750', total_fund: '26,750',
+        subtotal_amount: '298,190', total_amount: '298,190',
+        detail_subtotal: '271,440', detail_total: '271,440', detail_rounding: '0',
+        visit_date: '2026-07-14',
+      },
+      at(2026, 7, 14, 10), // 화요일 평일
+    );
+    expect(b.subtotal_copayment).toBe('11,400');         // floor100 (끝수 40)
+    expect(b.subtotal_fund).toBe('26,790');              // 끝수 40 공단 이전
+    expect(b.detail_subtotal).toBe('271,400');           // 계 = 271,440 − 40
+    expect(b.detail_total).toBe('271,400');              // 합계 = floor10(271,400)
+    expect(b.detail_rounding).toBe('0');
+    expect(b.subtotal_amount).toBe('298,190');           // 진료비 총액 불변(공단 포함)
+    // 급여 보존식(본인+공단) 불변량 유지: 11,440+26,750 == 11,400+26,790.
+    expect(amt(b.subtotal_copayment) + amt(b.subtotal_fund)).toBe(11440 + 26750);
+  });
+
+  test('no-op 가드: 끝수 0(가산 후 100배수) / 공단 0(grade=null) → bill_detail 종전값 보존', () => {
+    // 정률 100배수: 8,800 급여, 본인 3,000 base, 공휴일 가산 → rawCopay 3,900(끝수 0).
+    const mult = billDetail(
+      {
+        subtotal_copayment: '3,000', total_copayment: '3,000',
+        subtotal_fund: '7,000', total_fund: '7,000',
+        subtotal_amount: '10,000', total_amount: '10,000',
+        detail_subtotal: '3,000', detail_total: '3,000', detail_rounding: '0',
+        visit_date: '2026-07-25',
+      },
+      at(2026, 7, 25, 10),
+    );
+    expect(amt(mult.subtotal_copayment) % 100).toBe(0);  // 끝수 0 → floor no-op
+    expect(amt(mult.subtotal_copayment) + amt(mult.subtotal_fund)).toBe(13000); // 보존식 유지
+
+    // 공단 0(등급부재): 끝수 있어도 공단으로 이전하지 않음(AC-7 무회귀).
+    const nullGrade = billDetail(
+      {
+        subtotal_copayment: '11,440', total_copayment: '11,440',
+        subtotal_fund: '0', total_fund: '0',
+        subtotal_amount: '11,440', total_amount: '11,440',
+        detail_subtotal: '11,440', detail_total: '11,440', detail_rounding: '0',
+        visit_date: '2026-07-14',
+      },
+      at(2026, 7, 14, 10),
+    );
+    expect(nullGrade.subtotal_copayment).toBe('11,440'); // 공단 0 → no-op(본인 전액 유지)
+    expect(nullGrade.subtotal_fund).toBe('0');
+  });
+});
+
+// ── REOPEN item ② — 선수금 차감 경로(PaymentMiniWindow:2119 deductCopayWithSurcharge) 회귀 assert ──
+//   [판별 결과] deductCopayWithSurcharge = floorOutpatientCopayment(deductCopay + surcharge.copay) 는 **환자 payable**
+//   (deductAmount)만 산출한다 — 독립 공단(insurance_covered/subtotal_fund) 계산 없음 → 끝수 소실 site 아님(§3 정답산식
+//   '독립계산 공단' 버그 부재). 절사(floor100)는 환자 부담액에 대해 정확하며, 공단으로의 끝수 이전은 문서 렌더 경로
+//   (bill_detail=item#8 / bill_receipt_new=absorb, full-base)가 담당한다. 따라서 2119 코드 변경 불요 = field 재확인 회귀 락.
+test.describe('item ② — 선수금 차감 경로 본인부담 floor100 (deductCopayWithSurcharge 미러, 회귀 락)', () => {
+  test('선수금 차감 후 본인부담(가산 포함)은 외래 100원 FLOOR — payable grain', () => {
+    // deductBilling.copaymentTotal + deductSurcharge.copay = 3,380(끝수) → floor100 → 3,300.
+    expect(floorOutpatientCopayment(3380)).toBe(3300);
+    expect(floorOutpatientCopayment(3300)).toBe(3300); // 이미 100배수 → 불변(무회귀)
+    // deductAmount = floor100(본인) + 비급여(무절사). 공단 split 미산출(문서 경로가 이전 담당).
+    const deductCopay = floorOutpatientCopayment(3380);
+    const nonCov = 5000;
+    expect(deductCopay + nonCov).toBe(8300);           // 환자 실차감액(payable) — 공단 불포함
   });
 });
