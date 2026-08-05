@@ -132,10 +132,15 @@ CREATE TRIGGER trg_pkgpay_pkg_status_recompute
   FOR EACH ROW EXECUTE FUNCTION public.foot_trg_recompute_package_status();
 
 -- ──────────────────────────────────────────────────────────────
--- 4. SECDEF grant-seal — 재계산 코어는 트리거에서만 발화. 직접 EXECUTE 차단(C23).
---    (트리거 래퍼는 trigger-typed → 직접 호출 불가, 별도 revoke 불요.)
+-- 4. SECDEF grant-seal — intended-caller-tier: backend-only.
+--    재계산 코어(RETURNS void·SECDEF·no-authz)는 트리거에서만 발화 → 직접 EXECUTE 전면 차단(C23).
+--    foot backend-only 이디엄(REVOKE PUBLIC/anon/authenticated + GRANT service_role) 준수.
+--    default-priv 가 신규 함수에 authenticated EXECUTE 를 auto-상속 → authenticated 명시 REVOKE 필수
+--    (C23-3 authenticated 잔차 봉인). 트리거 래퍼는 trigger-typed → 직접 호출 불가, 별도 revoke 불요.
 -- ──────────────────────────────────────────────────────────────
-REVOKE ALL ON FUNCTION public.foot_recompute_package_status(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.foot_recompute_package_status(uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.foot_recompute_package_status(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.foot_recompute_package_status(uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.foot_recompute_package_status(uuid) FROM authenticated;
+GRANT  EXECUTE ON FUNCTION public.foot_recompute_package_status(uuid) TO service_role;
 
 COMMIT;
