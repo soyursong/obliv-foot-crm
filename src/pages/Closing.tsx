@@ -95,6 +95,10 @@ interface PackagePaymentRow {
   method: 'card' | 'cash' | 'transfer';
   payment_type: PaymentType;
   created_at: string;
+  /** T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 매출 인식(판매)일 = accounting_date(INSERT 트리거 세팅).
+   *  담당실장별 매출집계(SalesDoctorTab/SalesDailyTab)가 이 컬럼으로 집계 → 결제내역 리스트도 동일 축으로 정합(AC-2).
+   *  prod census: package_payments 전건 non-null(refund 포함). NULL이면 created_at 폴백. */
+  accounting_date: string | null;
   customer_id: string;
   installment: number | null;
   memo: string | null;
@@ -364,7 +368,12 @@ export default function Closing() {
     },
   });
 
-  // ── 패키지 결제 ────────────────────────────────────────────
+  // ── 패키지 결제 (created_at 축 — 일마감 합계/확정 전용) ─────────────────────
+  //   ★ T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 이 쿼리는 created_at KST 윈도잉을 '의도적으로' 유지한다.
+  //     일마감 확정 totals(package_card_total 등 → daily_closings write, L1192)와 마감 전령 payload는
+  //     CLOSING-HERALD-PAYLOAD-RECONCILE(deployed)의 INV5 하드게이트(system_totals==daily_closings 3중 대조,
+  //     윈도잉=created_at KST)에 바인딩돼 있어, 축을 바꾸면 확정 emit-fail/DLQ 회귀. 따라서 합계/확정 축은 불변.
+  //     결제내역 '리스트' 표시 누락은 아래 pkgPaymentsForList(accounting_date 축)로 별도 해소(합계 축과 분리).
   const { data: pkgPayments = [] } = useQuery<PackagePaymentRow[]>({
     queryKey: ['closing-pkg-payments', clinic?.id, date],
     enabled: !!clinic,
@@ -389,6 +398,32 @@ export default function Closing() {
     },
   });
 
+  // ── 패키지 결제 (accounting_date 축 — 결제내역 '리스트' 표시 전용) ──────────────
+  //   T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING (AC-1/AC-2):
+  //     [증상] 일마감 결제내역 리스트에 '당일 패키지(선수금) 결제'가 누락 → 정산 금액 불일치.
+  //     [RC]   위 pkgPayments(created_at 축)로 리스트를 그려, 매출 인식일(accounting_date, INSERT 트리거 세팅)이
+  //            created_at 일자와 다른 선수금/익일마감 귀속 결제(prod census 7/134건)를 리스트에서만 탈락시킴.
+  //            담당실장별 매출집계(SalesDoctorTab/SalesDailyTab)는 accounting_date로 집계(deployed) → divergence.
+  //     [Fix]  리스트는 집계 SSOT와 동일한 accounting_date 축으로 조회 → 리스트 패키지 합 = 담당실장별 패키지 합(AC-2).
+  //            prod census: accounting_date NULL 0건(refund 19건 포함 전건 채움) → 누락 리스크 없음.
+  //     ★ payments(단건)는 AC-3(일반결제·환불 행 불변) 준수 위해 created_at 유지 — 본 티켓 스코프 밖.
+  //     ★ 이중기록 없음(AC-3): 패키지 판매는 회차1=payments / 회차2+=package_payments 로 상호배타(PKGCLASS-SESSION1-SINGLE),
+  //       source 태그로 구분되어 UNION 중복 불가 → dedup 불요.
+  const { data: pkgPaymentsForList = [] } = useQuery<PackagePaymentRow[]>({
+    queryKey: ['closing-pkg-payments-list', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('package_payments')
+        .select('id, package_id, amount, method, payment_type, created_at, accounting_date, customer_id, installment, memo, parent_payment_id, created_by, processor:user_profiles!package_payments_created_by_fkey(name)')
+        .eq('clinic_id', clinic!.id)
+        .eq('accounting_date', date)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as PackagePaymentRow[];
+    },
+  });
+
   // ── T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT [FOLD]: 전 기간 환불 합계 ──
   //   AC-B1/AC-B2: 완전환불행 재환불 차단 + 교차일(원결제일≠환불일) 환불 배지.
   //   당일 표시되는 원결제행(payments/package_payments)에 연결된 환불을 '날짜 필터 없이' 조회해
@@ -398,9 +433,10 @@ export default function Closing() {
     () => payments.filter(p => p.payment_type !== 'refund').map(p => p.id),
     [payments],
   );
+  // T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 리스트 행의 교차일 환불 누적은 리스트 소스(accounting_date) 기준.
   const origPkgPayIds = useMemo(
-    () => pkgPayments.filter(p => p.payment_type !== 'refund').map(p => p.id),
-    [pkgPayments],
+    () => pkgPaymentsForList.filter(p => p.payment_type !== 'refund').map(p => p.id),
+    [pkgPaymentsForList],
   );
   const { data: refundTotalsAllDates = {} } = useQuery<Record<string, number>>({
     queryKey: ['closing-refund-alldates', clinic?.id, origPayIds, origPkgPayIds],
@@ -580,9 +616,12 @@ export default function Closing() {
     const ids = new Set<string>();
     payments.forEach(p => { if (p.customer_id) ids.add(p.customer_id); });
     pkgPayments.forEach(p => { if (p.customer_id) ids.add(p.customer_id); });
+    // T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 리스트 표시 소스(accounting_date) 고객도 customerMap 시딩
+    //   (accounting_date 귀속 패키지 행의 성함/차트번호/담당자 해소 — 미시딩 시 '-' 표기 회귀 방지).
+    pkgPaymentsForList.forEach(p => { if (p.customer_id) ids.add(p.customer_id); });
     checkInsDetail.forEach(c => { if (c.customer_id) ids.add(c.customer_id); });
     return [...ids].sort();
-  }, [payments, pkgPayments, checkInsDetail]);
+  }, [payments, pkgPayments, pkgPaymentsForList, checkInsDetail]);
 
   // ── 고객 기본정보 ──────────────────────────────────────────
   const { data: customersBasic = [] } = useQuery<CustomerBasic[]>({
@@ -717,7 +756,11 @@ export default function Closing() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `clinic_id=eq.${clinic.id}` },
         () => qc.invalidateQueries({ queryKey: ['closing-payments', clinic.id, date] }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'package_payments', filter: `clinic_id=eq.${clinic.id}` },
-        () => qc.invalidateQueries({ queryKey: ['closing-pkg-payments', clinic.id, date] }))
+        () => {
+          qc.invalidateQueries({ queryKey: ['closing-pkg-payments', clinic.id, date] });
+          // T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 리스트 소스(accounting_date)도 동시 갱신.
+          qc.invalidateQueries({ queryKey: ['closing-pkg-payments-list', clinic.id, date] });
+        })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'closing_manual_payments', filter: `clinic_id=eq.${clinic.id}` },
         () => qc.invalidateQueries({ queryKey: ['closing-manual', clinic.id, date] }))
       .subscribe();
@@ -952,14 +995,21 @@ export default function Closing() {
     }
 
     // 패키지 결제 — T-20260510-foot-C21-STAFF-REVENUE: 담당자 자동연동
-    for (const p of pkgPayments) {
+    // T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 리스트 소스 = pkgPaymentsForList(accounting_date 축).
+    for (const p of pkgPaymentsForList) {
       const cust = p.customer_id ? customerMap.get(p.customer_id) : null;
       const dt = new Date(p.created_at);
       const assignedStaffName = cust?.assigned_staff_id ? (staffMap.get(cust.assigned_staff_id) ?? null) : null;
+      // T-20260805-foot-DAYCLOSE-PAYHIST-PACKAGE-MISSING: 표시 일자 = accounting_date(매출 인식일, 리스트 필터 축과 일치).
+      //   시각(HH:mm)은 실제 수납 clock(created_at) 유지. accounting_date NULL이면 created_at 폴백.
+      //   ★ sort_key 는 created_at(단건 payments 와 동일 포맷=Supabase UTC ISO) 유지 → 소스간 정렬 포맷 혼합
+      //     (localeCompare tz-offset 오정렬) 회피. accounting 귀속 소수 건(census 7/134)은 당일 상단에 정렬됨(허용).
+      const acctDate = p.accounting_date ?? format(dt, 'yyyy-MM-dd');
+      const pkgTime = format(dt, 'HH:mm');
       rows.push({
         sort_key: p.created_at,
-        pay_date: format(dt, 'yyyy-MM-dd'),
-        pay_time: format(dt, 'HH:mm'),
+        pay_date: acctDate,
+        pay_time: pkgTime,
         chart_number: cust?.chart_number ?? null,
         customer_name: cust?.name ?? '-',
         // T-20260522-foot-DAILY-SETTLE-STAFF: 내원경로=customers.visit_route
@@ -1051,7 +1101,7 @@ export default function Closing() {
 
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
     return rows;
-  }, [payments, pkgPayments, manualEntries, checkInDetailMap, checkInVisitTypeByCustomer, customerMap, staffMap]);
+  }, [payments, pkgPaymentsForList, manualEntries, checkInDetailMap, checkInVisitTypeByCustomer, customerMap, staffMap]);
 
   // ── T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 환불 상태 헬퍼 ──
   //   전 기간(교차일 포함) 누적 환불액 / 완전환불 판정 / 고객 단위 환불행 묶기.
