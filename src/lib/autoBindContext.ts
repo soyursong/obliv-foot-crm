@@ -447,6 +447,39 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
 }
 
 /**
+ * T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT (SSOT — 발행일자 파생 토큰 일원화):
+ *   buildAutoBindValues 는 issue_date(교부년월일)와 **별개로** 납입증명서 {{year}}/{{month}} 및
+ *   진료의뢰서 {{referral_year}}/{{referral_month}}/{{referral_day}} 를 각각 독립적으로 new Date()(=오늘)
+ *   에서 산출한다. 그래서 사용자가 발행일자를 수기 정정(issue_date_manual='1')해도 이 파생 날짜 토큰들은
+ *   정정값을 따라가지 않고 항상 '오늘'로 인쇄되는 divergence 가 발생한다(현장: "모든 서류 종류·모든 출력 경로").
+ *
+ *   → 발행일자가 명시 수기 정정된 경우(마커=1) 그 dashed 값을 파생 날짜 토큰에 전파해 문서 전체 날짜를
+ *     일원화한다. 마커가 없으면(정상 발행) 무변경 → 기본 동작(발행 시점=오늘) 회귀 0(AC-2). 마커가 있어도
+ *     issue_date 가 유효 dashed(YYYY-MM-DD)가 아니면 방어적으로 무변경. 멱등(재적용해도 동일 결과)이라
+ *     미리보기(allValues)·단건 인쇄(printJpg)·재출력(buildPageHtml)·일괄출력 어느 경로에 몇 번 적용돼도 안전.
+ *
+ *   ※ 마커 게이트 이유: {{year}}/{{referral_*}} 는 field_map 상 독립 편집 가능 필드 → 정정 없는 일반 발행에서는
+ *     사용자의 개별 입력·자동값을 절대 덮지 않아야 한다. 발행일자를 명시 정정한 순간에만 날짜축을 정합시킨다.
+ */
+export function syncIssueDateDerivedTokens(
+  values: Record<string, string>,
+): Record<string, string> {
+  if (values.issue_date_manual !== '1') return values;
+  const raw = (values.issue_date ?? '').trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!m) return values;
+  const [, y, mo, d] = m;
+  return {
+    ...values,
+    year: y,
+    month: mo,
+    referral_year: y,
+    referral_month: mo,
+    referral_day: d,
+  };
+}
+
+/**
  * T-20260606-foot-DOC-FIELD-MISSING-3 AC-1/2/3:
  * 보험청구서·진료비계산서 금액 필드(공단부담금/본인부담금/비급여) 라이브 보강.
  *

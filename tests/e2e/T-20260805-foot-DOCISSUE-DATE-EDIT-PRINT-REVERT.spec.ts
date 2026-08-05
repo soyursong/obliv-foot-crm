@@ -18,6 +18,7 @@
 
 import { test, expect } from '@playwright/test';
 import { buildIssueNo, splitIssueNoForDisplay } from '../../src/lib/docSerial';
+import { syncIssueDateDerivedTokens } from '../../src/lib/autoBindContext';
 
 // ── Bug A / AC1: 수기 정정 발행일 보존 (마커 존재) ──────────────────────────────
 test('AC1: issue_date_manual 마커 + 수기 정정 dashed → 인쇄 표시에 정정 날짜 보존 (발번일로 안 돌아감)', () => {
@@ -104,4 +105,77 @@ test('AC4: 활성셋이 우선(중복 id 시 활성 정본 선택) + 완전 미�
   expect(resolveHistoryTemplate('dup', templates, extra)?.name_ko).toBe('활성본');
   // 삭제되어 양쪽 다 없으면 undefined → onClick 이 안내 토스트로 분기(무반응 아님).
   expect(resolveHistoryTemplate('gone', templates, extra)).toBeUndefined();
+});
+
+// ── Bug A / AC5: 발행일자 파생 토큰 SSOT 일원화 (모든 서류 종류·모든 출력 경로) ──────────
+//   현장: 발행일자 수기 정정 시 처방전 교부년월일뿐 아니라 납입증명서 {{year}}/{{month}}·진료의뢰서
+//   {{referral_*}} 도 정정값을 따라야 한다. 마커(issue_date_manual='1') 있을 때만 전파, 없으면 무변경(회귀 0).
+test('AC5: 마커 + dashed 정정 → year/month/referral_* 모두 정정 발행일자로 일원화', () => {
+  const out = syncIssueDateDerivedTokens({
+    issue_date: '2026-08-01',
+    issue_date_manual: '1',
+    year: '2026', month: '08',            // buildAutoBindValues 가 오늘(예 2026-08-05)로 넣은 값 모사
+    referral_year: '2026', referral_month: '08', referral_day: '05',
+  });
+  expect(out.year).toBe('2026');
+  expect(out.month).toBe('08');
+  expect(out.referral_year).toBe('2026');
+  expect(out.referral_month).toBe('08');
+  expect(out.referral_day).toBe('01');   // 오늘(05) 아님 = 정정값(01) 반영
+});
+
+test('AC5: 정정 월/연도까지 전파 (7월 15일 정정 시 month=07·referral_day=15)', () => {
+  const out = syncIssueDateDerivedTokens({
+    issue_date: '2026-07-15',
+    issue_date_manual: '1',
+    year: '2026', month: '08',
+    referral_year: '2026', referral_month: '08', referral_day: '05',
+  });
+  expect(out.year).toBe('2026');
+  expect(out.month).toBe('07');
+  expect(out.referral_month).toBe('07');
+  expect(out.referral_day).toBe('15');
+});
+
+test('AC5 무회귀: 마커 없으면 파생 토큰 무변경(정상 발행·독립 편집 보존)', () => {
+  const input = {
+    issue_date: '2026-08-01',            // 선바인딩값이 달라도 마커 없으면 파생축 미접촉
+    year: '2026', month: '08',
+    referral_year: '2026', referral_month: '08', referral_day: '05',
+  };
+  const out = syncIssueDateDerivedTokens(input);
+  expect(out.month).toBe('08');          // 오늘(발행 시점) 값 그대로
+  expect(out.referral_day).toBe('05');
+});
+
+test('AC5 무회귀: 마커 있어도 issue_date 가 유효 dashed 아니면 무변경(방어)', () => {
+  const bad = syncIssueDateDerivedTokens({
+    issue_date: '20260801',              // compact = 미매치
+    issue_date_manual: '1',
+    month: '08', referral_day: '05',
+  });
+  expect(bad.month).toBe('08');
+  expect(bad.referral_day).toBe('05');
+  const empty = syncIssueDateDerivedTokens({ issue_date: '', issue_date_manual: '1', month: '08' });
+  expect(empty.month).toBe('08');
+});
+
+test('AC5 멱등: 재적용해도 동일 결과 (allValues·buildPageHtml 다중 경로 안전)', () => {
+  const once = syncIssueDateDerivedTokens({
+    issue_date: '2026-08-01', issue_date_manual: '1',
+    year: '2026', month: '08', referral_year: '2026', referral_month: '08', referral_day: '05',
+  });
+  const twice = syncIssueDateDerivedTokens(once);
+  expect(twice).toEqual(once);
+  expect(twice.referral_day).toBe('01');
+});
+
+test('AC5: 파생축 외 필드 무오염 (환자명·issue_no 등 그대로)', () => {
+  const out = syncIssueDateDerivedTokens({
+    issue_date: '2026-08-01', issue_date_manual: '1',
+    patient_name: '홍길동', issue_no: '20260805000014', month: '08',
+  });
+  expect(out.patient_name).toBe('홍길동');
+  expect(out.issue_no).toBe('20260805000014');
+  expect(out.month).toBe('08'); // referral 미존재 키는 신규 생성되지만 month 는 정정 반영
 });

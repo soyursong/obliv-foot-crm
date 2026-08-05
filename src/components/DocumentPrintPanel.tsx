@@ -107,7 +107,7 @@ import {
   getHtmlTemplate,
   isHtmlTemplate,
 } from '@/lib/htmlFormTemplates';
-import { loadAutoBindContext, applyBillingFallback, loadTreatingDoctorName } from '@/lib/autoBindContext';
+import { loadAutoBindContext, applyBillingFallback, loadTreatingDoctorName, syncIssueDateDerivedTokens } from '@/lib/autoBindContext';
 // T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC: 출력시점 야간·공휴일 가산 자동 판정·계산(FE-only).
 //   (reopen 2026-07-19) 미리보기·일괄출력 양 경로가 동일 SSOT 헬퍼(applyNightHolidaySurcharge)를 호출 —
 //   가산이 미리보기에만 반영되고 현장 인쇄물(handleBatchPrint)엔 누락되던 divergence를 구조적으로 차단.
@@ -350,6 +350,11 @@ function buildHtmlPageHtml(
 ): string {
   const htmlTpl = getHtmlTemplate(template.form_key);
   if (!htmlTpl) return '';
+  // T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT (SSOT — 재출력/일괄출력 경로 정합): 저장 스냅샷(field_data)에
+  //   수기 정정 마커(issue_date_manual='1')가 있으면 파생 날짜 토큰({{year}}/{{month}}/{{referral_*}})도 정정
+  //   발행일자로 일원화한다. 마커 없으면 무변경(멱등, 회귀 0). 단건 경로는 allValues 에서 이미 적용됐으므로 여기선
+  //   재적용해도 동일 결과 — ReprintViewer(저장본)·handleBatchPrint 경로까지 '모든 출력 경로' 정합(AC-5).
+  fieldValues = syncIssueDateDerivedTokens(fieldValues);
   // T-20260601-foot-RX-QR-LABEL (현장 확정 스코프, MSG-20260601-180722-8kgj / 181005-tdlp):
   //   QR 가림의 원인은 RX-DUAL이 우측 상단(top:10px;right:10px)에 추가한 absolute 오버레이 박스뿐.
   //   → 그 오버레이 박스만 제거하고, 중앙 상단 {{rx_copy_label}}(약국보관용/환자보관용) 구분 라벨은
@@ -419,6 +424,9 @@ function buildPageHtml(
   fieldValues: Record<string, string>,
   imgUrl: string,
 ): string {
+  // T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT (SSOT — 이미지 오버레이 양식 재출력 경로): 수기 정정 마커 시
+  //   파생 날짜 토큰을 정정 발행일자로 일원화(진료의뢰서 등 field_map 오버레이 렌더). 마커 없으면 무변경(회귀 0).
+  fieldValues = syncIssueDateDerivedTokens(fieldValues);
   // ── HTML/CSS 디지털 양식 분기 (T-20260514-foot-FORM-CLARITY-REWORK) ──
   if (template.template_format === 'html' || isHtmlTemplate(template.form_key)) {
     return buildHtmlPageHtml(template, fieldValues);
@@ -3572,7 +3580,11 @@ function IssueDialog({
       base.diagnosis_codes_html = renderCodeLines(mgmtDiagnoses);
     }
 
-    return base;
+    // T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT (SSOT): 발행일자를 수기 정정(issue_date_manual='1')한
+    //   경우, 파생 날짜 토큰(납입증명서 {{year}}/{{month}}·진료의뢰서 {{referral_*}})을 정정값으로 일원화.
+    //   미리보기(PreviewDialog=bindHtmlTemplate(allValues))와 단건 인쇄(printJpg(allValues))가 동일 base 를
+    //   소비하므로 여기서 한 번 정합시키면 preview==print 유지. 마커 없으면 무변경(회귀 0).
+    return syncIssueDateDerivedTokens(base);
   }, [autoValues, manualValues, dutyDoctors.length, selectedDoctorName, computedTotal, template.form_key, serviceItems, footBillingItems, customerInsuranceGrade, alreadyPaidAmount, checkIn, clinicDoctors.length, selectedClinicDoctorId, clinicDoctorOverrides, rxItemDosages, serialChartNo, editOverrides, amountOverrides, holidayDateSet, surchargeOverriddenKeys, mgmtProcedures, mgmtDiagnoses]);
 
   const editableFields = useMemo(() => {
