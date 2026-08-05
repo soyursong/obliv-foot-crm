@@ -30,7 +30,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // ── 환경 변수 ─────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // 장쳰봇 토큰 — 전용 미설정 시 redpay-reconcile 과 동일 장쳰봇 토큰 재사용(단일 봇).
 const SLACK_BOT_TOKEN =
   Deno.env.get("CONSULT_NOTIFY_SLACK_BOT_TOKEN") ??

@@ -37,7 +37,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // worker 인증용 (net.http_post 헤더 X-Internal-Cron 과 일치). dopamine-dispatch 컨벤션.
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 // 시트 문서 ID + 허용 gid (duty-sheet-read EF 와 동일 env 컨벤션).
