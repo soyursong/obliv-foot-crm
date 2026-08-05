@@ -132,10 +132,16 @@ test.describe('(b) 세부내역서 합계 — 가산 additive bump (재계산 �
     const sc = computeSurcharge(consult.covered, consult.copay, detectSurchargeKind(HOLIDAY, false));
     applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, consult);
 
-    // ★ 회귀 정정: detail_total 은 종전값 + 가산 본인분(additive bump). 함수 내 재플로어 없음.
-    expect(num(base.detail_total)).toBe(10000 + sc.copay); // 12,820
-    expect(num(base.detail_subtotal)).toBe(10000 + sc.copay); // 계도 동일 fold
-    // detail_rounding 은 함수가 건드리지 않음 → 종전값(서류 렌더 경로 SSOT 산출값) 유지.
+    // ★ 회귀 정정: detail_total 은 종전값 + 가산 본인분(additive bump). 이어서 item#8
+    //   (T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING) 끝수 공단이전 적용:
+    //   본인 10,000 + 2,820 = 12,820 → floor100 = 12,800(끝수 20 공단 이전, 보존식).
+    //   detail 계/합계도 20 감소(computeBillDetailRounding SSOT — F-4741 이중 재계산 블록과 별개 authority).
+    expect(num(base.detail_total)).toBe(12800); // 12,820 − 끝수 20
+    expect(num(base.detail_subtotal)).toBe(12800); // 계도 동일(끝수 이전 반영)
+    // 끝수 20 은 공단(subtotal_fund)으로 이전(실종 없음): 가산 covered 2,830 + 20 = 2,850.
+    expect(num(base.subtotal_fund)).toBe(2850);
+    expect(num(base.subtotal_copayment)).toBe(12800);
+    // detail_rounding: 12,800 이 이미 10원 배수 → 0.
     expect(num(base.detail_rounding)).toBe(0);
   });
 
@@ -157,14 +163,18 @@ test.describe('(b) 세부내역서 합계 — 가산 additive bump (재계산 �
     const sc = computeSurcharge(consult.covered, consult.copay, detectSurchargeKind(HOLIDAY, false));
     applyNightHolidaySurcharge(base, 'bill_detail', false, new Set(), HOLIDAY, noop, consult);
 
-    // 계 행(subtotal_fund) 증가분 == 가산 행에 표시될 covered (동일 값 fold → 계 행 == 행별 합)
-    expect(num(base.subtotal_fund)).toBe(7000 + sc.covered);
-    expect(num(base.total_fund)).toBe(7000 + sc.covered);
-    expect(num(base.subtotal_copayment)).toBe(3000 + sc.copay);
-    expect(num(base.detail_total)).toBe(3000 + sc.copay); // 합계도 동일 additive
+    // 가산 fold 후 item#8(COPAY-TRUNCATE-FUND-TRANSFER) 끝수 공단이전:
+    //   본인 3,000 + copay 1,690 = 4,690 → floor100 = 4,600(끝수 90 공단 이전).
+    //   계 행(subtotal_fund) = 7,000 + covered 3,960 + 끝수 90 = 11,050(보존식, 끝수 실종 없음).
+    expect(num(base.subtotal_fund)).toBe(7000 + sc.covered + 90); // 11,050
+    expect(num(base.total_fund)).toBe(7000 + sc.covered + 90); // 11,050
+    expect(num(base.subtotal_copayment)).toBe(4600); // 4,690 − 끝수 90(floor100)
+    expect(num(base.detail_total)).toBe(4600); // 합계도 끝수 이전 반영
     expect(sc.covered % 10).toBe(0);
     expect(sc.copay % 10).toBe(0);
     expect(sc.copay + sc.covered).toBe(sc.amount);
+    // ★ 보존식(불변식): 본인(floor後) + 공단 == subtotal_amount(진료비 총액, item#8 미접촉)
+    expect(num(base.subtotal_copayment) + num(base.subtotal_fund)).toBe(num(base.subtotal_amount));
   });
 
   // ── ★ 회귀 재현 가드(F-4741 김병완, 공휴일 가산 건 2026-08-01): 계 행 == 행별 합 정합 ──
@@ -244,8 +254,8 @@ test.describe('(b) 세부내역서 합계 — 가산 additive bump (재계산 �
       covered: 18840,
       copay: 9420,
     });
-    // overridden → detail_total bump 스킵(수동값 우선). 계(detail_subtotal)는 fold 반영.
-    expect(num(base.detail_total)).toBe(10000); // 수동값 우선 → 불변
-    expect(num(base.detail_subtotal)).toBe(12820); // 계는 fold 반영
+    // overridden → detail_total bump·끝수이전 모두 스킵(수동값 우선). 계(detail_subtotal)는 fold + item#8 끝수이전 반영.
+    expect(num(base.detail_total)).toBe(10000); // 수동값 우선 → 불변(detail_total override 시 item#8 끝수이전도 스킵)
+    expect(num(base.detail_subtotal)).toBe(12800); // 계 = 12,820(fold) − 끝수 20(item#8 공단이전)
   });
 });
