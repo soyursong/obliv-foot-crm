@@ -27,6 +27,12 @@ import { QR_CODE_API_ENDPOINT, EDGE_FUNCTIONS } from '@/lib/externalServices';
 // T-20260803-foot-TERMINAL-TID-COMPORT-PERSEAT-SETTINGS: 자리(PC)별 카드 단말 설정 입력·저장·영속.
 //   저장방식 = localStorage(PC별). 기존 cband CAT 직결결제(T-20260731) 인프라 재사용 — DB 무변경.
 import { getTerminalConfig, saveTerminalConfig } from '@/lib/cband/config';
+import {
+  checkSeatTidRegistered,
+  logUnregisteredTid,
+  getSeatId,
+  type TidRegistryVerdict,
+} from '@/lib/cband/tidRegistryGate';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
@@ -51,7 +57,7 @@ import {
 import {
   MessageSquare, Settings, ChevronRight, Loader2, AlertCircle,
   CheckCircle2, Phone, Send, History, Ban, Zap, QrCode, Download,
-  ImagePlus, X, CreditCard,
+  ImagePlus, X, CreditCard, AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 import type { Clinic, CheckIn } from '@/lib/types';
 import { RESERVED_EVENT_TYPES } from '@/lib/notificationEventTypes';
@@ -1833,7 +1839,22 @@ function SectionSelfCheckinQR({ clinic }: { clinic: Clinic }) {
 //   ※ 인프라(getTerminalConfig/saveTerminalConfig, LS_KEY='cband.terminal.config')는
 //     T-20260731-foot-CBAND-CAT-DIRECT-PAY 에서 이미 구축됨 — 본 티켓은 '입력 UI'만 추가(DB 무변경).
 //   ※ 스코프 가드: 값 입력·저장·영속까지. 실제 단말 제어(COM포트로 카드리더 명령)는 본 티켓 밖.
+//
+// T-20260805-foot-TERM-BIZNO-VERIFY-UX (UX-GUARD · spin-off of REDPAY-INVISIBLE ④)
+//   AC-1: 단말 등록/변경 시 사업자번호 확인 가이드 표기 — 단말이 구 사업자번호(511-60-00988)를 물고
+//         등록되면 RedPay 정산 조회 0건(전 기간 사각)이 재생산된다. 현장 방어선(최필경):
+//         단말 [특수]→시스템→910115→가맹점정보조회로 사업자번호가 457-23-00938 인지 확인.
+//   AC-2: 입력 TID 가 registry allowlist 와 불일치/미등록이면 저장 전 soft 경고 + 구조화 로깅.
+//         ★자매 REGISTRY-GATE(결제 커밋 경로 게이트)와 tidRegistryGate 로직 공유(중복 구현 회피).
+//         여기는 '등록 시점' UX 가드 — hard-block 아님(저장은 계속, 흔적만 남긴다).
+
+// 이 가맹점의 올바른 사업자번호 — 현장 [특수]→시스템→910115→가맹점정보조회 값과 대조.
+const EXPECTED_FOOT_BIZNO = '457-23-00938';
+// 정산 사각을 만든 구(舊) 사업자번호 — 단말이 이 번호를 물고 있으면 RedPay 조회 0건.
+const STALE_FOOT_BIZNO = '511-60-00988';
+
 function SectionTerminal() {
+  const clinic = useClinic();
   // 기존 저장값(env fallback 포함)으로 프리필. getTerminalConfig 는 3값 모두 있어야 non-null.
   const existing = getTerminalConfig();
   const [tid, setTid]         = useState(existing?.tid ?? '');
@@ -1841,8 +1862,10 @@ function SectionTerminal() {
   const [saving, setSaving]   = useState(false);
   // 저장 완료 후 "이 PC에 저장됨" 확정 표시 — 재부팅해도 유지됨을 현장에 각인.
   const [persisted, setPersisted] = useState(existing != null);
+  // AC-2: TID↔registry 대조 판정. null=미대조(입력 변경 후 초기화). 저장 시점에 세팅.
+  const [tidVerdict, setTidVerdict] = useState<TidRegistryVerdict | null>(null);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const t = tid.trim();
     const p = catPort.trim();
     // ★TID·COM포트만 필수(단말 거부 방지, config.ts 실측#1).
@@ -1853,6 +1876,20 @@ function SectionTerminal() {
     if (!p) { toast.error('COM 포트 번호를 입력하세요.'); return; }
     setSaving(true);
     try {
+      // AC-2: 저장 전 TID 를 registry allowlist(REGISTRY-GATE 공유 로직)와 대조.
+      //   미등록이면 soft 경고 배너 + 구조화 로깅(누구/seat/TID/시각). ★저장은 계속(hard-block 아님).
+      //   registry 미가용(unknown)/등록됨(registered)은 조용히 통과 — 거짓 경고로 현장 교란 금지.
+      const verdict = await checkSeatTidRegistered(t);
+      setTidVerdict(verdict);
+      if (verdict.status === 'unregistered') {
+        logUnregisteredTid({
+          tid: t,
+          phase: 'detect',
+          seatId: getSeatId(),
+          clinicId: clinic?.id ?? null,
+        });
+        toast.warning('입력한 단말기 번호가 등록된 목록에 없습니다. 사업자번호를 다시 확인해 주세요.');
+      }
       saveTerminalConfig({ tid: t, merno: existing?.merno ?? '', catPort: p });
       setPersisted(true);
       toast.success('이 PC의 카드 단말기 설정을 저장했습니다. 재부팅해도 자동으로 채워집니다.');
@@ -1882,12 +1919,46 @@ function SectionTerminal() {
         </div>
       )}
 
+      {/* AC-1: 사업자번호 확인 가이드 — 저장 전에 단말에서 직접 확인하도록 안내(정산 사각 예방). */}
+      <div
+        className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 space-y-2"
+        data-testid="terminal-bizno-guide"
+      >
+        <div className="flex items-center gap-2 font-semibold">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-amber-600" />
+          저장 전 사업자번호를 꼭 확인하세요
+        </div>
+        <p className="leading-relaxed">
+          단말기에서 <b>[특수]→1.시스템→910115→가맹점정보조회</b> 순서로 들어가
+          사업자번호가 <b className="text-base tabular-nums">{EXPECTED_FOOT_BIZNO}</b> 인지 확인하세요.
+        </p>
+        <p className="leading-relaxed text-amber-800">
+          다른 번호(예: 옛 번호 <span className="tabular-nums">{STALE_FOOT_BIZNO}</span>)로 되어 있으면
+          카드 결제 내역이 정산에 잡히지 않을 수 있습니다. 이 경우 저장하지 말고 담당자에게 알려주세요.
+        </p>
+      </div>
+
+      {/* AC-2: 저장 시 registry 대조 결과 미등록이면 soft 경고(저장은 이미 진행됨 — 되돌리지 않음). */}
+      {tidVerdict?.status === 'unregistered' && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900"
+          data-testid="terminal-tid-unregistered-warn"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-600" />
+          <span className="leading-relaxed">
+            방금 저장한 단말기 번호 <b className="tabular-nums">{tidVerdict.tid}</b> 는 등록된 단말 목록에 없습니다.
+            사업자번호가 <b className="tabular-nums">{EXPECTED_FOOT_BIZNO}</b> 인지 다시 확인하고,
+            번호가 맞는데도 이 안내가 계속 뜨면 담당자에게 알려주세요.
+          </span>
+        </div>
+      )}
+
       <div className="rounded-lg border p-4 space-y-5">
         <div className="space-y-2">
           <label className="text-sm font-medium">단말기 번호 (TID)</label>
           <Input
             value={tid}
-            onChange={(e) => setTid(e.target.value)}
+            onChange={(e) => { setTid(e.target.value); setTidVerdict(null); }}
             placeholder="예: 1234567890"
             inputMode="numeric"
             autoComplete="off"
