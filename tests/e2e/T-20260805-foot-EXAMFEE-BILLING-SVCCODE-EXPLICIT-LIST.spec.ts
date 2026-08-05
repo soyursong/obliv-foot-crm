@@ -24,6 +24,12 @@
  *
  * @see T-20260805-foot-EXAMFEE-BILLING-SVCCODE-EXPLICIT-LIST
  * @see T-20260805-foot-EXAMFEE-FLAT-GOSIA-CARVEOUT (선행 carve-out — 본 티켓이 하드닝)
+ *
+ * ⚠ billing 값 SUPERSEDE (T-20260805-foot-CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE, DA §12/§13 fu5j supersede):
+ *   진찰료 billing base carve-out(coveredBaseUnit 의 flat 고시액 exempt) 이 REVERSED 됐다. 본 스펙의 핵심(=
+ *   service_code identity 매칭, isFlatPublishedExamFee/isConsultationFeeItem 술어)은 **불변**이나, 부수적
+ *   billing coveredTotal 단언(진찰료 = 18,840)은 1원 canon(18,845)으로 갱신한다. 재진(13,370)·AA222(4,693)은
+ *   flat==canon 우연 일치라 불변. identity 술어(display-unify 트랙 위해 유지)와 billing base 는 별개 축.
  */
 
 import { test, expect } from '@playwright/test';
@@ -86,10 +92,9 @@ test.describe('T-20260805 진찰료/가산 service_code 명시목록 교체', ()
     const hacked = renamed(svcInitExam, 'ZZZ무단변경된이름'); // '진찰' 문자 제거
     expect(isFlatPublishedExamFee(hacked, 'general')).toBe(true);   // 종전 regex 였다면 false 로 반전됐을 것
     expect(isConsultationFeeItem(hacked, 'general')).toBe(true);
-    // 청구금액도 flat 고시액 18,840 유지 (18,845 defect 재발 안 함)
+    // billing base 는 1원 canon(18,845) — 명칭변경 무영향(코드 매칭). carve-out REVERSED 후 값.
     const r = computeFootBilling([item(hacked)], 'general', withMirror);
-    expect(r.coveredTotal).toBe(18840);
-    expect(r.coveredTotal).not.toBe(18845);
+    expect(r.coveredTotal).toBe(18845);
   });
 
   test('VULN-2 AA254 항목명 임의변경 → flat 판정 불변', () => {
@@ -129,9 +134,9 @@ test.describe('T-20260805 진찰료/가산 service_code 명시목록 교체', ()
   });
 
   // ───── REG: 판정 동치(회귀 0) ─────
-  test('REG-1 AA154 초진진찰료 = flat 18,840 (18,845 defect 제거)', () => {
+  test('REG-1 AA154 초진진찰료 billing = 1원 canon 18,845 (carve-out REVERSED) + identity 술어 불변', () => {
     const r = computeFootBilling([item(svcInitExam)], 'general', withMirror);
-    expect(r.coveredTotal).toBe(18840);
+    expect(r.coveredTotal).toBe(18845);
     expect(isFlatPublishedExamFee(svcInitExam, 'general')).toBe(true);
     expect(isConsultationFeeItem(svcInitExam, 'general')).toBe(true);
   });
@@ -167,9 +172,9 @@ test.describe('T-20260805 진찰료/가산 service_code 명시목록 교체', ()
     expect(r.coveredTotal).toBe(0);
   });
 
-  test('REG-6 혼합 카트: 진찰료 flat + 시술 1원 canon 동시 정합', () => {
+  test('REG-6 혼합 카트: 진찰료 + 시술 = 둘 다 1원 canon 동시 정합 (carve-out REVERSED)', () => {
     const r = computeFootBilling([item(svcInitExam), item(svcProcReVisit)], 'general', withMirror);
-    expect(r.coveredTotal).toBe(18840 + 4693); // 23,533
+    expect(r.coveredTotal).toBe(18845 + 4693); // 23,538
   });
 
   test('REG-7 grade=null(라이브 89%) 경로도 판정 동치 (급여 gate 통과 = is_insurance_covered)', () => {

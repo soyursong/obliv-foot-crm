@@ -1,23 +1,28 @@
 /**
- * E2E — T-20260805-foot-EXAMFEE-FLAT-GOSIA-CARVEOUT
- * 초진/재진 진찰료 = 정부 공표 flat 고시액 축 carve-out (18,845 defect 제거)
+ * E2E — T-20260805-foot-EXAMFEE-FLAT-GOSIA-CARVEOUT  [billing carve-out SUPERSEDED → REVERSED]
+ * 초진/재진 진찰료 billing base = 1원 canon mirror (18,845) — 종전 flat 고시액(18,840) carve-out REVERSED
  *
- * DA SSOT: da_decision_foot_initfee_examfee_flat_gosia_axis_reconcile_20260805 §4-1/§4-2 (A-flat)
- * - 진찰료 amount = 공표 flat 고시액(services.price), score×환산지수 도출(1원 canon) 미적용.
- * - 초진 197.12×95.60 = 18,844.67 → 1원 반올림 18,845(DEFECT) / 공표 고시액 = 18,840(byte-source).
- * - score 197.12 = provenance only(진찰료 amount 미feed).
+ * ⚠ SUPERSEDE: T-20260805-foot-CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE (DA CONSULT-REPLY
+ *   MSG-20260805-224633-9acx §12/§13, fu5j supersede) 가 이 티켓의 **billing carve-out** premise 를 정정했다.
+ *   - 종전(이 스펙 원본): 진찰료 billing base = 공표 flat 고시액(services.price 18,840), score×unit(1원 canon) exempt.
+ *   - 정정(DA §12): 진찰료 billing-canonical = calc_copayment ROUND(score×unit, 1원) = 초진 18,845 (AA222 parity).
+ *     ∴ coveredBaseUnit 의 진찰료 exempt(carve-out) 제거 → 진찰료 billing base 도 시술 급여 base 와 동일하게
+ *       1원 canon 미러링. "18,845" 는 defect 이 아니라 billing 정본.
+ *   - 클라 표시 carve-out(문서에 18,840 렌더)은 별개 P3 display-unify 트랙(reporter surface 게이트)로 이관 —
+ *     billing base 집계와 무관. isFlatPublishedExamFee identity 술어는 그 트랙 위해 유지(coveredBaseUnit 호출만 제거).
  *
  * 순수함수 검증(브라우저 불요) — computeFootBilling / isFlatPublishedExamFee / isConsultationFeeItem.
  * fixture = 2026-08-05 prod(rxlomoozakkjesdqjtvd) services 실측 shape (service_role READ-ONLY probe).
  *
- * AC-1 (시나리오1): 초진진찰료 급여 aggregate = 18,840 (18,845 아님) — THE FIX.
- * AC-2 (시나리오2): 1WON-MIRROR context(hiraUnitValue 주입) 동시에도 진찰료 = 18,840 flat 유지(§5 exempt).
- * AC-3 (시나리오3): 재진진찰료 = 13,370 (별표1 grounding, no-op).
- * AC-4 (가드): AA222(재진-물리치료·주사 등 시술받은 경우, score 49.09) = 시술 base 1원 canon 유지(4,693, price 4,690 아님) — carve-out 미적용.
- * AC-5 (가드): price 미설정(0) 진찰료 legacy row = carve-out 제외(score×unit 경로 유지, ₩0 회귀 방지).
+ * AC-1 (REVERSED): 초진진찰료 billing base = 18,845 (1원 canon mirror 포함, 종전 flat 18,840 아님).
+ * AC-2 (REVERSED): 진찰료 + 시술(AA222) 혼합 카트 = 둘 다 1원 canon(18,845 + 4,693).
+ * AC-3 (no-op): 재진진찰료 = 13,370 (ROUND(139.85×95.60)=13,370, flat==canon 우연 일치 → 불변).
+ * AC-4 (가드): AA222(재진-물리치료·주사 등 시술받은 경우, score 49.09) = 시술 base 1원 canon 유지(4,693).
+ * AC-5 (가드): price 미설정(0) 진찰료 legacy row = score×unit 경로(14,661), ₩0 회귀 방지 — 불변.
  * AC-6 (가드): isConsultationFeeItem(가산 base 술어) 는 AA222 를 여전히 포함(불변) — 가산 회귀 0.
  *
  * @see T-20260805-foot-EXAMFEE-FLAT-GOSIA-CARVEOUT
+ * @see T-20260805-foot-CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE (supersede)
  * @see da_decision_foot_initfee_examfee_flat_gosia_axis_reconcile_20260805
  */
 
@@ -96,31 +101,32 @@ const item = (svc: BillingService, unitPrice = svc.price ?? 0, qty = 1): FootBil
 // 1원 mirror context = hiraUnitValue 주입(급여 base = ROUND(score×unit)) 활성
 const withMirror = { hiraUnitValue: HIRA_UNIT } as const;
 
-test.describe('T-20260805 진찰료 flat 고시액 carve-out', () => {
-  test('AC-1 초진진찰료 급여 aggregate = 18,840 (18,845 defect 제거)', () => {
-    // 1WON-MIRROR context 에서도 진찰료는 score×unit(18,845) 이 아니라 flat 고시액(18,840).
+test.describe('T-20260805 진찰료 billing base [carve-out REVERSED → 1원 canon mirror]', () => {
+  test('AC-1 [REVERSED] 초진진찰료 billing base = 18,845 (1원 canon mirror 포함)', () => {
+    // T-20260805-CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE (DA §12/§13 fu5j supersede): 진찰료 billing base 도
+    //   시술 급여 base 와 동일하게 1원 canon = ROUND(197.12×95.60) = 18,845 (종전 flat carve-out 18,840 REVERSED).
     const r = computeFootBilling([item(svcInitExam)], 'general', withMirror);
-    expect(r.coveredTotal).toBe(18840);
-    expect(r.coveredTotal).not.toBe(18845);
-    // defect 재현: score×unit → 18,845 였음을 명시(exempt 전 경로).
+    expect(r.coveredTotal).toBe(18845);
+    expect(r.coveredTotal).not.toBe(18840);
     expect(Math.round(197.12 * HIRA_UNIT)).toBe(18845);
-    // 술어: 초진진찰료 = flat 고시액 축
+    // identity 술어는 불변(true) — display-unify 트랙 위해 유지(billing base 집계와 무관).
     expect(isFlatPublishedExamFee(svcInitExam, 'general')).toBe(true);
   });
 
-  test('AC-2 §5 1WON-MIRROR 동시 적용에도 진찰료 flat 유지 + 시술은 1원 canon (혼합 카트)', () => {
-    // 진찰료(초진) + 시술(AA222) 동시 → 진찰료=18,840(flat) / 시술=4,693(score×unit 1원 canon).
+  test('AC-2 [REVERSED] 진찰료 + 시술(AA222) 혼합 카트 = 둘 다 1원 canon (18,845 + 4,693)', () => {
+    // 진찰료(초진)도 이제 1원 canon(18,845), 시술(AA222)도 1원 canon(4,693) — 동일 규칙 수렴.
     const r = computeFootBilling(
       [item(svcInitExam), item(svcProcReVisit)],
       'general',
       withMirror,
     );
-    expect(r.coveredTotal).toBe(18840 + 4693); // 23,533
+    expect(r.coveredTotal).toBe(18845 + 4693); // 23,538
   });
 
-  test('AC-3 재진진찰료 = 13,370 (flat, no-op)', () => {
+  test('AC-3 재진진찰료 = 13,370 (ROUND(139.85×95.60)=13,370, flat==canon 우연 일치 → no-op)', () => {
     const r = computeFootBilling([item(svcReExam)], 'general', withMirror);
     expect(r.coveredTotal).toBe(13370);
+    expect(r.coveredTotal).toBe(Math.round(139.85 * HIRA_UNIT)); // 1원 canon 과 flat 이 동일값
     expect(isFlatPublishedExamFee(svcReExam, 'general')).toBe(true);
   });
 

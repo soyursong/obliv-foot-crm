@@ -313,33 +313,23 @@ export function computeFootBilling(
   opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
-  // ── 급여 base 권위 소스 (DA da_decision_…_20260723 Q1): ROUND(hira_score × hira_unit_value).
+  // ── 급여 base 권위 소스 (1원 canon) = ROUND(hira_score × hira_unit_value) ──────────────
   //   적용 대상 = 급여(getTaxClass='급여') AND hira_score 존재 AND hira_unit_value(clinics, §2-2-0) 전달.
   //   그 외(비급여 / hira_score NULL / hira_unit_value 미전달) = 기존 unitPrice(price) base 유지.
   //   하드코딩·연도 상수 금지 — hira_unit_value 는 호출부(clinics)에서 취득해 주입한다.
+  //
+  //   T-20260805-foot-CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE (DA CONSULT-REPLY MSG-20260805-224633-9acx
+  //     §12/§13, fu5j supersede): 진찰료(AA154/AA254 등)도 시술 급여 base 와 **동일 규칙**으로
+  //     calc_copayment 의 ROUND(score×unit, 1원) canon 을 미러링한다. 종전 EXAMFEE-FLAT-GOSIA-CARVEOUT
+  //     (진찰료 billing base = services.price flat 고시액 18,840, score×unit 도출 배제)은 billing canon
+  //     이탈(진찰료 billing-canonical = 초진 18,845, AA222 parity)로 판정되어 **REVERSED** — 진찰료 line 을
+  //     1원 mirror 에서 exempt 하지 않고 포함한다(별도 진찰료 exempt 분기 신설 금지). services.price(10원)를
+  //     급여 base authority 로 쓰지 않으므로, 1원이 전액 공단 leg 로 흡수되던 내부 non-conformance
+  //     (5,119 vs 5,120 류) 가 제거된다. round_10(10원 반올림) 도입 금지(DA 4차 REJECT canon).
+  //   ★ 클라 표시 carve-out(문서에 18,840 렌더)은 별개 P3 display-unify 트랙(reporter surface 확인 게이트) —
+  //     본 함수(billing base 집계)와 무관. isFlatPublishedExamFee 술어는 그 트랙 위해 export 유지(호출만 제거).
   const hiraUnitValue = opts?.hiraUnitValue ?? null;
   const coveredBaseUnit = (svc: BillingService): number | null => {
-    // ── 진찰료(초진/재진) = 정부 공표 flat 고시액 축 carve-out ─────────────────────
-    //   DA da_decision_foot_initfee_examfee_flat_gosia_axis_reconcile_20260805 §4-1/§4-2 (A-flat):
-    //   진찰료 amount = 정부 공표 flat 고시액(10원 grain, services.price 에 저장된 authority).
-    //   score×환산지수(hira_score × hira_unit_value) 도출은 근사(approximation)이며 진찰료의
-    //   정확 산출식이 아니다 — 197.12×95.60=18,844.67 을 1원 반올림하면 18,845(=DEFECT),
-    //   공표 고시액은 18,840(byte-source). 진찰료 line 을 score×unit 도출에서 exempt 하고
-    //   flat 고시액(unitPrice=services.price)을 사용한다(§4-2 amount 미feed of score).
-    //   ★ §5 1WON-MIRROR exempt: 이 early-return 이 진찰료 line 을 1원 base 미러 경로에서
-    //     제외하는 지점이다(depends_on CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE 회귀 방지).
-    //   ★ 시술 base 수가(급여 copay base, 1원 4사5입 canon)는 무접촉 — carve-out 은 진찰료 전용.
-    //     AA222(재진-물리치료·주사 등 시술받은 경우, score 49.09)는 시술 base RVU 축이므로
-    //     제외한다(§10-2 census). → isFlatPublishedExamFee 는 '진찰료/상담' 명칭만 매칭(가산용
-    //     isConsultationFeeItem 의 넓은 /진찰|상담|초진|재진/ 와 달리 AA222 를 배제).
-    //   ★ price 미설정(0/null) legacy row 는 flat 고시액 부재 → carve-out 제외(기존 경로 유지).
-    if (
-      isFlatPublishedExamFee(svc, insuranceGrade) &&
-      svc.price != null &&
-      svc.price > 0
-    ) {
-      return null; // flat 고시액(unitPrice=services.price) 사용, score×unit 도출 배제
-    }
     if (
       hiraUnitValue != null &&
       svc.hira_score != null &&
@@ -347,7 +337,7 @@ export function computeFootBilling(
     ) {
       return Math.round(svc.hira_score * hiraUnitValue);
     }
-    return null; // price base 유지
+    return null; // price base 유지(비급여 / hira_score NULL / hira_unit_value 미전달)
   };
   const amountOf = (i: FootBillingItem) => (coveredBaseUnit(i.service) ?? i.unitPrice) * i.qty;
   const grandTotal = pricingItems.reduce((s, i) => s + amountOf(i), 0);
@@ -658,10 +648,18 @@ export function isConsultationFeeItem(
 }
 
 /**
- * ── T-20260805-foot-EXAMFEE-FLAT-GOSIA-CARVEOUT ──────────────────────────────────
- * 진찰료 amount = 정부 공표 flat 고시액 축 판정 (DA da_decision_foot_initfee_examfee_flat_
- * gosia_axis_reconcile_20260805 §4-1/§4-2). 이 술어가 true 인 항목은 amount 를 score×환산지수
- * 도출이 아니라 services.price(공표 고시액)로 산출한다(coveredBaseUnit carve-out).
+ * ── T-20260805-foot-EXAMFEE-FLAT-GOSIA-CARVEOUT (billing carve-out REVERSED) ──────────
+ * 진찰료 = 정부 공표 flat 고시액 축 identity 판정 (DA da_decision_foot_initfee_examfee_flat_
+ * gosia_axis_reconcile_20260805 §4-1/§4-2).
+ *
+ * ★ T-20260805-foot-CALCOPAY-BASE-1WON-MIRROR-CONFORMANCE (DA CONSULT-REPLY MSG-20260805-224633-9acx
+ *   §12/§13, fu5j supersede): 종전 이 술어는 coveredBaseUnit 의 **billing base carve-out**(진찰료
+ *   amount = services.price flat 고시액, score×unit 1원 canon 배제)에 쓰였으나, DA §12 가 그 premise 를
+ *   정정(진찰료 billing-canonical = calc_copayment ROUND(score×unit, 1원) = 초진 18,845, AA222 parity)
+ *   → billing carve-out 은 REVERSED(coveredBaseUnit 호출 제거). 진찰료 billing base 도 이제 시술 급여
+ *   base 와 동일하게 1원 canon 을 미러링한다.
+ * ★ 이 술어(export) 는 **클라 표시 carve-out(문서에 18,840 렌더)** 를 위한 별개 P3 display-unify 트랙
+ *   (reporter surface 확인 게이트)에서 재사용하기 위해 유지한다 — billing base 집계와는 무관한 identity 술어.
  *
  * ★ isConsultationFeeItem(가산 base 용, SURCHARGE_EXAM_FEE_SERVICE_CODES)과 의도적으로 다른(더 좁은) 술어다:
  *   - 가산(야간/공휴)은 AA222(재진-물리치료,주사 등 시술받은 경우)까지 진찰료-adjacent 로 포함하나,
