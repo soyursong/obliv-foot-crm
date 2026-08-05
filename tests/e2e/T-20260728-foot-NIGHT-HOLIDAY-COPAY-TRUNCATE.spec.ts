@@ -3,6 +3,7 @@ import {
   detectSurchargeKind,
   computeSurcharge,
   resolveSurchargeRefDate,
+  applyNightHolidaySurcharge,
   SURCHARGE_RATE,
   KOREAN_HOLIDAYS_2026,
 } from '../../src/lib/nightHolidaySurcharge';
@@ -136,6 +137,43 @@ test.describe('시나리오1 — 가산금 경로 절사 적용 (AC-1/AC-3, 버�
     expect(r.copayment + r.covered).toBe(r.grand); // 3,300 + 8,140 = 11,440
     // 가산 분할 합 정합(누락·이중 없음)
     expect(r.surcharge.copay + r.surcharge.covered).toBe(r.surcharge.amount);
+  });
+
+  test('AC-4 (reopen item#8) — 세부산정내역서(bill_detail) 실코드경로: 공단부담 끝수 흡수 + 보존식 site-lock (T-20260805 FUND-TRANSFER)', () => {
+    // ★ 로컬 settle() 재구현이 아니라 실제 렌더 함수 applyNightHolidaySurcharge(bill_detail 분기)를 직접 구동해
+    //   item#8 코드 site(subtotal_fund 끝수 이전 + 보존식)를 회귀 락한다. supervisor 배포검증에서 잡힌
+    //   "공단부담 열 raw 8,060(절사 전)" 재발을 실코드 경로에서 차단(로컬 미러가 통과해도 실함수가 어긋나면 FAIL).
+    const num = (s: string) => Number((s ?? '0').replace(/[^\d.-]/g, ''));
+    const base: Record<string, string> = {
+      subtotal_copayment: '2,600',   // 본인부담(가산 전)
+      subtotal_fund: '6,200',        // 공단부담(가산 전)
+      subtotal_amount: '8,800',      // 급여 진료비 총액(가산 전)
+      total_copayment: '2,600',
+      total_fund: '6,200',
+      total_amount: '8,800',
+      detail_subtotal: '2,600',      // 계 = 본인 + 비급여(0)
+      detail_total: '2,600',
+      detail_rounding: '0',
+      visit_date: '2026-07-25',
+      items_html: '',
+    };
+    // 공휴일(토) → 30% 가산: 본인 2,600+780=3,380 / 공단 6,200+1,860=8,060 / 급여총액 8,800+2,640=11,440
+    applyNightHolidaySurcharge(base, 'bill_detail', false, new Set<string>(), at(2026, 7, 25, 10), () => '');
+    // item#8: 본인 floor100 → 3,300, 끝수 80원 → 공단 8,060+80=8,140 (독립계산 8,060 아님)
+    expect(num(base.subtotal_copayment)).toBe(3300);
+    expect(num(base.subtotal_fund)).toBe(8140);        // ★ 공단부담 열 = 끝수 흡수값. raw 8,060 재발 금지
+    expect(num(base.subtotal_fund)).not.toBe(8060);    // 회귀 가드(배포검증 지적 site)
+    expect(num(base.total_fund)).toBe(8140);           // total 열도 동시 갱신
+    expect(num(base.total_copayment)).toBe(3300);
+    // ★ 보존식(불변식): 본인부담(floor後) + 공단부담 == 급여 진료비 총액 (비급여 0)
+    expect(num(base.subtotal_copayment) + num(base.subtotal_fund)).toBe(num(base.subtotal_amount));
+    // 진료비 총액(공단 포함)은 item#8 미접촉 → 가산 fold 값 그대로(보존식 우변 불변)
+    expect(num(base.subtotal_amount)).toBe(11440);
+    expect(num(base.total_amount)).toBe(11440);
+    // 계/합계 동시 정합: 계 = 본인(floor後) + 비급여(0) = 3,300, 합계 = floor10(3,300) = 3,300, 조정 0
+    expect(num(base.detail_subtotal)).toBe(3300);
+    expect(num(base.detail_total)).toBe(3300);
+    expect(num(base.detail_rounding)).toBe(0);
   });
 
   test('AC-4 재정의(DA) — 영수증 ⑧ 환자부담총액 = 수납 aggregate(floor100 본인부담 + 비급여 무절사)', () => {
