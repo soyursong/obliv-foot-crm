@@ -73,6 +73,7 @@ import { FOOT_SYMPTOM_OPTIONS } from '@/lib/footHealthSymptoms';
 import { isLaserService } from '@/lib/laserService';
 // T-20260622-foot-DOCSERIAL-AUTOGEN: 서류 연번호 자동 생성 (단일 config + 헬퍼)
 import { buildDocSerial, docSerialPrefix, buildIssueNo, splitIssueNoForDisplay } from '@/lib/docSerial';
+import { filterIssuanceHistory } from '@/lib/issuanceHistory';
 import type { CheckIn } from '@/lib/types';
 import { useDutyDoctors, type DutyDoctor } from '@/hooks/useDutyRoster';
 // T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED: 소견서·진단서 = 원장 발행본 출력만(데스크 작성 불가).
@@ -1800,15 +1801,21 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
   const usingFallback = templates.length > 0 && templates[0].id.startsWith('fallback-');
   const selectedCount = selectedKeys.size;
 
+  // T-20260805-foot-PREVDOC-OPEN-FAIL (RC 확정 — 현장 F-4741 07/28 '알 수 없는 양식 임시'): 발행 이력에는
+  //   '실제 발행된 서류'(template_id 로 양식이 해석되는 submission)만 노출한다. 혈액/검사 접수·항목상태 레이어가
+  //   form_submissions 를 template_id=NULL 상태 저장소로 재사용해 이력에 '알 수 없는 양식 임시'로 새어 나와
+  //   클릭해도 안 열리던 문제 — printable-doc 불변식(발행 서류는 template_id 보유)으로 제외. 판별 SSOT=issuanceHistory.ts.
+  const historySubmissions = filterIssuanceHistory(submissions);
+
   // T-20260623-foot-CHART2-VISITHIST-COMPACT-REISSUE ③: 발행 이력 블록 — 위치(상단/원위치)·열수(2열/1열)를
   //   historyAtTop prop으로 분기. 항목 렌더/onClick(템플릿 재선택) 로직은 동일(DOCOUTPUT 행리스트 무영향).
-  const historyBlock = submissions.length > 0 ? (
+  const historyBlock = historySubmissions.length > 0 ? (
     <div className="space-y-1.5">
       <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
         <Clock className="h-3 w-3" /> 발행 이력
       </span>
       <div className={historyAtTop ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5'}>
-        {submissions.map((sub) => {
+        {historySubmissions.map((sub) => {
           // T-20260805-foot-PREVDOC-OPEN-FAIL: 활성 목록(templates)에 없으면 이력 전용 보충셋(extraTemplates)로
           //   폴백 해석 → '알 수 없는 양식' 라벨/무반응 클릭(열기 불가) 해소.
           const tpl = templates.find((t) => t.id === sub.template_id)
