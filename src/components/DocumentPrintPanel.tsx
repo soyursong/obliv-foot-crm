@@ -139,6 +139,8 @@ import {
   //   환자부담총액(=환자 실수납액, 수납 aggregate grain) 절사 SSOT — 외래 본인부담 급여 component 만 floor100,
   //   비급여 무절사(별표2 제19조제1항 다만조항). PMW(수납창)와 동일 SSOT 로 same-receipt cross-render 정합.
   floorBillReceiptNewPatientTotal,
+  // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: 신양식 ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식 SSOT).
+  absorbBillReceiptNewCopayFloorRemainder,
   computeBillReceiptNewCategoryBreakdown,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A: 신양식 비급여 category 토큰 주입 SSOT(승격됨).
   applyBillReceiptNewCategoryTokens,
@@ -1642,6 +1644,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           const copayComponent = parseAmountStr(v.copayment);
           const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
           if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
+          // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식, AC-6). ⑧절사 후·행분해 전.
+          absorbBillReceiptNewCopayFloorRemainder(v);
           // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
           applyBillReceiptNewCoveredTokens(v, batchRnItems);
           // ── T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (일괄출력 경로, 캐논 supersede) ──
@@ -3481,6 +3485,9 @@ function IssueDialog({
       const patientFloored = hasPatientOverride ? parseAmountStr(patientOverrideRaw) : autoPatientFloored;
       if (hasPatientOverride) base.patient_amount = patientOverrideRaw;
 
+      // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식, AC-6).
+      //   ⑧절사 후 · 행분해(CoveredTokens) 전 순서 — 수납창(PMW)·일괄인쇄와 동일 보존식 값(3경로 정합).
+      absorbBillReceiptNewCopayFloorRemainder(base);
       // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX ──
       // 결함A: 급여 category 분해 토큰 주입. ★야간가산 fold 이후(여기)에 호출해야 진찰료 remainder 가
       //   최종 aggregate({{copayment}}/{{insurance_covered}}) 기준으로 산출돼 Σ(행)=합계 정합(§3.3 순서강제).

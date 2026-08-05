@@ -859,6 +859,35 @@ export function floorBillReceiptNewPatientTotal(
 }
 
 /**
+ * T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING — 신양식(bill_receipt_new) ①본인부담금 floor100 절사
+ *   끝수를 ②공단부담금으로 이전(흡수). 건강보험법 시행령 제22조1항: 본인부담 100원 미만 끝수 = 공단부담.
+ *
+ * ▷ 버그(80원 실종): ①본인부담을 floorOutpatientCopayment 로 절사(끝수 제거)하면서, ②공단부담은
+ *   (base covered + 가산 covered)로 **독립 계산** → 제거된 끝수(copay − floor100(copay))가 ②에도 안 더해져
+ *   시스템에서 소실. 결과: 본인 3,300 + 공단 8,060 = 11,360 ≠ 급여총액 11,440 (보존식 위반).
+ * ▷ 정답(파생, 독립계산 금지): insurance_covered = 급여총액(①+② 절사전, 불변) − floor100(①). 끝수 자동 흡수 →
+ *   본인 3,300 + 공단 8,140 = 11,440. 불변식 base = copayment + insurance_covered 성립.
+ *
+ * ★ 순서강제: applyNightHolidaySurcharge(가산 fold) **이후** · applyBillReceiptNewCoveredTokens(행 분해) **이전**
+ *   호출. 최종 aggregate ①② 를 floor 정합시킨 뒤 진찰료 remainder 를 계산해야 Σ(행)=합계·보존식이 동시 성립.
+ * ★ 무회귀 가드:
+ *   - 공단부담 ≤ 0(등급부재 grade=null → 공단 0 / 비급여only): no-op — 끝수를 공단(0)으로 이전하지 않고 본인=급여전액
+ *     기존 거동 유지(AC-7, 스코프 밖).
+ *   - 끝수 0(①이 이미 100원 배수): no-op(값 불변, AC-5 선행 floor100 무회귀).
+ *   - ⑧환자부담총액(patient_amount)·⑥진료비총액(total_amount)·비급여(non_covered) 무접촉 — 급여 ①↔② 재배분만.
+ */
+export function absorbBillReceiptNewCopayFloorRemainder(values: Record<string, string>): void {
+  const copay = parseAmount(values.copayment ?? '');
+  const ins = parseAmount(values.insurance_covered ?? '');
+  if (!(copay > 0) || !(ins > 0)) return;                 // 급여 본인·공단 둘 다 있을 때만(등급부재/비급여 no-op)
+  const flooredCopay = floorOutpatientCopayment(copay);   // 본인부담 외래 100원 FLOOR
+  if (flooredCopay === copay) return;                     // 끝수 0(이미 100원 배수) → no-op(무회귀)
+  const gupyeoTotal = copay + ins;                        // 급여 총액(본인+공단, 절사 전) — 보존 대상 불변량
+  values.copayment = formatAmount(flooredCopay);
+  values.insurance_covered = formatAmount(Math.max(0, gupyeoTotal - flooredCopay)); // 끝수 공단 흡수(보존식)
+}
+
+/**
  * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② — 진료비 계산서·영수증 신양식 비급여 항목행 category 분해.
  *
  * 배경(버그): 신양식(bill_receipt_new)은 급여 split(본인/공단)을 진찰료 행에 aggregate 표기(3FIX)하고,
