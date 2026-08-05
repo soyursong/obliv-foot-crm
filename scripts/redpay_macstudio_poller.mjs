@@ -270,7 +270,8 @@ const FOOT_MERCHANT_WHITELIST_DEFAULT = [
   "1777285001", "1777285002", "1777285003", "1777285004", "1777285005", "1777285006",
   "1777285007", "1777285008",             // VAN8 (신규 002·003·005·006·007·008)
   "1777288001", "1777288003", "1777288004", "1777288005", "1777288006",
-  "1777288008",                           // 유선6 (신규 003·005·006·008)
+  "1777288007",                           // ★유선 0806GAP 신규 merchant admission — 결번 007 편입(tid 538244, DA CONSULT admission GO 게이트, T-20260806-...-0806GAP)
+  "1777288008",                           // 유선 (신규 003·005·006·008)
   "1777289001", "1777289002", "1777289003", "1777289004", "1777289005",
   "1777289006", "1777289007", "1777289008", // 멀티8
   "1777289009", "1777289010", "1777289011", "1777289012", "1777289013", // 무선5
@@ -305,6 +306,8 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047535845", "1047535843", "1047535842", "1047535837", "1047535835", "1047535797", // VAN 신 live(T-20260724-...-0723GAP Opt-B′)
   // 0805 GAP 신 live TID(538xxx) — 289002 재활성(8/03 TRUE-ZERO DEACTIVATE→8/04 TRUE-POSITIVE 재개) 멀티 재프로비저닝 구479476→538233(구 479476 superseded 병존):
   "1047538233", // 멀티 재활성 5세대(T-20260805-...-0805GAP-REACTIVATE, DA-20260805-foot-REDPAY...obfz GO — belt-and-suspenders parity, admission=merchant-keyed이라 gating 아님)
+  // 0806 GAP 신규 merchant admission(★remap 아님) — 1777288007(결번 007) 신규 유선 단말 tid 1047538244(신 live primary):
+  "1047538244", // 유선 신규 merchant admission(T-20260806-...-0806GAP §신규 admission, DA CONSULT admission GO 게이트 — 신규 merchant는 merchant-keyed admit 확장이므로 registry INSERT 적용 후에만 유효)
 ];
 
 // ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
