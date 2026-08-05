@@ -41,8 +41,8 @@ const isMult100 = (n: number) => n % 100 === 0;
 /**
  * PaymentMiniWindow 수납 grain 정산 파생식 1:1 미러 (T-20260728 FIX-REQUEST 수정본).
  *   sc = computeSurcharge(consultCovered, consultCopay, kind)
- *   ★급여 본인부담금(가산 포함) = floorOutpatientCopayment(payCopaymentTotal + sc.copay)  ← 외래 100원 FLOOR (수정핵심)
- *   공단부담액(가산 포함) = (coveredTotal − payCopaymentTotal) + sc.covered                ← 절사 무관(불변)
+ *   ★급여 본인부담금(가산 포함) = floorOutpatientCopayment(payCopaymentTotal + sc.copay)  ← 외래 100원 FLOOR
+ *   공단부담액(가산 포함) = 급여총액 − 본인부담(floor後)                                    ← T-20260805 floor100 끝수 흡수(보존식)
  *   진료비 총액(가산 포함) = (coveredTotal + nonCovered) + sc.amount                       ← 절사 무관(불변)
  *   최종 수납잔액        = 급여 본인부담(floor100) + nonCovered(무절사)
  */
@@ -61,12 +61,19 @@ function settle(
   const sc = computeSurcharge(cb.covered, cb.copay, kind);
   const rawCopay = payCopaymentTotal + sc.copay;
   const copayFloored = floorOutpatientCopayment(rawCopay); // ★ 외래 100원 FLOOR
+  // ── T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: floor100 끝수 공단 흡수(보존식) ──
+  //   공단부담 = 급여총액 − 본인부담(floor後) 로 파생 → 끝수(rawCopay−copayFloored)를 공단이 흡수.
+  //   불변식 급여총액 = 본인부담 + 공단부담. 공단 0(등급부재/비급여) 은 0 유지(무회귀).
+  const gupyeoCovered = insuranceCoveredTotal + sc.covered;      // 급여 공단부담(가산 포함, 절사 전)
+  const coveredAbsorbed = gupyeoCovered > 0
+    ? Math.max(0, (rawCopay + gupyeoCovered) - copayFloored)
+    : gupyeoCovered;
   return {
     kind,
     surcharge: sc,
     rawCopay,                                      // 절사 전(구 버그값 = 그대로 청구되던 금액)
     copayment: copayFloored,                       // 급여 본인부담금(가산 + 100원 절사)
-    covered: insuranceCoveredTotal + sc.covered,   // 공단부담액(가산 포함) — 절사 무관
+    covered: coveredAbsorbed,                      // 공단부담액(가산 포함) — floor100 끝수 흡수(보존식)
     grand: grandTotal + sc.amount,                 // 진료비 총액(가산 포함) — 절사 무관
     payable: copayFloored + nonCovered,            // 최종 수납잔액
   };
@@ -116,13 +123,17 @@ test.describe('시나리오1 — 가산금 경로 절사 적용 (AC-1/AC-3, 버�
     expect(r.payable).toBe(3300);
   });
 
-  test('AC-3 — 절사는 급여 본인부담에만: 공단부담액·진료비 총액 산식 불변', () => {
+  test('AC-3 — 본인부담 floor100 끝수(80원)가 공단부담으로 흡수: 보존식 본인+공단=총액 성립 (T-20260805 FUND-TRANSFER)', () => {
     const r = settle(8800, 2600, 0, at(2026, 7, 25, 10));
-    // 공단부담액 = (8,800 − 2,600) + 가산 공단분(2,640 − 780 = 1,860) = 8,060 (절사 미적용 = 법정 표기 불변)
-    expect(r.covered).toBe(6200 + 1860);
-    expect(r.covered).toBe(8060);
-    // 진료비 총액 = (8,800 + 0) + 2,640 = 11,440 (절사 미적용)
+    // 급여총액(11,440) = 본인부담 raw(3,380) + 공단 raw(6,200+1,860=8,060). 본인 floor100=3,300 → 끝수 80원.
+    // ★ 정답(보존식): 공단부담 = 급여총액 − 본인부담(floor後) = 11,440 − 3,300 = 8,140 (끝수 80원 흡수).
+    //   구 버그값 8,060(독립계산·끝수 소실)이 아니라 8,140 이어야 본인 3,300 + 공단 8,140 = 11,440 == 총액.
+    expect(r.covered).toBe(8140);
+    expect(r.covered).not.toBe(8060);              // 회귀 가드: 구 버그(80원 실종) 재발 금지
+    // 진료비 총액 = (8,800 + 0) + 2,640 = 11,440 (불변)
     expect(r.grand).toBe(11440);
+    // ★ 보존식(불변식): 본인부담(절사후) + 공단부담 == 급여 총액 (nonCovered=0 → grand == 급여총액). 80원 실종 방지.
+    expect(r.copayment + r.covered).toBe(r.grand); // 3,300 + 8,140 = 11,440
     // 가산 분할 합 정합(누락·이중 없음)
     expect(r.surcharge.copay + r.surcharge.covered).toBe(r.surcharge.amount);
   });

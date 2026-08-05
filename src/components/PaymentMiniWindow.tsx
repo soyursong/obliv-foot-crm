@@ -162,6 +162,8 @@ import {
   // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정3): bill_receipt_new ⑧ 산출 SSOT
   //   — PMW(수납창)·DPP(인쇄) 공유 순수함수. same-receipt cross-render(PMW==DPP) 정합 보장.
   floorBillReceiptNewPatientTotal,
+  // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: 신양식 ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식 SSOT).
+  absorbBillReceiptNewCopayFloorRemainder,
   // T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN 단계 A/B: 신양식(bill_receipt_new) 비급여 category 토큰
   //   주입 SSOT(footBilling 승격) — DPP 와 동일 인자로 소비해 결제미니창 인쇄 시 처치/검사 행 공란 해소.
   applyBillReceiptNewCategoryTokens,
@@ -1911,7 +1913,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   //     배수) → 값 불변(AC-2). 공단부담액·진료비 총액(insuranceCoveredWithSurcharge/grandTotalWithSurcharge)은
   //     본인부담 절사와 직교 → 산식 불변(AC-3, 법정 표기 칸 무접촉).
   const payCopaymentWithSurcharge = floorOutpatientCopayment(payCopaymentTotal + settleSurcharge.copay); // 급여 본인부담금(가산 포함, 외래 100원 FLOOR)
-  const insuranceCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered; // 공단부담액(가산 포함) — 절사 무관(AC-3)
+  // ── T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING [P0 hotfix, 이은상 팀장] ──────────────
+  //   [버그] 종전 공단부담을 (insuranceCoveredTotal + settleSurcharge.covered) 로 **독립 계산** → 본인부담 floor100 으로
+  //     제거된 끝수(rawCopay − floor100)가 공단에도 안 더해져 소실(본인 3,300 + 공단 8,060 = 11,360 ≠ 총액 11,440, 80원 실종).
+  //   [정답] 건강보험법 시행령 제22조1항(본인부담 100원 미만 끝수 = 공단부담): 공단부담 = 급여총액 − 본인부담(floor後) 로 **파생**
+  //     → 끝수 자동 흡수. 불변식 급여총액 = 본인부담 + 공단부담 성립(본인 3,300 + 공단 8,140 = 11,440 == 총액).
+  //     급여총액(가산 포함) = 본인부담(raw) + 공단(raw) = (payCopaymentTotal+settleSurcharge.copay) + (insuranceCoveredTotal+settleSurcharge.covered).
+  //   [무회귀] 등급부재(공단0)·비급여only → 공단 0 유지(AC-7). 끝수 0(이미 100원배수) → 파생값 == 종전값(AC-5).
+  //     수납잔액(payableTotalWithSurcharge=본인+비급여)·진료비 총액(grandTotalWithSurcharge) 불변(AC-8/AC-3).
+  const gupyeoRawCopayWithSurcharge = payCopaymentTotal + settleSurcharge.copay;              // 급여 본인부담(절사 전, 가산 포함)
+  const gupyeoCoveredWithSurcharge = insuranceCoveredTotal + settleSurcharge.covered;         // 급여 공단부담(가산 포함)
+  const insuranceCoveredWithSurcharge = gupyeoCoveredWithSurcharge > 0
+    ? Math.max(0, (gupyeoRawCopayWithSurcharge + gupyeoCoveredWithSurcharge) - payCopaymentWithSurcharge) // 공단 = 급여총액 − 본인부담(floor後) → 끝수 흡수(보존식)
+    : gupyeoCoveredWithSurcharge;                                                             // 공단 0(등급부재/비급여) = 0 유지(AC-7 무회귀)
   const grandTotalWithSurcharge = grandTotal + settleSurcharge.amount;                // 진료비 총액(가산 포함) — 절사 무관(AC-3)
   // 최종 수납금액(수납잔액) = 절사된 급여 본인부담(가산 포함, floor100) + 비급여 전액(무절사). 가산 공단분은 환자가 내지 않음(공단 몫).
   const payableTotalWithSurcharge = payCopaymentWithSurcharge + nonCoveredTotal;
@@ -2036,6 +2050,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   기존 인라인(floorOutpatientCopayment(copay) + nonCov)과 수학적 동치(무회귀).
     const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
     if (rawPatient > 0) enriched.patient_amount = formatAmount(patientFloored);
+    // ── T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식) ──
+    //   ⑧ 절사(floorBillReceiptNewPatientTotal) 후 · 행분해(CoveredTokens) 전 순서(§순서강제). 인쇄 ①② 를 수납창
+    //   (payCopaymentWithSurcharge/insuranceCoveredWithSurcharge)과 동일 보존식으로 정합 → 수납==인쇄==명세 3경로 동일값(AC-6).
+    absorbBillReceiptNewCopayFloorRemainder(enriched);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
     // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT ⑨(이미 납부한 금액) 선차감 보정 ──────────────
