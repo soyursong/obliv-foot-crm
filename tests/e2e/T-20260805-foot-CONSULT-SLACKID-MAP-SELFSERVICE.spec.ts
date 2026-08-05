@@ -153,3 +153,20 @@ test('Part B 가드 로직: 빈 입력 → 매핑 해제(value=null) 허용', ()
   expect(r.ok).toBe(true);
   expect(r.value).toBeNull();
 });
+
+// ── Part C: 기존 연동값 자동 표시(pre-fill) — read-only ──────────────────────
+
+test('Part C: staff 행 값은 defaultValue 로 pre-fill (자동 표시)', () => {
+  const tab = read(TAB);
+  // 입력칸이 staff.slack_user_id 를 기본값으로 표시(이미 연동된 계정 자동 노출).
+  expect(tab).toMatch(/defaultValue=\{c\.slack_user_id\}/);
+});
+
+test('Part C: staff 행 미기입 시 상수 매핑을 placeholder(read-only)로 안내', () => {
+  const tab = read(TAB);
+  // 상수 fallback 은 placeholder 로만 노출 — defaultValue 로 넣지 않음(자동 write 금지).
+  expect(tab).toContain('resolveSiljangSlackId(c.name)');
+  expect(tab).toMatch(/placeholder=\{[\s\S]*resolveSiljangSlackId\(c\.name\)[\s\S]*\}/);
+  // 상수값이 defaultValue 로 새어 자동 저장되지 않는지: defaultValue 는 여전히 staff 행만.
+  expect(tab).not.toMatch(/defaultValue=\{[^}]*resolveSiljangSlackId/);
+});

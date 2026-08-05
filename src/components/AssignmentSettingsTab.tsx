@@ -16,6 +16,8 @@ import { useAuth } from '@/lib/auth';
 import type { Clinic, AssignLeadSource, AssignStrategy } from '@/lib/types';
 // T-20260805-foot-CONSULT-SLACKID-MAP-SELFSERVICE Part B: 셀프서비스 slack_user_id 입력 가드(봇 ID/형식).
 import { checkSlackUserId } from '@/lib/slackId';
+// Part C: staff 행 미기입 시 상수 매핑(SILJANG_SLACK_MAP)을 placeholder 로 표시(read-only, 자동 write 금지).
+import { resolveSiljangSlackId } from '@/lib/siljangSlack';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -395,7 +397,13 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
                 <Label className="whitespace-nowrap text-sm text-muted-foreground">Slack ID</Label>
                 <Input
                   defaultValue={c.slack_user_id}
-                  placeholder="예: U01AB2CD3EF (선택)"
+                  // Part C: staff 행이 비어 있어도 상수 매핑에 이 실장이 있으면 그 값을 안내(placeholder=read-only).
+                  //   실제 저장은 총괄이 입력·저장(Part B)해야 staff 행으로 승격 — 임의 자동 write 금지.
+                  placeholder={
+                    !c.slack_user_id && resolveSiljangSlackId(c.name)
+                      ? `현재 연동: ${resolveSiljangSlackId(c.name)} (저장 시 이 계정에 고정)`
+                      : '예: U01AB2CD3EF (선택)'
+                  }
                   className="h-10 max-w-xs"
                   onBlur={(e) => saveSlack(c.id, e.target.value, e.target)}
                   data-testid={`slack-input-${c.id}`}
