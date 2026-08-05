@@ -3662,27 +3662,41 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                         Phase A: 스태프가 공단 포털에서 확인한 잔액을 직접 입력 → '공단 차감' 버튼 클릭 시
                         급여 본인부담금을 잔액에서 차감 → 실수납 0원(부분차감=잔액만큼). 자동조회 아님(총괄 A안). */}
                     {isMedicalAid1 && (
-                      <div className="mt-2 rounded-md border border-teal-300 bg-teal-50/70 p-2 space-y-1.5">
+                      <div className="mt-2 rounded-md border border-teal-300 bg-teal-50/70 p-2 space-y-2">
                         <div className="text-xs font-semibold text-teal-800">
                           의료급여 1종 · 건강생활유지비 공단 차감
                         </div>
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs text-muted-foreground whitespace-nowrap">공단 잔액</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="h-8 flex-1 rounded border px-2 text-sm text-right tabular-nums disabled:bg-muted disabled:text-muted-foreground"
-                            value={healthMaintenanceBalance > 0 ? formatAmount(healthMaintenanceBalance) : ''}
-                            onChange={(e) => {
-                              const v = Number(e.target.value.replace(/[^0-9]/g, ''));
-                              setHealthMaintenanceBalance(Number.isFinite(v) ? v : 0);
-                              setHealthFeeApplied(false); // 잔액 변경 시 재적용 필요
-                            }}
-                            placeholder="공단 포털에서 확인한 잔액 입력"
-                            disabled={healthFeeApplied || settled}
-                          />
-                          <span className="text-xs text-muted-foreground">원</span>
+                        {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC1): 좁은 산정 컬럼(sm:w-56~lg:w-64)
+                            에서 [라벨·input·원] 가로 배치가 input을 짓눌러 긴 placeholder 가 잘리고 비율이 어긋났다.
+                            → 라벨을 input 위로 스택 + input min-w-0 full-width + placeholder 축약으로 비율 정렬. */}
+                        <div className="space-y-1">
+                          <label className="block text-xs text-muted-foreground">공단 잔액 (공단 포털 확인)</label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              className="h-8 min-w-0 flex-1 rounded border px-2 text-sm text-right tabular-nums disabled:bg-muted disabled:text-muted-foreground"
+                              value={healthMaintenanceBalance > 0 ? formatAmount(healthMaintenanceBalance) : ''}
+                              onChange={(e) => {
+                                const v = Number(e.target.value.replace(/[^0-9]/g, ''));
+                                setHealthMaintenanceBalance(Number.isFinite(v) ? v : 0);
+                                setHealthFeeApplied(false); // 잔액 변경 시 재적용 필요
+                              }}
+                              placeholder="잔액 입력"
+                              disabled={healthFeeApplied || settled}
+                            />
+                            <span className="shrink-0 text-xs text-muted-foreground">원</span>
+                          </div>
                         </div>
+                        {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC2): 건강생활유지비 잔액 상시 표기 복구.
+                            구현: 차감 후 잔액이 '적용 클릭 후' + muted 톤으로만 노출돼 현장에서 '안 보임' 회귀. 잔액 입력
+                            즉시(적용 전) 현재 잔액을 teal 톤으로 노출해 스태프가 확인 가능하게 한다(적용 후 잔액은 아래 상세). */}
+                        {!healthFeeApplied && healthMaintenanceBalance > 0 && (
+                          <div className="flex justify-between text-xs font-medium text-teal-800">
+                            <span>건강생활유지비 잔액</span>
+                            <span className="tabular-nums">{formatAmount(healthMaintenanceBalance)}</span>
+                          </div>
+                        )}
                         {!healthFeeApplied ? (
                           <Button
                             type="button"
@@ -3704,7 +3718,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                               <span>건강생활유지비 차감</span>
                               <span className="tabular-nums font-semibold">− {formatAmount(healthFeeDeducted)}</span>
                             </div>
-                            <div className="flex justify-between text-muted-foreground">
+                            {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC2): muted→teal font-medium 로 승격
+                                (차감 후 갱신 잔액 '표기해줘' 스펙 복구 — 흐린 톤이라 안 보이던 회귀 정정). */}
+                            <div className="flex justify-between font-medium text-teal-800">
                               <span>차감 후 건강생활유지비 잔액</span>
                               <span className="tabular-nums">{formatAmount(healthFeeRemainingBalance)}</span>
                             </div>
