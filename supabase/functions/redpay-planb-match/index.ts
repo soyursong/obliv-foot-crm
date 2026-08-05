@@ -48,8 +48,11 @@ import {
   retentionCutoffIso,
   groupPendingByAmount,
   selectCandidateRaw,
+  kstAccountingDate,
+  selectDormantGapBlock,
   type PendingRow,
   type RawRow,
+  type ExistingCardPaymentRow,
 } from "./match.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
@@ -100,7 +103,8 @@ async function expirePass(nowIso: string): Promise<number> {
 async function matchPass(
   nowIso: string,
 ): Promise<{ matched: number; skippedAmbiguous: number; retentionCandidates: number;
-             autoCreated: number; autoAbsorbed: number; autoSkipped: number }> {
+             autoCreated: number; autoAbsorbed: number; autoSkipped: number;
+             autoGapBlocked: number }> {
   // MATCH 후보 선점 (정정2 파라미터 2분리):
   //   status ∈ {open, expired}  — 유효 open + 만료 후 보관창 내 expired.
   //   expires_at > (now - RETENTION_MS)  — 유효 open(expires_at>now) + 만료 후 1h 이내 expired 를 함께 포함.
@@ -118,7 +122,7 @@ async function matchPass(
   const retentionCandidates = pendings.filter((p) => p.status === "expired").length;
   if (pendings.length === 0) {
     return { matched: 0, skippedAmbiguous: 0, retentionCandidates,
-             autoCreated: 0, autoAbsorbed: 0, autoSkipped: 0 };
+             autoCreated: 0, autoAbsorbed: 0, autoSkipped: 0, autoGapBlocked: 0 };
   }
 
   // (clinic_id, expected_amount) 그룹핑 — 2건+ 는 모호(자동매칭 제외). match.ts 순수 로직.
@@ -149,6 +153,7 @@ async function matchPass(
   let autoCreated = 0;   // auto-create RPC → 신규 payment 기록(action=created)
   let autoAbsorbed = 0;  // absorb-guard → 기존 CAT payment 흡수(action=absorbed, INSERT skip)
   let autoSkipped = 0;   // tier4_manual / cross_tenant_reject / already_claimed / error(관측)
+  let autoGapBlocked = 0; // DORMANTGAP-GUARD → non-CAT 수기수납 존재 → auto-create 차단(RPC 미호출, 순-write 0)
 
   for (const [, list] of groups) {
     if (list.length > 1) { skippedAmbiguous += list.length; continue; } // 모호 그룹 스킵
@@ -179,6 +184,42 @@ async function matchPass(
       //   K5 co-set: absorb-guard(CAT-origin 흡수)·raw-row 원자 claim 멱등·shape-parity 전부 RPC 내부 1벌.
       //   flag OFF(default) 시 이 블록 skip = 기존 Model A(pending 전이만) 회귀-안전. golive 시 flag ON.
       if (AUTOCREATE_ENABLED) {
+        // ── DORMANTGAP-GUARD (T-20260805-foot-REDPAY-PLANA-REATTACH-DORMANTGAP-GUARD, AC-2) ──
+        //   auto-create RPC 호출 前 사전 negative gate. 동일 clinic·금액(TAMT)·accounting_date(일자)·
+        //   payment_type(TRANTYPE) 활성 카드결제 중 RPC absorb 사각(payment_attempt_id IS NULL = non-CAT
+        //   수기수납, ★승인번호 NULL 포함)·미대사 건이 있으면 → auto-create 차단(RPC 미호출 = 신규 INSERT 0)
+        //   → 스태프 confirm 전용. RPC absorb 가능 건(CAT-origin, approval_no 일치)은 차단 안 함(RPC 정상).
+        //   ★write 0 순수 read-guard(fail-closed: 조회 오류 시에도 차단).
+        const acctDate = kstAccountingDate(raw.approved_at);
+        if (!acctDate) {
+          autoGapBlocked += 1;
+          console.warn(`${LOG}[DORMANTGAP-GUARD] pending=${p.id} raw=${raw.id} accounting_date 산출불가(approved_at=${raw.approved_at}) → fail-closed 차단(스태프 confirm).`);
+          continue;
+        }
+        const { data: existRows, error: exErr } = await supabase
+          .from("payments")
+          .select("id, amount, accounting_date, payment_type, method, status, deleted_at, payment_attempt_id, external_approval_no, reconciled_at")
+          .eq("clinic_id", p.clinic_id)
+          .eq("amount", p.expected_amount)
+          .eq("accounting_date", acctDate)
+          .eq("method", "card")
+          .eq("status", "active")
+          .is("deleted_at", null);
+        if (exErr) {
+          autoGapBlocked += 1;
+          console.error(`${LOG}[DORMANTGAP-GUARD] payments 조회 오류(pending=${p.id}): ${exErr.message} → fail-closed 차단(스태프 confirm).`);
+          continue;
+        }
+        const blocker = selectDormantGapBlock(
+          (existRows ?? []) as ExistingCardPaymentRow[],
+          { amount: Number(p.expected_amount), accountingDate: acctDate },
+        );
+        if (blocker) {
+          autoGapBlocked += 1;
+          console.warn(`${LOG}[DORMANTGAP-GUARD] pending=${p.id} 동일금액(${p.expected_amount})·동일일자(${acctDate}) non-CAT 수기수납(payment=${blocker.id}, approval_no=${blocker.external_approval_no ?? "NULL"}) 존재 → auto-create 차단(RPC 미호출, 순-write 0, 스태프 confirm 전용).`);
+          continue;
+        }
+
         if (!p.check_in_id || !p.customer_id) {
           autoSkipped += 1;
           console.error(`${LOG}[AUTOCREATE] 귀속 결손(pending=${p.id}, check_in_id=${p.check_in_id}, customer_id=${p.customer_id}) → skip(수동폴백).`);
@@ -211,7 +252,7 @@ async function matchPass(
       }
     }
   }
-  return { matched, skippedAmbiguous, retentionCandidates, autoCreated, autoAbsorbed, autoSkipped };
+  return { matched, skippedAmbiguous, retentionCandidates, autoCreated, autoAbsorbed, autoSkipped, autoGapBlocked };
 }
 
 // ── ③ AUTO-CANCEL 패스 — 보관창(1h) 초과 미매칭 선점 → cancelled ──────────────────
@@ -260,7 +301,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     // ★패스 순서 = expire → match → autoCancel. match-before-cancel 구조 강제(별도 cron 금지, OPT3 #4).
     const expired = await expirePass(nowIso);
-    const { matched, skippedAmbiguous, retentionCandidates, autoCreated, autoAbsorbed, autoSkipped } =
+    const { matched, skippedAmbiguous, retentionCandidates, autoCreated, autoAbsorbed, autoSkipped, autoGapBlocked } =
       await matchPass(nowIso);
     const autoCancelled = await autoCancelPass(nowIso);
     return json(200, {
@@ -276,6 +317,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       auto_created: autoCreated,                 // 신규 payment 기록(single RPC action=created).
       auto_absorbed: autoAbsorbed,               // absorb-guard 흡수(기존 CAT payment, INSERT skip).
       auto_skipped: autoSkipped,                 // tier4_manual/cross_tenant/already_claimed/error.
+      auto_gap_blocked: autoGapBlocked,          // DORMANTGAP-GUARD: non-CAT 수기수납 존재 → auto-create 차단(순-write 0).
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
