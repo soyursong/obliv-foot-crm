@@ -1,0 +1,91 @@
+{
+  "ticket": "T-20260805-foot-REPAY-METHODCHG-UNMATCH-REFUND-F4717",
+  "phase": "B",
+  "da_consult_ref": "DA-20260805-foot-REPAY-PKGLINK-REVTRANSITION-FWDFIX",
+  "captured_note": "READ-ONLY freeze+before-image (no persistence)",
+  "freeze_pks": {
+    "package_id": "9455ca84-5798-413b-bd45-7457616d7f55",
+    "repay_payment_id": "8bf6ac26-dd20-4cfc-af38-7113868c9882"
+  },
+  "before_image": {
+    "packages_row": {
+      "id": "9455ca84-5798-413b-bd45-7457616d7f55",
+      "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "status": "refunded",
+      "total_amount": 5760000,
+      "paid_amount": 5760000,
+      "total_sessions": 24,
+      "transferred_to": null,
+      "transferred_from": null,
+      "superseded_by": null,
+      "updated_at": "2026-07-28 02:17:33.471441+00"
+    },
+    "repay_payment_row": {
+      "id": "8bf6ac26-dd20-4cfc-af38-7113868c9882",
+      "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+      "package_id": null,
+      "payment_type": "payment",
+      "amount": 5760000,
+      "method": "card",
+      "external_trxid": "K104753583726072811004430106625",
+      "reconciled_at": "2026-07-28 02:23:29.733+00",
+      "status": "active",
+      "deleted_at": null,
+      "is_simulation": false,
+      "created_at": "2026-07-28 02:21:58.44287+00"
+    },
+    "package_payments_ledger1": [
+      {
+        "id": "8810d75d-c909-4506-a73c-2e7e5e885123",
+        "payment_type": "payment",
+        "amount": 4500000,
+        "method": "card",
+        "parent_payment_id": null,
+        "created_at": "2026-07-20 05:17:55.43094+00"
+      },
+      {
+        "id": "dce87bc6-e8e9-4a53-8413-2a211533d371",
+        "payment_type": "payment",
+        "amount": 1260000,
+        "method": "transfer",
+        "parent_payment_id": null,
+        "created_at": "2026-07-20 07:03:00+00"
+      },
+      {
+        "id": "26ad8db1-9cbd-4200-a0f5-e9bbbccd9a67",
+        "payment_type": "refund",
+        "amount": 4500000,
+        "method": "card",
+        "parent_payment_id": "8810d75d-c909-4506-a73c-2e7e5e885123",
+        "created_at": "2026-07-28 02:17:33.379275+00"
+      },
+      {
+        "id": "2a074445-9b32-4b0a-96b8-7fd60d3b5c7e",
+        "payment_type": "refund",
+        "amount": 1260000,
+        "method": "card",
+        "parent_payment_id": "dce87bc6-e8e9-4a53-8413-2a211533d371",
+        "created_at": "2026-07-28 02:17:33.471441+00"
+      }
+    ]
+  },
+  "judgment_basis": {
+    "ledger1_net_pp": 0,
+    "ledger2_repay_amount": 5760000,
+    "ledger2_reconciled_at": "2026-07-28 02:23:29.733+00",
+    "crossledger_net_before": 0,
+    "crossledger_net_after_expected": 5760000,
+    "expected_status_transition": "refunded -> active",
+    "revenue_firewall_customer_net_pay": 5771600
+  },
+  "planned_mutation": {
+    "sql": "UPDATE payments SET package_id = '9455ca84-5798-413b-bd45-7457616d7f55' WHERE id = '8bf6ac26-dd20-4cfc-af38-7113868c9882' AND package_id IS NULL;",
+    "expect_rows_affected": 1,
+    "status_authority": "trigger trg_payments_pkg_status_recompute (packages 직접 write 금지)"
+  },
+  "rollback": {
+    "sql": "UPDATE payments SET package_id = NULL WHERE id = '8bf6ac26-dd20-4cfc-af38-7113868c9882';  -- 트리거가 status refunded 재파생(대칭)",
+    "note": "원장① package_payments 무접점(환불행 존치). packages.status 는 트리거 auto-revert."
+  }
+}
