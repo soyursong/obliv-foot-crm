@@ -70,7 +70,10 @@ test.describe('T-20260620-foot-MEDDOC-DESK-PRINTONLY-DOCTOR-AUTHORED — 원장 
     expect(g).toContain("eq('form_key', 'opinion_doc')");
     expect(g).toContain("eq('status', 'published')");
     expect(g).toContain("final_text");
-    expect(g).toContain('export function printAuthoredMedDoc');
+    // ★stale-drift 정합(T-20260805-foot-DOCSPEC-STALE-HYGIENE-2): printAuthoredMedDoc 는 발행본 스냅샷
+    //   오버레이(담당의/도장/발급일/상병코드) DB 조회를 await 하도록 async 시그니처로 전환됨(현 라이브 정상).
+    //   검증 의도('데스크 출력 = printAuthoredMedDoc 발행본 출력기 export 존재')는 async 시그니처로 보존.
+    expect(g).toContain('export async function printAuthoredMedDoc');
     // DocumentPrintPanel 게이트 카드는 IssueDialog(자유작성) 대신 발행본 출력으로 라우팅
     const d = dpp();
     expect(d).toContain('medDocGate');
