@@ -217,7 +217,7 @@ BEGIN
     FROM public.payments p
    WHERE p.customer_id = v_cust AND p.status = 'active' AND p.package_id IS NULL;
   IF v_single_net <> v_single_expected THEN
-    RAISE EXCEPTION 'ORACLE-FAIL single net % (기대 % / include_73=%%)',
+    RAISE EXCEPTION 'ORACLE-FAIL single net % (기대 % / include_73=%)',
       v_single_net, v_single_expected, v_include_73e604cf;
   END IF;
 
