@@ -291,6 +291,34 @@ test.describe('classify (★이중결제 방지)', () => {
     expect(msg).toContain('확인');
     expect(msg).toMatch(/다시 결제하지/);
   });
+
+  // ── ⑬ [T-20260805-foot-PLANA-PLANB-CODEREVIEW-REQUEST] 건당 한도(5,000,000원) 초과 케이스 ──
+  //   현장 확인 3건 ⑬: 발톱 패키지 500만원 초과 실거래 리스크(이미 292만원 결제 실측 존재).
+  //   ★불변식(항목⑦ 🔴): 한도초과=단말/PG가 명확한 거절코드(ERRCODE≠0000, ATTENTION집합 아님)로 응답 →
+  //     classify=FAIL(과금 미발생 확정, 재시도 안전) → '승인 여부 불명'으로 남지 않음(요청서 ⑬ 기준(b) 충족).
+  //     응답이 유실(무응답)되면 classify(null)=ATTENTION 으로 정지(자동 재시도 금지) — 두 경로 모두 안전.
+  //   ★한도초과 전용 ERRCODE→자명문구 매핑은 미비(현재 -14/-2만) → MSG1 원문 폴백. (자식 impl 후보 (c))
+  const LIMIT_EXCEEDED = // 건당 한도 초과 = 명확한 거절(과금 미발생). 코드는 대표치, 핵심은 ERRCODE≠0000·비ATTENTION.
+    '{"ERRCODE":"9999","TRANTYPE":"0210","MSG1":"거래한도초과","ResultMessage":"승인 실패 : 거래한도초과"}';
+
+  test('⑬ FAIL: 건당 한도(5백만) 초과 → 명확한 거절(FAIL)·불명상태 아님', () => {
+    const n = normalize(safeParse(LIMIT_EXCEEDED));
+    // ERRCODE≠0000 이고 ATTENTION 집합(C011/8003/8555)이 아니면 무조건 FAIL(과금 미발생 확정).
+    expect(classify(n)).toBe('FAIL');
+    expect(classify(n)).not.toBe('ATTENTION'); // 승인 여부 불명(자동재시도 유발) 상태로 남지 않음
+  });
+
+  test('⑬ 한도초과 사용자 메시지: 거절 사유(MSG1)를 화면에 표시', () => {
+    const n = normalize(safeParse(LIMIT_EXCEEDED));
+    const msg = responseMessageForUser('FAIL', n);
+    expect(msg).toContain('한도'); // 원인이 화면에 표시(요청서 ⑬ 기준(a))
+    expect(msg).not.toMatch(/확인 필요/); // FAIL 은 '확인 필요'(ATTENTION) 아님 — 자동재시도 경로 미진입
+  });
+
+  test('⑬ 한도초과 응답유실(무응답)은 ATTENTION 으로 정지(자동재시도 금지)', () => {
+    // 한도초과 판정 후 응답이 유실되면(무응답) 승인 여부 불확실 → ATTENTION(정지). classify null 경로 재확인.
+    expect(classify(null)).toBe('ATTENTION');
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
