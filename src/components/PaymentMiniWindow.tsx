@@ -2116,6 +2116,12 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   절사대상 = deductBilling.copaymentTotal + deductSurcharge.copay = 순수 급여 본인부담(비급여 미포함) → bundle-floor 우려 없음.
     //   deductSurcharge.copay=Math.round 우수리 제거. 가산 없음 → floor100(copaymentTotal)=copaymentTotal(100원 배수) →
     //   값 불변(무회귀). 비급여(nonCoveredTotal)는 무절사 별도 합산. base=본인부담 최종액(AC-3).
+    // ── T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING REOPEN item ② (판별 결과, 이은상 팀장 6ojn) ──
+    //   [판정] 본 site 는 floor100 절사만 하고 '끝수 미이전' 이 아니다 — deductCopayWithSurcharge 는 환자 payable
+    //   (deductAmount) 만 산출하며 **독립 공단(insurance_covered) 계산이 없다** → §3 정답산식이 지목한 '독립계산 공단'
+    //   버그의 site 가 아님(끝수 소실 없음). 절사는 환자 부담액 grain 에 정확하고, 공단으로의 끝수 이전은 문서 렌더
+    //   경로(bill_detail=nightHolidaySurcharge item#8 / bill_receipt_new=absorbBillReceiptNewCopayFloorRemainder,
+    //   full-base)가 담당한다. ∴ 코드 변경 불요 — E2E 회귀 락(item ② describe)으로 flooring 거동만 고정.
     const deductCopayWithSurcharge = floorOutpatientCopayment(deductBilling.copaymentTotal + deductSurcharge.copay);
     return deductCopayWithSurcharge + deductBilling.nonCoveredTotal;
   };

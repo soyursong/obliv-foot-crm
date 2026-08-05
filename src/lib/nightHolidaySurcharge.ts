@@ -20,6 +20,10 @@
  */
 
 import { formatAmount } from '@/lib/format';
+// T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING (item #8): 세부산정내역서 본인부담 floor100 끝수 → 공단 이전.
+//   floorOutpatientCopayment(외래 100원 FLOOR) + computeBillDetailRounding(문서 floor10 단일 authority, 재발명 금지)
+//   재사용. footBilling → nightHolidaySurcharge 역참조 없음(단방향, 순환 import 무).
+import { floorOutpatientCopayment, computeBillDetailRounding } from '@/lib/footBilling';
 
 /** 가산 요율 — 야간/공휴일 공통 30% (의원급 진찰료 표준, body canon 동일). */
 export const SURCHARGE_RATE = 0.3;
@@ -303,6 +307,40 @@ export function applyNightHolidaySurcharge(
       //     서류 렌더 경로의 computeBillDetailRounding(AC-9 SSOT, 무접촉) 하나이며, 여기서는 가산 본인분을
       //     detail_total 에 additive fold 만 한다(§53 no-revert roll-forward).
       bump('detail_total', sc.copay);
+    }
+    // ── T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING (item #8, 이은상 팀장 최종확정 s5kh 2026-08-05) ──
+    //   세부산정내역서(bill_detail) ①본인부담 floor100 끝수 → ②공단부담 이전(보존식). 영수증 신양식
+    //   absorbBillReceiptNewCopayFloorRemainder 와 **동일 연산을 양쪽 열**(subtotal_copayment/subtotal_fund)에 적용해
+    //   detail_total(=본인+비급여) == 영수증 ⑧ parity 달성(공단 열 단독 수정 금지 — 본인 floor100 이 detail_total 에도 반영).
+    //   ★가산 fold(위 bump) **이후** 실행 → rawCopay = 가산 포함 aggregate. `if(sc.amount>0)` 밖에 두어 무가산 건
+    //   (base 본인부담 자체에 끝수, 예: 11,440)도 정합(영수증 absorb 가 가산무관 적용됨과 동일 grain, AC-6 3경로 동일값).
+    //   기존 bump 8줄·computeSurcharge v4 canon 무접촉(additive enrich, §53 no-revert). subtotal_amount/total_amount
+    //   (진료비 총액, 공단 포함)은 절대 미접촉 → 보존식(본인+공단=총액) AC-1 성립.
+    {
+      const rawCopay = parseAmt(base.subtotal_copayment);        // 가산 포함, 절사 전
+      const fundBase = parseAmt(base.subtotal_fund);             // 공단부담(끝수 이전 前)
+      const flooredCopay = floorOutpatientCopayment(rawCopay);   // 외래 100원 FLOOR(급여 본인부담)
+      const remainder = rawCopay - flooredCopay;                 // 공단으로 넘길 끝수
+      // 무회귀 가드: remainder==0(평일·무가산/이미 100배수) → no-op(AC-5/시나리오2).
+      //   subtotal_fund<=0(등급부재·비급여only) → no-op(영수증 absorb 와 동일 가드, AC-7 grade=null 무회귀).
+      //   overriddenKeys(스태프 수동 편집) → 수동값 우선(기존 bump 동일 semantics, AC-4).
+      const copayOverridden = overriddenKeys.has('subtotal_copayment') || overriddenKeys.has('total_copayment');
+      const fundOverridden = overriddenKeys.has('subtotal_fund') || overriddenKeys.has('total_fund');
+      if (remainder > 0 && fundBase > 0 && !copayOverridden && !fundOverridden) {
+        base.subtotal_copayment = formatAmount(flooredCopay);
+        base.total_copayment = base.subtotal_copayment;
+        base.subtotal_fund = formatAmount(fundBase + remainder);   // 끝수 공단 흡수(보존식)
+        base.total_fund = base.subtotal_fund;
+        // 계(detail_subtotal) = 본인(floor後) + 비급여 → remainder 만큼 감소. 합계 = floor10(계)(computeBillDetailRounding
+        //   단일 authority), 끝처리조정 = 합계 − 계. 계/합계 동시 갱신 → 상호 정합(F-4741 divergence 재발 방지).
+        if (!overriddenKeys.has('detail_subtotal')) {
+          const detailSubtotal = Math.max(0, parseAmt(base.detail_subtotal) - remainder);
+          const { adjustment, roundedTotal } = computeBillDetailRounding(detailSubtotal);
+          base.detail_subtotal = formatAmount(detailSubtotal);
+          if (!overriddenKeys.has('detail_total')) base.detail_total = formatAmount(roundedTotal);
+          if (!overriddenKeys.has('detail_rounding')) base.detail_rounding = formatAmount(adjustment);
+        }
+      }
     }
   }
 }
