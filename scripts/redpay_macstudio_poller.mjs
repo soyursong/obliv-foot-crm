@@ -303,6 +303,8 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047538239", "1047538246", // 멀티/유선 4세대(T-20260728-...-0728GAP §108-113, DA-20260728-foot-REDPAY-r7wj GO)
   // 0723 GAP 신 live TID(535xxx) — VAN 재프로비저닝 285001→845·002→843·003→842·005→837·006→835·007→797(구 479 병존):
   "1047535845", "1047535843", "1047535842", "1047535837", "1047535835", "1047535797", // VAN 신 live(T-20260724-...-0723GAP Opt-B′)
+  // 0805 GAP 신 live TID(538xxx) — 289002 재활성(8/03 TRUE-ZERO DEACTIVATE→8/04 TRUE-POSITIVE 재개) 멀티 재프로비저닝 구479476→538233(구 479476 superseded 병존):
+  "1047538233", // 멀티 재활성 5세대(T-20260805-...-0805GAP-REACTIVATE, DA-20260805-foot-REDPAY...obfz GO — belt-and-suspenders parity, admission=merchant-keyed이라 gating 아님)
 ];
 
 // ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
