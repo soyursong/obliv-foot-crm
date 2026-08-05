@@ -87,7 +87,10 @@ export default function StaffPage() {
   });
 
   return (
-    <div className="h-full overflow-auto space-y-4 p-4">
+    // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경3: 직원·공간 화면 컴팩트 재정비(1차안).
+    //   여백/패딩·정보밀도 위주 — 무리한 재배치 없이 외곽 여백(p-4→p-3)·섹션 간격(space-y-4→space-y-3) 축소.
+    //   field-soak 총괄 재확인(반복 시각조정) 전제.
+    <div className="h-full overflow-auto space-y-3 p-3" data-testid="staff-space-root">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더' 탭 제거 — 최상위 [직원 근무 캘린더]로 승격·흡수 */}
@@ -222,7 +225,8 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
   };
 
   return (
-    <div className="space-y-4">
+    // 변경3(컴팩트): 섹션 간격 space-y-4→3, 역할 카드 그리드 밀도↑(lg 5열 = 5개 역할 1행), gap-4→3.
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-base font-semibold">직원 관리</h3>
@@ -242,7 +246,7 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         {ROLE_ORDER.map((role) => (
           <Card key={role}>
             <CardHeader className="pb-2">
@@ -251,7 +255,7 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                 <Badge variant="outline">{grouped[role].length}명</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-1.5">
               {grouped[role].length === 0 && (
                 <div className="rounded-md border border-dashed py-3 text-center text-xs text-muted-foreground">
                   등록된 인원이 없습니다.
@@ -260,7 +264,7 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
               {grouped[role].map((s) => (
                 <div
                   key={s.id}
-                  className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+                  className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 text-sm ${
                     !s.active ? 'bg-muted/30 opacity-70' : 'bg-card'
                   }`}
                 >
@@ -942,7 +946,8 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   };
 
   return (
-    <div className="space-y-4">
+    // 변경3(컴팩트): 공간 배정 탭 섹션 간격 space-y-4→3, 카드 그리드 gap-4→3.
+    <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="flex items-end gap-2">
           {roomView === 'daily' ? (
@@ -997,7 +1002,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       </div>
 
       {roomView === 'daily' ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {ROOM_TYPE_ORDER.map((type) => {
             const list = groupedRooms[type];
             if (list.length === 0) return null;
@@ -1221,7 +1226,8 @@ function ClinicSettingsTab({ clinic, onSaved }: { clinic: Clinic; onSaved: () =>
   };
 
   return (
-    <div className="space-y-6 max-w-lg">
+    // 변경3(컴팩트): 클리닉 설정 탭 섹션 간격 space-y-6→4.
+    <div className="space-y-4 max-w-lg">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
