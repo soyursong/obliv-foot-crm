@@ -10,8 +10,12 @@
  *
  * 시나리오:
  *   1. 메뉴 리네임 확인('소견서'→'서류작성', value/testid 보존).
- *   2. 서류요청→작성하기 흐름(9칼럼 + 작성하기 반짝 + OpinionEditorDialog prefill).
+ *   2. 서류요청→작성하기 흐름(9칼럼 + 작성하기 반짝 + OpinionEditorDialog prefill)
+ *      + (B안 델타, hold 해제 2026-08-05) 원장 작성창 2단 메모칸 양방향 편집 → staff_memo write-back → 요청기록 반영.
  *   3. 권한 게이트(데스크/일반직원 본문 입력 read-only — canPublish staff-view).
+ *
+ * B안 델타 코드 = T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE 로 라이브(A단방향→양방향 전환 이미 배포).
+ *   본 스펙은 그 델타를 본 티켓 surface(진료대시보드 서류작성) E2E lock 으로 고정 + NOTOUCH 회귀 가드.
  *
  * 검증 방식: 현장 계정 PHI → 인증 우회 불가. 정적 코드 구조 검증 + 앱 로드(HTTP 200) + 회귀 가드.
  *   실브라우저 클릭 시나리오는 하단 체크리스트(갤탭 실기기 현장 confirm 대상).
@@ -101,21 +105,16 @@ test.describe('T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW — 서류작성 테이�
     expect(q).not.toContain("from 'react-dom'"); // 자체 createPortal 팝오버 재구현 안 함
   });
 
-  test('RXCLIN 상속: 처방내역·임상경과 셀 클릭 → 컬럼앵커 드롭다운 전문', () => {
+  test('RXCLIN 상속: 임상경과 셀 클릭 → 컬럼앵커 드롭다운 전문 (처방내역=상시 전건표기)', () => {
     const q = queue();
-    // 처방내역 = widthScale=2(DoctorCallDashboard 처방 드롭다운과 동일), 임상경과 = 기본 폭.
-    // testId 는 ColumnExpandPopover prop 으로 전달(컴포넌트 내부에서 data-testid 로 렌더).
-    expect(q).toContain('testId="docreq-rx-expand-pop"');
-    expect(q).toContain('testId="docreq-clinical-expand-pop"');
-    expect(q).toContain('widthScale={2}');
-    // 셀에 ref + 클릭 토글(미리보기→펼침).
-    expect(q).toContain('rxCellRef');
+    // ★스펙 갱신(T-20260729-foot-ALIMPAN-RX-MULTILIST-ALWAYSVISIBLE, deployed): 처방내역 셀은
+    //   클릭 드롭다운(docreq-rx-expand-pop/rxCellRef/setExpandRx/widthScale=2) 제거 → 당일 처방약 전건 상시 표기.
+    //   임상경과는 RXCLIN 컬럼앵커 드롭다운(ColumnExpandPopover) 유지.
+    expect(q).not.toContain('testId="docreq-rx-expand-pop"');   // 처방내역 드롭다운 제거됨(상시표기 전환)
+    expect(q).toContain('testId="docreq-clinical-expand-pop"'); // 임상경과 드롭다운 유지
+    // 임상경과 셀 ref + 클릭 토글(미리보기→펼침).
     expect(q).toContain('clinicalCellRef');
-    expect(q).toContain('setExpandRx');
     expect(q).toContain('setExpandClinical');
-    // 처방내역 데이터소스 = medical_charts.prescription_items(ADDITIVE read).
-    const l = lib();
-    expect(l).toContain('prescription_items');
   });
 
   // ── 시나리오 3: 권한 게이트(데스크 본문 입력 불가) ────────────────────────
@@ -137,13 +136,49 @@ test.describe('T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW — 서류작성 테이�
     expect(tab).toContain('publish_opinion_doc');
   });
 
-  // ── Q2 fallback(non-blocking): 메모 단방향 read-display ────────────────────
-  test('Q2 fallback: 직원 서류요청 메모 = 단방향 read-display', () => {
+  // ── 큐 셀 표시: 직원 서류요청 메모 read-display(편집 surface 아님) ──────────
+  //   양방향 편집 surface = 원장 작성창(OpinionDocTab) 2단 메모칸. 큐 테이블 셀은 표시 전용 유지.
+  test('큐 셀: 직원 서류요청 메모 = read-display(테이블 셀 편집 없음)', () => {
     const q = queue();
     expect(q).toContain('data-testid="docreq-cell-memo"');
     expect(q).toContain('메모:');
-    // 큐 셀은 메모를 표시만 — 편집 input/textarea 없음(양방향 편집 미구현).
+    // 큐 테이블 셀은 메모를 표시만 — 셀 내 편집 input/textarea 없음(편집은 작성창에서).
     expect(q).not.toContain('docreq-memo-edit');
+  });
+
+  // ── Q2 B안 델타: 원장 작성창 2단 메모칸 양방향 편집 + staff_memo write-back ──
+  //   (hold 해제 2026-08-05 JONGNO D-7 directive 종결. 코드=T-20260715-DOCREQ-STAFFMEMO-VIEWER-EDITABLE 라이브,
+  //    본 티켓 스코프 = A단방향→양방향 전환의 E2E lock.)
+  test('시나리오2(B안 델타): 원장 작성창 2단 메모칸 = 편집 textarea(readOnly 제거)', () => {
+    const tab = opinionTab();
+    // 2단 메모칸 = 편집 가능 textarea(입력 활성). read-only 뷰어(단순 span) 아님.
+    expect(tab).toContain('data-testid="opinion-staff-memo-input"');
+    expect(tab).toContain('value={memoDraft}');
+    expect(tab).toContain('onChange={(e) => setMemoDraft(e.target.value)}');
+    // readOnly/disabled 속성으로 잠기지 않음(원장 편집 허용).
+    expect(tab).not.toMatch(/opinion-staff-memo-input"[\s\S]{0,400}readOnly/);
+  });
+
+  test('시나리오2(B안 델타): 원장 수정 → 저장(blur) → 원 요청메모(staff_memo) write-back(양방향)', () => {
+    const tab = opinionTab();
+    // blur 시 저장 → useUpdateStaffMemo(requestId, staffMemo=memoDraft).
+    expect(tab).toContain('onBlur={handleMemoSave}');
+    expect(tab).toContain('useUpdateStaffMemo');
+    expect(tab).toContain('updateMemoMut.mutateAsync({ requestId, staffMemo: memoDraft })');
+    // write-back = 원 요청 form_submissions.field_data.staff_memo 단일 키 merge(양방향, 요청기록 반영).
+    const l = lib();
+    expect(l).toContain('const merged = { ...prev, staff_memo: input.staffMemo ?? \'\' }');
+    // 요청기록(처리대기 큐) 즉시 반영 — 편집한 메모가 큐 표시에도 동기화.
+    expect(l).toContain("queryKey: ['opinion_request_queue', clinicId]");
+  });
+
+  test('시나리오2(B안 델타, NOTOUCH): write-back = staff_memo 전용 — 발행/서명/직인/RPC 미접촉', () => {
+    const l = lib();
+    // draft + staff_consult 요청에만 write(발행/취소 소급 미변경) — 가드레일 NOTOUCH.
+    expect(l).toContain("prev['request_origin'] !== 'staff_consult'");
+    expect(l).toContain(".eq('status', 'draft')");
+    // 편집 훅은 publish_opinion_doc 비가역 RPC 미호출(발행 산출물 불오염).
+    expect(l).not.toContain("rpc('publish_opinion_doc'");
   });
 
   // ── NO-DDL 가드: 서류요청 영속화 = form_submissions draft 재사용 ───────────
@@ -170,8 +205,10 @@ test.describe('T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW — 서류작성 테이�
  *   3. 한 행에서 서류종류=진단서, 해당항목 선택(=상담내역 선택박스와 동일 항목) → 처리요청
  *   4. 발행 칸에 '작성하기' 버튼 + 반짝 효과 표시 확인
  *   5. (작성권한자로) '작성하기' 클릭 → 진단서 쓰기창(기존 소견서 창과 동일, 서류종류=mode) 오픈, 좌측 해당항목 미리선택 확인
- *   6. 2단(소견 내용 위)에 직원 서류요청 메모가 '실장 요청(참고)'로 표시 확인(읽기전용)
- *   Expected: 별도 진단서창 신설 없이 기존 발행창 재사용, prefill·메모 참고 정상.
+ *   6. 2단(소견 내용 위)에 직원 서류요청 메모가 '실장 요청(메모)'로 표시 + 편집 가능(textarea) 확인
+ *   7. (B안 델타) 원장이 2단 메모칸 내용 수정 → 입력칸 밖 클릭(blur) → '저장됨' 표기 확인
+ *   8. (B안 델타) 처리대기 큐로 돌아가면 해당 요청 메모가 수정된 내용으로 반영(양방향, 요청기록 write-back) 확인
+ *   Expected: 별도 진단서창 신설 없이 기존 발행창 재사용, prefill 정상 + 메모 양방향 편집·요청기록 동기.
  *
  * [시나리오3] 권한 게이트(MEDDOC reconcile) — BLOCKING
  *   1. 데스크/일반직원 계정으로 '작성하기' 클릭
