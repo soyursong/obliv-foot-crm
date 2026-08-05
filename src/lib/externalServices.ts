@@ -23,6 +23,8 @@ export const EDGE_FUNCTIONS = {
   SEND_CONSULT_NOTIFY: 'send-consult-notify',
   /** T-20260730-foot-REDPAY-REVERSE-MATCH-SUSU-HOOK: [수납] 저장 훅 → 레드페이 역방향 매칭 1회(claim-first write-path) */
   REDPAY_REVERSE_MATCH: 'redpay-reverse-match',
+  /** T-20260805-foot-REDPAY-SUGI-REATTACH-CANDIDATEONLY: 승인번호-NULL 수기수납 재부착 후보검색(list, read-only) + 담당자 confirm(기존행 UPDATE) */
+  REDPAY_REATTACH_CANDIDATES: 'redpay-reattach-candidates',
   /** T-20260629-foot-RXSET-DRUG-VERIFY-PHASE2 AC-7: 식약처(MFDS) 2차 성분축 대조(키 부재 시 graceful degrade) */
   MFDS_INGREDIENT_VERIFY: 'mfds-ingredient-verify',
   /** T-20260803-foot-STAFF-PROVISION-ATOMIC-EF-INV6-PORT: 직원 계정 등록 원자화 오케스트레이터(고아 self-heal + 보상삭제). body pilot 15d18d00 이식. */

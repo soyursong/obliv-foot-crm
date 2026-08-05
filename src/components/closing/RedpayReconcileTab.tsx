@@ -34,6 +34,7 @@ import {
 } from '@/lib/redpayPlanbInflowMetric';
 import { REDPAY_PLANB_TTL } from '@/lib/redpayPlanbTtl';
 import PlanbPendingReceiveList from '@/components/PlanbPendingReceiveList';
+import RedpayReattachCandidateCard from '@/components/redpay/RedpayReattachCandidateCard';
 
 // ── 타입 ──────────────────────────────────────────────────────
 type ReconStatus =
@@ -323,6 +324,10 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
 
       {/* 수신 대기 목록 (OPT3 #6) — 기능플래그 ON 시에만 렌더(OFF=null, 기존 화면 무변경) */}
       <PlanbPendingReceiveList clinicId={clinicId} />
+
+      {/* 승인번호 없는 수기수납 · 후보 연결 (T-20260805 SUGI-REATTACH-CANDIDATEONLY) —
+          금액+날짜 후보만 read-only 표시, 담당자 클릭으로만 기존행에 승인번호 채움(자동연결 없음). 플래그 ON 시 렌더 */}
+      <RedpayReattachCandidateCard clinicId={clinicId} />
 
       {/* 대조 목록 (CRM 수납 ↔ 레드페이) — read-only */}
       <Card>
