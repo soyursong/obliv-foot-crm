@@ -23,8 +23,9 @@
  *   4. 요청 동시 1건 한도 → catClient 동시성 잠금(본 파일은 순수, 상위에서 강제).
  *
  * ── ★ 이중결제 방지(D, 티켓 §D — 후순위 금지 최우선 안전장치) ────────────────
- *   classify() 가 ATTENTION 을 반환하는 응답(C011/8003/8555/무응답)은 승인 여부가 **불확실**하다.
+ *   classify() 가 ATTENTION 을 반환하는 응답(C011/8003/8555/★8326/무응답)은 승인 여부가 **불확실**하다.
  *   → 자동 재시도 절대 금지. 상위 흐름은 '확인 필요'로 정지하고 MSG_TRACE 로 단말기 승인내역조회.
+ *   ★8326 = 요청↔응답 전문의 금액·거래고유번호 불일치(받은 응답이 다른 거래일 수 있음) = 동일 불확실 클래스.
  */
 
 // ── 전문 종류(TRANTYPE) — 실측: 취소 AUTHNO 는 원거래와 동일, TRANTYPE 으로만 승인/취소 구분 ──
@@ -48,6 +49,99 @@ export const RESPONSE_CODE_SUCCESS = '0000' as const;
  *   (무응답=timeout 은 코드가 없으므로 classify 가 별도 신호 raw===null 로 판단)
  */
 export const ATTENTION_CODES: ReadonlySet<string> = new Set(['C011', '8003', '8555']);
+
+/**
+ * ★★ 8326 — 요청전문 ↔ 응답전문의 거래금액·거래고유번호 불일치(코밴 규격서).
+ *   받은 응답이 **다른 거래의 것일 수 있음** → 이 결제가 승인됐는지 **불확실**.
+ *   T-20260805-foot-PLANA-ERRCODE-HANGUL-8326-UNCLEAR: 성공(0000)도 실패도 아닌 '확인 필요'로 분기.
+ *   ⚠ 성공/실패로 오분류하면 이중결제(자동 재시도)·미확인 결제 발생 → 반드시 ATTENTION(자동 재시도 금지).
+ *   응답유실 원칙(C011/8003/8555/무응답)과 동일 클래스(응답 신뢰불가) — 정책 정합 확장(덮어쓰기 아님).
+ */
+export const RESPONSE_CODE_TXN_MISMATCH = '8326' as const;
+
+/**
+ * ★ 거래 무결성 불확실 코드 집합 — classify 가 ATTENTION 으로 분기(자동 재시도 금지·'확인 필요' 정지).
+ *   현재 8326(요청/응답 전문 불일치) 1종. ATTENTION_CODES(단말 통신이상)와 개념 축은 다르나 처리는 동일.
+ */
+export const UNCLEAR_TXN_CODES: ReadonlySet<string> = new Set<string>([RESPONSE_CODE_TXN_MISMATCH]);
+
+/** 건당 결제 한도(원) — 초과 시 밴 거절(⑬). 한도초과 표시 문구 판정 참고값. */
+export const PER_TXN_LIMIT_KRW = 5_000_000 as const;
+
+/**
+ * ★ ERRCODE(밴/코밴 응답코드) → 현장(실장) 한글 표시 문구 — 표시 전용(additive, classify 무접촉).
+ *   T-20260805-foot-PLANA-ERRCODE-HANGUL-8326-UNCLEAR: 종전 DLL_RET(-14/-2) 2개만 매핑 → 나머지 원문 폴백.
+ *   여기서 '확인 필요(ATTENTION/UNCLEAR)' 축의 밴 응답코드에 자명한 한글 문구를 부여한다.
+ *   ⚠ 이 표는 '표시'만 바꾼다 — 승인/실패/확인필요 판정(classify)은 코드 집합으로만(표에 넣어도 분기 변화 없음).
+ *   ★현재 항목은 전부 '확인 필요' 코드(responseMessageForUser 의 ATTENTION 분기가 소비). FAIL 축의 밴
+ *     거절 사유는 대개 코드가 아니라 MSG1 텍스트로 오므로 keywordMessage 로 정규화하고, 그래도 못 알아보면
+ *     '원문 + 코드번호' 병기로 폴백(실장이 규격서 조회 가능).
+ */
+export const ERRCODE_MESSAGES: Readonly<Record<string, string>> = {
+  '8326': '결제 응답이 요청한 거래와 일치하지 않습니다(금액·거래번호 불일치). 승인 여부가 불확실하니 다시 결제하지 마시고, 단말기 [승인내역조회]로 확인해 주세요.',
+  'C011': '단말기 통신에 이상이 있어 결과를 확인할 수 없습니다. 승인 여부가 불확실하니 다시 결제하지 마시고, 단말기 [승인내역조회]로 확인해 주세요.',
+  '8003': '단말기 응답에 이상이 있어 결과를 확인할 수 없습니다. 승인 여부가 불확실하니 다시 결제하지 마시고, 단말기 [승인내역조회]로 확인해 주세요.',
+  '8555': '단말기 응답에 이상이 있어 결과를 확인할 수 없습니다. 승인 여부가 불확실하니 다시 결제하지 마시고, 단말기 [승인내역조회]로 확인해 주세요.',
+};
+
+/** ERRCODE 로 한글 표시 문구 조회(없으면 null). trim·대문자 정규화 후 비교. */
+export function errcodeMessage(code: string | null | undefined): string | null {
+  if (code == null) return null;
+  const k = String(code).trim().toUpperCase();
+  return k in ERRCODE_MESSAGES ? ERRCODE_MESSAGES[k] : null;
+}
+
+/**
+ * ★ 응답 메시지(MSG1/ResultMessage) 원문 키워드 → 현장 한글 정규화 — 표시 전용(additive).
+ *   밴 거절 사유는 코드가 아니라 텍스트(한글/영문 혼재)로 오는 경우가 많다(⑬ 한도초과 포함).
+ *   실장이 알아볼 수 있게 알려진 사유는 자명한 한글로 치환하고, 못 알아보는 건 원문+코드로 폴백한다.
+ *   순서 = 구체적인 것 우선(먼저 매칭되는 항목 반환). classify 무참여(판정 불변).
+ */
+const KEYWORD_MESSAGES: ReadonlyArray<{ pattern: RegExp; message: string }> = [
+  {
+    pattern: /한도\s*초과|한도금액|거래한도|EXCEED.*LIMIT|OVER.*LIMIT|LIMIT.*EXCEED/i,
+    message: `건당 결제 한도(${PER_TXN_LIMIT_KRW.toLocaleString('ko-KR')}원)를 초과했습니다. 금액을 나누어 결제하시거나 카드사에 한도를 확인해 주세요.`,
+  },
+  {
+    pattern: /잔액\s*부족|INSUFFICIENT|NOT\s*ENOUGH/i,
+    message: '카드 잔액(또는 한도)이 부족합니다. 다른 카드로 결제해 주세요.',
+  },
+  {
+    pattern: /유효\s*기간|만료|EXPIRE/i,
+    message: '카드 유효기간이 지났습니다. 다른 카드로 결제해 주세요.',
+  },
+  {
+    pattern: /분실|도난|LOST|STOLEN/i,
+    message: '사용할 수 없는 카드입니다(분실/도난). 다른 카드로 결제해 주세요.',
+  },
+  {
+    pattern: /비밀번호|PIN|PASSWORD/i,
+    message: '카드 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.',
+  },
+  {
+    pattern: /정지|취급\s*거절|거래\s*거절|취소된\s*카드|DECLINE|DENIED/i,
+    message: '카드사에서 거래가 거절되었습니다. 카드사에 문의하시거나 다른 카드로 결제해 주세요.',
+  },
+];
+
+/** 응답 메시지 원문에서 알려진 거절 사유 키워드를 찾아 한글 문구로 정규화(없으면 null). */
+export function keywordMessage(message: string | null | undefined): string | null {
+  if (message == null) return null;
+  const s = String(message).trim();
+  if (!s) return null;
+  for (const { pattern, message: m } of KEYWORD_MESSAGES) {
+    if (pattern.test(s)) return m;
+  }
+  return null;
+}
+
+/** 사용자 문구 뒤에 '(코드 XXXX)' 병기 — 코드가 있고 아직 문구에 없을 때만(실장 규격서 조회용). */
+function appendCode(base: string, code: string | null | undefined): string {
+  const c = code == null ? '' : String(code).trim();
+  if (!c) return base;
+  if (base.includes(c)) return base;
+  return `${base} (코드 ${c})`;
+}
 
 /**
  * ★ DLL_RET(로컬 단말 DLL 반환코드) → 현장(실장) 표시 문구 매핑 — 표시 전용(additive).
@@ -117,6 +211,12 @@ export interface BuildMsgParams {
    *   어느 경우에도 빈값("")/누락 금지(NULLREF-COMPLETE AC2 의 CAT_TERMINAL_RECEIPT 한정 재정의).
    */
   commTest?: boolean;
+  /**
+   * ★할부 개월수 — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT(HALBU 가변 전송).
+   *   undefined/0/1 = 일시불("00"), 2~12 = 개월수("02"~"12"). formatHalbu 로 조립.
+   *   ★취소(0430) 시에도 원거래 할부개월을 그대로 전달 → VAN 이 할부거래를 정확히 취소·복원(전체취소만).
+   */
+  installmentMonths?: number | null;
 }
 
 // ── 정규화된 응답 ────────────────────────────────────────────────────────────
@@ -272,10 +372,40 @@ export const CBAND_DEVICE_TYPE = 'CAT_' as const;
 
 /**
  * ★body.HALBU — 할부 개월수. "00" = 일시불(기본).
- *   근거: 7/31 실승인 응답 원문 echo "HALBU":"00"(일시불). 현재 결제경로는 일시불만 → "00" 고정 기본값.
- *   (할부 지원 확장 시 이 값만 개월수로 치환. 필드 존재는 언제나 보장.)
+ *   근거: 7/31 실승인 응답 원문 echo "HALBU":"00"(일시불). 일시불은 언제나 "00" 고정.
+ *   (할부 지원 시 이 값을 개월수 2자리("02"~"12")로 치환. 필드 존재는 언제나 보장.)
  */
 export const CBAND_HALBU_LUMPSUM = '00' as const;
+
+/**
+ * ★할부 최대 개월수 — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT.
+ *   카드 단말 할부 관행상 1개월=일시불, 2~12개월 지원(scalp2 INSTALLMENT-BTN-1TO12 패턴 준용).
+ *   초과 값은 실결제 실패 위험 → formatHalbu 에서 throw(조립 단계 차단).
+ */
+export const CBAND_HALBU_MAX_MONTHS = 12 as const;
+
+/**
+ * ★body.HALBU 조립 — 할부 개월수를 CAT 전문 HALBU(2자리) 문자열로 변환.
+ *   T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT(HALBU 가변 전송).
+ *   · undefined/null/0/1 = 일시불 → "00" (카드 관행: 1개월=일시불, 별도 HALBU 없음).
+ *   · 2~12 = 개월수 → 2자리 zero-pad("02"~"12").
+ *   · 비정수·음수·12 초과 = 실결제 실패 위험 → throw(조립 단계에서 차단, 과금 위험 0).
+ *   ★일시불은 항상 "00"(7/31 실승인 echo 정합 유지) — 승인/취소 어느 경로에서도 필드는 항상 존재.
+ */
+export function formatHalbu(months?: number | null): string {
+  if (months == null) return CBAND_HALBU_LUMPSUM;
+  if (!Number.isInteger(months)) {
+    throw new Error(`HALBU 할부개월이 정수가 아닙니다: ${months}`);
+  }
+  if (months < 0) {
+    throw new Error(`HALBU 할부개월이 음수입니다(상위 버그 차단): ${months}`);
+  }
+  if (months <= 1) return CBAND_HALBU_LUMPSUM;   // 0·1개월 = 일시불("00")
+  if (months > CBAND_HALBU_MAX_MONTHS) {
+    throw new Error(`HALBU 할부개월 범위 초과(2~${CBAND_HALBU_MAX_MONTHS}): ${months}`);
+  }
+  return String(months).padStart(2, '0');
+}
 
 /**
  * ★body.CAT_BAUDRATE — CAT 시리얼 통신속도. "38400" 고정(현장 단말 세팅 SSOT,
@@ -350,7 +480,7 @@ export function buildMsg(params: BuildMsgParams): {
   body: Record<string, string>;
   envelope: { header: Record<string, string>; body: Record<string, string> };
 } {
-  const { tranType, tid, merno, amount, catPort, msgTrace, originalAuthNo, originalAuthDate, commTest } = params;
+  const { tranType, tid, merno, amount, catPort, msgTrace, originalAuthNo, originalAuthDate, commTest, installmentMonths } = params;
 
   // 실측#1: TID 비우면 실제 거부 → 강제 채움.
   if (!tid || !tid.trim()) {
@@ -380,7 +510,7 @@ export function buildMsg(params: BuildMsgParams): {
   const body: Record<string, string> = {
     TRANTYPE: tranType,                                   // ★body 유지: 응답도 flat TRANTYPE echo·승인/취소 discriminator (필수20 외 discriminator)
     TID: tid.trim(),                                      // #1  실측#1: 비우면 거부(위에서 throw 강제)
-    HALBU: CBAND_HALBU_LUMPSUM,                           // #2  할부개월 — 일시불 "00"(응답 echo 근거)
+    HALBU: formatHalbu(installmentMonths),               // #2  할부개월 — 일시불 "00" / 2~12 = "02"~"12"(INSTALLMENT-HALBU-SUPPORT)
     TAMT: pad9(amount),                                   // #3  규칙#3 9자리 zero-pad
     ORI_DATE: isCancel ? (originalAuthDate?.trim() ?? '') : '',   // #4  원거래일자(취소 시) / 승인 시 ""
     ORI_AUTHNO: isCancel ? (originalAuthNo as string).trim() : '', // #5  실측#2: 원거래 승인번호(취소 시) / 승인 시 ""
@@ -538,7 +668,7 @@ export function normalize(parsed: Record<string, unknown> | null): NormalizedRes
  *
  * @param resp    normalize() 결과. **무응답(타임아웃)은 반드시 null 을 넘길 것** → ATTENTION.
  * @returns
- *   'ATTENTION' : ★불확실(무응답 or C011/8003/8555). 자동 재시도 금지·'확인 필요' 정지.
+ *   'ATTENTION' : ★불확실(무응답 or C011/8003/8555 or ★8326 전문불일치). 자동 재시도 금지·'확인 필요' 정지.
  *   'APPROVED'  : 성공(RESPCODE=0000 + AUTHNO 수신).
  *   'FAIL'      : 명확한 실패(그 외 응답코드). 과금 미발생 확정 → 재시도 안전.
  *
@@ -550,8 +680,12 @@ export function classify(resp: NormalizedResponse | null): PaymentClassification
 
   const code = resp.responseCode;
 
-  // 응답코드가 ATTENTION 집합이면 불확실 → 정지.
+  // 응답코드가 ATTENTION 집합(단말 통신이상 C011/8003/8555)이면 불확실 → 정지.
   if (code != null && ATTENTION_CODES.has(code.toUpperCase())) return 'ATTENTION';
+
+  // ★8326(요청↔응답 전문 금액·거래고유번호 불일치) = 받은 응답이 다른 거래일 수 있음 → 승인 여부 불명.
+  //   반드시 성공/실패보다 먼저 판정해 ATTENTION 으로 정지(FAIL 로 새면 자동 재시도 → 이중결제).
+  if (code != null && UNCLEAR_TXN_CODES.has(code.toUpperCase())) return 'ATTENTION';
 
   // 성공: 코드 0000 + 승인번호 수신.
   if (code === RESPONSE_CODE_SUCCESS && resp.authNo) return 'APPROVED';
@@ -574,21 +708,32 @@ export function responseMessageForUser(cls: PaymentClassification, resp: Normali
     return resp?.tranType === TRANTYPE_CANCEL ? '취소가 완료되었습니다.' : '결제가 승인되었습니다.';
   }
   if (cls === 'ATTENTION') {
+    // ★확인필요 코드(8326/C011/8003/8555)면 코드별 자명한 한글 문구 + 코드번호 병기. 없으면 일반 안내.
+    //   (무응답=null 은 responseCode 없음 → 일반 안내로 폴백. 어느 경우든 '자동 재시도 금지' 정지 취지.)
+    const attMsg = errcodeMessage(resp?.responseCode);
+    if (attMsg) return appendCode(attMsg, resp?.responseCode);
     return '결제 결과를 확인할 수 없습니다. 카드가 승인되었을 수 있으니 다시 결제하지 마시고, 단말기 [승인내역조회]로 확인해 주세요. (확인 필요)';
   }
   // FAIL
   // ⑤ DLL_RET 표시 매핑(additive) — dllRet 또는 responseCode 가 DLL_RET 표에 있으면 자명한 안내로 치환.
-  //    (예: -14 = 단말기에 IC 카드 이미 꽂힘). 표에 없으면 기존 폴백(메시지 → 코드 → 일반문구) 유지.
+  //    (예: -14 = 단말기에 IC 카드 이미 꽂힘). 표에 없으면 아래 폴백 순서로.
   //    ★[-2] 케이블 미연결(T-20260804-...-CABLE-DISCONNECT-ERRMSG): 데몬이 코드를 dllRet/responseCode
   //    필드가 아니라 ResultMessage 의 '[-N]' 토큰으로 실어 보내는 경로도 커버 → bracketRetCode 로 추출해
-  //    같은 표로 조회. 표에 없는 [-N] 은 null → 기존 폴백 유지(회귀 없음, raw 원문 미노출).
+  //    같은 표로 조회. 표에 없는 [-N] 은 null → 아래 폴백 유지(회귀 없음, raw 원문 미노출).
   const dllMsg =
     dllRetMessage(resp?.dllRet) ??
     dllRetMessage(resp?.responseCode) ??
     dllRetMessage(bracketRetCode(resp?.responseMessage));
   if (dllMsg) return dllMsg;
+  // ★ERRCODE 전체표 한글 매핑(신규) — 밴 응답코드가 표에 있으면 자명한 한글 문구 + 코드 병기.
+  const errMsg = errcodeMessage(resp?.responseCode);
+  if (errMsg) return appendCode(errMsg, resp?.responseCode);
+  // ★키워드 정규화(신규) — 거절 사유가 MSG1 텍스트로 오는 경우(⑬ 한도초과·잔액부족 등)를 한글로.
+  const kwMsg = keywordMessage(resp?.responseMessage);
+  if (kwMsg) return appendCode(kwMsg, resp?.responseCode);
+  // ★미매핑 잔여: 원문 + 코드번호 병기(실장이 규격서 조회 가능) — reporter 요구.
   const msg = resp?.responseMessage;
-  if (msg) return `결제가 처리되지 않았습니다: ${msg}`;
   const code = resp?.responseCode;
+  if (msg) return appendCode(`결제가 처리되지 않았습니다: ${msg}`, code);
   return code ? `결제가 처리되지 않았습니다 (코드 ${code}). 다시 시도해 주세요.` : '결제가 처리되지 않았습니다. 다시 시도해 주세요.';
 }

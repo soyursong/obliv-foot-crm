@@ -631,6 +631,10 @@ export default defineConfig({
         //   GO_WARN 회귀 고정: classify 3분기(성공/실패/무응답=ATTENTION) 불변. auth/server/page 불요. unit 전용.
         //   (②TID/COM 팝업 이관은 총괄 스크린샷 확정 대기 → 후속. ①③ 실렌더·활성카드결제 = supervisor QA/field-soak.)
         '**/T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX.spec.ts',
+        // T-20260805-foot-PLANA-ERRCODE-HANGUL-8326-UNCLEAR: 오류문구 한글화 + ERRCODE 전체표 + ★8326 unclear.
+        //   classify(8326)→ATTENTION(성공/실패로 안 새는지) + errcode/keyword 한글매핑 + 미매핑 원문+코드 병기.
+        //   순수 함수(classify/normalize/responseMessageForUser/errcodeMessage/keywordMessage) 단언. auth/server/page 불요, 결정론. unit 전용.
+        '**/T-20260805-foot-PLANA-ERRCODE-HANGUL-8326-UNCLEAR.spec.ts',
         // T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER: E2E/dev DB 근본격리(L3) 로직 회귀.
         //   isTruthyFlag(OFF 기본=현행 CI 무파손) + mapDevIsolationEnv(DEV_SUPABASE_*→표준키 매핑,
         //   EXPECT_DEV_DB_REF 자동세팅=PRODREF-HARDGUARD 활성) + fail-closed(prod 오배선 abort) 순수 검증.
