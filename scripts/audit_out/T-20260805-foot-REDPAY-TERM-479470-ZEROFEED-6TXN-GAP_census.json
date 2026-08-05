@@ -1,0 +1,433 @@
+{
+  "meta": {
+    "ticket": "T-20260805-foot-REDPAY-TERM-479470-ZEROFEED-6TXN-GAP",
+    "mode": "READ-ONLY",
+    "tid": "1047479470",
+    "day_kst": "2026-08-04",
+    "writes": 0,
+    "generated_by": "dev-foot"
+  },
+  "AC1_crm_census": {
+    "external_tid_exact_total": 6,
+    "external_tid_exact_0804": 6,
+    "like_479470_total": 6,
+    "like_479470_variants_seen": [
+      "1047479470"
+    ],
+    "distinct_authno_0804": [
+      "32397288",
+      "30880289",
+      "58668290"
+    ],
+    "rows": [
+      {
+        "id": "9b994496-9144-4ee3-a789-76ffe0fdeb81",
+        "amount": 3000,
+        "method": "card",
+        "type": "payment",
+        "status": "active",
+        "deleted": null,
+        "authno": "32397288",
+        "ext_trxid": null,
+        "ext_status": null,
+        "reconciled": null,
+        "acct": "2026-08-04",
+        "created_kst": "2026-08-04 14:23:35 KST",
+        "memo": "코밴 단말 카드결제",
+        "attempt": "2db1ef60-e246-42c4-8702-792e7f49c95a",
+        "approve_cancel": "approve"
+      },
+      {
+        "id": "5f1a3c18-c830-499c-88e9-c2faf5a57ebf",
+        "amount": 3000,
+        "method": "card",
+        "type": "refund",
+        "status": "active",
+        "deleted": null,
+        "authno": "32397288",
+        "ext_trxid": null,
+        "ext_status": null,
+        "reconciled": null,
+        "acct": "2026-08-04",
+        "created_kst": "2026-08-04 14:33:59 KST",
+        "memo": "코밴 단말 결제취소",
+        "attempt": "e23b04fe-d64b-41a4-8dcc-019693a0fb46",
+        "approve_cancel": "cancel"
+      },
+      {
+        "id": "6c6670f0-d05b-47ea-ad24-d9198e727664",
+        "amount": 3000,
+        "method": "card",
+        "type": "payment",
+        "status": "active",
+        "deleted": null,
+        "authno": "30880289",
+        "ext_trxid": null,
+        "ext_status": null,
+        "reconciled": null,
+        "acct": "2026-08-04",
+        "created_kst": "2026-08-04 14:47:50 KST",
+        "memo": "코밴 단말 카드결제",
+        "attempt": "1ac3b9f4-4d7f-4bca-8c29-993f7bc9c93a",
+        "approve_cancel": "approve"
+      },
+      {
+        "id": "d44a9256-ef4b-44eb-a560-c986935a46e3",
+        "amount": 3000,
+        "method": "card",
+        "type": "refund",
+        "status": "active",
+        "deleted": null,
+        "authno": "30880289",
+        "ext_trxid": null,
+        "ext_status": null,
+        "reconciled": null,
+        "acct": "2026-08-04",
+        "created_kst": "2026-08-04 14:48:49 KST",
+        "memo": "코밴 단말 결제취소",
+        "attempt": "1a5d4bcb-0524-4bfe-a8db-ea0ffaf3af7c",
+        "approve_cancel": "cancel"
+      },
+      {
+        "id": "e7775eac-a8db-4926-86e6-f558e7f9f99e",
+        "amount": 3000,
+        "method": "card",
+        "type": "payment",
+        "status": "active",
+        "deleted": null,
+        "authno": "58668290",
+        "ext_trxid": null,
+        "ext_status": null,
+        "reconciled": null,
+        "acct": "2026-08-04",
+        "created_kst": "2026-08-04 15:40:16 KST",
+        "memo": "코밴 단말 카드결제",
+        "attempt": "653e1c25-c4f0-462c-b409-5b92cd6a6a51",
+        "approve_cancel": "approve"
+      },
+      {
+        "id": "f3db9029-e545-41d1-adc1-2cd1bb33618e",
+        "amount": 3000,
+        "method": "card",
+        "type": "refund",
+        "status": "active",
+        "deleted": null,
+        "authno": "58668290",
+        "ext_trxid": null,
+        "ext_status": null,
+        "reconciled": null,
+        "acct": "2026-08-04",
+        "created_kst": "2026-08-04 15:40:52 KST",
+        "memo": "코밴 단말 결제취소",
+        "attempt": "78b9e0c8-8a32-46ba-a8f5-60807d6c94ed",
+        "approve_cancel": "cancel"
+      }
+    ]
+  },
+  "AC1_redpay_feed_by_tid": {
+    "tid": "1047479470",
+    "raw_count": 0,
+    "note": "CONFIRMED zero-feed: raw 0건 @tid=1047479470",
+    "rows": []
+  },
+  "AC2_remap_hypothesis": {
+    "crm_authnos_traced": 3,
+    "authno_landings": [
+      {
+        "authno": "32397288",
+        "raw_hits": 0,
+        "landings": []
+      },
+      {
+        "authno": "30880289",
+        "raw_hits": 0,
+        "landings": []
+      },
+      {
+        "authno": "58668290",
+        "raw_hits": 0,
+        "landings": []
+      }
+    ],
+    "landed_tids": [],
+    "landed_merchant_ids": [],
+    "registry_479470_as_primary": [],
+    "registry_479470_in_superseded": [],
+    "registry_for_landed_tids": [],
+    "remap_verdict": "NO-REMAP-EVIDENCE: CRM AUTHNO 6건이 raw 어디에도 부재(tid-무관) → remap 아님(피드 자체 미수신)"
+  },
+  "AC3_whitelist_scope": {
+    "registry_total_rows": 41,
+    "foot_rows": 27,
+    "tid_479470_registered": false,
+    "registration_state": "ABSENT (미등록)",
+    "foot_active_tids": [
+      "1047479261",
+      "1047479469",
+      "1047479483",
+      "1047479479",
+      "1047479158",
+      "1047538231",
+      "1047538237",
+      "1047538235",
+      "1047538245",
+      "1047538239",
+      "1047538243",
+      "1047479157",
+      "1047538233",
+      "1047479264",
+      "1047479473",
+      "1047535845",
+      "1047535842",
+      "1047535837",
+      "1047535835",
+      "1047535797",
+      "1047535843",
+      "1047538246",
+      "1047538236",
+      "1047538241",
+      "1047479153"
+    ],
+    "foot_all_tids": [
+      {
+        "merchant_id": "1777285004",
+        "tid": "1047479261",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777288001",
+        "tid": "1047479469",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777289001",
+        "tid": "1047479483",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777289005",
+        "tid": "1047479479",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777289012",
+        "tid": "1047479158",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777288004",
+        "tid": "1047538231",
+        "active": true,
+        "superseded": [
+          "1047479472"
+        ]
+      },
+      {
+        "merchant_id": "1777289004",
+        "tid": "1047538237",
+        "active": true,
+        "superseded": [
+          "1047479478"
+        ]
+      },
+      {
+        "merchant_id": "1777289003",
+        "tid": "1047538235",
+        "active": true,
+        "superseded": [
+          "1047479477"
+        ]
+      },
+      {
+        "merchant_id": "1777289008",
+        "tid": "1047538245",
+        "active": true,
+        "superseded": [
+          "1047479482"
+        ]
+      },
+      {
+        "merchant_id": "1777289006",
+        "tid": "1047538239",
+        "active": true,
+        "superseded": [
+          "1047479480"
+        ]
+      },
+      {
+        "merchant_id": "1777289010",
+        "tid": "1047479148",
+        "active": false,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777289007",
+        "tid": "1047538243",
+        "active": true,
+        "superseded": [
+          "1047479481"
+        ]
+      },
+      {
+        "merchant_id": "1777289009",
+        "tid": "1047479157",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777289002",
+        "tid": "1047538233",
+        "active": true,
+        "superseded": [
+          "1047479476"
+        ]
+      },
+      {
+        "merchant_id": "1777285008",
+        "tid": "1047479264",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777288005",
+        "tid": "1047479473",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777285001",
+        "tid": "1047535845",
+        "active": true,
+        "superseded": [
+          "1047479255"
+        ]
+      },
+      {
+        "merchant_id": "1777285003",
+        "tid": "1047535842",
+        "active": true,
+        "superseded": [
+          "1047479254"
+        ]
+      },
+      {
+        "merchant_id": "1777285005",
+        "tid": "1047535837",
+        "active": true,
+        "superseded": [
+          "1047479268"
+        ]
+      },
+      {
+        "merchant_id": "1777285006",
+        "tid": "1047535835",
+        "active": true,
+        "superseded": [
+          "1047479262"
+        ]
+      },
+      {
+        "merchant_id": "1777285007",
+        "tid": "1047535797",
+        "active": true,
+        "superseded": [
+          "1047479263"
+        ]
+      },
+      {
+        "merchant_id": "1777285002",
+        "tid": "1047535843",
+        "active": true,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777288008",
+        "tid": "1047538246",
+        "active": true,
+        "superseded": [
+          "1047479475"
+        ]
+      },
+      {
+        "merchant_id": "1777289011",
+        "tid": "1047479155",
+        "active": false,
+        "superseded": null
+      },
+      {
+        "merchant_id": "1777288003",
+        "tid": "1047538236",
+        "active": true,
+        "superseded": [
+          "1047479471"
+        ]
+      },
+      {
+        "merchant_id": "1777288006",
+        "tid": "1047538241",
+        "active": true,
+        "superseded": [
+          "1047479474"
+        ]
+      },
+      {
+        "merchant_id": "1777289013",
+        "tid": "1047479153",
+        "active": true,
+        "superseded": null
+      }
+    ],
+    "scope_note": "폴러 필터 1차권위=merchant_id 화이트리스트, 2차=TID. 479470 이 registry 부재면 merchant 멤버십에서 구조적 탈락 → 뷰 active-hard-filter 에서 0건. 단 raw 는 §10 admission 으로 캡처될 수 있으므로 raw 부재(AC-1')가 whitelist-drop 이 아니라 feed-미수신을 시사."
+  },
+  "AC4_stale_tid": {
+    "crm_recorded_tid": "1047479470",
+    "actual_feed_tids_for_same_authno": [],
+    "mismatch": false,
+    "verdict": "INDETERMINATE: AUTHNO 가 raw 어디에도 없어 실 단말 TID 확인 불가 → stale-tid 판정 근거 부재(feed-미수신이 dominant)"
+  },
+  "AC6_parent_gate": {
+    "plana_window_kst": "2026-08-04 00:00~24:00 KST (full-day; CODEREVIEW ⑭ 538246=9·479470=6 재현)",
+    "plana_tids": [
+      "1047538246",
+      "1047479470"
+    ],
+    "crm_count_by_tid": {
+      "1047479470": 6,
+      "1047538246": 9
+    },
+    "redpay_count_by_tid": {
+      "1047479470": 0,
+      "1047538246": 6
+    },
+    "crm_total_planA_alllegs": 15,
+    "redpay_total_planA": 6,
+    "divergence_planA_fullday": 9,
+    "tid479470_crm_alllegs": 6,
+    "tid479470_crm_approve_or_authno": "3 (approve) / 3 (distinct authno)",
+    "tid479470_redpay": 0,
+    "tid479470_note": "479470 6건 = 3 AUTHNO × (approve ₩3,000 + 즉시 refund ₩3,000) = net ₩0 자기상쇄 test 쌍. 14:23~15:40 KST(=16:00 window 밖).",
+    "parent_divergence_7_explained_by_479470": {
+      "all_legs_grain": "6 of 7 (CRM 6 rows − RedPay 0)",
+      "approve_or_authno_grain": "3 of 7",
+      "net_grain": "0 of 7 (approve/refund 자기상쇄, 매출영향 0)",
+      "caveat": "부모 CRM26 vs RedPay19(7) 의 정확한 window·leg-grain 은 in-repo 부재 → planner/부모티켓 grain 명시로 확정 권고. 479470 은 grain 에 따라 3~6 rows 기여 = divergence 의 majority driver, 잔여는 538246 자체 gap(full-day CRM9 vs RedPay6=3)."
+    }
+  },
+  "AC5_verdict": {
+    "primary_hypothesis": "(ii)+(iii) 복합 / 우세=feed-미수신",
+    "reason": "CRM 6건 AUTHNO 가 RedPay raw 어디에도 부재(tid-무관 전수 추적) → remap(i) 반증. 479470 registry 등록상태·raw 부재로 판정. 실질 = 이 단말의 승인 트랜잭션이 RedPay 피드에 애초 미수신(폴러 scope 밖 or 단말이 RedPay 미연동).",
+    "evidence_pointers": [
+      "AC1_crm_census",
+      "AC1_redpay_feed_by_tid",
+      "AC2_remap_hypothesis",
+      "AC3_whitelist_scope",
+      "AC4_stale_tid",
+      "AC6_parent_gate"
+    ]
+  }
+}
