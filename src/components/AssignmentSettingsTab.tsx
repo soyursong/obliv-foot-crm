@@ -14,6 +14,8 @@ import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import type { Clinic, AssignLeadSource, AssignStrategy } from '@/lib/types';
+// T-20260805-foot-CONSULT-SLACKID-MAP-SELFSERVICE Part B: 셀프서비스 slack_user_id 입력 가드(봇 ID/형식).
+import { checkSlackUserId } from '@/lib/slackId';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -245,8 +247,17 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
     }
   };
 
-  const saveSlack = async (id: string, value: string) => {
-    const v = value.trim() || null;
+  // T-20260805-foot-CONSULT-SLACKID-MAP-SELFSERVICE Part B: 봇 ID/형식 오류 입력 가드(CHOIHH 오배선 재발 방지).
+  //   inputEl = onBlur 대상 <input>. 거부 시 마지막 정상값으로 되돌린다(uncontrolled defaultValue 이므로 DOM 직접 복원).
+  const saveSlack = async (id: string, value: string, inputEl?: HTMLInputElement | null) => {
+    const prev = consultants.find((c) => c.id === id)?.slack_user_id ?? '';
+    const check = checkSlackUserId(value);
+    if (!check.ok) {
+      toast.error(check.message);
+      if (inputEl) inputEl.value = prev; // 잘못된 입력이 화면에 남지 않게 직전값 복원
+      return;
+    }
+    const v = check.value; // 정규화(대문자) 값 또는 null(매핑 해제)
     const { data, error } = await supabase
       .from('staff')
       .update({ slack_user_id: v })
@@ -254,8 +265,12 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
       .select('id');
     if (error || !data || data.length === 0) {
       toast.error('Slack 매핑 저장에 실패했어요.');
+      if (inputEl) inputEl.value = prev;
     } else {
-      toast.success('Slack 매핑을 저장했어요.');
+      // 로컬 상태·입력창을 정규화된 값으로 동기화(다음 blur 의 직전값 기준).
+      setConsultants((cur) => cur.map((c) => (c.id === id ? { ...c, slack_user_id: v ?? '' } : c)));
+      if (inputEl) inputEl.value = v ?? '';
+      toast.success(v ? 'Slack 매핑을 저장했어요.' : 'Slack 매핑을 해제했어요.');
     }
   };
 
@@ -380,9 +395,9 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
                 <Label className="whitespace-nowrap text-sm text-muted-foreground">Slack ID</Label>
                 <Input
                   defaultValue={c.slack_user_id}
-                  placeholder="예: U01AB2CD (선택)"
+                  placeholder="예: U01AB2CD3EF (선택)"
                   className="h-10 max-w-xs"
-                  onBlur={(e) => saveSlack(c.id, e.target.value)}
+                  onBlur={(e) => saveSlack(c.id, e.target.value, e.target)}
                   data-testid={`slack-input-${c.id}`}
                 />
               </div>

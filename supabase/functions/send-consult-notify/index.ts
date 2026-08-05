@@ -53,6 +53,9 @@ const SILJANG_SLACK_MAP: Record<string, string> = {
   "김주연": "U0ATDB587PV",
   // T-20260731-foot-TMNOTIFY-CHOIHH-SLACKID-MAP — 최현희 실장 실제 멤버 ID(총괄 재확인, 봇 ID·기존 6명 무충돌). SSOT 동기화.
   "최현희": "U0BKRDWDG9Z",
+  // T-20260805-foot-CONSULT-SLACKID-MAP-SELFSERVICE — 상담실장 2명 추가(총괄 확정, 봇 ID·기존 7명 무충돌 grep 검증). SSOT 동기화.
+  "진이서": "U0BM25FTBFZ",
+  "송민근": "U0BMKHRLCJV",
 };
 
 const corsHeaders = {

@@ -32,6 +32,9 @@ export const SILJANG_SLACK_MAP: Record<string, string> = {
   김주연: 'U0ATDB587PV',
   // T-20260731-foot-TMNOTIFY-CHOIHH-SLACKID-MAP — 최현희 실장 실제 멤버 ID(총괄 재확인, 봇 ID·기존 6명 무충돌).
   최현희: 'U0BKRDWDG9Z',
+  // T-20260805-foot-CONSULT-SLACKID-MAP-SELFSERVICE — 상담실장 2명 추가(총괄 확정, 봇 ID·기존 7명 무충돌 grep 검증). SSOT 동기화.
+  진이서: 'U0BM25FTBFZ',
+  송민근: 'U0BMKHRLCJV',
 };
 
 /** staff 표시명/이름으로 Slack ID 해소(staff.slack_user_id 우선은 호출부에서). 미매핑 시 null. */
@@ -39,3 +42,6 @@ export function resolveSiljangSlackId(nameOrDisplay: string | null | undefined):
   const key = stripSiljangSuffix(nameOrDisplay);
   return SILJANG_SLACK_MAP[key] ?? null;
 }
+// NOTE(T-20260805-foot-CONSULT-SLACKID-MAP-SELFSERVICE): 셀프서비스 입력 가드(봇 ID/형식 검증)는
+//   src/lib/slackId.ts 로 분리. 이 파일(매핑 SSOT)에는 봇 ID 리터럴을 두지 않는다
+//   (CHOIHH 스펙의 '봇 ID 잔존 없음' 정합 보존).
