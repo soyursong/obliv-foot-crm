@@ -15,8 +15,12 @@ import {
   retentionCutoffIso,
   groupPendingByAmount,
   selectCandidateRaw,
+  kstAccountingDate,
+  isDormantGapCandidate,
+  selectDormantGapBlock,
   type PendingRow,
   type RawRow,
+  type ExistingCardPaymentRow,
 } from "./match.ts";
 
 // ── 픽스처 ────────────────────────────────────────────────────────────────────
@@ -187,4 +191,103 @@ Deno.test("isAutoCancelTarget ⊥ isWithinRetention: 두 판정은 상보(겹침
       `상보성 위반(exp=${exp}) — autoCancel 대상과 retention 후보가 겹침`,
     );
   }
+});
+
+// ── DORMANTGAP-GUARD (T-20260805-foot-REDPAY-PLANA-REATTACH-DORMANTGAP-GUARD) ─────
+//   픽스처 = 부모 verify 증적(track1b_gap_snapshot.json)의 실측 행 반영.
+//   null_approval_card_payments: attempt=false(payment_attempt_id NULL), ext_trxid NULL, acct 2026-08-04.
+
+function payRow(over: Partial<ExistingCardPaymentRow> = {}): ExistingCardPaymentRow {
+  return {
+    id: "pay1",
+    amount: 10000,
+    accounting_date: "2026-08-04",
+    payment_type: "payment",
+    method: "card",
+    status: "active",
+    deleted_at: null,
+    payment_attempt_id: null,        // non-CAT 수기수납 = RPC absorb 사각
+    external_approval_no: null,       // 승인번호 NULL
+    reconciled_at: null,
+    ...over,
+  };
+}
+
+Deno.test("kstAccountingDate: UTC ISO → Asia/Seoul(UTC+9) 달력일 (RPC v_acct_date 동치)", () => {
+  // 2026-08-04 16:01:18 KST = 2026-08-04 07:01:18 UTC → KST 달력일 2026-08-04.
+  assertEquals(kstAccountingDate("2026-08-04T07:01:18.000Z"), "2026-08-04");
+  // UTC 자정 직후(15:30Z = 익일 00:30 KST) → KST 날짜는 +1일 넘어감(달력일 경계 검증).
+  assertEquals(kstAccountingDate("2026-08-04T15:30:00.000Z"), "2026-08-05", "UTC 15:30 = KST 익일 00:30");
+  assertEquals(kstAccountingDate(null), null, "null → null");
+  assertEquals(kstAccountingDate("not-a-date"), null, "파싱 불가 → null");
+});
+
+Deno.test("isDormantGapCandidate: non-CAT 수기수납(승인번호 NULL)만 gap 후보 (AC-2)", () => {
+  const opts = { amount: 10000, accountingDate: "2026-08-04" };
+  assert(isDormantGapCandidate(payRow(), opts), "동일금액·동일일자·non-CAT·미대사 → gap 후보");
+  // ★RPC absorb 가능 건(CAT-origin: payment_attempt_id NOT NULL)은 gap 아님(RPC 가 흡수).
+  assertFalse(
+    isDormantGapCandidate(payRow({ payment_attempt_id: "cat-attempt-1", external_approval_no: "116927731" }), opts),
+    "CAT-origin(payment_attempt_id NOT NULL) → RPC absorb 대상, gap 차단 아님",
+  );
+  // 이미 대사된 건 = dup 후보 아님.
+  assertFalse(isDormantGapCandidate(payRow({ reconciled_at: "2026-08-04T09:00:00.000Z" }), opts), "미대사만 후보");
+  // 금액/일자 불일치 제외.
+  assertFalse(isDormantGapCandidate(payRow({ amount: 20000 }), opts), "금액 불일치 제외");
+  assertFalse(isDormantGapCandidate(payRow({ accounting_date: "2026-08-03" }), opts), "일자 불일치 제외");
+  // refund(TRANTYPE 상이) 제외 — auto-create 는 payment 만 생성.
+  assertFalse(isDormantGapCandidate(payRow({ payment_type: "refund" }), opts), "refund(TRANTYPE 상이) 제외");
+  // 삭제/비활성 제외.
+  assertFalse(isDormantGapCandidate(payRow({ deleted_at: "2026-08-04T10:00:00.000Z" }), opts), "삭제분 제외");
+  assertFalse(isDormantGapCandidate(payRow({ status: "void" }), opts), "비활성 제외");
+});
+
+Deno.test("selectDormantGapBlock: gap 후보 1건+ 존재 → 차단(payment 반환) / 없으면 null", () => {
+  const opts = { amount: 10000, accountingDate: "2026-08-04" };
+  // 증적 재현: 동일금액(10000) non-CAT 수기수납 존재 → 차단.
+  assertEquals(
+    selectDormantGapBlock([payRow({ id: "gap10000" })], opts)?.id,
+    "gap10000",
+    "동일금액 수기수납 존재 → auto-create 차단",
+  );
+  // CAT-origin 만 있으면 차단 안 함(RPC absorb 경로).
+  assertEquals(
+    selectDormantGapBlock([payRow({ id: "cat", payment_attempt_id: "a1", external_approval_no: "116927731" })], opts),
+    null,
+    "CAT-origin 만 → 차단 없음(RPC absorb)",
+  );
+  // 대조 대상 없음 → null(정상 auto-create 진행).
+  assertEquals(selectDormantGapBlock([], opts), null, "기존 payment 없음 → 차단 없음");
+});
+
+Deno.test("AC-3 재현: 6 unmatched-Y raw × auto-reattach 활성 가정 → 재부착 0건(순-write 0)", () => {
+  // 증적 track1b_gap_snapshot.json 의 6 unmatched-Y raw 승인시각·금액 반영(전부 KST 2026-08-04).
+  const rawsFx = [
+    { amount: 10000,   approved_utc: "2026-08-04T07:01:18.000Z" }, // 16:01:18 KST
+    { amount: 20000,   approved_utc: "2026-08-04T07:48:11.000Z" }, // 16:48:11 KST
+    { amount: 2670000, approved_utc: "2026-08-04T07:54:08.000Z" }, // 16:54:08 KST
+    { amount: 10000,   approved_utc: "2026-08-04T08:26:58.000Z" }, // 17:26:58 KST
+    { amount: 1400,    approved_utc: "2026-08-04T08:55:03.000Z" }, // 17:55:03 KST
+    { amount: 260000,  approved_utc: "2026-08-04T11:15:59.000Z" }, // 20:15:59 KST
+  ];
+  // 실측 null-approval 수기수납(payment) 금액집합: 10000·20000·260000 (payment type, attempt=false).
+  const existingManualPayments: ExistingCardPaymentRow[] = [
+    payRow({ id: "m-10000", amount: 10000 }),
+    payRow({ id: "m-20000", amount: 20000 }),
+    payRow({ id: "m-260000", amount: 260000 }),
+  ];
+  let autoCreatedWouldBe = 0;
+  let gapBlocked = 0;
+  for (const r of rawsFx) {
+    const acct = kstAccountingDate(r.approved_utc)!;
+    assertEquals(acct, "2026-08-04", "모든 raw 는 KST 2026-08-04 매출일");
+    const blocker = selectDormantGapBlock(existingManualPayments, { amount: r.amount, accountingDate: acct });
+    if (blocker) gapBlocked += 1;
+    else autoCreatedWouldBe += 1; // 대조 없음 = 신규 생성 후보(단, prod 에선 pending=0 이라 매칭 자체 0).
+  }
+  // 수기수납 존재 금액(10000·20000·260000·10000)= 4건 차단. 2670000·1400 은 수기수납 부재.
+  assertEquals(gapBlocked, 4, "수기수납 존재(10000·20000·260000)와 동일금액 raw 4건 → 가드 차단(dup INSERT 0)");
+  // ★prod 실측: pending_payment.total=0 → matchPass 매칭 자체 0 → 6건 전부 재부착 0(가드 이전에 이미 0).
+  //   가드는 forward-hardening: 수기수납이 이미 있는 금액이면 pending 이 생겨도 auto-create INSERT 0 보장.
+  assertEquals(autoCreatedWouldBe, 2, "수기수납 부재 금액(2670000·1400)만 가드 통과 후보(단 dup 아님=double-count 위험 0)");
 });

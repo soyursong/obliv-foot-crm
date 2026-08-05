@@ -157,3 +157,77 @@ export function selectCandidateRaw(
     .sort((a, b) => (String(a.approved_at) < String(b.approved_at) ? -1 : 1));
   return candidates[0] ?? null;
 }
+
+// ── T-20260805-foot-REDPAY-PLANA-REATTACH-DORMANTGAP-GUARD ─────────────────────
+//   부모 verify(PLANA-PG-REDPAY-DUP-VERIFY) AC-5(b) carve-out. 성격 = forward-hardening,
+//   dormant(현재 REDPAY_PLANB_AUTOCREATE_ENABLED=false → 손실0). 착지 = PLANB autocreate 활성 前.
+//
+//   ── gap 본질 (AC-2) ────────────────────────────────────────────────────────────
+//   single RPC record_planb_card_payment 의 absorb-guard(K5)는 CAT-origin 결제만 흡수한다:
+//     scope = payment_attempt_id IS NOT NULL(PRIMARY) ∧ external_approval_no = raw.approval_no.
+//   그런데 스태프가 먼저 수기수납한 영수증(payment_attempt_id IS NULL = non-CAT, ★승인번호 NULL 포함)은
+//   이 scope 사각(payment_attempt_id NULL + approval_no NULL) → absorb 못 하고 신규 payment INSERT →
+//   동일 승인건이 (수기수납 1 + auto-create 1) 로 double-count.  ← dormant gap.
+//
+//   ── 가드 (AC-2) ────────────────────────────────────────────────────────────────
+//   auto-create RPC 호출 前, 동일 clinic·동일 금액(TAMT)·동일 accounting_date(일자)·동일 payment_type(TRANTYPE)
+//   활성 카드결제 중 'RPC absorb 사각(payment_attempt_id IS NULL)·미대사(reconciled_at IS NULL)' 건이
+//   하나라도 있으면 → auto-create 차단(RPC 미호출 = 신규 payment INSERT 0) → 스태프 confirm 전용.
+//   = reporter item2 복합키(AUTHNO+TAMT+일자+TRANTYPE)의 AUTHNO-fallback(승인번호 NULL 수기수납 커버).
+//   ★가드는 순수 negative gate(write 0) — RPC/스키마 무접촉(ADDITIVE, db_change=false).
+//   ★RPC absorb 가능 건(payment_attempt_id NOT NULL, approval_no 일치)은 차단하지 않음 → RPC absorb 경로 정상.
+
+/** payments 조회행(가드 대조 대상). EF 는 (clinic·금액·일자) 로 broad 조회 후 이 순수 술어로 gap 후보만 필터. */
+export interface ExistingCardPaymentRow {
+  id: string;
+  amount: number | null;
+  accounting_date: string | null;      // 'YYYY-MM-DD' (Asia/Seoul 달력일)
+  payment_type?: string | null;        // 'payment' | 'refund'
+  method?: string | null;              // 'card'
+  status?: string | null;              // 'active' ...
+  deleted_at?: string | null;
+  payment_attempt_id?: string | null;  // NOT NULL = CAT-origin(RPC absorb 대상) / NULL = non-CAT 수기수납(gap)
+  external_approval_no?: string | null;
+  reconciled_at?: string | null;       // NOT NULL = 이미 대사됨(dup 후보 아님)
+}
+
+/** raw.approved_at(UTC ISO) → Asia/Seoul(UTC+9) 달력일 'YYYY-MM-DD'. RPC v_acct_date 산식과 동치. */
+export function kstAccountingDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return new Date(t + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * dormant-gap 후보 판별 (AC-2 핵심 술어).
+ *   동일 금액 ∧ 동일 accounting_date ∧ payment_type='payment'(TRANTYPE) ∧ method='card' ∧ 활성 ∧ 미삭제 ∧
+ *   payment_attempt_id IS NULL(non-CAT = RPC absorb 사각, ★승인번호 NULL 수기수납 포함) ∧ reconciled_at IS NULL.
+ */
+export function isDormantGapCandidate(
+  row: ExistingCardPaymentRow,
+  opts: { amount: number; accountingDate: string },
+): boolean {
+  return (
+    (row.method ?? "card") === "card" &&
+    (row.status ?? "active") === "active" &&
+    row.deleted_at == null &&
+    (row.payment_type ?? "payment") === "payment" &&
+    row.amount != null &&
+    Number(row.amount) === Number(opts.amount) &&
+    row.accounting_date === opts.accountingDate &&
+    row.payment_attempt_id == null &&   // non-CAT 수기수납 = RPC absorb-guard 사각(승인번호 NULL 포함)
+    row.reconciled_at == null           // 미대사만 = dup 위험 후보
+  );
+}
+
+/**
+ * auto-create 차단 여부 판정. 하나라도 gap 후보가 있으면 그 payment 를 반환(→ 차단, 스태프 confirm 전용).
+ * 없으면 null(→ RPC 진행, absorb 또는 신규기록).
+ */
+export function selectDormantGapBlock(
+  existing: ExistingCardPaymentRow[],
+  opts: { amount: number; accountingDate: string },
+): ExistingCardPaymentRow | null {
+  return existing.find((r) => isDormantGapCandidate(r, opts)) ?? null;
+}
