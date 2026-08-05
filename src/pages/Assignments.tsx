@@ -80,6 +80,10 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+// T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1(SPEC-CORRECTION-2): '배정 설정' 탭을 [직원·공간] 섹션에서
+//   [상담·치료사 배정] 섹션([랭킹] 탭 우측)으로 cross-section 이동. AssignmentSettingsTab(가중치·목표건수·유입경로전략·
+//   자동배정 토글·Slack매핑)은 [랭킹]에 흡수된 '배정 순번 설정'(RotationOrderDialog)과 별개 대상(census 확인).
+import { AssignmentSettingsTab } from '@/components/AssignmentSettingsTab';
 
 // ── T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 배정 '상담 성격' 4종 옵션(SSOT) ──────────────
 //   DB CHECK(chk_check_ins_assignment_consult_type)와 1:1 parity. 기본 pre-select = 초진(App default, DB default는 NULL).
@@ -440,7 +444,8 @@ export default function Assignments() {
   //  금일 배정 grain 실측(2026-07-10 prod): 앵커=check_ins(consultant_id/therapist_id). reservations엔 배정필드 부재
   //  (preferred_therapist_id=예약단계 선호값), visits 테이블 부재 → TREATING-DOCTOR-SELECT-SYNC 선례와 정합. DB무변경.
   // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 상위 탭에 [랭킹] 추가('ranking').
-  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list' | 'ranking'>('consult');
+  // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: [배정 설정] 탭 추가('assignment-settings', [랭킹] 우측).
+  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list' | 'ranking' | 'assignment-settings'>('consult');
   const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
   const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
 
@@ -1755,9 +1760,11 @@ export default function Assignments() {
       <Tabs
         value={mainTab}
         onValueChange={(v) => {
-          const next = v as 'consult' | 'therapy' | 'list' | 'ranking';
+          const next = v as 'consult' | 'therapy' | 'list' | 'ranking' | 'assignment-settings';
           // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 비admin 이 (URL/이벤트 조작 등으로) ranking 진입 시도 시 무시(이중 가드).
           if (next === 'ranking' && !canViewRanking) return;
+          // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경2: [배정 설정] 탭도 관리자 전용 이중 가드(랭킹과 동일 술어 canViewRanking).
+          if (next === 'assignment-settings' && !canViewRanking) return;
           setMainTab(next);
           // 상담/치료 탭은 기존 운영 카드의 role 필터(activeTab) 동기화. 배정목록/랭킹은 자체 조회.
           if (next === 'consult' || next === 'therapy') setActiveTab(next);
@@ -1777,6 +1784,14 @@ export default function Assignments() {
           {canViewRanking && (
             <TabsTrigger value="ranking" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-ranking">
               랭킹
+            </TabsTrigger>
+          )}
+          {/* T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1·2: [배정 설정] 탭을 [랭킹] 우측에 배치(cross-section 이동).
+              변경2 = 관리자 전용(canViewRanking = admin/manager/director, 랭킹과 동일 role 술어 재사용 — 신규 role/RLS 신설 0).
+              비admin 은 탭 자체 미노출(UI 숨김) + onValueChange 이중 가드 + 아래 콘텐츠 && 가드 3중. */}
+          {canViewRanking && (
+            <TabsTrigger value="assignment-settings" className="px-4 py-1.5 text-sm" data-testid="assignments-tab-assignment-settings">
+              배정 설정
             </TabsTrigger>
           )}
         </TabsList>
@@ -2977,6 +2992,18 @@ export default function Assignments() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── [배정 설정] 탭 (T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1·2) ──
+          [직원·공간] 섹션에서 이동해 온 AssignmentSettingsTab(랭킹 가중치·하루 목표건수·유입경로 배정방식·
+          상담실장별 자동배정 토글·Slack 매핑). [랭킹]에 흡수된 '배정 순번 설정'(RotationOrderDialog=기본순번+가능시술)과
+          별개 대상(census 확인 — no-op/모순 아님).
+          변경2 = 관리자 전용: canViewRanking(admin/manager/director) && 가드(탭 미노출·onValueChange 차단과 3중).
+          쓰기(assignment_ranking_weights/daily_target_config/leadsource_policy·staff.*)는 기존 RLS 로 서버 차단됨(신규 게이트 불요). */}
+      {mainTab === 'assignment-settings' && canViewRanking && clinic && (
+        <div data-testid="assignments-assignment-settings">
+          <AssignmentSettingsTab clinic={clinic} />
+        </div>
+      )}
     </div>
   );
 }

@@ -4,9 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
-import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, Settings, X, PowerOff, Power, ClipboardList, Building2, Shuffle } from 'lucide-react';
-// T-20260726-foot-CRM-ASSIGN-V1 실행6: 상담 자동배정 관리자 설정 탭.
-import { AssignmentSettingsTab } from '@/components/AssignmentSettingsTab';
+import { Plus, UserCog, DoorOpen, ChevronLeft, ChevronRight, Pencil, Trash2, Settings, X, PowerOff, Power, ClipboardList, Building2 } from 'lucide-react';
+// T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1(SPEC-CORRECTION-2): '배정 설정' 탭(AssignmentSettingsTab)을
+//   [직원·공간] 섹션에서 제거하고 [상담·치료사 배정] 섹션([랭킹] 탭 우측)으로 cross-section 이동 → import 를 Assignments.tsx 로 옮김.
+//   ⚠ census(별개 탭 확인): 이 '배정 설정'(가중치·목표건수·유입경로전략·자동배정 토글·Slack매핑)은 deployed ADMINLOCK 가
+//      [랭킹] 탭에 흡수한 '배정 순번 설정'(RotationOrderDialog=기본순번+가능시술)과 **별개 대상**(no-op/모순 아님).
 // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: DutyRosterTab(근무캘린더) 탭 제거로 import 삭제 — /admin/handover 로 이관
 import { ReservationRegistrarTab } from '@/components/ReservationRegistrarTab';
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 병원·원장 정보 페이지를 '원장정보' 탭으로 임베드.
@@ -66,7 +68,9 @@ interface RoomAssignmentRow {
 // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: 직접 진입(리다이렉트/북마크)로 열 수 있는 탭 화이트리스트.
 //   /admin/clinic-settings → /admin/staff?tab=clinic-info 리다이렉트가 이 탭을 자동 선택.
 // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더'(duty=원장 근무표) 탭은 최상위 [직원 근무 캘린더](/admin/handover)로 승격·흡수됨 → 여기서 제거(중복 노출 방지). 나머지 탭은 유지.
-const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings', 'assignment']);
+// T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: 'assignment'('배정 설정') 탭을 /admin/assignments 로 이동 →
+//   여기 화이트리스트에서 제거(직원·공간에는 더 이상 없음). 잔여 deep-link `?tab=assignment` 는 무효 → staff fallback.
+const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
 
 export default function StaffPage() {
   const { profile } = useAuth();
@@ -116,12 +120,8 @@ export default function StaffPage() {
               <Settings className="mr-1 h-4 w-4" /> 클리닉 설정
             </TabsTrigger>
           )}
-          {/* T-20260726-foot-CRM-ASSIGN-V1 실행6: 상담 자동배정 설정 탭(admin/manager/director). */}
-          {isAdmin && (
-            <TabsTrigger value="assignment">
-              <Shuffle className="mr-1 h-4 w-4" /> 배정 설정
-            </TabsTrigger>
-          )}
+          {/* T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: '배정 설정' 탭 제거 —
+              [상담·치료사 배정](/admin/assignments) [랭킹] 탭 우측으로 cross-section 이동. */}
         </TabsList>
         {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: duty TabsContent 제거 — 원장 근무표는 /admin/handover 로 이관 */}
         <TabsContent value="staff">{clinic && <StaffTab clinic={clinic} />}</TabsContent>
@@ -138,12 +138,8 @@ export default function StaffPage() {
             {clinic && <ClinicSettingsTab clinic={clinic} onSaved={refetchClinic} />}
           </TabsContent>
         )}
-        {/* T-20260726-foot-CRM-ASSIGN-V1 실행6: 상담 자동배정 설정. */}
-        {isAdmin && (
-          <TabsContent value="assignment">
-            {clinic && <AssignmentSettingsTab clinic={clinic} />}
-          </TabsContent>
-        )}
+        {/* T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: '배정 설정' TabsContent 제거 —
+            /admin/assignments 의 [배정 설정] 탭으로 이동(AssignmentSettingsTab 렌더 위치 변경). */}
       </Tabs>
     </div>
   );
