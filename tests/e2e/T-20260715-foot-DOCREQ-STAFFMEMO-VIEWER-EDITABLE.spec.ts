@@ -134,7 +134,15 @@ test.describe('T-20260715-foot-DOCREQ-STAFFMEMO-VIEWER-EDITABLE — 실장 요�
     const q = queue();
     expect(q).toContain('data-testid="docreq-write-btn"');
     expect(q).toContain('작성하기');
-    expect(q).toContain('testId="docreq-rx-expand-pop"');
+    // RXCLIN 처방내역/임상경과 미리보기 표현 회귀 없음.
+    //   ★stale-drift 정합(T-20260805-foot-DOCSPEC-STALE-HYGIENE-2): 원 단언 'testId="docreq-rx-expand-pop"'
+    //   는 T-20260729-foot-ALIMPAN-RX-MULTILIST-ALWAYSVISIBLE 배포로 삭제됨(처방내역=클릭 드롭다운 제거 →
+    //   당일 처방약 전건 셀 안 상시 표기). 검증 의도('RXCLIN 미리보기 존재+무회귀')는 現 라이브 표현으로 보존:
+    //     처방내역 = 상시 표기 셀(docreq-cell-rx) + 전건 나열(docreq-rx-list),
+    //     임상경과 = RXCLIN 컬럼-앵커 드롭다운(docreq-clinical-expand-pop) 유지.
+    expect(q).toContain('data-testid="docreq-cell-rx"');
+    expect(q).toContain("data-testid={rx ? 'docreq-rx-list' : undefined}");
+    expect(q).toContain('testId="docreq-clinical-expand-pop"');
     // CANCEL 취소버튼(T-20260715-DOCREQ-CANCEL-BTN-CHART2) 회귀 없음.
     expect(q).toContain('data-testid="docreq-cancel-btn"');
     expect(q).toContain('data-testid="docreq-cancel-confirm-btn"');
