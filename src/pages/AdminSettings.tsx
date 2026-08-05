@@ -33,6 +33,11 @@ import {
   getSeatId,
   type TidRegistryVerdict,
 } from '@/lib/cband/tidRegistryGate';
+import {
+  classifyBizno,
+  formatBizno,
+  type BiznoVerdict,
+} from '@/lib/cband/biznoValidation';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/lib/toast';
@@ -1847,8 +1852,16 @@ function SectionSelfCheckinQR({ clinic }: { clinic: Clinic }) {
 //   AC-2: 입력 TID 가 registry allowlist 와 불일치/미등록이면 저장 전 soft 경고 + 구조화 로깅.
 //         ★자매 REGISTRY-GATE(결제 커밋 경로 게이트)와 tidRegistryGate 로직 공유(중복 구현 회피).
 //         여기는 '등록 시점' UX 가드 — hard-block 아님(저장은 계속, 흔적만 남긴다).
+//
+// T-20260805-foot-TERMINAL-REGISTER-BIZNO-VALIDATION (UX-GUARD · spin-off of REDPAY-INVISIBLE ④)
+//   위 VERIFY-UX 의 정적 가이드/TID축 위에 사업자번호 값 자체를 능동 대조하는 축을 추가.
+//   AC-1: 스태프가 910115 조회 화면의 사업자번호를 입력 → biznoValidation.classifyBizno 로 기대값 대조.
+//   AC-2: 구번호(511-60-00988)/불일치 감지 → 저장 confirm 게이트(soft-block) + confirm-through 감사 로깅.
+//         ★hard-block 아님(현장 확인 게이트, AC-2 단서) — 명시 확인 체크 시 저장 진행.
+//   AC-3: 910115 조회 API 부재(census) → 자동 취득 불가 → 스태프 수동 입력 기반 대조로 착지.
 
 // 이 가맹점의 올바른 사업자번호 — 현장 [특수]→시스템→910115→가맹점정보조회 값과 대조.
+//   ★값 SSOT = biznoValidation 모듈(classifyBizno 기본값과 동일). 여기 리터럴은 표시/문구 검수용.
 const EXPECTED_FOOT_BIZNO = '457-23-00938';
 // 정산 사각을 만든 구(舊) 사업자번호 — 단말이 이 번호를 물고 있으면 RedPay 조회 0건.
 const STALE_FOOT_BIZNO = '511-60-00988';
@@ -1864,10 +1877,27 @@ function SectionTerminal() {
   const [persisted, setPersisted] = useState(existing != null);
   // AC-2: TID↔registry 대조 판정. null=미대조(입력 변경 후 초기화). 저장 시점에 세팅.
   const [tidVerdict, setTidVerdict] = useState<TidRegistryVerdict | null>(null);
+  // ── TERMINAL-REGISTER-BIZNO-VALIDATION ──────────────────────────────────────
+  // 스태프가 단말 910115 조회 화면에서 읽은 사업자번호를 입력 → 능동 대조(AC-1·AC-2).
+  //   biznoInput = 입력 원문(하이픈 포함 가능), biznoVerdict = 실시간 대조 결과(순수 파생).
+  //   confirmStale = 구번호/불일치 상태에서도 저장을 계속하겠다는 명시 확인(soft-block 해제).
+  const [biznoInput, setBiznoInput] = useState('');
+  const [confirmStale, setConfirmStale] = useState(false);
+  const biznoVerdict: BiznoVerdict = classifyBizno(biznoInput);
 
   const handleSave = async () => {
     const t = tid.trim();
     const p = catPort.trim();
+    // AC-2 soft-block: 사업자번호가 구번호/불일치인데 명시 확인이 없으면 저장 보류(confirm 게이트).
+    //   ★hard-block 아님 — 확인 체크 시 저장 진행. 미입력(empty)은 막지 않음(현장 확인 게이트, AC-2 단서).
+    if (biznoVerdict.shouldBlock && !confirmStale) {
+      toast.error(
+        biznoVerdict.status === 'stale'
+          ? '입력한 사업자번호가 옛 번호(정산 누락 유발)입니다. 단말 사업자번호를 먼저 바꾸거나, 아래 확인란을 체크해야 저장됩니다.'
+          : '입력한 사업자번호가 이 가맹점 번호와 다릅니다. 다시 확인하거나, 아래 확인란을 체크해야 저장됩니다.',
+      );
+      return;
+    }
     // ★TID·COM포트만 필수(단말 거부 방지, config.ts 실측#1).
     //   ★FIX-3(MERNO-REQFIELD-BUG): MERNO(가맹점번호) 필수 칸 제거 — 결제 '요청'에 쓰이는 값이 아니라
     //   승인 '응답'에서만 오므로 결제 前 입력 대상이 아니다(순환참조 해소). 기존 저장값(env/legacy)은
@@ -1890,8 +1920,26 @@ function SectionTerminal() {
         });
         toast.warning('입력한 단말기 번호가 등록된 목록에 없습니다. 사업자번호를 다시 확인해 주세요.');
       }
+      // 사업자번호 confirm-through(구번호/불일치인데 확인 체크로 강행) = 감사 흔적(정산 사각 사후추적).
+      //   스키마 무변 — tidRegistryGate 로깅과 동일 구조화 console 흔적.
+      if (biznoVerdict.shouldBlock) {
+        console.warn(
+          '[cband][bizno-gate][CONFIRM-THROUGH] ' +
+            JSON.stringify({
+              event: 'bizno_confirm_through',
+              status: biznoVerdict.status,
+              enteredBizno: biznoVerdict.formatted,
+              expectedBizno: EXPECTED_FOOT_BIZNO,
+              tid: t,
+              seatId: getSeatId(),
+              clinicId: clinic?.id ?? null,
+              at: new Date().toISOString(),
+            }),
+        );
+      }
       saveTerminalConfig({ tid: t, merno: existing?.merno ?? '', catPort: p });
       setPersisted(true);
+      setConfirmStale(false);
       toast.success('이 PC의 카드 단말기 설정을 저장했습니다. 재부팅해도 자동으로 채워집니다.');
     } catch (err) {
       toast.error(`저장 실패: ${extractErrorMsg(err)}`);
@@ -1954,6 +2002,62 @@ function SectionTerminal() {
       )}
 
       <div className="rounded-lg border p-4 space-y-5">
+        {/* AC-1·AC-2: 단말 910115 조회 화면의 사업자번호를 스태프가 입력 → 능동 대조.
+            구번호(511-60-00988)/불일치면 저장이 confirm 게이트로 막힌다(soft-block). */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">단말 사업자번호 확인</label>
+          <Input
+            value={biznoInput}
+            onChange={(e) => { setBiznoInput(formatBizno(e.target.value)); setConfirmStale(false); }}
+            placeholder={`예: ${EXPECTED_FOOT_BIZNO}`}
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-12 text-lg tabular-nums"
+            data-testid="terminal-bizno-input"
+          />
+          <p className="text-xs text-muted-foreground">
+            단말 <b>[특수]→1.시스템→910115→가맹점정보조회</b> 화면에 나온 사업자번호를 그대로 입력하세요.
+            입력한 번호를 저장 전에 자동으로 확인합니다.
+          </p>
+          {biznoVerdict.status === 'match' && (
+            <div className="flex items-center gap-2 text-sm text-emerald-700" data-testid="terminal-bizno-match">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              사업자번호가 올바릅니다.
+            </div>
+          )}
+          {biznoVerdict.status === 'stale' && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900" data-testid="terminal-bizno-stale">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-600" />
+              <span className="leading-relaxed">
+                입력한 번호는 <b>옛 사업자번호</b>입니다. 이 번호로 저장하면 카드 결제가 정산에 잡히지 않습니다.
+                단말에서 사업자번호를 <b className="tabular-nums">{EXPECTED_FOOT_BIZNO}</b> 로 먼저 바꾼 뒤 저장하세요.
+              </span>
+            </div>
+          )}
+          {biznoVerdict.status === 'mismatch' && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" data-testid="terminal-bizno-mismatch">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+              <span className="leading-relaxed">
+                입력한 번호가 이 가맹점 사업자번호(<b className="tabular-nums">{EXPECTED_FOOT_BIZNO}</b>)와 다릅니다.
+                단말 화면과 다시 대조해 주세요.
+              </span>
+            </div>
+          )}
+          {/* soft-block 해제 confirm — 구번호/불일치인데도 저장을 계속하려면 명시 확인. */}
+          {biznoVerdict.shouldBlock && (
+            <label className="flex items-start gap-2 text-sm text-red-900 cursor-pointer" data-testid="terminal-bizno-confirm">
+              <input
+                type="checkbox"
+                checked={confirmStale}
+                onChange={(e) => setConfirmStale(e.target.checked)}
+                className="mt-1 h-4 w-4"
+                data-testid="terminal-bizno-confirm-checkbox"
+              />
+              <span>사업자번호가 다르지만 담당자 확인 후 그대로 저장합니다.</span>
+            </label>
+          )}
+        </div>
+
         <div className="space-y-2">
           <label className="text-sm font-medium">단말기 번호 (TID)</label>
           <Input
