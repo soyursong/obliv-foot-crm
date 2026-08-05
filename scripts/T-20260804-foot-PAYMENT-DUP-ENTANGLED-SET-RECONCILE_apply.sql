@@ -223,10 +223,10 @@ BEGIN
 
   -- (c) orphan 환불 0: deleted payment 를 가리키는 활성 환불 부재
   SELECT count(*) INTO v_orphan_refunds
-    FROM public.payments r
-    JOIN public.payments t ON t.id = r.linked_payment_id
-   WHERE r.customer_id = v_cust AND r.status = 'active'
-     AND r.payment_type = 'refund' AND t.status = 'deleted';
+    FROM public.payments rf
+    JOIN public.payments tp ON tp.id = rf.linked_payment_id
+   WHERE rf.customer_id = v_cust AND rf.status = 'active'
+     AND rf.payment_type = 'refund' AND tp.status = 'deleted';
   IF v_orphan_refunds <> 0 THEN
     RAISE EXCEPTION 'ORACLE-FAIL orphan 환불 % (기대 0)', v_orphan_refunds;
   END IF;
