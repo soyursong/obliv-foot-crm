@@ -583,6 +583,43 @@ export function footBillDetailCategory(service: BillingService, covered: boolean
   return covered ? '이학요법료' : '기타';
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * T-20260805-foot-EXAMFEE-BILLING-SVCCODE-EXPLICIT-LIST — 진찰료/가산 판정 service_code 명시목록(SSOT)
+ *
+ * 배경(취약점): hira_category 미적재(NULL) 급여행의 진찰료-adjacent 판정을 **서비스명 정규식**
+ *   (/진찰|상담|초진|재진/, /진찰료|상담/)에 의존하면, 관리자가 항목명만 바꿔도 청구 금액이 반전된다
+ *   (실측 6/6: AA154/AA254 명칭변경 → flat 고시액 O→X, AA222 명칭변경 → 야간·공휴일 가산 소멸).
+ *
+ * 교체: 명칭 regex → HIRA service_code 명시목록. hira_category='consultation'(권위 enum)이 있으면
+ *   그 축이 여전히 1순위(불변) — 목록은 hira_category=NULL 폴백 경로에서만 명칭 대신 코드로 매칭한다.
+ *   판정결과는 활성 급여행 기준 명칭 regex 와 100% 동일(AC-0 그라운딩 실증: active-row mismatch=0).
+ *
+ * ★ 두 목록은 이 두 상수가 유일 정의 지점(SSOT) — 하드코딩 산재 금지.
+ *   - SURCHARGE: 야간/공휴일/토요일 30% 가산 base 대상(의원급 진찰료 축). AA222(재진-시술받은 경우)
+ *     포함 = 가산은 진찰료-adjacent 까지 산입.
+ *   - FLAT: 정부 공표 flat 고시액(services.price) 사용 대상. **AA222 배제** = AA222 amount 는 시술
+ *     base RVU 축(1원 4사5입 canon, score 49.09)이지 flat 고시액이 아니다(DA §10-2 census).
+ *
+ * ⚠ scalp2(obliv-scalp2-crm) 등 cross-fork byte-mirror 대상 — 동일 명시목록 지문 그대로 이식.
+ * ─────────────────────────────────────────────────────────────────────────── */
+/** 야간/공휴일/토요일 30% 가산 base 대상 진찰료 service_code (isConsultationFeeItem 폴백). */
+export const SURCHARGE_EXAM_FEE_SERVICE_CODES: ReadonlySet<string> = new Set([
+  'AA154', // 초진진찰료-의원
+  'AA254', // 재진진찰료-의원
+  'AA222', // 재진-물리치료,주사 등 시술받은 경우(재진 진찰료-adjacent)
+]);
+/** 정부 공표 flat 고시액(services.price) 사용 대상 service_code (isFlatPublishedExamFee 폴백). AA222 배제. */
+export const FLAT_PUBLISHED_EXAM_FEE_SERVICE_CODES: ReadonlySet<string> = new Set([
+  'AA154', // 초진진찰료-의원
+  'AA254', // 재진진찰료-의원
+]);
+
+/** service_code 가 주어진 명시목록에 속하는지 — null/blank 코드는 항상 false. */
+function hasExamFeeCode(svc: BillingService, codes: ReadonlySet<string>): boolean {
+  const code = svc.service_code ?? '';
+  return code !== '' && codes.has(code);
+}
+
 /**
  * ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──────────────────────────────
  * 야간/공휴일/토요일 30% 가산의 canon 적용 대상 판정 = **의원급 진찰료(초진/재진 진찰료·의사상담)
@@ -601,23 +638,23 @@ export function footBillDetailCategory(service: BillingService, covered: boolean
  *   0) 급여(getTaxClass==='급여')가 아니면 즉시 false (가산은 급여 진찰료 전용).
  *   1) hira_category(권위 enum) 존재 → 'consultation' 만 진찰료(true). examination(균검사)/procedure/
  *      prescription 등은 false. (라이브 예: 'KOH 균검사'=examination → 제외, '진찰료(초진)'=consultation → 포함.)
- *   2) hira_category 미적재(null) → category_label==='기본'(진찰료 버킷) AND 진찰료성 명칭(진찰/상담/초진/재진).
- *      '기본' 급여라도 단순처치 등 처치성 항목은 명칭 불일치로 제외(처치료 canon 밖). '검사'/'풋케어' 등
- *      다른 label 은 애초에 여기 도달 안 함(false). (라이브 예: '초진진찰료'·'재진진찰료-의원'·'재진-물리
- *      치료,주사 등 시술받은 경우'(재진 진찰료)·'의사전화상담' → 포함 / '단순처치 [1일]' → 제외.)
+ *   2) hira_category 미적재(null) → SURCHARGE_EXAM_FEE_SERVICE_CODES(AA154/AA254/AA222) 명시목록 매칭.
+ *      (T-20260805-EXAMFEE-BILLING-SVCCODE-EXPLICIT-LIST: 명칭 regex 폐지 — 명칭변경 청구조작 취약점 봉합.
+ *       판정결과는 활성 급여행 기준 종전 /진찰|상담|초진|재진/ 와 100% 동일. 라이브 예: 초진진찰료-의원
+ *       (AA154)·재진진찰료-의원(AA254)·재진-물리치료,주사 등 시술받은 경우(AA222) → 포함 / 단순처치(M0111)
+ *       ·비대상 코드 → 제외.)
  *
- * ※ scalp2(obliv-scalp2-crm) byte-mirror 대상 — 동일 predicate 지문 그대로 이식(가산 base=진찰료-only).
+ * ※ scalp2(obliv-scalp2-crm) byte-mirror 대상 — 동일 명시목록 지문 그대로 이식(가산 base=진찰료-only).
  */
 export function isConsultationFeeItem(
   svc: BillingService,
   insuranceGrade: InsuranceGrade | null = null,
 ): boolean {
   if (getTaxClass(svc, insuranceGrade) !== '급여') return false;
-  // 1) HIRA enum(권위) 우선 — 'consultation' 만 진찰료
+  // 1) HIRA enum(권위) 우선 — 'consultation' 만 진찰료 (불변)
   if (svc.hira_category) return svc.hira_category === 'consultation';
-  // 2) category_label='기본'(진찰료 버킷) 중 진찰료성 명칭만(단순처치 등 처치성 제외)
-  if (svc.category_label === '기본') return /진찰|상담|초진|재진/.test(svc.name ?? '');
-  return false;
+  // 2) hira_category=NULL 폴백 — service_code 명시목록(SSOT) 매칭 (명칭 regex 대체)
+  return hasExamFeeCode(svc, SURCHARGE_EXAM_FEE_SERVICE_CODES);
 }
 
 /**
@@ -626,13 +663,16 @@ export function isConsultationFeeItem(
  * gosia_axis_reconcile_20260805 §4-1/§4-2). 이 술어가 true 인 항목은 amount 를 score×환산지수
  * 도출이 아니라 services.price(공표 고시액)로 산출한다(coveredBaseUnit carve-out).
  *
- * ★ isConsultationFeeItem(가산 base 용, /진찰|상담|초진|재진/)과 의도적으로 다른(더 좁은) 술어다:
+ * ★ isConsultationFeeItem(가산 base 용, SURCHARGE_EXAM_FEE_SERVICE_CODES)과 의도적으로 다른(더 좁은) 술어다:
  *   - 가산(야간/공휴)은 AA222(재진-물리치료,주사 등 시술받은 경우)까지 진찰료-adjacent 로 포함하나,
  *     AA222 의 AMOUNT 는 시술 base RVU 축(1원 4사5입 canon, score 49.09)이지 flat 고시액이 아니다
- *     (DA §10-2 census). 따라서 amount carve-out 은 '진찰료'/'상담' 명칭만 매칭해 AA222 를 배제한다.
- *   - 매칭: 초진진찰료/재진진찰료/의사전화상담 등(=정부 공표 flat 고시액 보유) ⊂ isConsultationFeeItem.
+ *     (DA §10-2 census). 따라서 amount carve-out 목록(FLAT_PUBLISHED_EXAM_FEE_SERVICE_CODES)은
+ *     AA222 를 배제한다(= SURCHARGE 목록 − AA222).
+ *   - 매칭: AA154 초진진찰료·AA254 재진진찰료(=정부 공표 flat 고시액 보유) ⊂ isConsultationFeeItem.
  *
- * ※ price>0(고시액 실재) 가드는 호출부(coveredBaseUnit)에서 적용 — 술어는 순수 identity 판정.
+ * ★ T-20260805-EXAMFEE-BILLING-SVCCODE-EXPLICIT-LIST: 명칭 regex(/진찰료|상담/) 폐지 → service_code
+ *   명시목록 매칭. 명칭변경 청구조작 취약점 봉합. 판정결과는 활성 급여행 기준 종전 regex 와 100% 동일.
+ * ※ price>0(고시액 실재) 가드는 호출부(coveredBaseUnit)에서 적용 — 술어는 순수 identity 판정(불변).
  * ※ cross-fork(body 도수·women·scalp2) 진찰료 보유 시 동형 carve-out 대상(별건 note, DA §6).
  */
 export function isFlatPublishedExamFee(
@@ -640,12 +680,10 @@ export function isFlatPublishedExamFee(
   insuranceGrade: InsuranceGrade | null = null,
 ): boolean {
   if (getTaxClass(svc, insuranceGrade) !== '급여') return false;
-  // 1) HIRA enum(권위) 우선 — 'consultation' = 진찰료 축
+  // 1) HIRA enum(권위) 우선 — 'consultation' = 진찰료 축 (불변)
   if (svc.hira_category) return svc.hira_category === 'consultation';
-  // 2) category_label='기본' 중 '진찰료'/'상담' 명칭만 — 시술-linked 재진(AA222 물리치료)은
-  //    명칭에 '진찰료' 없음 → 자연 배제(시술 base 1원 canon 무접촉).
-  if (svc.category_label === '기본') return /진찰료|상담/.test(svc.name ?? '');
-  return false;
+  // 2) hira_category=NULL 폴백 — service_code 명시목록(SSOT, AA222 배제) 매칭 (명칭 regex 대체)
+  return hasExamFeeCode(svc, FLAT_PUBLISHED_EXAM_FEE_SERVICE_CODES);
 }
 
 /**

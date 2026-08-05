@@ -36,11 +36,14 @@ import { buildSurchargeDetailRowHtml } from '../../src/lib/htmlFormTemplates';
 const at = (y: number, m: number, d: number, hh: number, mm = 0) => new Date(y, m - 1, d, hh, mm);
 
 // ── 라이브 census 미러 서비스 fixture (급여판정: is_insurance_covered=true → 급여) ──
-const svcConsultInit: BillingService = { id: 's-init', name: '초진진찰료', category_label: '기본', is_insurance_covered: true, price: 12000 };
-const svcConsultReDoc: BillingService = { id: 's-redoc', name: '재진진찰료-의원', category_label: '기본', is_insurance_covered: true, price: 9000 };
+// T-20260805-foot-EXAMFEE-BILLING-SVCCODE-EXPLICIT-LIST: 진찰료 판정이 명칭 regex → service_code
+//   명시목록으로 교체됨. fixture 에 실 prod service_code 를 부여(prod census 2026-08-05 실측).
+const svcConsultInit: BillingService = { id: 's-init', name: '초진진찰료', service_code: 'AA154', category_label: '기본', is_insurance_covered: true, price: 12000 };
+const svcConsultReDoc: BillingService = { id: 's-redoc', name: '재진진찰료-의원', service_code: 'AA254', category_label: '기본', is_insurance_covered: true, price: 9000 };
 const svcConsultHira: BillingService = { id: 's-hira', name: '진찰료 (초진)', category_label: null, hira_category: 'consultation', hira_code: 'AA154', is_insurance_covered: true, price: 15000 };
-const svcConsultPhone: BillingService = { id: 's-phone', name: '의사전화상담', category_label: '기본', is_insurance_covered: true, price: 5000 };
-const svcConsultReProc: BillingService = { id: 's-reproc', name: '재진-물리치료,주사 등 시술받은 경우', category_label: '기본', is_insurance_covered: true, price: 6000 };
+// 의사전화상담 = AA157 = prod 비활성(active=false) + 본 티켓 명시목록 밖(정리 후속 티켓 분기) → 가산 대상 아님.
+const svcConsultPhone: BillingService = { id: 's-phone', name: '의사전화상담', service_code: 'AA157', category_label: '기본', is_insurance_covered: true, price: 5000 };
+const svcConsultReProc: BillingService = { id: 's-reproc', name: '재진-물리치료,주사 등 시술받은 경우', service_code: 'AA222', category_label: '기본', is_insurance_covered: true, price: 6000 };
 // 균검사 (급여) — 반드시 가산 제외
 const svcGyunLabel: BillingService = { id: 's-gyun1', name: '일반진균검사-KOH도말-조갑조직', category_label: '검사', is_insurance_covered: true, price: 20000 };
 const svcGyunHira: BillingService = { id: 's-gyun2', name: 'KOH 균검사', category_label: null, hira_category: 'examination', hira_code: 'D6591', is_insurance_covered: true, price: 8000 };
@@ -56,12 +59,15 @@ const item = (service: BillingService, qty = 1, unitPrice?: number): FootBilling
 });
 
 test.describe('isConsultationFeeItem — 진찰료 정밀 판정(균검사·처치·처방·비급여 제외)', () => {
-  test('진찰료 급여 = true (label=기본 진찰료류 + hira_cat=consultation)', () => {
-    expect(isConsultationFeeItem(svcConsultInit)).toBe(true);   // 초진진찰료
-    expect(isConsultationFeeItem(svcConsultReDoc)).toBe(true);  // 재진진찰료-의원
-    expect(isConsultationFeeItem(svcConsultHira)).toBe(true);   // 진찰료(초진) consultation enum
-    expect(isConsultationFeeItem(svcConsultPhone)).toBe(true);  // 의사전화상담
-    expect(isConsultationFeeItem(svcConsultReProc)).toBe(true); // 재진-물리치료… (재진 진찰료)
+  test('진찰료 급여 = true (service_code 명시목록 AA154/AA254/AA222 + hira_cat=consultation)', () => {
+    expect(isConsultationFeeItem(svcConsultInit)).toBe(true);   // 초진진찰료 AA154
+    expect(isConsultationFeeItem(svcConsultReDoc)).toBe(true);  // 재진진찰료-의원 AA254
+    expect(isConsultationFeeItem(svcConsultHira)).toBe(true);   // 진찰료(초진) consultation enum(권위축)
+    expect(isConsultationFeeItem(svcConsultReProc)).toBe(true); // 재진-물리치료… AA222 (재진 진찰료)
+    // T-20260805-EXAMFEE-BILLING-SVCCODE-EXPLICIT-LIST: 의사전화상담 AA157 = 비활성 + 명시목록 밖 →
+    //   가산 대상 아님(false). 종전 명칭 regex('상담') 매칭에서 배제 — 명칭변경 취약점 봉합의 일부.
+    //   (AA157 정리/재편입은 후속 티켓 분기. 비활성 행이라 실 청구영향 0.)
+    expect(isConsultationFeeItem(svcConsultPhone)).toBe(false); // 의사전화상담 AA157 (비활성·목록밖)
   });
 
   test('★균검사 급여 = false (검사료는 canon 밖 — 본 버그의 핵심)', () => {
