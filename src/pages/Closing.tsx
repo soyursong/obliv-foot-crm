@@ -237,6 +237,11 @@ interface EnrichedRow {
   refund_time?: string | null;
   /** 원결제행에 병합된 환불 총액(양수 합). */
   refund_amount?: number;
+  /** T-20260805-foot-CLOSING-PAYDETAIL-REFUND-PROCESSOR-DISPLAY: 원결제행에 병합된 환불의 실제 처리자
+   *  (환불행 processor_name = payments/package_payments.created_by→user_profiles.name).
+   *  ⚠ staff_name(고객 배정담당)과 별개 축 — '환불처리 직원명'. 매출집계>환자별 탭(SalesPatientTab '처리 직원명')과 parity.
+   *  다건 병합 시 refund_date/time 과 동일하게 '마지막(최신) 환불'의 처리자를 표기. 미기록 → null('—'). */
+  refund_processor_name?: string | null;
   /** 환불행 → 원결제행 매칭 키(단건=linked_payment_id / 패키지=parent_payment_id). */
   linked_payment_id?: string | null;
   parent_payment_id?: string | null;
@@ -1097,6 +1102,9 @@ export default function Closing() {
       // 마지막(최신) 환불 신청 시각을 원결제행에 표기
       orig.refund_date = r.pay_date;
       orig.refund_time = r.pay_time;
+      // T-20260805-foot-CLOSING-PAYDETAIL-REFUND-PROCESSOR-DISPLAY: 환불 처리자(환불행 created_by→name)를 원결제행에 승계.
+      //   refund_date/time 과 동일 규칙(마지막 환불 기준). 배정담당(orig.staff_name)과 별개 축. 미기록 → null('—').
+      orig.refund_processor_name = r.processor_name ?? null;
     }
 
     rows.sort((a, b) => a.sort_key.localeCompare(b.sort_key));
@@ -1113,6 +1121,16 @@ export default function Closing() {
   // AC-B1: 잔여 환불가능 0(원결제 ≤ 누적 환불) → 완전환불 = 재환불 불가.
   const isFullyRefunded = (r: EnrichedRow): boolean =>
     (r.source === 'payment' || r.source === 'package') && r.amount > 0 && refundedTotalForRow(r) >= r.amount;
+  // T-20260805-foot-CLOSING-PAYDETAIL-REFUND-PROCESSOR-DISPLAY: 결제내역 표시행의 '환불처리 직원명' 산출.
+  //   ① 병합된 환불(원결제행): refund_processor_name(승계분) → 당일 환불행의 처리자.
+  //   ② 병합 안 된 자체 환불행(고아 환불, 원결제 당일 목록에 없음): 행 자체 processor_name = 환불 처리자.
+  //   ★ 교차일 누적 환불(refundedTotalForRow>0·당일 refunded 아님)은 환불행이 당일 로드 스코프 밖 → 처리자 미표시(날조 금지).
+  //   반환 { has, name }: has=true 면 환불 처리자 라인 노출('—' 포함), false 면 미노출.
+  const refundProcessorForRow = (r: EnrichedRow): { has: boolean; name: string | null } => {
+    if (r.refunded) return { has: true, name: r.refund_processor_name ?? null };
+    if (r.payment_type === 'refund') return { has: true, name: r.processor_name ?? null };
+    return { has: false, name: null };
+  };
   // 환불창 오픈 시 같은 고객(row_customer_id)의 환불 가능 결제행(payment/package, 환불행 제외) 묶음.
   //   row_customer_id 없으면(고객 미매칭 payment 등) 해당 행 단독.
   const gatherCustomerRefundRows = (r: EnrichedRow): EnrichedRow[] => {
@@ -2242,7 +2260,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="px-2 py-1.5 text-xs">{r.visit_type_label}</td>
                         <td className="px-2 py-1.5 text-xs">{r.lead_source ?? '-'}</td>
                         {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' (AC-1 라벨 결제담당→담당자) */}
-                        <td className="px-2 py-1.5 text-xs">{r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}</td>
+                        {/* T-20260805-foot-CLOSING-PAYDETAIL-REFUND-PROCESSOR-DISPLAY: 환불 행에 '환불처리 직원명'(created_by) 병기.
+                            매출집계>환자별 탭(SalesPatientTab '처리 직원명') parity. staff_name(배정담당)과 별개 축 — 라벨로 명시 구분. 미기록 '—'. */}
+                        <td className="px-2 py-1.5 text-xs">
+                          {r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}
+                          {(() => {
+                            const rp = refundProcessorForRow(r);
+                            if (!rp.has) return null;
+                            return (
+                              <div className="text-[10px] text-red-600 leading-tight" data-testid="closing-paydetail-refund-processor">
+                                환불처리 {rp.name ?? '—'}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                           {r.payment_type === 'refund' ? '-' : ''}{formatAmount(r.amount)}
                           {/* T-20260715 REQ②: 원결제행에 병합된 환불액(양수) 병기 */}
