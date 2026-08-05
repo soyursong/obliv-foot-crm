@@ -25,10 +25,12 @@ import {
 import {
   fetchMtmCardMetrics,
   fetchMonthlyComparison,
+  fetchStaffDailyBreakdown,
   fetchNoshowReturningPrev,
   projectMonthlyRevenue,
   type MtmCardMetrics,
   type MonthlyComparison,
+  type StaffDailyBreakdown,
   type NoshowPrevCompare,
 } from '@/lib/mtmSales';
 import { downloadConsultantSalesReport } from '@/lib/consultantSalesExport';
@@ -112,6 +114,7 @@ export default function Stats() {
   // T-20260804-foot-MTM-SALES-DASH-RESTRUCTURE: 01 카드 확장지표 · 02 전월비교 · 05 전월노쇼.
   const [mtmMetrics, setMtmMetrics]                 = useState<MtmCardMetrics | null>(null);
   const [monthlyCompare, setMonthlyCompare]         = useState<MonthlyComparison | null>(null);
+  const [staffDaily, setStaffDaily]                 = useState<StaffDailyBreakdown | null>(null);
   const [noshowPrev, setNoshowPrev]                 = useState<NoshowPrevCompare | null>(null);
   const [therapistSummary, setTherapistSummary]     = useState<TherapistSummaryRow[]>([]);
   const [therapistServices, setTherapistServices]   = useState<TherapistServiceRow[]>([]);
@@ -134,13 +137,14 @@ export default function Stats() {
         if (tab === 'revenue') {
           // MTM 5섹션: 기존 4종(매출/시술별/실장/노쇼) + MTM 확장 3종(01 카드지표·02 전월비교·05 전월노쇼).
           //   refISO=from 기준 달의 1일~말일 경계로 전월 비교를 계산(선택 기간과 무관하게 월 단위).
-          const [rev, cat, cons, nsr, mtm, cmp, nprev] = await Promise.all([
+          const [rev, cat, cons, nsr, mtm, cmp, staffBd, nprev] = await Promise.all([
             fetchRevenue(clinic.id, from, to),
             fetchCategoryRevenue(clinic.id, from, to),
             fetchConsultantPerf(clinic.id, from, to),
             fetchNoshowReturning(clinic.id, from, to),
             fetchMtmCardMetrics(clinic.id, from, to),
             fetchMonthlyComparison(clinic.id, from),
+            fetchStaffDailyBreakdown(clinic.id, from),
             fetchNoshowReturningPrev(clinic.id, from),
           ]);
           if (aborted) return;
@@ -150,6 +154,7 @@ export default function Stats() {
           setNoshowReturning(nsr);
           setMtmMetrics(mtm);
           setMonthlyCompare(cmp);
+          setStaffDaily(staffBd);
           setNoshowPrev(nprev);
         } else if (tab === 'tm') {
           const data = await fetchTmAggregate(clinic.id, from, to);
@@ -313,7 +318,7 @@ export default function Stats() {
           {/* T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT: 01 매출통계 맨 상단 목표/달성률 (AC-5: RevenueSection 바로 위) */}
           <MonthlyTargetSection clinicId={clinic?.id} refISO={rangeFrom} />
           <RevenueSection rows={revenue} loading={loading} metrics={mtmMetrics} projectedMonthly={projectedMonthly} />
-          <MonthlyComparisonSection data={monthlyCompare} loading={loading} />
+          <MonthlyComparisonSection data={monthlyCompare} staffBreakdown={staffDaily} loading={loading} />
           <CategorySection rows={categories} loading={loading} />
           <ConsultantSection rows={consultants} loading={loading} totalNetRevenue={revenueNetTotal} />
           <NoshowReturningSection rows={noshowReturning} loading={loading} prev={noshowPrev} />

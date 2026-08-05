@@ -306,6 +306,163 @@ export async function fetchMonthlyComparison(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 02b 일별 매출 추이 — 실장(담당실장)별 breakdown
+//   T-20260805-foot-DAILYTREND-STAFF-BREAKDOWN-CLARIFY (AC-A).
+//   실장별 총매출 = SALESAGG-STAFF-4METRIC-REDEFINE(deployed) 정의를 **일자 grain**으로 재사용.
+//   ★신규 산식 창작 금지 — SalesDoctorTab(담당실장별) 로직/귀속 기준을 그대로 소비:
+//     · 총매출 = 패키지 결제 합산(payments tax_type='선수금' net)
+//               + 급여 본인부담금 합산(payments tax_type='급여' net)   [총괄 명시 산식 ④]
+//     · net = payment_type='refund' → 음수(환불 차감). accounting_date(판매/수납일) 축.
+//     · 담당실장 귀속 = customers.assigned_staff_id (SalesDoctorTab AC-2 동일 grain).
+//     · assigned_staff 없음 → '미지정' 버킷 명시(누락·오귀속 금지, 시나리오 2-2).
+//     · sim(테스트) 고객 결제는 방어필터로 제외(매출집계 탭과 동일 집합).
+//   read-only 집계. write/RPC/DDL 무접촉(db_change=false).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 담당실장 미지정 매출 버킷 sentinel(SalesDoctorTab UNASSIGNED 와 동일 의미). */
+export const STAFF_BREAKDOWN_UNASSIGNED = '__UNASSIGNED__';
+
+export interface StaffDailyCol {
+  id: string;     // staff UUID or STAFF_BREAKDOWN_UNASSIGNED
+  name: string;   // 실명 or '미지정'
+  total: number;  // 당월 실장 총합(net)
+}
+
+export interface StaffDailyRow {
+  day: number;                      // 1~말일
+  isFuture: boolean;                // 현재월 미래일 → 표시 '-'(0 오도 금지)
+  byStaff: Record<string, number>;  // staffId → 당일 총매출(net)
+  total: number;                    // 당일 전 실장 합
+}
+
+export interface StaffDailyBreakdown {
+  staff: StaffDailyCol[];  // 매출 내림차순 정렬, '미지정' 항상 최후미
+  rows: StaffDailyRow[];   // 1~말일
+  grandTotal: number;      // 당월 전체 합(= Σ staff.total)
+  monthLabel: string;      // "yyyy-MM"
+}
+
+interface StaffBreakdownPayRow {
+  amount: number;
+  payment_type: string | null;
+  tax_type: string | null;
+  accounting_date: string | null;
+  customer_id: string | null;
+}
+
+export async function fetchStaffDailyBreakdown(
+  clinicId: string,
+  refISO: string,
+): Promise<StaffDailyBreakdown> {
+  const cur = monthBounds(refISO);
+  const simIds = await getSimulationCustomerIds(clinicId);
+
+  // payments — 패키지(선수금) + 급여(본인부담금)만, accounting_date 축, deleted 제외.
+  const { data: pays, error: payErr } = await supabase
+    .from('payments')
+    .select('amount, payment_type, tax_type, accounting_date, customer_id')
+    .eq('clinic_id', clinicId)
+    .not('status', 'eq', 'deleted')
+    .in('tax_type', ['선수금', '급여'])
+    .gte('accounting_date', cur.from)
+    .lte('accounting_date', cur.to);
+  if (payErr) throw payErr;
+  const rows = excludeSimulationPaymentRows(
+    (pays ?? []) as StaffBreakdownPayRow[],
+    simIds,
+  );
+
+  // customer_id → assigned_staff_id (SalesDoctorTab 동일 3-step join).
+  const custIds = [
+    ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
+  ];
+  const custStaffMap = new Map<string, string>();
+  if (custIds.length > 0) {
+    const { data: custs, error: custErr } = await supabase
+      .from('customers')
+      .select('id, assigned_staff_id')
+      .in('id', custIds);
+    if (custErr) throw custErr;
+    for (const c of (custs ?? []) as {
+      id: string;
+      assigned_staff_id: string | null;
+    }[]) {
+      if (c.assigned_staff_id) custStaffMap.set(c.id, c.assigned_staff_id);
+    }
+  }
+
+  // staff_id → name.
+  const staffNameMap = new Map<string, string>();
+  const { data: staffList, error: staffErr } = await supabase
+    .from('staff')
+    .select('id, name')
+    .eq('clinic_id', clinicId);
+  if (staffErr) throw staffErr;
+  for (const s of (staffList ?? []) as { id: string; name: string }[]) {
+    staffNameMap.set(s.id, s.name);
+  }
+
+  // 집계: day → (staffId → net), staffId → net 총합.
+  const dayStaff = new Map<number, Map<string, number>>();
+  const staffTotals = new Map<string, number>();
+  for (const p of rows) {
+    if (!p.accounting_date) continue;
+    const day = Number(p.accounting_date.slice(8, 10));
+    if (!day) continue;
+    const staffId =
+      (p.customer_id && custStaffMap.get(p.customer_id)) ||
+      STAFF_BREAKDOWN_UNASSIGNED;
+    const net = p.payment_type === 'refund' ? -p.amount : p.amount;
+    if (!dayStaff.has(day)) dayStaff.set(day, new Map());
+    const dm = dayStaff.get(day)!;
+    dm.set(staffId, (dm.get(staffId) ?? 0) + net);
+    staffTotals.set(staffId, (staffTotals.get(staffId) ?? 0) + net);
+  }
+
+  // 실장 컬럼: 당월 활동 있는 실장만, 매출 내림차순, '미지정' 항상 최후미.
+  const staff: StaffDailyCol[] = [...staffTotals.entries()]
+    .map(([id, total]) => ({
+      id,
+      name:
+        id === STAFF_BREAKDOWN_UNASSIGNED
+          ? '미지정'
+          : staffNameMap.get(id) ?? '미지정',
+      total,
+    }))
+    .sort((a, b) => {
+      if (a.id === STAFF_BREAKDOWN_UNASSIGNED) return 1;
+      if (b.id === STAFF_BREAKDOWN_UNASSIGNED) return -1;
+      return b.total - a.total;
+    });
+
+  // 현재 KST 월이면 오늘 이후 날짜 = 미래(데이터 없음) → 셀 '-'(0 오도 금지).
+  const [ty, tm, td] = todaySeoulISODate().split('-').map(Number);
+  const isCurMonth = ty === cur.year && tm === cur.month;
+
+  const rowsOut: StaffDailyRow[] = [];
+  let grandTotal = 0;
+  for (let d = 1; d <= cur.daysInMonth; d++) {
+    const dm = dayStaff.get(d);
+    const byStaff: Record<string, number> = {};
+    let total = 0;
+    for (const col of staff) {
+      const v = dm?.get(col.id) ?? 0;
+      byStaff[col.id] = v;
+      total += v;
+    }
+    grandTotal += total;
+    rowsOut.push({
+      day: d,
+      isFuture: isCurMonth && d > td,
+      byStaff,
+      total,
+    });
+  }
+
+  return { staff, rows: rowsOut, grandTotal, monthLabel: cur.label };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 05 노쇼율/재방문율 — 전월 비교(평균) 데이터
 // ─────────────────────────────────────────────────────────────────────────────
 
