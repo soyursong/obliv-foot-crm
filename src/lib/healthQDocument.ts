@@ -15,6 +15,11 @@
 
 import { extractDisplayFields, FORM_TYPE_LABEL, type HQResult } from '@/components/HealthQResultsPanel';
 import { parseFootSites, type FootSide } from '@/components/FootSiteSelector';
+// T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER: 별도창 문서에 고객 첨부사진 주입(async).
+//   ResultCard(in-app)는 health_q_photos + signed URL 로 사진을 렌더하나, 별도창 문서(T-20260606)는
+//   폼필드/발톱SVG 만 렌더하고 사진을 포함한 적이 없었음 → 팝업에서 첨부사진 미표시.
+//   window.open 동기성(팝업차단) 보존을 위해 창을 먼저 열고, 사진은 async 로 창 DOM 에 주입한다.
+import { supabase } from '@/lib/supabase';
 
 interface DocumentOpts {
   customerName: string;
@@ -170,6 +175,14 @@ export function buildHealthQDocumentHtml(result: HQResult, opts: DocumentOpts): 
   .nail-box .legend{ margin-top:8px; text-align:center; font-size:10.5px; color:var(--muted); }
   .nail-box .legend .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; background:var(--primary-hi); border:1px solid var(--primary); vertical-align:-1px; margin-right:3px; }
   .empty{ margin-top:18px; padding:24px; text-align:center; font-size:13px; color:var(--muted); border:1px dashed var(--border); border-radius:10px; }
+  /* T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER: 고객 첨부사진 섹션(async 주입) */
+  .photo-sec .sec-title .badge-new{ margin-left:6px; font-size:10px; font-weight:700; color:var(--primary); background:var(--surface); border:1px solid var(--taupe); border-radius:999px; padding:1px 8px; }
+  .photo-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .photo-item{ border:1px solid var(--border); border-radius:10px; overflow:hidden; background:#fff; }
+  .photo-item img{ display:block; width:100%; aspect-ratio:1/1; object-fit:cover; }
+  .photo-item figcaption{ text-align:center; font-size:11px; font-weight:700; color:var(--label); background:var(--surface); padding:4px 0; }
+  .photo-loading{ font-size:11.5px; color:var(--muted); padding:6px 2px; }
+  @media print { .photo-grid{ grid-template-columns:repeat(3,1fr); } .photo-item img{ -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
   .doc-foot{ margin-top:18px; padding-top:12px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center; }
   .doc-foot .stamp{ font-size:10px; color:var(--muted); }
   .doc-foot .ro{ font-size:10px; color:var(--ink-soft); background:var(--surface); border:1px solid var(--border); padding:3px 10px; border-radius:999px; font-weight:600; }
@@ -196,6 +209,8 @@ export function buildHealthQDocumentHtml(result: HQResult, opts: DocumentOpts): 
       ${emptyNotice}
       ${nailSection}
       ${rows ? `<div class="section"><div class="sec-title"><span class="no">◆</span> 자가작성 응답</div><div class="qa">${rows}</div></div>` : ''}
+      <!-- T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER: 고객 첨부사진 mount (openHealthQDocumentWindow 가 async 로 채움) -->
+      <div id="hq-photo-mount"></div>
       <div class="doc-foot">
         <div class="stamp">본 문서는 환자 본인이 셀프접수 단계에서 직접 작성·제출한 내용을 그대로 이미지화한 것입니다.</div>
         <div class="ro">읽기 전용</div>
@@ -204,6 +219,62 @@ export function buildHealthQDocumentHtml(result: HQResult, opts: DocumentOpts): 
   </div>
 </body>
 </html>`;
+}
+
+// T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER
+//   첨부사진 섹션 HTML 을 빌드하는 순수함수(테스트 결정성 위해 분리 export).
+//   foot_side: R=오른발 / L=왼발 (ResultCard sideLabel 과 동일 SSOT).
+export function buildHealthQPhotoSectionHtml(
+  photos: Array<{ url: string; foot_side: string | null }>,
+): string {
+  if (!photos.length) return '';
+  const items = photos
+    .map((p) => {
+      const label = p.foot_side === 'R' ? '오른발' : p.foot_side === 'L' ? '왼발' : '첨부 사진';
+      return `<figure class="photo-item"><img src="${esc(p.url)}" alt="${esc(label)}" /><figcaption>${esc(label)}</figcaption></figure>`;
+    })
+    .join('');
+  return `
+      <div class="section photo-sec">
+        <div class="sec-title"><span class="no">◆</span> 고객 첨부 사진<span class="badge-new">고객 촬영</span></div>
+        <div class="photo-grid">${items}</div>
+      </div>`;
+}
+
+// T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER
+//   고객 첨부사진(health_q_photos)을 이미 열린 별도창의 #hq-photo-mount 에 async 주입.
+//   ResultCard 의 사진 로드 로직(HealthQResultsPanel.tsx 156~176)과 동일 SSOT:
+//     - health_q_photos: result_id 스코프 + sort_order(R→L) 정렬 (clinic RLS 는 테이블 정책이 강제).
+//     - foot-health-q-photos(private 버킷): createSignedUrl 30분 TTL.
+//   window.open 은 호출측에서 이미 동기 완료 → 여기서 await 해도 팝업차단과 무관.
+async function injectHealthQPhotos(win: Window, resultId: string): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('health_q_photos')
+      .select('id, storage_path, foot_side')
+      .eq('result_id', resultId)
+      .order('sort_order', { ascending: true });
+    if (error || !data || data.length === 0) return;
+
+    const rows = data as { id: string; storage_path: string; foot_side: string | null }[];
+    const signed = await Promise.all(
+      rows.map(async (p) => {
+        const { data: s } = await supabase.storage
+          .from('foot-health-q-photos')
+          .createSignedUrl(p.storage_path, 60 * 30); // 30분 TTL (ResultCard 와 동일)
+        return { url: s?.signedUrl ?? '', foot_side: p.foot_side };
+      }),
+    );
+    const photos = signed.filter((p) => p.url);
+    if (photos.length === 0) return;
+
+    const mount = win.document?.getElementById('hq-photo-mount');
+    if (!mount) return; // 창이 닫혔거나 문서 미준비
+
+    mount.innerHTML = buildHealthQPhotoSectionHtml(photos);
+  } catch {
+    // 주입 실패는 문서 본문 표시에 영향 없음(사진만 누락) — 조용히 무시.
+  }
 }
 
 /** 별도창(window.open) 으로 발건강질문지 자가작성 문서를 연다. */
@@ -220,12 +291,21 @@ export function openHealthQDocumentWindow(result: HQResult, opts: DocumentOpts):
     win.document.open();
     win.document.write(html);
     win.document.close();
+    // T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER: 창을 연 뒤 고객 첨부사진 async 주입.
+    void injectHealthQPhotos(win, result.id);
     return;
   }
   // 팝업 차단/핸들 확보 실패 fallback — Blob URL 로 새 탭 열기
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const tab = window.open(url, '_blank');
+  // T-20260805-foot-FOOTQST-POPUP-PHOTO-NORENDER: blob 탭도 핸들 확보 시 사진 주입 시도.
+  //   (blob 문서 로드 완료 후 mount 가 생기므로 onload 이후 주입. 크로스컨텍스트 접근 가능한 same-origin blob 한정.)
+  if (tab) {
+    const doInject = () => { void injectHealthQPhotos(tab, result.id); };
+    try { tab.addEventListener('load', doInject); } catch { /* 접근 불가 시 무시 */ }
+    setTimeout(doInject, 800); // onload 미발화 대비 백스톱
+  }
   if (!tab) {
     // 최후 fallback — 동기 유저제스처 내 anchor click 으로 팝업차단 우회
     const a = document.createElement('a');
