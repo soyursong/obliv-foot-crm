@@ -158,11 +158,18 @@ export function splitIssueNoForDisplay(
   const raw = (values.issue_no ?? '').trim();
   if (!/^\d{9,}$/.test(raw)) return values;        // date8 + 순번(1자리↑) 아니면 무변경(멱등: split 후 6자리는 미매치)
   const ymd = raw.slice(0, 8); // 발행날짜 앞 8자리(compact YYYYMMDD)
+  // T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT (현장 버그): 사용자가 교부년월일(issue_date)을 수기 정정한
+  //   경우(issue_date_manual='1' 마커) 그 값을 보존한다. 마커가 없으면 종전대로 issue_no 앞 8자리(발번 당일)로
+  //   재조립한다. 마커 없이 무조건 덮어쓰면, 발번은 항상 '오늘'(new Date) 기준이라 수기 정정 날짜가 인쇄 시
+  //   오늘 날짜로 되돌아가는 divergence(미리보기 2026-08-01 → 인쇄 2026-08-05) 발생. 마커는 명시 편집 경로
+  //   (DocFormSettingsDialog / editOverrides)에서만 세팅 → 일반 발행·재출력 표시 회귀 0.
+  const manualDate = values.issue_date_manual === '1' ? (values.issue_date ?? '').trim() : '';
+  const manualValid = /^\d{4}-\d{2}-\d{2}$/.test(manualDate);
   return {
     ...values,
     // T-20260721-foot-RXPRINT-ISSUENO-DATE-PHARMACIST-LABEL (총괄 요청): 교부 날짜를 YYYY-MM-DD(dashed)로 표시.
     //   구: compact '20260721' → 신: '2026-07-21'. 미리보기(today 선바인딩=dashed)와 발행본 표시형식 통일.
-    issue_date: `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`,
+    issue_date: manualValid ? manualDate : `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`,
     issue_no: raw.slice(8),
   };
 }

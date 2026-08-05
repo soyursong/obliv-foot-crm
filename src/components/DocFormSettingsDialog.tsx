@@ -120,6 +120,9 @@ export function DocFormSettingsDialog({
           remarks: edited.remarks,
           // 일부 양식은 {{remark}}(단수) 플레이스홀더 사용 → 동시 적재.
           remark: edited.remarks,
+          // T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT: 수기 정정 발행일 보존 마커(재출력 시에도 유지).
+          //   splitIssueNoForDisplay(rx_standard)가 발번 당일로 issue_date 를 덮어쓰지 않도록 신호.
+          ...(edited.issue_date ? { issue_date_manual: '1' } : {}),
         };
         const { error } = await supabase.from('form_submissions').insert({
           clinic_id: checkIn.clinic_id,

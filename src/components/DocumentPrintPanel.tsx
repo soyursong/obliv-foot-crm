@@ -644,6 +644,9 @@ function findLatestPrintedSubmission(
 export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false, newIssueMode = false }: Props) {
   const { profile } = useAuth();
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
+  // T-20260805-foot-PREVDOC-OPEN-FAIL: 발행 이력이 참조하나 활성/카테고리 필터 밖(비활성·타 카테고리·
+  //   fallback id 불일치)이라 templates 에 없는 양식들. 이력 라벨 해석·클릭 열기 전용(발행 목록 미오염).
+  const [extraTemplates, setExtraTemplates] = useState<FormTemplate[]>([]);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [batchPrinting, setBatchPrinting] = useState(false);
@@ -880,11 +883,34 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     const dbTpls = (tplRes.data ?? []) as FormTemplate[];
     const footDbTpls = dbTpls.filter((t) => t.category === 'foot-service');
     const insDbTpls  = dbTpls.filter((t) => t.category === 'insurance');
-    setTemplates([
+    const mergedTpls = [
       ...(footDbTpls.length > 0 ? footDbTpls : FALLBACK_TEMPLATES),
       ...(insDbTpls.length  > 0 ? insDbTpls  : INSURANCE_FALLBACK_TEMPLATES),
-    ]);
-    setSubmissions((subRes.data ?? []) as FormSubmission[]);
+    ];
+    setTemplates(mergedTpls);
+    const subs = (subRes.data ?? []) as FormSubmission[];
+    setSubmissions(subs);
+
+    // T-20260805-foot-PREVDOC-OPEN-FAIL (현장 버그): 발행 이력 항목의 template_id 가 위 활성/카테고리
+    //   필터 집합(mergedTpls)에 없으면 라벨이 '알 수 없는 양식'으로 표기되고 onClick 이 무반응(열기 불가).
+    //   → 이력이 참조하는 미해결 template_id 를 active/category 필터 없이 id 로만 보충 조회해 이력 전용
+    //   해석셋(extraTemplates)에 담는다. 발행 목록/그룹(visibleTemplates·docListGroups)에는 미포함이라
+    //   issue list 오염 0 — 이력 라벨/클릭 해석에만 사용한다.
+    const loadedIds = new Set(mergedTpls.map((t) => t.id));
+    const missingIds = [...new Set(
+      subs
+        .map((s) => s.template_id)
+        .filter((id): id is string => !!id && !loadedIds.has(id)),
+    )];
+    if (missingIds.length > 0) {
+      const { data: extra } = await supabase
+        .from('form_templates')
+        .select('*')
+        .in('id', missingIds);
+      setExtraTemplates((extra ?? []) as FormTemplate[]);
+    } else {
+      setExtraTemplates([]);
+    }
     setInvoiceDocs((invRes.data ?? []) as InvoiceDoc[]);
     setPaymentItems((payRes.data ?? []) as PaymentItem[]);
 
@@ -1783,14 +1809,20 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       </span>
       <div className={historyAtTop ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5'}>
         {submissions.map((sub) => {
-          const tpl = templates.find((t) => t.id === sub.template_id);
+          // T-20260805-foot-PREVDOC-OPEN-FAIL: 활성 목록(templates)에 없으면 이력 전용 보충셋(extraTemplates)로
+          //   폴백 해석 → '알 수 없는 양식' 라벨/무반응 클릭(열기 불가) 해소.
+          const tpl = templates.find((t) => t.id === sub.template_id)
+            ?? extraTemplates.find((t) => t.id === sub.template_id);
           return (
             <div
               key={sub.id}
               className="flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted/40"
               onClick={() => {
-                const t = templates.find((tt) => tt.id === sub.template_id);
-                if (t) handleSelectTemplate(t);
+                const t = templates.find((tt) => tt.id === sub.template_id)
+                  ?? extraTemplates.find((tt) => tt.id === sub.template_id);
+                if (t) { handleSelectTemplate(t); return; }
+                // 양식 row 자체가 삭제돼 보충 조회로도 해석 불가한 극단 케이스 — 무반응 대신 안내.
+                toast.error('이 서류의 양식 정보를 찾을 수 없습니다. 관리자에게 문의해 주세요.');
               }}
             >
               <div className="flex items-center gap-2 min-w-0">
@@ -4816,6 +4848,9 @@ function IssueDialog({
             issue_date: edited.issue_date,
             remarks: edited.remarks,
             remark: edited.remarks, // {{remark}}(단수) 양식 동시 반영
+            // T-20260805-foot-DOCISSUE-DATE-EDIT-PRINT-REVERT: 수기 정정 발행일 보존 마커.
+            //   처방전(rx_standard) 인쇄 시 splitIssueNoForDisplay 가 발번 당일로 덮어쓰는 것을 차단.
+            ...(edited.issue_date ? { issue_date_manual: '1' } : {}),
           }))
         }
       />
