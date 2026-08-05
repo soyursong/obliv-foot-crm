@@ -52,6 +52,14 @@ import { getTerminalConfig, getTerminalConfigRaw, saveTerminalConfig } from '@/l
 import { cbandGateCopy, type CbandGateKind } from '@/lib/cband/gateCopy';
 // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value 파생 SSOT(순수·≤0 스킵).
 import { resolveCbandDefaultAmount } from '@/lib/cband/prefillAmount';
+// ★T-20260805-foot-PLANA-PERSEAT-TID-REGISTRY-GATE — per-seat TID 를 registry allowlist 와 대조(AC-1),
+//   미등록이면 soft-warn + 구조화 로깅(AC-2), 관리자 override escape hatch(AC-3). 결제 흐름 무차단(soft).
+import {
+  checkSeatTidRegistered, isTidGateOverridden, setTidGateOverride, logUnregisteredTid,
+  getSeatId, type TidRegistryVerdict,
+} from '@/lib/cband/tidRegistryGate';
+import { useAuth } from '@/lib/auth';
+import { hasOpsAuthority } from '@/lib/permissions';
 
 interface Props {
   checkInId: string;
@@ -251,7 +259,25 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   const [cfgVersion, setCfgVersion] = useState(0);
   // ②: 빈값(TID) 전송 차단 안내(pre-daemon).
   const [payBlock, setPayBlock] = useState<string | null>(null);
+  // ★TID-REGISTRY-GATE: seat TID ↔ registry allowlist 대조 verdict + 관리자 override 상태(soft-warn·무차단).
+  const [tidVerdict, setTidVerdict] = useState<TidRegistryVerdict | null>(null);
+  const [tidOverridden, setTidOverridden] = useState(false);
   const mounted = useRef(true);
+
+  // ★TID-REGISTRY-GATE: 구조화 로깅 '누구' 축(감사 흔적). 관리자 override 노출 게이트도 여기서 파생.
+  const { profile } = useAuth();
+  const actor = {
+    userId: profile?.id ?? null,
+    userName: profile?.name ?? null,
+    clinicId: profile?.clinic_id ?? clinicId ?? null,
+    seatId: getSeatId(),
+  };
+  // override(escape hatch)는 관리자급만 설정 가능(AC-3). admin/manager/director 또는 운영최고권한.
+  const canOverrideTidGate =
+    profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director' ||
+    hasOpsAuthority(profile);
+  // 미등록 TID + override 미설정 → soft-warn 배너 노출(결제는 계속 가능).
+  const showTidWarn = tidVerdict?.status === 'unregistered' && !tidOverridden;
 
   const cfg = getTerminalConfig();
   // ★AC-4: '기능 노출(플래그)'과 '연결/설정 상태'를 분리. enabled = 기능플래그(ON/OFF)만.
@@ -330,6 +356,12 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     const activeCfg = getTerminalConfig();
     if (!activeCfg) { setPayBlock('단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
     setPayBlock(null);
+    // ★TID-REGISTRY-GATE (AC-1/AC-2): 커밋 직전 seat TID 를 registry allowlist 와 대조.
+    //   미등록이면 구조화 로깅(누구/seat/TID/시각)만 남기고 결제는 진행한다(soft-warn·무차단).
+    //   ★hard-block 아님 — 현장/DA 협의 게이트(임의 결제 거부 금지). verdict 미검(unknown)은 무소음.
+    if (tidVerdict?.status === 'unregistered') {
+      logUnregisteredTid({ ...actor, tid: activeCfg.tid, overridden: tidOverridden, phase: 'commit' });
+    }
     setUi('sending');
     setResult(null);
     cancelProbe(); // ★U2: 결제 소켓 열기 전 탐침 소켓 확실히 종료(동시 1개). send 내부에서도 재호출됨.
@@ -366,6 +398,17 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   async function onEntryClick() {
     reset();
     setPrechecking(true);
+    // ★TID-REGISTRY-GATE (AC-1): 팝업 open 시 seat TID ↔ registry allowlist 대조(read-only).
+    //   미등록이면 soft-warn 배너를 idle 화면에 노출(결제는 계속 가능). override 상태도 함께 반영.
+    //   실패/미가용(unknown)은 무소음(degrade-open) — 거짓 경고로 현장 흐름 교란 금지.
+    setTidOverridden(isTidGateOverridden());
+    checkSeatTidRegistered(cfg?.tid).then((v) => {
+      if (!mounted.current) return;
+      setTidVerdict(v);
+      if (v.status === 'unregistered') {
+        logUnregisteredTid({ ...actor, tid: v.tid, overridden: isTidGateOverridden(), phase: 'detect' });
+      }
+    }).catch(() => { /* degrade-open: 미판정 무소음 */ });
     let decision: ConcurrencyDecision = { blocked: false, reason: null, allowOverride: false, userMessage: '' };
     try {
       decision = await precheckConcurrentPayment(
@@ -385,6 +428,14 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       setUi('idle');
     }
     setOpen(true);
+  }
+
+  // ★TID-REGISTRY-GATE (AC-3) escape hatch — 관리자가 '이 단말 계속 사용' 승인(배너 억제).
+  //   설정/사용은 구조화 로깅(누가·어느 seat·어느 TID). 결제 흐름은 원래 무차단(soft) — 배너만 접힌다.
+  function overrideTidGate() {
+    const tid = tidVerdict?.tid ?? getTerminalConfigRaw().tid;
+    setTidGateOverride(true, { ...actor, tid });
+    setTidOverridden(true);
   }
 
   // ★AC-6-2 완료건 재결제: 실장 confirm(그래도 진행) → 정상 결제 입력으로 전환.
@@ -463,6 +514,31 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                   <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
                 )}
               </div>
+              {/* ★T-20260805-foot-PLANA-PERSEAT-TID-REGISTRY-GATE (AC-2/AC-3) — 미등록 TID soft-warn 배너.
+                  이 PC 단말 번호(TID)가 정산 단말 목록(registry)에 없으면 안내 + (관리자) 계속 사용 승인.
+                  ★결제는 막지 않는다(soft) — 잘못된 단말로 결제 시 정산 사각 위험을 사용자에게 알리는 용도. */}
+              {showTidWarn && ui === 'idle' && (
+                <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-testid="cband-tid-unregistered-warn">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                    <span>
+                      이 PC 카드 단말 번호(TID <span className="font-mono font-bold">{tidVerdict?.tid}</span>)가
+                      등록된 정산 단말 목록에 없습니다. 이대로 결제하면 정산 대사에서 누락될 수 있어요.
+                      단말 번호가 맞는지 위 [변경]에서 확인하거나 관리자에게 문의해 주세요.
+                    </span>
+                  </div>
+                  {canOverrideTidGate && (
+                    <button
+                      type="button"
+                      className="ml-6 font-medium text-amber-700 underline underline-offset-2 hover:text-amber-800"
+                      data-testid="btn-cband-tid-override"
+                      onClick={overrideTidGate}
+                    >
+                      관리자 확인 — 이 단말 계속 사용
+                    </button>
+                  )}
+                </div>
+              )}
               {/* ★② 빈값(TID) 전송 차단 안내 — 결제요청 눌렀는데 단말기 번호 미입력 시 */}
               {payBlock && ui === 'idle' && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-testid="cband-payblock">
