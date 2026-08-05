@@ -1,0 +1,10 @@
+{
+  "applied": true,
+  "rows_affected": 1,
+  "package_status_after": "active",
+  "repay_package_id_after": "9455ca84-5798-413b-bd45-7457616d7f55",
+  "ledger1_net_after": 0,
+  "revenue_net_before": 5771600,
+  "revenue_net_after": 5771600,
+  "rollback_sql": "UPDATE payments SET package_id = NULL WHERE id = '8bf6ac26-dd20-4cfc-af38-7113868c9882';"
+}
