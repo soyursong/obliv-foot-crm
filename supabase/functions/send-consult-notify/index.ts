@@ -1,5 +1,14 @@
 // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY — Edge Function: send-consult-notify
 //
+// ⚠ T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN (P1 resilience): Slack 발송을 [확정] 성공경로에서 decouple.
+//   구조: 구 EF 단일출구(502)가 Slack 발송 실패를 [확정] 실패로 전파 → 채널 하나 장애가 배정 확정 전면 정지(P0).
+//   신규: [확정] 성공 = claim 영속(rows=1)만으로 성립(DA semantic). Slack 발송 = side-effect(outbox/retry/DLQ).
+//     · enqueue_consult_notify RPC 가 claim + consult_notify_outbox 적재를 단일 txn 원자 영속(VG1, fire-forget 금지).
+//     · best-effort 동기 발송 후 실패해도 2xx([확정] 성공). pg_cron worker(process_consult_notify_outbox)가 backoff/DLQ 재시도(VG2).
+//     · 멱등 event_id=check_in_id(VG3). DLQ 시 check_ins.consult_notify_status='failed' 배지 + 슬랙 알람 가시화(VG4).
+//     · channel_not_found=즉시 DLQ terminal(VG5). PHI: outbox payload=운영 메타 only, 고객명은 발송시점 재조회(transient·§16-3 N/A).
+//   유일한 non-2xx = enqueue(claim+outbox 원자) 자체 실패(claim 동반 롤백, gap 미생성). Slack 실패는 절대 non-2xx 아님.
+//
 // 변경2: 금일 배분 이력 [확정] 버튼 클릭 시에만 상담대기방(C0B4HEC9SHH)으로 Slack 발송.
 //   현행 자동 즉시발송은 prod 미배선(factual_check 결과 — chat.postMessage 코드 부재)이었으므로
 //   '제거할 자동발송'이 아니라 '확정 게이트로 신규 배선'. 배정 발생 시 자동발송 없음, 오직 이 EF 만 발송.
@@ -38,6 +47,9 @@ const SLACK_BOT_TOKEN =
   "";
 // 상담대기방(총괄 확정) — 오버라이드 불가피 시 env, 기본 티켓 정본 채널.
 const CONSULT_WAIT_CHANNEL = Deno.env.get("CONSULT_NOTIFY_CHANNEL") ?? "C0B4HEC9SHH";
+
+// VG5 종단분류 discriminator — 채널 소멸(self-heal 불가) = 즉시 DLQ terminal(무한 재시도 금지).
+const CHANNEL_GONE = /channel_not_found|not_in_channel|is_archived|channel_is_archived/i;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -201,12 +213,6 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, alreadySent: true, message: "이미 발송된 건입니다." });
   }
 
-  // ── 봇 토큰 미설정 → claim 이전에 조기 차단(불필요한 claim/rollback churn 방지). ──
-  if (!SLACK_BOT_TOKEN) {
-    console.error("[send-consult-notify] SLACK_BOT_TOKEN 미설정 — 발송 불가(claim 미실행)");
-    return json({ error: "발송 채널(봇 토큰) 미설정 — 관리자에게 문의하세요." }, 503);
-  }
-
   // ── 담당 실장 → Slack mention 해소 (staff.slack_user_id → 6명 매핑 fallback) ──
   //   ⚠ QA-FIX A안: staff.display_name 컬럼은 foot prod 부재(STAFF-NAME-UNIFY 미마이그) → select 금지(42703).
   //   → name 만 select. suffix('… 실장')는 name 에 저장되며 nameKey 가 strip 후 6명 매핑 조회 → 정합.
@@ -227,52 +233,79 @@ Deno.serve(async (req: Request) => {
   const inflow = inflowRaw ? `${inflowRaw} ` : "";
   const text = `${mention} ${customerName}님 ${inflow}상담 대기중`;
 
-  // ── 멱등 claim (3-state: NULL → 'sending', 조건부 UPDATE rows-affected 가드) ─────
-  //   DA R3: claim 은 'sending' 로 예약만(sent_at/slack_ts 미기록). Slack post 성공 후에만 'sent' 승격.
-  //   → claim↔post 사이 프로세스 크래시 시 false-'sent'(무발송) 대신 'sending' 잔류(sweep/재확정 복구 가능).
-  //   가드(DA Q3): SET 절에 consult_notify_* 컬럼만 — consultant_id/therapist_id/assigned_consultant_id 절대 미포함.
-  const { data: claimed, error: claimErr } = await supabase
-    .from("check_ins")
-    .update({
-      consult_notify_status: "sending",
-      consult_notify_by: userId,
-    })
-    .eq("id", checkInId)
-    .eq("clinic_id", clinicId)
-    .is("consult_notify_status", null)
-    .select("id");
-  if (claimErr) return json({ error: `상태 갱신 실패: ${claimErr.message}` }, 500);
-  if (!claimed || claimed.length === 0) {
-    // 동시 클릭/이미 claim('sending')/발송('sent') — 이중발송 차단
-    return json({ ok: true, alreadySent: true, message: "이미 발송(확정)된 건입니다." });
+  // ══════════════════════════════════════════════════════════════════
+  // DECOUPLE-HARDEN (T-20260806): [확정] 성공 = claim 영속(rows=1). Slack 발송 = side-effect(outbox/retry/DLQ).
+  //   VG1 durable enqueue(atomicity): enqueue_consult_notify RPC 가 claim(check_ins NULL→'sending') + outbox 적재를
+  //     단일 txn 원자 영속. enqueue 예외 시 claim 동반 롤백([확정] 동반 실패, silent gap 미생성).
+  //   그 뒤 best-effort 동기 발송(정상 채널 즉시 delivery). 실패는 절대 non-2xx 전파 금지 → [확정]은 성공 유지.
+  //   가드(DA Q3/INV-1): RPC SET 절 consult_notify_* 만 — consultant_id/assigned_consultant_id 무접촉.
+  // ══════════════════════════════════════════════════════════════════
+  const { data: enq, error: enqErr } = await supabase.rpc("enqueue_consult_notify", {
+    p_check_in_id: checkInId,
+    p_clinic_id:   clinicId,
+    p_inflow:      inflowRaw,
+    p_channel:     CONSULT_WAIT_CHANNEL,
+    p_user_id:     userId,
+  });
+  if (enqErr) {
+    // VG1: enqueue(claim+outbox 원자) 자체 실패 → [확정] 동반 실패(gap 재생성 방지). 이 경우만 non-2xx.
+    console.error(`[send-consult-notify] enqueue 실패: ${enqErr.message} (check_in=${checkInId})`);
+    return json({ error: `확정 처리 실패: ${enqErr.message}` }, 500);
+  }
+  const enqRes = (enq ?? {}) as { claimed?: boolean; enqueued?: boolean; outbox_id?: string | null };
+  if (!enqRes.claimed) {
+    // 이미 claim('sending')/발송('sent')/실패('failed') — 이중 확정/발송 차단(멱등).
+    return json({ ok: true, alreadySent: true, message: "이미 확정된 건입니다." });
   }
 
-  // ── Slack 발송 ────────────────────────────────────────────────────
+  // enqueued=false(기존 outbox 존재 rare edge) → worker 가 기존 행 재시도. 동기 발송 skip.
+  if (!enqRes.enqueued || !enqRes.outbox_id) {
+    return json({ ok: true, confirmed: true, notifyPending: true, message: "확정 완료 · 상담대기방 알림 전송 대기중입니다." });
+  }
+  const outboxId = enqRes.outbox_id;
+
+  // ── best-effort 동기 발송 (실패해도 [확정]은 성공 — outbox worker 재시도) ──
+  if (!SLACK_BOT_TOKEN) {
+    // 토큰 미설정 → 동기 발송 불가. outbox pending 유지 → worker 재시도(env 주입 후). [확정]은 성공.
+    console.warn("[send-consult-notify] SLACK_BOT_TOKEN 미설정 — 동기 발송 skip, outbox pending 유지");
+    return json({ ok: true, confirmed: true, notifyPending: true, message: "확정 완료 · 상담대기방 알림 전송 대기중입니다." });
+  }
+
+  const nowIso = new Date().toISOString();
   const sent = await sendSlackMessage(CONSULT_WAIT_CHANNEL, text, SLACK_BOT_TOKEN);
-  if (!sent.ok) {
-    // 발송 실패 → claim 롤백('sending'→NULL) → 재시도 가능. (내 claim 만: status='sending' AND by=userId)
+
+  if (sent.ok) {
+    // 발송 성공 → outbox 'sent' + check_ins 'sending'→'sent'(delivered, VG3). 내 claim 만.
+    await supabase.from("consult_notify_outbox")
+      .update({ status: "sent", last_error: null, slack_ts: sent.ts ?? null, sent_at: nowIso, updated_at: nowIso })
+      .eq("id", outboxId);
+    const { error: promoteErr } = await supabase.from("check_ins")
+      .update({ consult_notify_status: "sent", consult_notify_sent_at: nowIso, consult_notify_slack_ts: sent.ts ?? null })
+      .eq("id", checkInId).eq("clinic_id", clinicId).eq("consult_notify_status", "sending");
+    if (promoteErr) console.error(`[send-consult-notify] sent OK but promote failed: ${promoteErr.message} (check_in=${checkInId})`);
+    console.log(`[send-consult-notify] sent check_in=${checkInId} by=${userId} ts=${sent.ts}`);
+    return json({ ok: true, sent: true, ts: sent.ts, text });
+  }
+
+  // ── 발송 실패 (decouple: [확정]은 성공 유지, non-2xx 전파 금지) ──
+  if (CHANNEL_GONE.test(sent.error ?? "")) {
+    // VG5 — 채널 소멸(self-heal 불가): 즉시 terminal(무한 재시도 금지) + 즉시 가시화(check_ins 'failed' 배지 + DLQ 알람).
+    await supabase.from("consult_notify_outbox")
+      .update({ status: "failed", dlq: true, dlq_reason: "channel_gone", last_error: `channel_gone: ${sent.error}`, updated_at: nowIso })
+      .eq("id", outboxId);
     await supabase.from("check_ins")
-      .update({ consult_notify_status: null, consult_notify_by: null })
-      .eq("id", checkInId).eq("clinic_id", clinicId)
-      .eq("consult_notify_status", "sending").eq("consult_notify_by", userId);
-    return json({ error: `Slack 발송 실패: ${sent.error ?? "unknown"}` }, 502);
+      .update({ consult_notify_status: "failed" })
+      .eq("id", checkInId).eq("clinic_id", clinicId).in("consult_notify_status", ["sending", "sent"]);
+    // VG4 — 즉시 슬랙 알람(best-effort, 실패 무시). worker 도 매 틱 재알람 픽업.
+    try { await supabase.rpc("alert_consult_notify_dlq"); } catch (_e) { /* worker fallback */ }
+    console.warn(`[send-consult-notify] channel_gone → DLQ terminal (check_in=${checkInId} err=${sent.error})`);
+    return json({ ok: true, confirmed: true, notifyFailed: true, reason: "channel_gone", message: "확정 완료 · 상담대기방 알림 발송 실패(채널 확인 필요)." });
   }
 
-  // ── 발송 성공 → 'sending' → 'sent' 승격 (+sent_at, slack_ts). 내 claim 만. ──
-  const { error: promoteErr } = await supabase
-    .from("check_ins")
-    .update({
-      consult_notify_status: "sent",
-      consult_notify_sent_at: new Date().toISOString(),
-      consult_notify_slack_ts: sent.ts ?? null,
-    })
-    .eq("id", checkInId).eq("clinic_id", clinicId)
-    .eq("consult_notify_status", "sending").eq("consult_notify_by", userId);
-  if (promoteErr) {
-    // Slack 은 이미 발송됨. 상태 승격만 실패 → 'sending' 잔류(무한 재발송 금지 위해 성공 반환).
-    console.error(`[send-consult-notify] sent OK but promote to 'sent' failed: ${promoteErr.message} (check_in=${checkInId} ts=${sent.ts})`);
-  }
-
-  console.log(`[send-consult-notify] sent check_in=${checkInId} by=${userId} slack_id=${slackId || "(name-fallback)"} ts=${sent.ts}`);
-  return json({ ok: true, sent: true, ts: sent.ts, text });
+  // transient(5xx/network 등) → outbox pending 유지 → worker backoff 재시도. check_ins 'sending' 유지.
+  await supabase.from("consult_notify_outbox")
+    .update({ last_error: `transient: ${sent.error ?? "?"}`, updated_at: nowIso })
+    .eq("id", outboxId);
+  console.warn(`[send-consult-notify] transient 발송 실패 → outbox pending 재시도 (check_in=${checkInId} err=${sent.error})`);
+  return json({ ok: true, confirmed: true, notifyPending: true, message: "확정 완료 · 상담대기방 알림 전송 대기중입니다." });
 });

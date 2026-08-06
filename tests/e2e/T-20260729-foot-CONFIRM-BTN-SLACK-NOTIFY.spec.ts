@@ -107,22 +107,31 @@ test('변경2(QA-FIX A안): 담당실장 Slack ID 해소 = staff.slack_user_id �
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 3: 이중발송 방지 (멱등, 3-state)
 // ─────────────────────────────────────────────────────────────────────────────
-test('시나리오3: EF 조건부 claim (WHERE status IS NULL → sending) rows-affected 가드', () => {
+// ⚠ SUPERSEDED by T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN:
+//   구 EF 는 claim 을 직접(.is(null).select) 수행 + Slack 실패 시 sending→NULL 롤백 + 502 return 이었다.
+//   decouple-harden 후 claim 은 enqueue_consult_notify RPC(단일 txn: claim+outbox)로 이관, Slack 실패는
+//   NULL 롤백/502 대신 outbox/DLQ side-effect. 아래 두 test 는 신규(decoupled) 계약으로 갱신.
+test('시나리오3(갱신): 조건부 claim(WHERE status IS NULL → sending)은 enqueue RPC 로 이관, 멱등 alreadySent 유지', () => {
   const src = read(EF);
-  // claim: status NULL → 'sending' (3-state R3, sent_at/slack_ts 미기록)
-  expect(src).toMatch(/consult_notify_status: "sending"/);
-  expect(src).toMatch(/\.is\("consult_notify_status", null\)\s*\n?\s*\.select\("id"\)/);
-  // rows-affected 0 → alreadySent (이중발송 차단)
-  expect(src).toMatch(/if \(!claimed \|\| claimed\.length === 0\) \{[\s\S]*?alreadySent: true/);
+  // claim 은 RPC 로 이관 — EF 는 RPC 호출 + claimed=false 시 alreadySent
+  expect(src).toMatch(/supabase\.rpc\("enqueue_consult_notify"/);
+  expect(src).toMatch(/if \(!enqRes\.claimed\)[\s\S]*?alreadySent: true/);
+  // NULL 가드 rows-affected 는 마이그 RPC 안에 존재
+  const mig = read('supabase/migrations/20260807120000_foot_consult_notify_outbox_decouple.sql');
+  expect(mig).toMatch(/consult_notify_status = 'sending'[\s\S]*?AND consult_notify_status IS NULL/);
+  expect(mig).toMatch(/GET DIAGNOSTICS v_claimed = ROW_COUNT/);
 });
 
-test('시나리오3: 발송 성공 시에만 sending → sent 승격 (+slack_ts), 실패 시 sending → NULL 롤백', () => {
+test('시나리오3(갱신): 발송 성공 시 sending→sent 승격(+slack_ts), 실패 시 NULL 롤백/502 아님 — outbox/DLQ decouple', () => {
   const src = read(EF);
-  // 승격
-  expect(src).toMatch(/consult_notify_status: "sent",\s*\n?\s*consult_notify_sent_at: new Date\(\)\.toISOString\(\),\s*\n?\s*consult_notify_slack_ts: sent\.ts/);
-  expect(src).toMatch(/\.eq\("consult_notify_status", "sending"\)\.eq\("consult_notify_by", userId\)/);
-  // 실패 롤백
-  expect(src).toMatch(/if \(!sent\.ok\) \{[\s\S]*?consult_notify_status: null, consult_notify_by: null/);
+  // 승격은 유지
+  expect(src).toMatch(/consult_notify_status: "sent", consult_notify_sent_at: nowIso, consult_notify_slack_ts: sent\.ts/);
+  // 구 NULL 롤백/502 제거 확인 (decouple)
+  expect(src).not.toMatch(/consult_notify_status: null, consult_notify_by: null/);
+  expect(src).not.toMatch(/Slack 발송 실패[\s\S]*?\}, 502\)/);
+  // 실패는 outbox 상태로 흡수(channel_gone=DLQ / transient=pending), [확정]은 2xx
+  expect(src).toMatch(/dlq_reason: "channel_gone"/);
+  expect(src).toMatch(/notifyPending: true/);
 });
 
 test('시나리오3: FE 도 sent/sending 이면 재발송 차단 + 버튼 비노출(발송됨/발송중 배지)', () => {
@@ -143,15 +152,19 @@ test('RED LINE INV-1: EF 의 모든 .update() SET 절은 consult_notify_* 컬럼
   // 매출귀속 앵커는 코드 어디에도 write 없음 (customers 소재, EF 는 check_ins 만)
   expect(code).not.toMatch(/assigned_consultant_id/);
   expect(code).not.toMatch(/from\("customers"\)/);
-  // 모든 .update({ ... }) payload 추출 → consultant_id/therapist_id 를 SET 하지 않음(DA Q3 가드: consult_notify_* 만).
+  // 모든 .update({ ... }) payload 추출 → consultant_id/therapist_id 를 SET 하지 않음(DA Q3 가드).
+  //   T-20260806-DECOUPLE-HARDEN: EF 는 이제 check_ins(consult_notify_*) 외에 consult_notify_outbox(운영 메타) 도 write.
+  //   check_ins update(consult_notify_status 포함 블록)은 여전히 consult_notify_* 만 — outbox 블록은 운영키 허용.
   const updateBlocks = code.match(/\.update\(\{[\s\S]*?\}\)/g) ?? [];
   expect(updateBlocks.length).toBeGreaterThan(0);
   for (const blk of updateBlocks) {
     expect(blk).not.toMatch(/\bconsultant_id\b/);
     expect(blk).not.toMatch(/\btherapist_id\b/);
-    // SET 되는 키는 전부 consult_notify_ 접두
-    const keys = (blk.match(/(\w+):/g) ?? []).map((k) => k.replace(':', ''));
-    for (const key of keys) expect(key.startsWith('consult_notify_')).toBe(true);
+    // check_ins 발송상태 update(consult_notify_status 를 SET 하는 블록)의 키는 전부 consult_notify_ 접두.
+    if (/consult_notify_status:/.test(blk)) {
+      const keys = (blk.match(/(\w+):/g) ?? []).map((k) => k.replace(':', ''));
+      for (const key of keys) expect(key.startsWith('consult_notify_')).toBe(true);
+    }
   }
 });
 
