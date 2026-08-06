@@ -1162,6 +1162,18 @@ export function PenChartTab({
   //   (초기화 없이 bg 만 재로드[onerror 재시도]되는 경우엔 중복 이관 방지)
   const editDrawSeededRef  = useRef(false);
 
+  // ── T-20260806-foot-PENCHART-ERASER-LAYER-ISOLATE: 수정(edit) 모드 지우개 복원면 = 원본 빈 양식 ──
+  //   [RC] 저장본 PNG 는 flatten 합성본(양식 줄 문양 + 사용자 필기)이다. 수정 재진입 시 지우개가
+  //     노출/복원하는 배경이 '흰색'(eraseBgIfEdit 의 fillRect white)이라 → 필기 지운 자리의 양식(줄 문양)이
+  //     함께 하얗게 지워진다(현장 "지우개로 글씨 지우면 뒤 양식까지 같이 지워짐").
+  //   [수정] 지우개 복원면을 흰색이 아니라 '원본 빈 양식 템플릿'으로 → 필기만 지워지고 양식(줄 문양) 보존.
+  //     - 저장 포맷 무변경: 저장본은 여전히 flatten 합성본으로 upsert(직렬화/역직렬화 무변경) → db_change=false.
+  //     - 하위호환: 기존 저장 차트도 원본 양식이 존재하는 form_key 면 그대로 복원 적용, 미준비 시 흰색 폴백(무회귀).
+  //   원본 빈 양식을 물리 치수(CANVAS_W*DRAW_DPR × canvasH*DRAW_DPR) 오프스크린에 1회 렌더 → 지우개 hot-path 에서
+  //   소형 blit(drawImage) 로 해당 영역만 복사. 로드/alloc 실패 시 ready=false → 흰색 폴백(기존 동작).
+  const formRestoreCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const formRestoreReadyRef  = useRef(false);
+
   // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 서명 캡처 UI 제거 — signature_base64 항상 null
 
   // T-20260526-foot-PENCHART-PEN-SLOW Fix-8: sync state → refs every render
@@ -1387,12 +1399,26 @@ export function PenChartTab({
     if (!editingChartRef.current) return; // 신규작성은 bg(빈 양식) read-only — 미관여
     const bctx = bgCtxRef.current;
     if (!bctx || bctx.isContextLost()) return;
-    // bg ctx 는 draw ctx 와 동일 DRAW_DPR 스케일(logical 좌표계 일치) → clearRect 와 동일 논리 rect 를 흰색으로 덮음.
+    // bg ctx 는 draw ctx 와 동일 DRAW_DPR 스케일(logical 좌표계 일치) → clearRect 와 동일 논리 rect 를 복원.
     bctx.save();
     bctx.globalCompositeOperation = 'source-over';
     bctx.globalAlpha = 1;
-    bctx.fillStyle = '#ffffff';
-    bctx.fillRect(x - sz, y - sz, sz * 2, sz * 2);
+    // ── T-20260806-foot-PENCHART-ERASER-LAYER-ISOLATE ──
+    //   복원면 = 흰색이 아니라 '원본 빈 양식'. 필기만 지워지고 양식(줄 문양) 보존.
+    //   offscreen(물리 치수)에서 동일 논리 rect 를 1:1 물리 픽셀로 복사. bctx 는 scale(DRAW_DPR) 상태라
+    //   dest=논리좌표, src=물리좌표(논리×DRAW_DPR). 미준비/실패 시 흰색 폴백(무회귀).
+    const restore = formRestoreCanvasRef.current;
+    if (formRestoreReadyRef.current && restore && restore.width > 0) {
+      bctx.imageSmoothingEnabled = false; // 1:1 물리 복사 — 스무딩 불필요(경계 선명)
+      bctx.drawImage(
+        restore,
+        (x - sz) * DRAW_DPR, (y - sz) * DRAW_DPR, sz * 2 * DRAW_DPR, sz * 2 * DRAW_DPR, // src(물리)
+        x - sz, y - sz, sz * 2, sz * 2,                                                 // dest(논리)
+      );
+    } else {
+      bctx.fillStyle = '#ffffff';
+      bctx.fillRect(x - sz, y - sz, sz * 2, sz * 2);
+    }
     bctx.restore();
   }, []);
 
@@ -1863,6 +1889,90 @@ export function PenChartTab({
       img.src = bgUrl;
     }
   }, [templateImgUrl, activeDrawTemplate, editingChart]);
+
+  // ── T-20260806-foot-PENCHART-ERASER-LAYER-ISOLATE: 원본 빈 양식 오프스크린 렌더 ──
+  //   수정(edit) 모드에서만 필요. bg(=저장본 합성본)와 별개로, '원본 빈 양식 템플릿'을 물리 치수 오프스크린에
+  //   1회 렌더해 둔다 → eraseBgIfEdit 이 지우개 hot-path 에서 해당 영역만 소형 blit 로 복원(양식 보존).
+  //   URL 해석은 initBgCanvas 신규작성 경로(L1667~)와 동일 분기 — editingChart 여부만 무시하고 원본 양식을 로드.
+  //   신규작성(editingChart 없음)에는 미빌드(불필요) + ready=false → 기존 신규 경로 완전 무영향.
+  useEffect(() => {
+    formRestoreReadyRef.current = false;
+    formRestoreCanvasRef.current = null;
+    if (!editingChart || !activeDrawTemplate) return; // 신규작성/양식 미확정 — 미빌드
+    // 원본 빈 양식 URL (신규작성 bgUrl 분기와 동일; editingChart 합성본 아님)
+    let tmplUrl: string | null;
+    if (isHealthQFormKey(activeDrawTemplate.form_key)
+        || isPdfOverlayFormKey(activeDrawTemplate.form_key)
+        || isPersonalChecklistKey(activeDrawTemplate.form_key)) {
+      tmplUrl = activeDrawTemplate.template_path ?? null;
+    } else {
+      tmplUrl = templateImgUrl; // pen_chart 기본 — 신고된 '펜차트(줄 문양)' 대상
+    }
+    if (!tmplUrl) return;
+
+    let cancelled = false;
+    const canvasH = getCanvasHeightForForm(activeDrawTemplate.form_key);
+    const off = document.createElement('canvas');
+    off.width  = CANVAS_W * DRAW_DPR;
+    off.height = canvasH  * DRAW_DPR;
+    // GPU/메모리 초과 시 alloc 0 → 흰색 폴백(무회귀)
+    if (off.width === 0 || off.height === 0) return;
+    const octx = off.getContext('2d');
+    if (!octx) return;
+    octx.scale(DRAW_DPR, DRAW_DPR);
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    let retry = 0;
+    img.onerror = () => {
+      if (retry++ < 2) { img.src = `${tmplUrl}${tmplUrl!.includes('?') ? '&' : '?'}cbfr=${retry}`; return; }
+      // 폴백: 원본 양식 로드 실패 → eraseBgIfEdit 흰색 폴백 유지(기존 동작)
+      console.warn('[PenChartTab] 원본 양식 오프스크린 로드 실패(지우개 복원=흰색 폴백):', tmplUrl);
+    };
+    img.onload = async () => {
+      if (cancelled) return;
+      if (img.naturalWidth === 0 || img.naturalHeight === 0) return;
+      try { await img.decode(); } catch { return; }
+      if (cancelled || octx.isContextLost()) return;
+      try {
+        // initBgCanvas 와 동일한 MAX_TILE 타일 분할(iOS/갤탭 GPU 텍스처 상한 대응)
+        const MAX_TILE = 2048;
+        const srcW = img.naturalWidth, srcH = img.naturalHeight;
+        if (srcW <= MAX_TILE && srcH <= MAX_TILE) {
+          octx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+        } else if (typeof createImageBitmap !== 'undefined') {
+          for (let sy = 0; sy < srcH; sy += MAX_TILE) {
+            const sh = Math.min(MAX_TILE, srcH - sy);
+            for (let sx = 0; sx < srcW; sx += MAX_TILE) {
+              const sw = Math.min(MAX_TILE, srcW - sx);
+              // eslint-disable-next-line no-await-in-loop
+              const bm = await createImageBitmap(img, sx, sy, sw, sh);
+              if (cancelled) { bm.close(); return; }
+              const dx = Math.round((sx / srcW) * CANVAS_W);
+              const dw = Math.max(1, Math.round(((sx + sw) / srcW) * CANVAS_W) - dx);
+              const dy = Math.round((sy / srcH) * canvasH);
+              const dh = Math.max(1, Math.round(((sy + sh) / srcH) * canvasH) - dy);
+              octx.drawImage(bm, 0, 0, sw, sh, dx, dy, dw, dh);
+              bm.close();
+            }
+          }
+        } else {
+          octx.drawImage(img, 0, 0, CANVAS_W, canvasH);
+        }
+        if (cancelled) return;
+        formRestoreCanvasRef.current = off;
+        formRestoreReadyRef.current = true;
+      } catch (e) {
+        // 폴백: 렌더 실패 → 흰색 폴백 유지(무회귀)
+        console.warn('[PenChartTab] 원본 양식 오프스크린 렌더 실패(지우개 복원=흰색 폴백):', e);
+      }
+    };
+    img.src = `${tmplUrl}${tmplUrl.includes('?') ? '&' : '?'}cbfr=0`;
+
+    return () => { cancelled = true; };
+  }, [editingChart, activeDrawTemplate, templateImgUrl]);
 
   /** 드로잉 레이어 초기화: 투명 배경 — 지우개 clearRect → bgCanvas 노출
    * T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0:
