@@ -447,7 +447,10 @@ async function persistSubmissionsAndResolveIssueNo(params: {
   isFallback: boolean;
   // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 반환 = 교부번호(rxIssueNo) + 연번호(visit_no) per-template 맵.
   //   기존 rxIssueNo 단일반환 → { rxIssueNo, visitNoByTemplateId } 로 확장. 인쇄 경로가 form_key별 visit_no 를 주입.
-}): Promise<{ rxIssueNo: string | null; visitNoByTemplateId: Map<string, string> }> {
+  // T-20260806-foot-DOCREPRINT-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2A: 저장본(form_submission) row id 도 per-template 반환.
+  //   persist 는 종전대로 가산 前 값으로 INSERT/발번(순서·발번 로직 무변경) → 인쇄 루프가 가산 fold 최종값을 만든 뒤
+  //   **후속 UPDATE** 로 저장본 field_data 를 정렬(재발번 0). 그 UPDATE 대상 row 를 지목하려면 submission id 가 필요.
+}): Promise<{ rxIssueNo: string | null; visitNoByTemplateId: Map<string, string>; submissionIdByTemplateId: Map<string, string> }> {
   const { selected, clinicId, checkInId, customerId, staffId, autoValues, codeItems, rxItemDosages, isFallback } = params;
   const hasRx = selected.some((t) => t.form_key === 'rx_standard');
   const issueYmd = format(new Date(), 'yyyyMMdd');    // 교부번호 앞 8자리(YYYYMMDD)
@@ -455,17 +458,20 @@ async function persistSubmissionsAndResolveIssueNo(params: {
   const nowIso = new Date().toISOString();
   // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: form_key별 발번된 연번호(visit_no) 수집.
   const visitNoByTemplateId = new Map<string, string>();
+  // T-20260806-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2A: form_key별 INSERT된 저장본 row id(후속 가산 정렬 UPDATE 대상).
+  const submissionIdByTemplateId = new Map<string, string>();
 
   // fallback/미staff: 발행이력 INSERT 불가 → 순번만 채번(persist 없이 공란/UUID 방지). rx 없으면 발번 불요.
   //   연번호(visit_no)도 INSERT 행이 없어 발번 불가(공란 유지) — DocumentPrintPanel.handlePrint fallback 분기 동형.
   if (isFallback || !staffId) {
-    if (!hasRx || !clinicId) return { rxIssueNo: null, visitNoByTemplateId };
+    // 발행이력 INSERT 불가 경로 → 저장본 자체가 없음(submissionIdByTemplateId 공맵). 후속 UPDATE 자동 skip.
+    if (!hasRx || !clinicId) return { rxIssueNo: null, visitNoByTemplateId, submissionIdByTemplateId };
     const { data: rxSeq } = await supabase.rpc('issue_foot_rx_issue_no', {
       p_clinic_id: clinicId,
       p_issue_date: issueDateIso,
       p_form_submission_id: null,
     });
-    return { rxIssueNo: buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1) || null, visitNoByTemplateId };
+    return { rxIssueNo: buildIssueNo(issueYmd, typeof rxSeq === 'number' ? rxSeq : 1) || null, visitNoByTemplateId, submissionIdByTemplateId };
   }
 
   // 1) form_submissions INSERT 먼저(issue_no 미포함 field_data) — persist-before-print. 선택 서류 전종 이력 기록(종전과 동일).
@@ -485,6 +491,11 @@ async function persistSubmissionsAndResolveIssueNo(params: {
     .select('id, template_id');
   if (insErr) {
     console.warn('[DOC-PRINT-UNIFY] form_submissions 기록 실패:', insErr.message);
+  }
+  // T-20260806-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2A: INSERT된 저장본 row id 를 form_key별로 수집.
+  //   인쇄 루프가 가산 fold 최종값을 만든 뒤 이 id 로 field_data 만 UPDATE(발번 로직·순서 무접촉, 재발번 0).
+  if (insertedRows) {
+    for (const r of insertedRows) submissionIdByTemplateId.set(r.template_id, r.id);
   }
 
   // ── 2) T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 연번호(visit_no) 발번 배선 ──
@@ -533,7 +544,7 @@ async function persistSubmissionsAndResolveIssueNo(params: {
     }
   }
 
-  if (!hasRx || !clinicId) return { rxIssueNo: null, visitNoByTemplateId };
+  if (!hasRx || !clinicId) return { rxIssueNo: null, visitNoByTemplateId, submissionIdByTemplateId };
 
   // 3) 처방전 행 교부번호 발행시점 채번·persist. 멱등 키=form_submission_id(RPC 가 rx_issue_seq 기록). INSERT 실패 시 fs_id=null(순번만).
   const rxTpl = selected.find((t) => t.form_key === 'rx_standard');
@@ -559,7 +570,7 @@ async function persistSubmissionsAndResolveIssueNo(params: {
       .eq('id', rxRowId);
     if (updErr) toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
   }
-  return { rxIssueNo, visitNoByTemplateId };
+  return { rxIssueNo, visitNoByTemplateId, submissionIdByTemplateId };
 }
 
 function buildCodeEnrichedValues(
@@ -2963,7 +2974,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         }
       }
       const isFallback = templates[0]?.id.startsWith('fallback-');
-      const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
+      const { rxIssueNo, visitNoByTemplateId, submissionIdByTemplateId } = await persistSubmissionsAndResolveIssueNo({
         selected,
         clinicId: checkIn.clinic_id,
         checkInId: checkIn.id,
@@ -2989,6 +3000,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
       const portraitSelected  = selected.filter((t) => t.form_key !== 'bill_detail');
 
+      // T-20260806-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2A: buildPages 가 만든 form_key별 **최종** print-binding 값
+      //   (가산 fold + 가산後 토큰 반영 후)을 수집. 인쇄 직후 이 값으로 저장본을 후속 UPDATE 하여 save↔print 정합.
+      const printFieldDataByTemplateId = new Map<string, Record<string, string>>();
+
       const buildPages = (tmplList: typeof selected) =>
         tmplList.flatMap((t) => {
           // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
@@ -3005,6 +3020,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
           // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
           // T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건③: pre-settle [출력]이면 printSettleCtx 전달(선차감 ⑨보정). post-settle 이면 null(현행 실원장 유지).
           applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx, printSettleCtx);
+          // T-20260806-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2A: 가산·토큰 fold 최종값 수집(후속 저장본 정렬 UPDATE 소스).
+          printFieldDataByTemplateId.set(t.id, enriched);
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
@@ -3024,6 +3041,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
 
       const landscapePages = buildPages(landscapeSelected);
       const portraitPages  = buildPages(portraitSelected);
+
+      // ── T-20260806-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2A: 저장본 가산 정렬 후속 UPDATE ──────────────
+      //   [문제] persist(:INSERT/발번)는 가산 前 buildCodeEnrichedValues 값으로 저장본을 굳힘 ↔ 인쇄는 가산 後 값.
+      //     → bill_detail 저장본 재출력(부모 FIX-1 편입) 시 가산 빠진 값이 verbatim 오발급(실손청구 금액오류).
+      //   [해소] 인쇄 루프(buildPages)가 이미 만든 form_key별 최종값을 그 저장본 row 에 UPDATE 로 정렬한다.
+      //     ⚠ GUARD-2(NIGHTSURCHARGE 동결): 값 재계산·재절사 없음 — buildPages 가 계산한 값을 그대로 persist 만.
+      //     ⚠ DoD 3(재발번 0): visit_no/issue_no 는 최종값 안에 persist된 동일 문자열이 그대로 실림(RPC 재호출 없음).
+      //     대상 = 가산-capable 서류(bill_detail·bill_receipt_new)만 — 그 외 서류는 가산 no-op → persist값==인쇄값(무영향).
+      const SURCHARGE_CAPABLE_FORM_KEYS = new Set(['bill_detail', 'bill_receipt_new']);
+      for (const t of selected) {
+        if (!SURCHARGE_CAPABLE_FORM_KEYS.has(t.form_key)) continue;
+        const subId = submissionIdByTemplateId.get(t.id);
+        const finalFieldData = printFieldDataByTemplateId.get(t.id);
+        if (!subId || !finalFieldData) continue; // 저장본 미생성(fallback/미staff) 또는 미인쇄 → skip
+        const { error: alignErr } = await supabase
+          .from('form_submissions')
+          .update({ field_data: finalFieldData })
+          .eq('id', subId);
+        if (alignErr) toast.error(`저장본 가산 정렬 실패(인쇄물은 정상): ${alignErr.message}`);
+      }
 
       if (landscapePages.length === 0 && portraitPages.length === 0) {
         toast.warning('출력 가능한 양식이 없습니다');

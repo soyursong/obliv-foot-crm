@@ -656,6 +656,21 @@ function findLatestPrintedSubmission(
   return submissions.find((s) => s.template_id === templateId && s.status === 'printed') ?? null;
 }
 
+// ── T-20260806-foot-DOCREPRINT-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2B (소급 가드) ──────────────
+//   야간·공휴일 가산이 반영되는 서류(bill_detail·bill_receipt_new)의 **구(舊) 저장본**(부모 FIX-0/PMW FIX-2A
+//   이전 = 가산 前 값을 그대로 persist 한 저장본)은 field_data 에 `surcharge_amount` 키 자체가 없다.
+//   신 저장본(FIX-0/FIX-2A 이후)은 applyNightHolidaySurcharge 가 이 두 서류에 무조건 surcharge_amount 를 세팅
+//   (평일=미가산도 '' 로 키 존재 — nightHolidaySurcharge.ts:256/278)하므로, **키 부재 = 가산 前 구본**으로 판별.
+//   구본을 ReprintViewer(저장본 다시보기)로 그대로 재출력하면 가산 빠진 값이 verbatim 재발급(실손청구 금액오류)
+//   → 뷰어 진입 대신 신규 발행(라이브 재계산=가산 반영)으로 폴백한다. 그 외 서류·신 저장본은 무영향.
+//   ★ GUARD-1: findLatestPrintedSubmission·newIssueMode·이전방문 프리필은 byte 불변 — 소비부에 폴백 분기만 추가.
+const SURCHARGE_CAPABLE_REPRINT_FORM_KEYS = new Set(['bill_detail', 'bill_receipt_new']);
+function isStaleSurchargeSavedCopy(formKey: string, sub: FormSubmission): boolean {
+  if (!SURCHARGE_CAPABLE_REPRINT_FORM_KEYS.has(formKey)) return false;
+  const fd = (sub.field_data ?? {}) as Record<string, unknown>;
+  return !Object.prototype.hasOwnProperty.call(fd, 'surcharge_amount');
+}
+
 // ─── 메인 컴포넌트 ───
 
 export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, historyAtTop = false, newIssueMode = false }: Props) {
@@ -1273,7 +1288,9 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     //   프리필하지 않는다. 재출력은 별도 '서류 재출력' 진입점(newIssueMode=false)에서만 STAGE2 동작 유지(AC-3).
     if (!newIssueMode && GENERAL_REPRINT_FORM_KEYS.has(tpl.form_key)) {
       const printed = findLatestPrintedSubmission(submissions, tpl.id);
-      if (printed) {
+      // T-20260806-PMW-SURCHARGE-PERSIST-RETROGUARD FIX-2B (소급 가드): 가산-capable 서류의 가산-前 구 저장본은
+      //   뷰어 재출력 대신 신규 발행으로 폴백(가산 빠진 값 verbatim 재발급 차단). 신 저장본/그 외 서류는 종전대로 뷰어.
+      if (printed && !isStaleSurchargeSavedCopy(tpl.form_key, printed)) {
         setReprintViewer({ template: tpl, submission: printed });
         return;
       }
