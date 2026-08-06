@@ -157,6 +157,36 @@ function isCrossDomainFootWrite(domain, clinicSlug, footClinicSlugs) {
   const targetIsFootClinic = clinicSlug ? footClinicSlugs.has(clinicSlug) : true;
   return targetIsFootClinic;
 }
+
+// ── ★ Q4 fail-closed 도메인-설정 정합 가드 (T-20260806-derm-REDPAY-MONITOR-ISOLATED-PIPE) ────────
+//   [정본] DA-20260806-derm-REDPAY-MONITOR-XCENTER-ISOLATED-PIPE §Q4 (L72-77)
+//          = §3.1 ADDITIVE 면제의 load-bearing precondition(HARD 선결). guard 부재 → 면제 무효.
+//   [RC 봉인] non-foot 도메인(derm 등)이 자기 merchant band 설정 없이 기동하면
+//     MERCHANT_DEFAULT_FOR_DOMAIN 의 `?? FOOT_MERCHANT_WHITELIST_DEFAULT` 폴백으로 **foot band 를 조용히 로드**
+//     → derm 감시가 foot 명단으로 오작동(= DA-20260729 DOSU-CONTAM +₩4.7M 동일 사고 클래스, 감시축 재현).
+//   [일반화] resolved merchant band 의 domain 은 REDPAY_DOMAIN 과 일치해야 한다.
+//     mismatch(=foot 폴백) → **기동 abort**. silent wrong-fallback → loud startup abort
+//     (anon-EXEC seal·cancel-atomicity seal 동형 doctrine).
+//   [foot/body 무접촉 — 순수 ADDITIVE]
+//     · foot  = 네이티브 도메인 → 폴백 개념 없음(항상 통과).
+//     · body  = DOMAIN_MERCHANT_DEFAULTS 자기 entry 보유 → foot 폴백 아님(항상 통과).
+//       (body→foot-clinic slug 오염은 기존 isCrossDomainFootWrite 가 별도로 봉인 — 본 가드는 band 축만.)
+//     · 오직 자기 설정(registry seed / 도메인 env override / 자기 DEFAULT)이 전무한 미구성 도메인(derm 등)만 발화.
+/** 순수 술어(self-test 대상): non-foot 도메인이 foot merchant band 로 silent-폴백한 오염 기동인가.
+ *   @param {object} p
+ *   @param {string} p.domain                REDPAY_DOMAIN
+ *   @param {boolean} p.hasOwnMerchantDefault DOMAIN_MERCHANT_DEFAULTS 에 자기 도메인 entry 존재 여부
+ *   @param {string} p.merchantResolveSource  whitelistResolveMeta.source ('registry' | 'default')
+ *   @param {boolean} p.envMerchant           도메인-스코프 merchant env override 존재 여부
+ *   @returns {null | {domain: string, reason: string}} null=정합(기동 허용) / 객체=mismatch(기동 abort) */
+function detectDomainMerchantFallback({ domain, hasOwnMerchantDefault, merchantResolveSource, envMerchant }) {
+  if (domain === "foot") return null;                    // 네이티브 도메인 — 폴백 개념 없음
+  if (merchantResolveSource === "registry") return null; // DB registry(domain=REDPAY_DOMAIN) 실 로드 = 자기 band
+  if (envMerchant) return null;                          // 도메인-스코프 env override = 명시 자기 band
+  if (hasOwnMerchantDefault) return null;                // DOMAIN_MERCHANT_DEFAULTS 자기 entry = foot 폴백 아님
+  // 도달 = registry 미로드 + 도메인 env 없음 + 자기 DEFAULT 없음 → merchant band = FOOT 폴백(오염)
+  return { domain, reason: "merchant_band_foot_fallback" };
+}
 // daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
@@ -1289,6 +1319,26 @@ async function main() {
   //     business_no 스코프로만. tidWhitelist 는 이제 FE-측 보조필터/drift 판정에만 쓰임(fetch narrowing 아님).
   await resolveWhitelists();
 
+  // ── ★ Q4 fail-closed 도메인-설정 정합 가드 (startup abort) — T-20260806-derm-REDPAY-MONITOR-ISOLATED-PIPE ──
+  //   [DA §Q4] non-foot 도메인이 자기 band 없이 foot merchant DEFAULT 로 silent-폴백하면 기동 abort.
+  //   §3.1 ADDITIVE 면제의 load-bearing precondition. resolveWhitelists() 직후(소스 확정 후) 평가.
+  const domainFallback = detectDomainMerchantFallback({
+    domain: REDPAY_DOMAIN,
+    hasOwnMerchantDefault: Object.prototype.hasOwnProperty.call(DOMAIN_MERCHANT_DEFAULTS, REDPAY_DOMAIN),
+    merchantResolveSource: whitelistResolveMeta?.source ?? "default",
+    envMerchant: REDPAY_MERCHANT_WHITELIST_ENV.length > 0,
+  });
+  if (domainFallback) {
+    errlog(
+      `[DOMAIN-CONSISTENCY-GUARD] domain=${REDPAY_DOMAIN} 의 merchant band 가 foot DEFAULT 로 silent-폴백 ` +
+      `(registry domain='${REDPAY_DOMAIN}' 미seed + 도메인 merchant env override 없음 + DOMAIN_MERCHANT_DEFAULTS 자기 entry 없음). ` +
+      `→ ${REDPAY_DOMAIN} 감시가 foot 명단으로 오작동하는 오염 벡터(DA-20260729 DOSU-CONTAM 동일 사고 클래스). ` +
+      `기동 abort(fail-closed·write 0·파괴 없음). ` +
+      `해소: redpay_terminal_registry domain='${REDPAY_DOMAIN}' seed(feed-authority census) 또는 REDPAY_MERCHANT_WHITELIST_${REDPAY_DOMAIN.toUpperCase()} 명시.`,
+    );
+    process.exit(3);
+  }
+
   if (merchantWhitelist.size === 0) {
     // fail-safe: 1차 권위 화이트리스트가 비면 도메인 경계 소실 = 타도메인 혼입 위험 → 차단.
     //   (merchant = 도메인 경계 1차 권위. 비면 어떤 도메인이든 혼입 위험 → 하드 종료.)
@@ -1686,6 +1736,32 @@ function runSelfTest() {
     // F) foot 도메인은 slug 미지정이어도 항상 허용
     assert(isCrossDomainFootWrite("foot", "", foots) === false,
       `xdomain-guard: foot+slug미지정 = 허용`);
+  }
+
+  // ── Q4 fail-closed 도메인-설정 정합 가드 self-test (T-20260806-derm-REDPAY-MONITOR-ISOLATED-PIPE §Q4) ──
+  //   불변식: non-foot 도메인이 자기 band 설정(registry/env/자기 DEFAULT) 없이 foot band 로 폴백 = 기동 abort.
+  {
+    // A) ★핵심 — derm 미구성(registry 미seed + env 없음 + 자기 DEFAULT 없음) → foot 폴백 감지 = abort
+    const dA = detectDomainMerchantFallback({ domain: "derm", hasOwnMerchantDefault: false, merchantResolveSource: "default", envMerchant: false });
+    assert(dA !== null && dA.reason === "merchant_band_foot_fallback",
+      `domain-guard: derm 미구성 → foot band silent-폴백 감지(abort). (실제=${JSON.stringify(dA)})`);
+    // B) derm + registry domain='derm' 실 seed 로드 → 자기 band = 정합(허용)
+    assert(detectDomainMerchantFallback({ domain: "derm", hasOwnMerchantDefault: false, merchantResolveSource: "registry", envMerchant: false }) === null,
+      `domain-guard: derm + registry seed 로드 = 허용(자기 band)`);
+    // C) derm + 도메인 env override(REDPAY_MERCHANT_WHITELIST_DERM) → 명시 자기 band = 허용
+    assert(detectDomainMerchantFallback({ domain: "derm", hasOwnMerchantDefault: false, merchantResolveSource: "default", envMerchant: true }) === null,
+      `domain-guard: derm + 도메인 env override = 허용(명시 자기 band)`);
+    // D) ★foot 무접촉 — 네이티브 도메인은 폴백 개념 없음(항상 허용, 회귀 가드)
+    assert(detectDomainMerchantFallback({ domain: "foot", hasOwnMerchantDefault: true, merchantResolveSource: "default", envMerchant: false }) === null,
+      `domain-guard: foot(네이티브) = 허용(폴백 개념 없음)`);
+    // E) ★body 무접촉 — DOMAIN_MERCHANT_DEFAULTS 자기 entry 보유 → foot 폴백 아님(항상 허용, 회귀 가드)
+    assert(detectDomainMerchantFallback({ domain: "body", hasOwnMerchantDefault: true, merchantResolveSource: "default", envMerchant: false }) === null,
+      `domain-guard: body(자기 DEFAULT 보유) = 허용(foot 폴백 아님)`);
+    // F) 실 config 정합 재확인 — DOMAIN_MERCHANT_DEFAULTS 에 foot·body 는 있고 derm 은 없다(미구성=abort 대상).
+    assert(Object.prototype.hasOwnProperty.call(DOMAIN_MERCHANT_DEFAULTS, "foot") &&
+           Object.prototype.hasOwnProperty.call(DOMAIN_MERCHANT_DEFAULTS, "body") &&
+           !Object.prototype.hasOwnProperty.call(DOMAIN_MERCHANT_DEFAULTS, "derm"),
+      `domain-guard: DOMAIN_MERCHANT_DEFAULTS = {foot,body} 보유·derm 미보유(derm=registry seed 경로 강제)`);
   }
 
   // ── T-20260803 FIX-REQUEST: 미등록 회선 digest 순수로직 self-test (redpay_unreg_digest_lib.mjs) ──────
