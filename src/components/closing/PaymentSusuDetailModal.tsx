@@ -12,6 +12,10 @@
  *   를 팝업 상단에 연동표시. 신규 write 0 (read-only).
  * [구분] = check_in_services.services.category (기본/풋케어/검사/상병/처방약) display-only.
  *
+ * 상병코드 섹션분리 (T-20260806-foot-SUSUDETAIL-DXCODE-SECTION-SPLIT):
+ *   category='상병' 서비스 = 상단 [상병코드] 전용 섹션(diagServices, >0일 때만).
+ *   시술 오더 목록 = 상병 제외(treatServices, category!=='상병'). 순수 view 재구성, write 0.
+ *
  * READ-ONLY 뷰: 편집·저장 없음 → DAYCLOSE 확정 편집잠금(T-20260730)과 무관.
  */
 
@@ -124,6 +128,9 @@ export function PaymentSusuDetailModal({
 
   const ci = row?.check_ins ?? null;
   const services = ci?.check_in_services ?? [];
+  // 상병코드(category='상병')는 별도 전용 섹션, 시술오더 목록에서는 제외 (AC-1/AC-2)
+  const treatServices = services.filter((s) => s.services?.category !== '상병');
+  const diagServices = services.filter((s) => s.services?.category === '상병');
   const isRefund = row?.payment_type === 'refund';
   const netAmt = row ? (isRefund ? -row.amount : row.amount) : 0;
   const charges = sumCharges(ci?.service_charges);
@@ -162,6 +169,23 @@ export function PaymentSusuDetailModal({
                 {diagnoses
                   .map((d) => `${d.disease_code}${d.disease_name ? ` (${d.disease_name})` : ''}`)
                   .join(', ')}
+              </div>
+            )}
+
+            {/* 상병코드 전용 섹션 (services.category='상병') — teal 박스 아래 상단 배치 (AC-2) */}
+            {diagServices.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-muted-foreground">상병코드</div>
+                {diagServices.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 rounded border px-2 py-1 text-xs"
+                    data-testid="closing-susu-detail-dxcode"
+                  >
+                    <FileText className="h-3 w-3 shrink-0 text-teal-500" />
+                    <span>{s.services?.name ?? '—'}</span>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -226,11 +250,11 @@ export function PaymentSusuDetailModal({
               </div>
             )}
 
-            {/* 시술 오더 (services.category = [구분] display-only) */}
-            {services.length > 0 && (
+            {/* 시술 오더 (상병 제외 = treatServices, services.category = [구분] display-only) */}
+            {treatServices.length > 0 && (
               <div className="space-y-1">
                 <div className="text-xs font-semibold text-muted-foreground">시술 오더</div>
-                {services.map((s, i) => (
+                {treatServices.map((s, i) => (
                   <div
                     key={i}
                     className="flex items-center gap-2 rounded border px-2 py-1 text-xs"
