@@ -117,7 +117,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .from("redpay_terminal_registry")
     .select("merchant_id")
     .eq("domain", "foot")
-    .eq("active", true);
+    .eq("active", true)
+    // T-20260806-TESTTID-479470: 정산 배제축 — reconcile_excluded=true 단말(시험단말 470)은
+    //   미등록회선 resolve-대조 activeSet 에서 제외(#5). IS NOT TRUE = false/null 포함 = 회귀 0.
+    .not("reconcile_excluded", "is", true);
   const activeSet = new Set<string>();
   if (regErr) {
     console.warn(`${LOG} registry 조회 실패 → 전이판정 생략(전량 미등록 취급): ${regErr.message}`);

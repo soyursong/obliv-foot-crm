@@ -151,7 +151,11 @@ async function loadRegistryTids(): Promise<Set<string> | null> {
       .from("redpay_terminal_registry")
       .select("tid,superseded_tids")
       .eq("domain", REDPAY_DOMAIN)
-      .eq("active", true);
+      .eq("active", true)
+      // T-20260806-TESTTID-479470: 정산 배제축 — reconcile_excluded=true 단말(시험단말 470)은
+      //   matcher Tier1/2 자동매칭 대상에서 제외(#3, AND NOT COALESCE(reconcile_excluded,false)).
+      //   IS NOT TRUE = false/null 포함 = 기존 전 단말 회귀 0. #1 게이트·#2 결제 술어는 무접촉(방화벽).
+      .not("reconcile_excluded", "is", true);
     if (error) {
       console.warn(`[redpay-reconcile][foot][REGUNION] registry 조회 오류 → env 폴백: ${error.message}`);
       return null;
