@@ -1,0 +1,158 @@
+════════ F-4717 Phase B-RECHECK 재진단 (READ-ONLY, service_role) ════════
+실행시각(server now): 아래 now 참조 / PKG=9455ca84-5798-413b-bd45-7457616d7f55 / REPAY=8bf6ac26-dd20-4cfc-af38-7113868c9882
+
+── server now ──
+[
+  {
+    "kst_now": "2026-08-06 20:21:57.468381",
+    "utc_now": "2026-08-06 11:21:57.468381+00"
+  }
+]
+
+── 고객 식별 (chart 4717) ──
+[
+  {
+    "id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+    "name": "현은호",
+    "chart_number": "F-4717"
+  }
+]
+
+════════ RC-1: 현재 prod F-4717 packages.status ════════
+[
+  {
+    "id": "9455ca84-5798-413b-bd45-7457616d7f55",
+    "package_name": "24회권",
+    "status": "active",
+    "total_amount": 5760000,
+    "paid_amount": 5760000,
+    "total_sessions": 24,
+    "superseded_by": null,
+    "transferred_to": null,
+    "updated_at": "2026-08-05 10:47:27.229974+00"
+  }
+]
+
+════════ RC-2: repay payment(8bf6ac26) package_id 링크 실재 여부 ════════
+[
+  {
+    "id": "8bf6ac26-dd20-4cfc-af38-7113868c9882",
+    "package_id": "9455ca84-5798-413b-bd45-7457616d7f55",
+    "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+    "amount": 5760000,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "external_trxid": "K104753583726072811004430106625",
+    "external_approval_no": "30106625",
+    "reconciled_at": "2026-07-28 02:23:29.733+00",
+    "accounting_date": "2026-07-28",
+    "cancelled_at": null,
+    "deleted_at": null,
+    "created_at": "2026-07-28 02:21:58.44287+00"
+  }
+]
+
+════════ RC-3: 08-05 19:48 apply 이후 신규 payments 이벤트 (KST) ════════
+── payments (원장② after apply) ──
+[]
+── package_payments (원장① after apply) ──
+[]
+
+── (보강) F-4717 전체 payments 원장 스냅샷 ──
+[
+  {
+    "id": "b695bea6-dff9-462b-9b47-fcb8bb9568f6",
+    "package_id": null,
+    "amount": 8800,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "created_kst": "2026-07-20 15:32:00",
+    "reconciled_at": "2026-07-20 06:34:44.922+00",
+    "cancelled_at": null,
+    "deleted_at": null
+  },
+  {
+    "id": "8bf6ac26-dd20-4cfc-af38-7113868c9882",
+    "package_id": "9455ca84-5798-413b-bd45-7457616d7f55",
+    "amount": 5760000,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "created_kst": "2026-07-28 11:21:58.44287",
+    "reconciled_at": "2026-07-28 02:23:29.733+00",
+    "cancelled_at": null,
+    "deleted_at": null
+  },
+  {
+    "id": "2e8f7aa5-3e83-4d4a-8900-ab1f0048694a",
+    "package_id": null,
+    "amount": 15000,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "created_kst": "2026-07-28 12:00:00",
+    "reconciled_at": null,
+    "cancelled_at": null,
+    "deleted_at": null
+  },
+  {
+    "id": "a0572a5b-6152-4b42-b337-ef9c8233a1bf",
+    "package_id": null,
+    "amount": 1400,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "created_kst": "2026-07-28 19:37:57.984975",
+    "reconciled_at": null,
+    "cancelled_at": null,
+    "deleted_at": null
+  },
+  {
+    "id": "748ea872-75ab-44ed-b3b7-fe7bdbd20e30",
+    "package_id": null,
+    "amount": 240000,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "created_kst": "2026-07-28 19:37:58.120444",
+    "reconciled_at": null,
+    "cancelled_at": null,
+    "deleted_at": null
+  },
+  {
+    "id": "ee440850-650e-4424-bb00-aec12a6f21a8",
+    "package_id": null,
+    "amount": 240000,
+    "method": "card",
+    "payment_type": "refund",
+    "status": "active",
+    "created_kst": "2026-07-28 19:38:25.781858",
+    "reconciled_at": null,
+    "cancelled_at": null,
+    "deleted_at": null
+  },
+  {
+    "id": "6f9de7ef-ecc9-489c-a283-283d29574e37",
+    "package_id": null,
+    "amount": 1400,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "created_kst": "2026-08-05 14:43:05.022363",
+    "reconciled_at": "2026-08-05 05:47:48.906+00",
+    "cancelled_at": null,
+    "deleted_at": null
+  }
+]
+
+════════ 판정 요약 ════════
+RC-1 packages.status       = active  (기대: active)
+RC-2 repay.package_id      = 9455ca84-5798-413b-bd45-7457616d7f55  (기대: 9455ca84-5798-413b-bd45-7457616d7f55)
+RC-2 repay linked?         = true
+RC-3 apply 이후 신규 pay    = 0건 / 신규 pp = 0건
+RC-3 신규 미링크 재결제 후보 = 0건
+
+분기:
+  → (a) active·링크정상·신규0 = apply 영속 확인. 현장 stale 캐시/세션 가설 → responder relay(새로고침·재로그인).
