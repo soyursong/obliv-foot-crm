@@ -1,0 +1,49 @@
+{
+  "ticket": "T-20260806-foot-HEO4717-CBAND-15K-MISSPAY-ADD",
+  "artifact_class": "db_only",
+  "action": "AC-2 APPLY (COMMIT) — 현은호(F-4717) 케어토어밴드 15,000 카드 결제 누락 1건 payments INSERT",
+  "supervisor_go": "MSG-20260806-105727-wv0m (AC-5 PASS · GO)",
+  "runner": "scripts/T-20260806-foot-HEO4717-CBAND-15K-MISSPAY-ADD_ac2_apply.mjs --apply",
+  "runner_commit": "80d7dd91cc6281a5791a4234acbf8015a1b54c47",
+  "supabase_ref": "rxlomoozakkjesdqjtvd",
+  "auth_context": "Supabase Management API /database/query (service_role 상당, RLS 미적용)",
+  "final_dryrun_reconfirm": {
+    "before": 8426360,
+    "after": 8441360,
+    "delta": 15000,
+    "dupe15k": 1,
+    "ci_bind": "c33dfc76-cda5-48e6-9b34-277281b26626",
+    "post_probe": 0,
+    "note": "supervisor 독립재현과 bit-일치 · freeze 무drift 재확인"
+  },
+  "apply_result": {
+    "http_status": 201,
+    "new_payment_id": "2e8f7aa5-3e83-4d4a-8900-ab1f0048694a",
+    "check_in_id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+    "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+    "amount": 15000,
+    "method": "card",
+    "payment_type": "payment",
+    "status": "active",
+    "is_simulation": false,
+    "package_id": null,
+    "external_approval_no": null,
+    "external_trxid": null,
+    "created_at": "2026-07-28 03:00:00+00",
+    "kst_date": "2026-07-28",
+    "van_promotion": "HARD REJECT (external/manual · pg 미결속)"
+  },
+  "ac3_revenue_neutral": {
+    "view": "v_daily_revenue[2026-07-28] clinic 74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "single_revenue_before": 8426360,
+    "single_revenue_after": 8441360,
+    "single_revenue_delta": 15000,
+    "package_revenue": -670000,
+    "net_revenue_after": 7771360,
+    "postcheck_rows_f4717_15000_active": 1,
+    "verdict": "정확히 +15,000 1건만 증가 · 이중계상 0"
+  },
+  "rollback_sql": "DELETE FROM payments WHERE customer_id='6412fbf7-8a53-4d49-af7a-491e1d731b4c' AND amount=15000 AND check_in_id='c33dfc76-cda5-48e6-9b34-277281b26626' AND memo LIKE '케어토어밴드%누락 사후기록%';",
+  "applied_by": "agent-fdd-dev-foot",
+  "applied_at_kst": "2026-08-06"
+}
