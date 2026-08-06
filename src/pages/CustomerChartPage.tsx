@@ -3714,11 +3714,39 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 실패:', error.message);
         return 'error';
       }
-      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: rows-affected=0 은 '당일 open check_in 부재'('none')가
+      //   아니라 write 실패(RLS/스코프)다 — 명단행이 실재하는데 갱신이 조용히 튕긴 상태. 'none'(=미반영 안내)로
+      //   오분류하면 "오늘 열린 접수건 없음"이라는 사실과 다른 안내가 나가므로, 'error'(=반영 실패 안내)로 분리한다.
+      if (!data || data.length === 0) {
+        console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 0-row(RLS/스코프 사일런트 실패)');
+        return 'error';
+      }
       setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
       return 'updated';
     },
     [customer, latestCheckIn],
+  );
+
+  // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN (Option A — 가시화, 최소):
+  //   2번 차트 담당자(assigned_staff_id) 저장 후 당일 open check_in 으로의 하향전파 결과를 스태프에게 노출한다.
+  //   기존 문제(latent divergence): latestCheckIn 이 stale(취소/완료/당일 아님/부재)이면 updateTodayOpenCheckInConsultant
+  //     가 'none' 을 반환하고 아무 안내 없이 종료 → 담당자 등록(assigned_staff_id)만 조용히 갱신되고 배정 명단엔
+  //     반영되지 않는데도 스태프는 "등록됐다"고 인지하는 silent no-op.
+  //   FIX: 저장은 그대로 유지하되(assigned_staff_id 무접점), 명단 미반영 사실을 숨기지 않고 안내로 노출한다.
+  //   ★membership 소스(check_ins only·open·today·NOT done/cancelled)는 by-design 확정 계약 — 반영 로직 무변경.
+  //     이 하드닝은 FE 안내만 추가(계약 무접점). 명단 반영 자체가 업무상 필요하면 그건 계약 변경(별도 DA 게이트).
+  //   ※ toast.info/success 는 wrapper 에서 묵음(@/lib/toast) — 스태프가 반드시 봐야 하는 안내이므로
+  //     묵음 제외 채널(warning/error)로 노출한다.
+  const syncChartOwnerToTodayRoster = useCallback(
+    async (staffId: string | null) => {
+      const result = await updateTodayOpenCheckInConsultant(staffId);
+      if (result === 'none') {
+        toast.warning('담당자는 저장됐지만, 오늘 열린 접수건이 없어 배정 명단에는 아직 반영되지 않았습니다. 접수 후 자동 반영됩니다.');
+      } else if (result === 'error') {
+        toast.error('담당자는 저장됐지만 배정 명단 반영에 실패했습니다. 화면을 새로고침해 주세요.');
+      }
+    },
+    [updateTodayOpenCheckInConsultant],
   );
 
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
@@ -6347,7 +6375,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         void (async () => {
                           const { error } = await saveCustomerField({ assigned_staff_id: v });
                           if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
-                          await updateTodayOpenCheckInConsultant(v);
+                          // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 + 명단 미반영/실패 가시화(silent no-op 제거)
+                          await syncChartOwnerToTodayRoster(v);
                         })();
                       }}
                       disabled={savingField}
@@ -9152,7 +9181,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                       void (async () => {
                         const { error } = await saveCustomerField({ assigned_staff_id: v }); // AC-6 쌍방연동
                         if (error) return; // 영구 저장 실패 시 미전파(saveCustomerField가 toast 처리)
-                        await updateTodayOpenCheckInConsultant(v);
+                        // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 + 명단 미반영/실패 가시화(silent no-op 제거)
+                        await syncChartOwnerToTodayRoster(v);
                       })();
                     }}
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-sage-500 bg-white"

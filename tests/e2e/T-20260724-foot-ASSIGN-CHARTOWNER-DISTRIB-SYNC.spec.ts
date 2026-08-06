@@ -45,7 +45,9 @@ test.describe('[정적] DISTRIB-SYNC AC-1 하향전파 로직', () => {
     expect(idx).toBeGreaterThan(0);
     const block = chart.slice(idx, idx + 1000);
     expect(block).toContain('saveCustomerField({ assigned_staff_id: v })');
-    expect(block).toContain('updateTodayOpenCheckInConsultant(v)');
+    // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 직접호출 → 래퍼(syncChartOwnerToTodayRoster)
+    //   경유로 대체됨(래퍼가 updateTodayOpenCheckInConsultant 를 호출 + 결과 가시화). 하향전파 배선은 불변.
+    expect(block).toContain('syncChartOwnerToTodayRoster(v)');
     // 저장 실패 시 전파 안 함(가드) — 영구 저장이 성공해야만 방문별 전파
     expect(block).toContain('if (error) return;');
   });
