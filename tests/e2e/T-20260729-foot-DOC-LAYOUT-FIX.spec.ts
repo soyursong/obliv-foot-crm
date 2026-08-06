@@ -68,7 +68,8 @@ const SAMPLE: Record<string, string> = {
 test.describe('DOC-LAYOUT-FIX 마크업 불변식', () => {
   // ── ① 계산서·영수증 (rn-wrap, 독립수정 안전) ──
   test('①-a: @media print .rn-wrap = width:190mm + margin:0 auto (A4 중앙정렬, 210mm full-bleed 폐기)', () => {
-    expect(NEW_TPL).toMatch(/\.rn-wrap\s*\{\s*width:190mm;\s*padding:5mm 7mm;\s*margin:0 auto;\s*\}/);
+    // T-20260806-foot-DOCPRINT-PAGEBOX-BLANK2P: print .rn-wrap 에 min-height:auto 추가(빈 2페이지 소멸) — 기존 width/padding/margin 유지.
+    expect(NEW_TPL).toMatch(/\.rn-wrap\s*\{\s*width:190mm;\s*padding:5mm 7mm;\s*margin:0 auto;\s*min-height:auto;\s*\}/);
     expect(NEW_TPL).not.toMatch(/\.rn-wrap\s*\{\s*width:210mm;\s*padding:5mm 7mm;\s*\}/);
   });
   test('①-b: 하단 요양기관 정보표 colgroup 6칸, 상호 값칸 col4 21%(REFIX-3) + 전화 라벨칸 col5 11%', () => {
