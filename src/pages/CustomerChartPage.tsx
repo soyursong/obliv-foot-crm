@@ -8841,6 +8841,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
               customerId={customer.id}
               clinicId={customer.clinic_id}
               editable
+              /* T-20260806-foot-NHIS-LOOKUP-SOURCE-UNATTRIBUTED: 포털 딥링크 조회 개시 상태를 전달 →
+                 source 초안을 'hira_lookup' 으로 프리셋(강제 아님, 라디오 선택·기존값 우선). */
+              lookupInProgress={nhis.captureOpen}
               /* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) 프리필 경로 제거 —
                  데스크가 포털에서 확인 후 등급을 직접 선택·저장하는 수기 단일 경로만 유지. */
               onChanged={() => {
