@@ -1466,6 +1466,9 @@ function PackageDetailSheet({
   const [transferOpen, setTransferOpen] = useState(false);
   const [useSessionOpen, setUseSessionOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  // T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 복구(환불 오표시 → 활성) / 취소(차감이력 有 → cancelled)
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!packageId) return;
@@ -1631,6 +1634,8 @@ function PackageDetailSheet({
               {(canWrite !== false) && <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>}
+              {/* T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 취소(차감이력 有 패키지 → cancelled). status='cancelled'=트리거 보호축(early-RETURN)·재역전 없음. 자동환불 안 함(사용분 매출확정·미사용분은 기존 '환불' 버튼). */}
+              {(canWrite !== false) && <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" data-testid="pkg-cancel-btn" onClick={() => setCancelOpen(true)}>패키지 취소</Button>}
               {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
                 <Button variant="destructive" size="sm" className="gap-1"
                   onClick={async () => {
@@ -1646,6 +1651,19 @@ function PackageDetailSheet({
                   <Trash2 className="h-3.5 w-3.5" />삭제
                 </Button>
               )}
+            </div>
+          )}
+
+          {/* T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 복구 — '환불' 오표시 패키지를 돈-원장 정합(payments.package_id LINK)으로 정상(활성) 복구.
+              packages.status 직접 write 금지 · payments INSERT/DELETE 금지 · LINK(UPDATE)만 → 트리거가 net>0 시 active 자동도출.
+              net>0 달성 불가(연결할 결제 없음) 시 실행 차단(버튼이 payment 발명 금지). */}
+          {pkg.status === 'refunded' && (canWrite !== false) && (
+            <div className="rounded-md border border-teal-200 bg-teal-50/50 px-3 py-2.5">
+              <div className="text-xs font-medium text-teal-700 mb-1.5">패키지 복구</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">환불로 표시된 패키지를 누락된 결제 건을 연결해 정상(활성)으로 복구합니다.</div>
+                <Button size="sm" data-testid="pkg-restore-btn" className="shrink-0" onClick={() => setRestoreOpen(true)}>복구</Button>
+              </div>
             </div>
           )}
 
@@ -1689,6 +1707,13 @@ function PackageDetailSheet({
           onDone={() => { setRefundOpen(false); reload(); onChanged(); }} />
         <TransferDialog open={transferOpen} pkg={pkg} onOpenChange={setTransferOpen}
           onDone={() => { setTransferOpen(false); onChanged(); }} />
+        {/* T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN */}
+        <RestorePackageDialog open={restoreOpen} pkg={pkg} pkgPayments={pkgPayments}
+          onOpenChange={setRestoreOpen}
+          onDone={() => { setRestoreOpen(false); reload(); onChanged(); }} />
+        <CancelPackageDialog open={cancelOpen} pkg={pkg} sessions={sessions}
+          onOpenChange={setCancelOpen}
+          onDone={() => { setCancelOpen(false); reload(); onChanged(); }} />
       </SheetContent>
     </Sheet>
   );
@@ -2108,6 +2133,236 @@ function RefundDialog({ open, payments, onOpenChange, onDone }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>취소</Button>
           <Button variant="destructive" data-testid="pkg-refund-submit" disabled={submitting || !selected} onClick={process}>환불 실행</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN — 패키지 복구 다이얼로그
+//   DA write-contract(MSG-20260806-200836-nq87): 복구 = 돈-원장 정합 → 파생 status 자동치유.
+//   · packages.status 직접 write 금지 / payments INSERT·DELETE 금지 / payments.package_id LINK(UPDATE)만.
+//   · net>0 달성 가능할 때만 실행(SAFETY GATE). net≤0(연결할 결제 부재)이면 차단 → 결제기록 경로 안내
+//     (버튼이 payment 를 발명하지 않는다 = body 22.3M 팬텀 역방향 방지).
+//   · 트리거 foot_recompute_package_status 가 LINK(payments AFTER UPDATE) 발화로 net 재계산 → active 도출.
+//   · write-correctness(cross_crm_write_rowcheck_standard): rows-affected 검증, 0/부분 = 성공오인 금지.
+// ============================================================
+function RestorePackageDialog({ open, pkg, pkgPayments, onOpenChange, onDone }: {
+  open: boolean;
+  pkg: PackageListItem;
+  pkgPayments: { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string }[];
+  onOpenChange: (o: boolean) => void; onDone: () => void;
+}) {
+  type Cand = { id: string; amount: number; method: string; created_at: string };
+  const [candidates, setCandidates] = useState<Cand[]>([]);
+  const [linkedNet, setLinkedNet] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // 원장① package_payments net (표시/계산 공용). 원장② = 현재 linked active payments net(fetch).
+  const pkgLedgerNet = useMemo(
+    () => pkgPayments.reduce((s, p) => s + (p.payment_type === 'refund' ? -p.amount : p.amount), 0),
+    [pkgPayments],
+  );
+
+  useEffect(() => {
+    if (!open) { setCandidates([]); setSelected(new Set()); setLinkedNet(0); return; }
+    setLoading(true);
+    (async () => {
+      const [candRes, linkedRes] = await Promise.all([
+        // 연결 후보 = 이 고객·clinic 의 미연결(package_id NULL) 활성 '결제'(refund 제외). 삭제행 제외.
+        supabase.from('payments')
+          .select('id, amount, method, created_at')
+          .eq('customer_id', pkg.customer_id).eq('clinic_id', pkg.clinic_id)
+          .is('package_id', null).eq('status', 'active').eq('payment_type', 'payment').is('deleted_at', null)
+          .order('created_at', { ascending: false }),
+        // 원장② 이미 이 패키지에 linked 된 active payments net (트리거 net 산식과 정합)
+        supabase.from('payments')
+          .select('amount, payment_type')
+          .eq('package_id', pkg.id).eq('status', 'active').is('deleted_at', null),
+      ]);
+      setCandidates((candRes.data ?? []) as Cand[]);
+      const ln = ((linkedRes.data ?? []) as { amount: number; payment_type: string }[])
+        .reduce((s, p) => s + (p.payment_type === 'refund' ? -p.amount : p.amount), 0);
+      setLinkedNet(ln);
+      setLoading(false);
+    })();
+  }, [open, pkg]);
+
+  const currentNet = pkgLedgerNet + linkedNet;
+  const selectedSum = candidates.filter((c) => selected.has(c.id)).reduce((s, c) => s + c.amount, 0);
+  const projectedNet = currentNet + selectedSum;
+  const canRestore = selected.size > 0 && projectedNet > 0;
+
+  const toggle = (id: string) =>
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const process = async () => {
+    const ids = [...selected];
+    if (ids.length === 0) { toast.error('연결할 결제 건을 선택하세요.'); return; }
+    if (projectedNet <= 0) { toast.error('선택한 결제로는 순납부액이 0 이하입니다. 복구할 수 없습니다.'); return; }
+    if (!window.confirm(`선택한 결제 ${formatAmount(selectedSum)}을(를) 이 패키지에 연결하여 복구하시겠습니까?`)) return;
+    setSubmitting(true);
+    // LINK(UPDATE)만: package_id 설정. 재확인 조건(package_id IS NULL·active)으로 idempotent·경합 방어.
+    const { data, error } = await supabase.from('payments')
+      .update({ package_id: pkg.id })
+      .in('id', ids).is('package_id', null).eq('status', 'active')
+      .select('id');
+    if (error) { toast.error(`복구 실패: ${error.message}`); setSubmitting(false); return; }
+    const affected = (data ?? []).length;
+    // write-correctness: 0-row/부분성공(RLS 거부·경합) = 성공 오인 금지.
+    if (affected !== ids.length) {
+      toast.error(`결제 연결에 실패했습니다(연결 ${affected}/${ids.length}건). 권한 또는 이미 처리된 건일 수 있습니다.`);
+      setSubmitting(false);
+      return;
+    }
+    // 트리거가 동기 재계산(AFTER UPDATE·동일 txn). 사후 status 확인 — net>0 게이트대로 active 여야 함.
+    const { data: after } = await supabase.from('packages').select('status').eq('id', pkg.id).maybeSingle();
+    setSubmitting(false);
+    if ((after as { status?: string } | null)?.status !== 'active') {
+      toast.error('결제는 연결됐으나 상태가 활성으로 전환되지 않았습니다. 결제내역을 확인하세요.');
+      onDone();
+      return;
+    }
+    toast.success('패키지 복구 완료 (활성)');
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>패키지 복구</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            현재 순납부액 <span className={cn('font-semibold tabular-nums', currentNet > 0 ? 'text-emerald-600' : 'text-red-600')}>{formatAmount(currentNet)}</span> · 0 이하라 '환불' 상태입니다.
+            누락된 결제 건을 연결하면 활성으로 복구됩니다.
+          </div>
+          {loading ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">불러오는 중…</div>
+          ) : candidates.length === 0 ? (
+            // SAFETY GATE(net>0 불가): 연결할 결제 없음 → 차단 + 결제기록 경로 안내.
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800" data-testid="pkg-restore-block">
+              연결할 결제 내역이 없습니다. 재결제가 필요한 경우, 결제 화면에서 결제를 먼저 기록한 뒤 다시 복구하세요.
+              <div className="mt-1 text-amber-700">(복구 버튼은 결제를 새로 만들지 않습니다.)</div>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label>연결할 결제 건 선택 (미연결 결제)</Label>
+                <div className="space-y-1.5">
+                  {candidates.map((c) => (
+                    <button key={c.id} type="button" onClick={() => toggle(c.id)}
+                      data-testid="pkg-restore-cand"
+                      className={cn('flex w-full items-center justify-between rounded-md border px-3 py-2 text-left transition-colors',
+                        selected.has(c.id) ? 'border-teal-600 bg-teal-50' : 'border-input hover:bg-muted')}>
+                      <span className="text-xs text-muted-foreground">{formatDateTimeDots(c.created_at)} · {methodLabel(c.method)}</span>
+                      <span className="font-medium tabular-nums">{formatAmount(c.amount)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={cn('rounded-lg border p-3', projectedNet > 0 ? 'bg-emerald-50' : 'bg-red-50')} data-testid="pkg-restore-projected-box">
+                <div className="text-xs text-muted-foreground">복구 후 순납부액 (예상)</div>
+                <div className={cn('text-xl font-bold tabular-nums', projectedNet > 0 ? 'text-emerald-700' : 'text-red-700')} data-testid="pkg-restore-projected">
+                  {formatAmount(projectedNet)}
+                </div>
+                {selected.size > 0 && projectedNet <= 0 && (
+                  <div className="mt-1 text-xs text-red-600">순납부액이 0 이하라 복구할 수 없습니다. 더 큰 결제 건을 선택하세요.</div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>
+          <Button data-testid="pkg-restore-submit" disabled={submitting || !canRestore} onClick={process}>복구 실행</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN — 패키지 취소 다이얼로그
+//   DA write-contract: 취소 = status='cancelled'(기존 enum 재사용·트리거 early-RETURN 보호축 → 재역전 없음).
+//   · 사용분 매출확정: package_sessions 무접점(used 유지) → status='used' 집계 그대로 = 매출 소실 0.
+//   · 미사용분 환불은 이 버튼이 자동 수행하지 않는다(refund_package_atomic cascade ON = used 소실 = REJECT).
+//     환불이 필요하면 기존 '환불' 버튼(refund_package_payment · cascade OFF)으로 별도 처리.
+//   · 미사용분 처리(환불 vs 몰수) business fork = 현장 confirm 대기(planner FOLLOWUP) — 본 v1 은 상태전이만.
+//   · write-correctness: rows-affected 검증 + status='active' 경합 가드.
+// ============================================================
+function CancelPackageDialog({ open, pkg, sessions, onOpenChange, onDone }: {
+  open: boolean;
+  pkg: PackageListItem;
+  sessions: { id: string; status: string }[];
+  onOpenChange: (o: boolean) => void; onDone: () => void;
+}) {
+  const [unusedAmount, setUnusedAmount] = useState<number | null>(null);
+  const [usedSessions, setUsedSessions] = useState<number | null>(null);
+  const [remainingSessions, setRemainingSessions] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const usedFromList = sessions.filter((s) => s.status === 'used').length;
+
+  useEffect(() => {
+    if (!open) { setUnusedAmount(null); setUsedSessions(null); setRemainingSessions(null); return; }
+    (async () => {
+      // 미사용분 상당액(참고 표시용, read-only). SQL 함수 = 무영속.
+      const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: pkg.id });
+      const q = (data ?? null) as { refund_amount?: number; used_sessions?: number; remaining_sessions?: number } | null;
+      setUnusedAmount(q?.refund_amount ?? null);
+      setUsedSessions(q?.used_sessions ?? null);
+      setRemainingSessions(q?.remaining_sessions ?? null);
+    })();
+  }, [open, pkg]);
+
+  const process = async () => {
+    if (!window.confirm(`「${pkg.package_name}」 패키지를 취소 처리하시겠습니까?\n\n사용분은 매출로 확정되며 환불되지 않습니다.\n(미사용분 환불이 필요하면 취소 전에 '환불' 버튼으로 처리하세요.)`)) return;
+    setSubmitting(true);
+    // status='cancelled' 직접 전이 = 트리거 보호축(active↔refunded 자동파생 대상 아님·early-RETURN).
+    // .eq('status','active') = 낙관적 경합 가드(그 사이 환불/취소로 바뀌면 미실행).
+    const { data, error } = await supabase.from('packages')
+      .update({ status: 'cancelled' })
+      .eq('id', pkg.id).eq('status', 'active')
+      .select('id');
+    if (error) { toast.error(`취소 실패: ${error.message}`); setSubmitting(false); return; }
+    const affected = (data ?? []).length;
+    if (affected !== 1) {
+      // write-correctness: 0-row(RLS 거부·상태 이미 변경) = 성공 오인 금지.
+      toast.error('취소 처리에 실패했습니다. 패키지 상태가 이미 변경되었거나 권한이 없을 수 있습니다.');
+      setSubmitting(false);
+      return;
+    }
+    setSubmitting(false);
+    toast.success('패키지 취소 완료');
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>패키지 취소</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+            사용 <span className="font-semibold">{usedSessions ?? usedFromList}회</span>
+            {remainingSessions != null && <> · 잔여 <span className="font-semibold">{remainingSessions}회</span></>}
+            {unusedAmount != null && unusedAmount > 0 && (
+              <> · 미사용분 상당액 <span className="font-semibold tabular-nums">{formatAmount(unusedAmount)}</span> <span className="text-muted-foreground">(참고)</span></>
+            )}
+          </div>
+          <div className="rounded-md border border-red-200 bg-red-50/50 px-3 py-2.5 text-xs text-red-800">
+            <div className="font-medium mb-1">취소 처리 안내</div>
+            <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+              <li>패키지를 <b>취소(cancelled)</b> 상태로 전환합니다.</li>
+              <li>이미 사용한 회차는 <b>매출로 확정</b>되며 환불되지 않습니다.</li>
+              <li>이 취소는 <b>자동 환불을 하지 않습니다.</b> 미사용분 환불이 필요하면 <b>'환불'</b> 버튼으로 먼저 처리하세요.</li>
+            </ul>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>
+          <Button variant="destructive" data-testid="pkg-cancel-submit" disabled={submitting} onClick={process}>취소 처리</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
