@@ -37,7 +37,8 @@
 --
 -- ══ change-class = ADDITIVE ══
 --   신규 테이블 1(cancel_sync_outbox) + enqueue fn 1 + reservations AFTER UPDATE OF status 트리거 1 +
---   drain/alert fn 2 + cron 1. 기존 reservations 본체·dopamine_callback_outbox·enqueue_dopamine_callback·
+--   drain/alert fn 2 + cron 1 + grant-seal(§6 C23: 신규 SECDEF 3종 per-fn REVOKE PUBLIC/anon/authenticated·GRANT
+--   service_role, intended-caller-tier=backend-only). 기존 reservations 본체·dopamine_callback_outbox·enqueue_dopamine_callback·
 --   dispatch(lifecycle) 무접촉. DROP/기존컬럼 ALTER/backfill 0. 트리거 EXCEPTION→WARNING(취소 tx 절대 비차단).
 --   ★DB 스키마 필요 판명 = ticket db_change=false→true 갱신 사유(planner 통지). 대표게이트 = ADDITIVE + DA GO
 --   → autonomy §3.1 면제, 잔여 = supervisor DDL-diff + EF-diff + env 게이트.
@@ -182,7 +183,8 @@ COMMENT ON FUNCTION public.enqueue_cancel_sync_from_reservations() IS
   'T-20260807-dopamine-CRM-CANCEL-CALLBACK-FOOT-COVERAGE: reservations status→cancelled → cancel_sync_outbox 적재. '
   '도파민 귀속(source_system=dopamine + external_id) 건만(누출가드). event_id=reservation_id:epoch(cancelled_at)(distinct·멱등). '
   'cancelled_at=NEW.cancelled_at 권위(now() 합성 금지). 동기 발송 X. EXCEPTION→WARNING(취소 tx 비차단). '
-  '★enqueue_dopamine_callback(lifecycle audit-only) 무접촉 — 별 rail 직교.';
+  '★enqueue_dopamine_callback(lifecycle audit-only) 무접촉 — 별 rail 직교. '
+  'intended-caller-tier: backend-only(트리거 발화 전용, PUBLIC/anon/authenticated 봉인·§6 C23).';
 
 -- AFTER UPDATE OF status — cancelled 전이 시 적재. BEFORE trg_ensure_reservation_cancelled_at 뒤 발화(cancelled_at 가시성 보장).
 DROP TRIGGER IF EXISTS trg_enqueue_cancel_sync_from_reservations ON public.reservations;
@@ -256,7 +258,8 @@ $$;
 
 COMMENT ON FUNCTION public.alert_cancel_sync_dlq() IS
   'T-20260807-dopamine-CRM-CANCEL-CALLBACK-FOOT-COVERAGE: 취소 sync DLQ 신규(dlq_alerted=false) 슬랙 배치 알람. '
-  'webhook=vault slack_infra_alerts_webhook_url → slack_ops_webhook_url fallback. 알람 후 dlq_alerted=true.';
+  'webhook=vault slack_infra_alerts_webhook_url → slack_ops_webhook_url fallback. 알람 후 dlq_alerted=true. '
+  'intended-caller-tier: backend-only(drain/cron/service_role EF 전용, PUBLIC/anon/authenticated 봉인·§6 C23).';
 
 -- ══════════════════════════════════════════════════════════════════
 -- 4) cancel_sync_drain() — pg_cron 드레이너 백스톱: due 행 있으면 crm-cancel-sync-emit EF poke.
@@ -326,7 +329,8 @@ $$;
 COMMENT ON FUNCTION public.cancel_sync_drain() IS
   'T-20260807-dopamine-CRM-CANCEL-CALLBACK-FOOT-COVERAGE: cancel_sync_outbox 드레이너 백스톱 '
   '(net.http_post → crm-cancel-sync-emit EF). due 행 있을 때만 poke + 매 틱 DLQ 알람. '
-  'EF 자체 dark 게이트(CANCEL_SYNC_EMIT_ENABLED)로 미준비 window 무발신. vault supabase_project_url/anon/cron.';
+  'EF 자체 dark 게이트(CANCEL_SYNC_EMIT_ENABLED)로 미준비 window 무발신. vault supabase_project_url/anon/cron. '
+  'intended-caller-tier: backend-only(pg_cron/service_role EF 전용, PUBLIC/anon/authenticated 봉인·§6 C23).';
 
 -- ══════════════════════════════════════════════════════════════════
 -- 5) cron 스케줄 (분당 — 취소 전파 latency 완화; outbox 무손실 보증)
@@ -340,6 +344,25 @@ SELECT cron.schedule(
   $cron$ SELECT public.cancel_sync_drain(); $cron$
 );
 
+-- ══════════════════════════════════════════════════════════════════
+-- 6) grant-seal (C23 — intended-caller-tier: backend-only, §15-5-10)
+--    FIX-REQUEST MSG-20260807-071726-3f8y: 신규 SECDEF 함수 3종이 grant-seal 절 부재 →
+--    Postgres default-priv(PUBLIC EXECUTE 자동상속)로 RPC-노출 SECDEF(drain=jsonb·alert=void)가
+--    anon/authenticated 컨텍스트에서 호출가능(SECDEF=RLS 우회 실행 → 미인증 poke 표면).
+--    ⇒ 함수 3종 전부 per-fn targeted 봉인: PUBLIC/anon/authenticated 회수 + service_role 명시 부여.
+--    의도 caller = 트리거(enqueue) / pg_cron(job owner=superuser, EXECUTE 검사 bypass) / service_role EF(drain·alert).
+--    ★ enqueue(RETURNS TRIGGER)=비-RPC노출이나 C23 shift-left 규율상 신규 SECDEF 는 동일 봉인(defense-in-depth).
+--    ★ blanket ALTER DEFAULT PRIVILEGES 금지(C23-4) — per-fn targeted 만.
+--    ★ payment twin(20260730 prod-live) systemic 미봉인 = 별 leg(RLS-ADMINFUNC-GATE-SWEEP, 비-blocking) — 본 신규 mig 밖.
+--    ★ HARD apply-time gate(supervisor POSTCHECK): has_function_privilege('anon',
+--       'public.cancel_sync_drain()','EXECUTE')=false ∧ alert_cancel_sync_dlq 동일 — anon-EXEC≠0 즉시 롤백.
+REVOKE EXECUTE ON FUNCTION public.enqueue_cancel_sync_from_reservations() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.cancel_sync_drain()                     FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.alert_cancel_sync_dlq()                 FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.enqueue_cancel_sync_from_reservations() TO service_role;
+GRANT  EXECUTE ON FUNCTION public.cancel_sync_drain()                     TO service_role;
+GRANT  EXECUTE ON FUNCTION public.alert_cancel_sync_dlq()                 TO service_role;
+
 COMMIT;
 
 -- ============================================================
@@ -349,6 +372,9 @@ COMMIT;
 -- [ ] trg_enqueue_cancel_sync_from_reservations = AFTER UPDATE OF status ON public.reservations
 --       WHEN(status=cancelled AND source_system=dopamine AND external_id NOT NULL)
 -- [ ] cancel_sync_drain() / alert_cancel_sync_dlq() / cron 'foot-cancel-sync-drain'(*) 등록
+-- [ ] ★C23 grant-seal(HARD): has_function_privilege('anon','public.cancel_sync_drain()','EXECUTE')=false
+--       ∧ ...'public.alert_cancel_sync_dlq()'=false ∧ ...'public.enqueue_cancel_sync_from_reservations()'=false.
+--       'authenticated' 동일=false. service_role EXECUTE=true. anon/authenticated-EXEC≠0 = 즉시 롤백.
 -- [ ] ★lifecycle rail 무접촉 회귀0: dopamine_callback_outbox / enqueue_dopamine_callback /
 --       dopamine-callback-dispatch(→crm-lifecycle-callback) / cron 무변경(잔존)
 -- [ ] 기존 reservations UPDATE 경로 회귀 0 (trigger EXCEPTION→WARNING, 취소 비차단)

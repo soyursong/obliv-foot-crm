@@ -14,7 +14,7 @@ SELECT cron.unschedule('foot-cancel-sync-drain')
 -- 2) 트리거 해제 (fn drop 前)
 DROP TRIGGER IF EXISTS trg_enqueue_cancel_sync_from_reservations ON public.reservations;
 
--- 2·3·4) 함수 제거
+-- 2·3·4) 함수 제거 (§6 grant-seal[C23] 은 DROP FUNCTION 이 grant 동반소거 → 역연산 REVOKE/GRANT 불요)
 DROP FUNCTION IF EXISTS public.enqueue_cancel_sync_from_reservations();
 DROP FUNCTION IF EXISTS public.cancel_sync_drain();
 DROP FUNCTION IF EXISTS public.alert_cancel_sync_dlq();
