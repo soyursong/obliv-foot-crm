@@ -87,9 +87,20 @@ const CBAND_INSTALLMENT_OPTIONS: readonly { value: number; label: string }[] = [
 ] as const;
 
 interface Props {
-  checkInId: string;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND — 패키지 탭 결제는 내원(check_in) 비종속 → nullable.
+   *   packageId 모드에서는 null 로 전달(동시성 잠금은 check_in 스코프 → 패키지는 payment_attempt_id 멱등이 1차 방어).
+   */
+  checkInId?: string | null;
   clinicId: string;
   customerId: string | null;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1) — 비-null 이면 이 CAT 결제는 payments 가 아니라
+   *   package_payments 행으로 착지한다(DA(b) canonical · VG-1 firewall). 카드 탭과 동일 버튼(총괄 "패키지 버튼 동일 버튼 생성").
+   */
+  packageId?: string | null;
+  /** ★AC-3: 승인(수납/취소 성립) 후 상위 목록 갱신 콜백(패키지 상세시트 reload). 미전달 = no-op(카드 탭 회귀 0). */
+  onApproved?: () => void;
   /**
    * ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ① — 외부(수납창) 게이팅.
    * true 면 결제 진입을 비활성 렌더(사유 1줄 노출) 한다. 분할결제 선택 시 등 '카드 단일결제가 아닐 때'
@@ -266,7 +277,7 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
 
-export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount }: Props) {
+export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved }: Props) {
   // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value(팝업 open/reset 시 금액칸 초기값).
   //   >0 일 때만 자동입력, ≤0/미전달 → 빈칸(수동입력) 유지. resolveCbandDefaultAmount = 쉼표없는 raw 정수문자열
   //   (AmountInput 이 표시 포맷 담당). 결제·payments write 로직 무접촉(초기값만).
@@ -406,7 +417,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       const r = await approve(
         {
           tid: activeCfg.tid, merno: activeCfg.merno, catPort: activeCfg.catPort,
-          amount: amountNum, clinicId, customerId, checkInId,
+          amount: amountNum, clinicId, customerId, checkInId: checkInId ?? null,
+          // ★PKG-PAY-EXPAND(AC-1): 비-null → package_payments 착지(payments 아님). 카드 탭(미전달)=payments 회귀 0.
+          packageId: packageId ?? null,
           // ★HALBU 가변 전송 — 실효 개월(5만원↓/일시불=0 → HALBU "00", 회귀 무영향). formatHalbu 가 "02"~"12" 조립.
           installmentMonths: effectiveInstallment,
         },
@@ -416,6 +429,8 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       setResult(r);
       // ★ 분류에 따른 정지/성공/실패. ATTENTION 은 절대 자동 재시도하지 않음.
       setUi(r.needsCheck ? 'attention' : r.classification === 'APPROVED' ? 'approved' : 'failed');
+      // ★AC-3: 승인 성립 시 상위 목록 갱신(패키지 잔금·결제이력 즉시 반영). 미전달(카드 탭)=no-op.
+      if (!r.needsCheck && r.classification === 'APPROVED') onApproved?.();
     } catch (e) {
       if (!mounted.current) return;
       // 예외(조립 실패 등)는 안전측(정지)로. 승인 성립 가능성 배제 못하면 확인필요.
@@ -455,7 +470,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     let decision: ConcurrencyDecision = { blocked: false, reason: null, allowOverride: false, userMessage: '' };
     try {
       decision = await precheckConcurrentPayment(
-        { clinicId, checkInId, merno: cfg?.merno ?? null },
+        { clinicId, checkInId: checkInId ?? null, merno: cfg?.merno ?? null },
         supabaseAttemptStore,
       );
     } catch (e) {

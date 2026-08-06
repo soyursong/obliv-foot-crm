@@ -25,6 +25,9 @@ import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, 
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments, effectiveNetPaid } from '@/lib/footBilling';
 import { cn } from '@/lib/utils';
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
+// ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1/AC-4) — 패키지 탭 코밴 CAT 단말결제/취소(카드 탭 동일 버튼 재사용).
+import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/CbandTerminalCancelButton';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
 
@@ -1460,7 +1463,9 @@ function PackageDetailSheet({
     { id: string; session_number: number; session_type: string; session_date: string; status: string }[]
   >([]);
   const [pkgPayments, setPkgPayments] = useState<
-    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null; parent_payment_id?: string | null }[]
+    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null; parent_payment_id?: string | null;
+      // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4): 코밴 CAT 단말취소용 필드(CAT-origin 판별·ORI 전문 파생).
+      external_approval_no?: string | null; external_tid?: string | null; payment_attempt_id?: string | null; installment?: number | null; accounting_date?: string | null }[]
   >([]);
   const [refundOpen, setRefundOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -1477,7 +1482,8 @@ function PackageDetailSheet({
       supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
         .eq('package_id', packageId).neq('status', 'deleted').order('session_number', { ascending: true }),
       // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: parent_payment_id 추가(결제행 단위 환불 잔여 산출용)
-      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind, parent_payment_id')
+      // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4): CAT 단말취소 판별/전문 파생 필드 동반 조회.
+      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind, parent_payment_id, external_approval_no, external_tid, payment_attempt_id, installment, accounting_date')
         .eq('package_id', packageId).order('created_at', { ascending: false }),
     ]);
     setPkg(pkgRes.data as unknown as PackageListItem);
@@ -1629,6 +1635,21 @@ function PackageDetailSheet({
               {/* T-20260521-foot-STAFF-PKG-ROLLBACK: canWrite=false(therapist) → 쓰기 버튼 숨김 */}
               {(canWrite !== false) && <Button size="sm" onClick={() => setUseSessionOpen(true)}>회차 소진</Button>}
               {(canWrite !== false) && <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />}
+              {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1): 패키지 탭 코밴 CAT 단말결제(카드 탭과 동일 버튼).
+                  내부 기능플래그(VITE_CBAND_PAY) OFF 면 null 렌더 → 프로덕션 노출 0(카드 탭과 동일 게이트).
+                  defaultAmount=패키지 미수잔금(≤0 이면 빈칸). packageId → package_payments 행 착지(DA(b)·VG-1 firewall).
+                  checkInId 미전달(내원 비종속). onApproved=reload(승인 즉시 잔금·결제이력 반영). */}
+              {(canWrite !== false) && (
+                <div className="w-full">
+                  <CbandPayEntryButton
+                    clinicId={pkg.clinic_id}
+                    customerId={pkg.customer_id}
+                    packageId={pkg.id}
+                    defaultAmount={Math.max(0, computeOutstanding(pkg.total_amount, effectiveNetPaid(pkg, pkgPayments)))}
+                    onApproved={reload}
+                  />
+                </div>
+              )}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>}
               {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
@@ -1667,10 +1688,30 @@ function PackageDetailSheet({
             <div className="space-y-1">
               {pkgPayments.length === 0 && <div className="py-3 text-center text-xs text-muted-foreground">결제 없음</div>}
               {pkgPayments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs">
+                <div key={p.id} className="flex items-center justify-between gap-2 rounded bg-muted/30 px-2.5 py-1.5 text-xs">
                   <span>{formatDateTimeDots(p.created_at)}</span>
-                  <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
-                    {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)} · {methodLabel(p.method)}
+                  <span className="flex items-center gap-2">
+                    <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
+                      {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)} · {methodLabel(p.method)}
+                    </span>
+                    {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4): CAT 결제(payment_attempt_id 有) 행에만 [단말기 취소].
+                        기능플래그 OFF 면 null. 재취소 가드·refund 착지 모두 package_payments(packageId 스코프). */}
+                    {(canWrite !== false) && p.payment_type === 'payment' && isPlanACardPayment({
+                      id: p.id, amount: p.amount, external_approval_no: p.external_approval_no,
+                      payment_attempt_id: p.payment_attempt_id,
+                    }) && (
+                      <CbandTerminalCancelButton
+                        payment={{
+                          id: p.id, amount: p.amount, clinic_id: pkg.clinic_id, check_in_id: null,
+                          external_approval_no: p.external_approval_no, accounting_date: p.accounting_date,
+                          created_at: p.created_at, payment_attempt_id: p.payment_attempt_id, installment: p.installment,
+                        }}
+                        clinicId={pkg.clinic_id}
+                        customerId={pkg.customer_id}
+                        packageId={pkg.id}
+                        onDone={reload}
+                      />
+                    )}
                   </span>
                 </div>
               ))}

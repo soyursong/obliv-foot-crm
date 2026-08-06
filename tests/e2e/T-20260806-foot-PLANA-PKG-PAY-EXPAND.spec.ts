@@ -5,9 +5,11 @@ import {
   PER_TXN_LIMIT_KRW,
   buildMsg,
   TRANTYPE_APPROVE,
+  TRANTYPE_CANCEL,
 } from '../../src/lib/cband/protocol';
 import {
   approve,
+  cancel,
   type AttemptRecord,
   type AttemptStore,
 } from '../../src/lib/cband/paymentFlow';
@@ -121,5 +123,71 @@ test.describe('T-20260806 PKG-PAY-EXPAND — AC-2 흐름: 한도는 전송 게�
       amount: 5_000_000, catPort: BASE.catPort, msgTrace: '111122225000',
     });
     expect(body.TAMT).toBe('005000000');
+  });
+});
+
+// ── 실측 3개월 할부 취소 정본(MSG-iyn7) — 패키지 CAT 취소(AC-4) 결정론 관측용 ──────────
+const REAL_CANCEL_3M =
+  '{"ERRCODE":"0000","TRANTYPE":"0430","CARDNO":"55318440****364*  ","HALBU":"03",' +
+  '"TAMT":"002670000","TRANDATE":"260806","TRANTIME":"131200","AUTHNO":"00328697    ",' +
+  '"MERNO":"00918554560    ","ORI_AUTHNO":"00328697","ORI_DATE":"260806",' +
+  '"TRANSERIAL":"104421000760","MSG1":"거래 취소00328697"}';
+
+/**
+ * AC-1/AC-3/AC-4 착지 discriminator (DA-20260806-...-LANDING-MODEL(b) · VG-1/VG-3 firewall).
+ * ────────────────────────────────────────────────────────────────────────────
+ * 착지 규칙: runPaymentFlow 이 input.packageId 를 AttemptRecord.packageId 로 그대로 전파하고,
+ *   recordCardPayment 이 이 판별자로 착지 테이블을 분기한다 —
+ *     packageId 비-null → package_payments 행(패키지 탭, CAT 캐논) 착지,
+ *     packageId null    → payments 행(카드 탭·내원 수납) 착지(회귀 0).
+ *   본 스펙은 착지 판별자(packageId)의 전파를 결정론으로 고정한다(VG-1 double-count firewall 의 관측 가능한 근거).
+ *   실 DB 행 착지·paid_amount 재계산 = supabase 라이브(field-soak, 갤탭 실기기 confirm).
+ */
+test.describe('T-20260806 PKG-PAY-EXPAND — AC-1/3/4 착지 discriminator(packageId 전파)', () => {
+  const mockSender = (raw: string) => async (_m: string, msgTrace: string): Promise<SendResult> =>
+    ({ raw, timedOut: false, msgTrace });
+
+  test('AC-1: 패키지 결제(packageId 有) → 기록 rec.packageId 전파(package_payments 착지 판별자)', async () => {
+    const { store, payments } = makeMemStore();
+    const r = await approve(
+      { ...BASE, checkInId: null, packageId: 'pkg-42', amount: 300_000 },
+      store, mockSender(REAL_APPROVAL_5M),
+    );
+    expect(r.classification).toBe('APPROVED');
+    expect(payments).toHaveLength(1);
+    // ★VG-1: 착지 판별자 = packageId 비-null → package_payments 경로(payments 중복 revenue행 금지).
+    expect(payments[0].packageId).toBe('pkg-42');
+  });
+
+  test('AC-1 회귀: 카드 탭(packageId 미전달) → rec.packageId=null(payments 착지, 회귀 0)', async () => {
+    const { store, payments } = makeMemStore();
+    const r = await approve(
+      { ...BASE, amount: 300_000 },
+      store, mockSender(REAL_APPROVAL_5M),
+    );
+    expect(r.classification).toBe('APPROVED');
+    expect(payments).toHaveLength(1);
+    // ★카드 탭 = packageId null → payments 경로(패키지 착지 분기 미진입, 무회귀).
+    expect(payments[0].packageId ?? null).toBeNull();
+  });
+
+  test('AC-4: 패키지 결제 취소(packageId 有) → refund + packageId 전파(package_payments 역착지 판별자)', async () => {
+    const { store, payments } = makeMemStore();
+    const r = await cancel(
+      { ...BASE, checkInId: null, packageId: 'pkg-42', amount: 2_670_000,
+        originalAuthNo: '00328697', originalAuthDate: '260806', installmentMonths: 3 },
+      store, mockSender(REAL_CANCEL_3M),
+    );
+    expect(r.classification).toBe('APPROVED');
+    expect(payments).toHaveLength(1);
+    expect(payments[0].tranType).toBe(TRANTYPE_CANCEL);   // refund(역처리)
+    expect(payments[0].packageId).toBe('pkg-42');         // ★취소 refund 도 package_payments 로 착지(승인+취소 커플링)
+    expect(payments[0].installmentMonths).toBe(3);        // 원거래 개월 각인(복원)
+  });
+
+  test('AC-2×패키지: 패키지 결제도 500만원 초과 사전차단 술어 동일 적용(공용 게이트)', () => {
+    // 패키지 결제는 카드 탭과 동일 CbandPayEntryButton 전송 게이트를 계승 — 한도 술어 공유 확인.
+    expect(exceedsPerTxnLimit(5_000_000)).toBe(false);
+    expect(exceedsPerTxnLimit(5_000_001)).toBe(true);
   });
 });
