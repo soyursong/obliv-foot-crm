@@ -1,5 +1,6 @@
 /**
- * T-20260806-foot-SALESDOCTOR-CUMULATIVE-GROSS-RECOMPUTE (김주연 총괄, forward-iteration of 4COL)
+ * T-20260806-foot-SALESDOCTOR-CUMUL-GROSS-REDEFINE (김주연 총괄, forward-iteration of 4COL)
+ *   (canonical; dedup of T-20260806-foot-SALESDOCTOR-CUMULATIVE-GROSS-RECOMPUTE — 동일 결정, planner void)
  * 매출집계 > 담당실장별 탭 — [누적매출]을 gross(환불 차감 前 원본 수납)로 재산식. 환불 단일차감.
  *
  * ── 왜 재산식인가 (부모 4COL 이중차감 RC) ─────────────────────────────────────────

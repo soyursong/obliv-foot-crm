@@ -1,5 +1,6 @@
 /**
- * T-20260806-foot-SALESDOCTOR-CUMULATIVE-GROSS-RECOMPUTE (forward-iteration of 4COL)
+ * T-20260806-foot-SALESDOCTOR-CUMUL-GROSS-REDEFINE (canonical; dedup of ...CUMULATIVE-GROSS-RECOMPUTE)
+ * (forward-iteration of 4COL)
  * 매출집계 > 담당실장별 [누적매출]을 gross(환불 차감 前 원본 수납)로 재산식 → 환불 단일차감.
  *
  * 현장 확정(김주연 총괄 2026-08-06):
