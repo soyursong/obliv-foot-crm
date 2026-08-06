@@ -4,6 +4,8 @@ import {
   nextPendingLeg,
   applyLegResult,
   resetLegForRetry,
+  markLegCancelled,
+  deriveSplitView,
   classifySession,
   advanceHalts,
   partialFailureOptions,
@@ -205,5 +207,112 @@ test.describe('AC-4 한 수납 ↔ 복수 승인번호 묶음 (스키마 무접�
     const g = collectApprovals(s);
     expect(g.approvalNumbers).toEqual(['AUTH001']);
     expect(g.total).toBe(100000);
+  });
+});
+
+test.describe('AC-5 승인분 취소(커플링) — markLegCancelled', () => {
+  test('승인분 취소: approved→cancelled, 묶음에서 제외 + 잔액 재산정', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+    ]);
+    s = applyLegResult(s, 0, approved('AUTH001'));
+    s = applyLegResult(s, 1, failed());
+    // 사람이 승인분(leg0)을 명시적으로 취소(0430 성공 후)
+    s = markLegCancelled(s, 0);
+    expect(s.legs[0].outcome).toBe('cancelled');
+    // 승인 0 + 미해소 실패 존재 → failed(void). 묶음 승인번호 0.
+    expect(collectApprovals(s).approvalNumbers).toEqual([]);
+    expect(classifySession(s)).toBe('failed');
+  });
+
+  test('승인분만 취소(pending/failed/attention 은 markLegCancelled 무효)', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+    ]);
+    s = applyLegResult(s, 1, failed());
+    s = markLegCancelled(s, 0); // leg0=pending → 무변경
+    s = markLegCancelled(s, 1); // leg1=failed → 무변경
+    expect(s.legs[0].outcome).toBe('pending');
+    expect(s.legs[1].outcome).toBe('failed');
+  });
+
+  test('3레그: 1건 취소 후 승인분 남으면 partial_failure(사람 판단 유지)', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+      { method: 'card', amount: 300000 },
+    ]);
+    s = applyLegResult(s, 0, approved('AUTH001'));
+    s = applyLegResult(s, 1, approved('AUTH002'));
+    s = applyLegResult(s, 2, failed());
+    s = markLegCancelled(s, 1); // 승인분 1건 취소 — leg0 승인 잔존
+    expect(classifySession(s)).toBe('partial_failure');
+    expect(collectApprovals(s).approvalNumbers).toEqual(['AUTH001']);
+    expect(partialFailureOptions(s).approvedTotal).toBe(100000);
+  });
+});
+
+test.describe('UI 배선 SSOT — deriveSplitView (렌더 결정 단일 파생)', () => {
+  test('진행 중: 다음 pending 레그 전송 허용(canSendNext)', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+    ]);
+    let v = deriveSplitView(s);
+    expect(v.canSendNext).toBe(true);
+    expect(v.nextLegIndex).toBe(0);
+    expect(v.halted).toBe(false);
+    s = applyLegResult(s, 0, approved('AUTH001'));
+    v = deriveSplitView(s);
+    expect(v.status).toBe('in_progress');
+    expect(v.nextLegIndex).toBe(1);      // 자동 진행 아님 — 사람이 다시 [결제 요청]
+  });
+
+  test('🔴 중간 실패 정지: canSendNext=false + 3옵션 노출(자동 진행 금지)', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+    ]);
+    s = applyLegResult(s, 0, approved('AUTH001'));
+    s = applyLegResult(s, 1, failed());
+    const v = deriveSplitView(s);
+    expect(v.halted).toBe(true);
+    expect(v.canSendNext).toBe(false);   // ★다음 레그 자동 전송 금지
+    expect(v.nextLegIndex).toBeNull();
+    expect(v.status).toBe('partial_failure');
+    expect(v.options.isPartial).toBe(true);
+    expect(v.options.retryableLegs).toEqual([1]);
+    expect(v.options.cancellableApprovedLegs).toEqual([0]);
+  });
+
+  test('완료: 승인 묶음 요약 + 전송 종료', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+    ]);
+    s = applyLegResult(s, 0, approved('AUTH001'));
+    s = applyLegResult(s, 1, approved('AUTH002'));
+    const v = deriveSplitView(s);
+    expect(v.status).toBe('completed');
+    expect(v.canSendNext).toBe(false);
+    expect(v.approvals.approvalNumbers).toEqual(['AUTH001', 'AUTH002']);
+    expect(v.approvals.total).toBe(300000);
+  });
+
+  test('재시도 후 재개: 실패 레그 pending 복귀 → canSendNext 회복', () => {
+    let s = createSplitSession(CTX, [
+      { method: 'card', amount: 100000 },
+      { method: 'card', amount: 200000 },
+    ]);
+    s = applyLegResult(s, 0, approved('AUTH001'));
+    s = applyLegResult(s, 1, failed());
+    expect(deriveSplitView(s).canSendNext).toBe(false);
+    s = resetLegForRetry(s, 1);
+    const v = deriveSplitView(s);
+    expect(v.canSendNext).toBe(true);
+    expect(v.nextLegIndex).toBe(1);
+    expect(v.halted).toBe(false);
   });
 });
