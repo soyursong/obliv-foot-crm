@@ -403,3 +403,20 @@
     inset 0 -1.5px 3px rgba(150, 160, 174, 0.28), /* 하단 inset 그림자(볼록 유지·무변경) */
     0 1px 1.5px rgba(120, 131, 146, 0.07);        /* 은은한 outer(2→1.5, alpha 0.12→0.07) */
 }
+/* ── T-20260806-foot-STAFFSPACE-UISIZE-HALF-COMPACT ─────────────────────────────
+   직원·공간(/admin/staff) 화면 전체 UI 요소를 균일하게 ~0.7배 축소(면적 ≈ 절반 밀도).
+   [근본원인] 부모 STAFFSPACE-TAB-RELOC-PERM-COMPACT(1차)는 외곽 여백/섹션 간격(p-3/space-y-3)만
+     축소 → 카드 내부 패딩·폰트·행높이·아이콘·버튼 등 시각 질량 대부분이 그대로라 "크기 이전과 동일"
+     피드백. piecemeal 유틸 조정은 요소를 빠뜨려 체감 밀도가 안 오른다.
+   [해결] 요소별 클래스를 일일이 손대는 대신 루트 컨테이너에 단일 균일 스케일(zoom)을 적용 →
+     폰트·패딩·행높이·아이콘·버튼·카드가 한 번에 비례 축소(누락 0). 부모 컴팩트 유틸(p-3/space-y-3)과
+     별개 축이라 이중 축소·레이아웃 붕괴 없음(zoom은 렌더 배율, 유틸은 논리 spacing).
+   [스코프 격리 AC-4] .staff-space-compact 클래스는 Staff.tsx 루트 div 1곳에만 부여 →
+     공용 ui/card·ui/button 기본값이나 전역 spacing/font 토큰 무접촉 → 타 화면 유출 0.
+   [가독 하한 AC-3] 리터럴 50%(zoom .5)는 폰트가 과소(text-xs 12→6px) → 가독 하한 내 최대 축소로
+     0.7 채택(text-sm 14→9.8px, text-xs 12→8.4px). 갤탭/Chromium·Safari17+ zoom 지원.
+   [모달] Radix Dialog 는 body portal 렌더(이 subtree 밖)라 zoom 미적용 → 입력 폼은 원배율 유지(의도).
+   현장 체감 조정 여지: 배율만 tune(0.65~0.8), 클래스/스코프 구조 불변. */
+.staff-space-compact {
+  zoom: 0.7;
+}
