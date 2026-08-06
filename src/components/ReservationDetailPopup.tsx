@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
@@ -313,6 +314,18 @@ export function ReservationDetailPopup({
   const [selectedConsultantId, setSelectedConsultantId] = useState<string>('');
   const [consultantSaving, setConsultantSaving] = useState(false);
 
+  // ── T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 동행(customer_id=NULL) 승격 상태.
+  //   동행예약 상세는 진성 고객이 없어(§444/§52 by-design) 차트입력·체크인이 비활성/orphan.
+  //   스태프-확정 실명+실번호로 fn_staff_companion_promote(find-or-create → customer_id 결속) 호출 →
+  //   promotedCustomerId 로컬 오버레이로 팝업 재오픈 없이 in-place 활성(effectiveCustomerId).
+  //   DA verdict A(scalp2 canonical 포팅)·VG1~VG5. 비동행(customer_id 有)에는 상태 미사용 → 회귀 0.
+  const [promotedCustomerId, setPromotedCustomerId] = useState<string | null>(null);
+  const [promoteName, setPromoteName] = useState('');
+  const [promotePhone, setPromotePhone] = useState('');
+  const [promoting, setPromoting] = useState(false);
+  //   effectiveCustomerId = 원래 customer_id(비동행·정상) 우선, 없으면 승격된 id. 비동행은 항상 원래값 = 무변.
+  const effectiveCustomerId = reservation?.customer_id ?? promotedCustomerId;
+
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단)
   const [searchValue, setSearchValue] = useState('');
 
@@ -522,6 +535,21 @@ export function ReservationDetailPopup({
     // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC2: 예약 변경 시 [힐러] 칩 상태(is_healer_intent) 재초기화(stale 차단).
     setDetailHealerIntent(reservation.is_healer_intent ?? false);
 
+    // T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 예약 변경 시 동행 승격 상태 리셋(stale 차단) +
+    //   동행(customer_id=NULL) 이면 스태프-확정 프리필(실명 base·실번호 스냅샷). 비동행은 폼 미사용.
+    setPromotedCustomerId(null);
+    setPromoting(false);
+    if (!reservation.customer_id) {
+      const baseName = (reservation.customer_real_name || reservation.customer_name || '')
+        .replace(/\s*(님)?\s*(과)?\s*동행\s*$/g, '')
+        .trim();
+      setPromoteName(baseName);
+      setPromotePhone(reservation.customer_real_phone ? formatPhoneInput(reservation.customer_real_phone) : '');
+    } else {
+      setPromoteName('');
+      setPromotePhone('');
+    }
+
     const customerId = reservation.customer_id;
     const clinicId = reservation.clinic_id;
 
@@ -567,6 +595,13 @@ export function ReservationDetailPopup({
   // reservation.id 변경 시에만 재로드
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservation?.id, reservation?.customer_id, reservation?.clinic_id]);
+
+  // T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 동행 승격 완료 후 1번구역(고객정보·패키지·치료내역)
+  //   in-place 로드 — 팝업 재오픈 없이 승격 고객 정보가 즉시 표시되도록. promotedCustomerId 세팅 시에만 발화.
+  useEffect(() => {
+    if (promotedCustomerId) loadZone1Data(promotedCustomerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promotedCustomerId]);
 
   // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: new-mode(anchor 예약 없음)에서도 예약등록자 마스터 로드.
   //   기존 마스터 로더는 reservation 효과 내부 → newMode 진입 시 registrars 가 비어 드롭다운이 공란이 되는 문제 보강.
@@ -1169,16 +1204,20 @@ export function ReservationDetailPopup({
     //   동적 365일 recency(서버 KST)로 교체. 식별된 고객(customer_id) + new/returning 예약에 한해
     //   최근 완료방문 365일 이내→재진 / 초과·무이력→초진취급 으로 판정. experience/미식별 예약은 기존 유지.
     //   ⚠ 라우팅 매핑(returning→치료대기 / new→접수중 / else→상담대기)은 불변 — 분류 입력만 교체.
+    // T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 승격된 동행은 effectiveCustomerId 로 귀속
+    //   (orphan 체크인 제거·AC-2 집계 반영). 비동행은 effectiveCustomerId === reservation.customer_id → 무변.
+    //   승격 시 name/phone 스냅샷도 스태프-확정 실명·실번호(promote 입력)로 기록(동행 라벨 대신 진성 신원).
     const effVisitType: VisitType =
-      reservation.customer_id && reservation.visit_type !== 'experience'
-        ? await resolveVisitTypeByRecency(reservation.customer_id, reservation.clinic_id)
+      effectiveCustomerId && reservation.visit_type !== 'experience'
+        ? await resolveVisitTypeByRecency(effectiveCustomerId, reservation.clinic_id)
         : reservation.visit_type;
     const { error } = await supabase.from('check_ins').insert({
       clinic_id: reservation.clinic_id,
-      customer_id: reservation.customer_id,
+      customer_id: effectiveCustomerId,
       reservation_id: reservation.id,
-      customer_name: reservation.customer_name ?? '',
-      customer_phone: reservation.customer_phone,
+      customer_name: (promotedCustomerId ? promoteName.trim() : '')
+        || reservation.customer_name || reservation.customer_real_name || '',
+      customer_phone: (promotedCustomerId ? promotePhone.trim() : null) || reservation.customer_phone,
       visit_type: effVisitType,
       // AC-1/AC-2: 재진 → 치료대기(treatment_waiting), 예약없이방문 → 상담대기(consult_waiting). canonical 분기 복원.
       // T-20260613-foot-FIELDBATCH item2: 초진(new) → [접수중](receiving). 우클릭→예약상세→초진 체크인 진입점. 셀프접수 초진(receiving)과 통일.
@@ -1213,9 +1252,51 @@ export function ReservationDetailPopup({
     await doCheckIn();
   };
 
+  // ── T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 동행자 승격(find-or-create 실번호 materialize → customer_id 결속)
+  //   DA verdict A(scalp2 canonical 포팅·스태프-JWT). 서버 RPC fn_staff_companion_promote 가 authz+find-or-create
+  //   +bind+companion_of stamp 를 원자 수행. VG1(진성 실번호·더미 provision 0)/VG2(§52 결속사다리: 0→create·
+  //   1정확일치→bind·불일치·2+→provisional 데스크확정·전화단독 auto-bind 금지)/VG4(스태프-확정 실명).
+  const promoteCompanion = async () => {
+    if (!reservation?.id) return;
+    const nm = promoteName.trim();
+    const ph = promotePhone.trim();
+    if (!nm) { toast.error('동행자 성함(실명)을 입력하세요'); return; }
+    if (ph.replace(/\D/g, '').length < 8) { toast.error('동행자 실 연락처를 입력하세요'); return; }
+    setPromoting(true);
+    const { data, error } = await supabase.rpc('fn_staff_companion_promote', {
+      p_reservation_id: reservation.id,
+      p_name: nm,
+      p_phone: ph,
+    });
+    setPromoting(false);
+    if (error) { toast.error(`동행자 고객 등록 실패: ${error.message}`); return; }
+    const res = (data ?? {}) as {
+      success?: boolean; provisional?: boolean; error?: string; customer_id?: string;
+    };
+    if (!res.success) {
+      const msg =
+        res.error === 'real_phone_required' ? '실 연락처가 필요합니다(더미번호 불가)'
+        : res.error === 'phone_required' ? '연락처 형식을 확인하세요'
+        : res.error === 'name_required' ? '성함을 확인하세요'
+        : res.error === 'reservation_not_found' ? '예약을 찾을 수 없습니다'
+        : `동행자 고객 등록 실패: ${res.error ?? '알 수 없는 오류'}`;
+      toast.error(msg);
+      return;
+    }
+    if (res.provisional) {
+      toast.warning('동일 연락처의 다른 고객이 있어 자동 연결을 보류했습니다. 데스크에서 고객 확인 후 연결하세요.');
+      return;
+    }
+    if (res.customer_id) {
+      setPromotedCustomerId(res.customer_id);
+      toast.success('동행자 고객 등록 완료 — 이제 차트 입력·체크인이 가능합니다');
+    }
+  };
+
   // ── 고객메모 저장
   const saveCustomerMemo = async () => {
-    if (!reservation.customer_id) return;
+    // T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 승격 고객 포함(effectiveCustomerId). 비동행은 무변.
+    if (!effectiveCustomerId) return;
     setMemoSaving(true);
     // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: write는 2번차트 1구역과 동일 컬럼
     // customers.customer_note로 일원화(양방향 sync). customer_memo는 3구역 예약메모 히스토리
@@ -1223,7 +1304,7 @@ export function ReservationDetailPopup({
     const { error } = await supabase
       .from('customers')
       .update({ customer_note: customerMemo })
-      .eq('id', reservation.customer_id);
+      .eq('id', effectiveCustomerId);
     setMemoSaving(false);
     if (error) { toast.error(`고객메모 저장 실패: ${error.message}`); return; }
     toast.success('고객메모 저장됨');
@@ -1231,14 +1312,15 @@ export function ReservationDetailPopup({
 
   // ── 상담사 저장 (customers.assigned_staff_id)
   const saveConsultant = async (val: string) => {
-    if (!reservation.customer_id) return;
+    // T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 승격 고객 포함(effectiveCustomerId). 비동행은 무변.
+    if (!effectiveCustomerId) return;
     const staffId = val === '__none__' ? null : val;
     setConsultantSaving(true);
     setSelectedConsultantId(val === '__none__' ? '' : val);
     const { error } = await supabase
       .from('customers')
       .update({ assigned_staff_id: staffId })
-      .eq('id', reservation.customer_id);
+      .eq('id', effectiveCustomerId);
     setConsultantSaving(false);
     if (error) { toast.error(`담당자 저장 실패: ${error.message}`); return; }
     toast.success('담당자 저장됨');
@@ -1279,11 +1361,12 @@ export function ReservationDetailPopup({
     //       예약경로 무변경 → customers.visit_route 재-stomp 금지(blast radius 축소). 초기값 = reservation.visit_route(L496 프리로드).
     //   ▸ G3(매출 회귀가드): source_system 무접촉.
     const routeChanged = visitRoute !== (reservation.visit_route ?? '');
-    if (reservation.customer_id && visitRoute !== '' && routeChanged) {
+    // T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 승격 고객 포함(effectiveCustomerId). 비동행은 무변.
+    if (effectiveCustomerId && visitRoute !== '' && routeChanged) {
       const { error: custErr } = await supabase
         .from('customers')
         .update({ visit_route: visitRoute })
-        .eq('id', reservation.customer_id);
+        .eq('id', effectiveCustomerId);
       if (custErr) { setRouteSaving(false); toast.error(`방문경로 연동 실패: ${custErr.message}`); return; }
     }
     setRouteSaving(false);
@@ -1502,6 +1585,58 @@ export function ReservationDetailPopup({
                 </div>
               )}
 
+              {/* T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 동행(customer_id=NULL) 승격 배너.
+                  동행예약 상세는 진성 고객이 없어(§444/§52) 차트입력·체크인이 비활성 → 스태프-확정 실명+실번호로
+                  고객 등록(승격) 후 활성. 승격 완료(promotedCustomerId) 시 폼 숨김·성공 배너.
+                  게이트: 기존 예약(reservation.id 有)·동행(customer_id=NULL)·newMode 아님·타고객조회(loadedMatch) 아님.
+                  비동행(customer_id 有)에는 미렌더 → 회귀 0. */}
+              {!newMode && !loadedMatch && reservation?.id && !reservation.customer_id && (
+                promotedCustomerId ? (
+                  <div
+                    className="rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2.5 text-xs text-teal-800 flex-shrink-0"
+                    data-testid="companion-promoted-banner"
+                  >
+                    ✓ 동행자 고객 등록 완료 — 아래에서 차트 입력·체크인을 진행하세요.
+                  </div>
+                ) : (
+                  <div
+                    className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-3 shadow-sm flex-shrink-0 space-y-2"
+                    data-testid="companion-promote-box"
+                  >
+                    <div className="text-xs font-semibold text-amber-800">동행자 고객 등록</div>
+                    <p className="text-[11px] leading-snug text-amber-700">
+                      동행 예약은 고객 정보가 연결되어 있지 않습니다. 차트 입력·체크인을 하려면 동행자 성함과 연락처를 확인해 고객으로 먼저 등록하세요.
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        value={promoteName}
+                        onChange={(e) => setPromoteName(e.target.value)}
+                        placeholder="동행자 성함(실명)"
+                        className="h-8 text-xs"
+                        data-testid="companion-promote-name"
+                      />
+                      <Input
+                        value={promotePhone}
+                        onChange={(e) => setPromotePhone(formatPhoneInput(e.target.value))}
+                        placeholder="연락처(실번호)"
+                        inputMode="tel"
+                        className="h-8 text-xs"
+                        data-testid="companion-promote-phone"
+                      />
+                      <Button
+                        size="sm"
+                        className="self-end h-7 text-xs"
+                        onClick={promoteCompanion}
+                        disabled={promoting}
+                        data-testid="btn-companion-promote"
+                      >
+                        {promoting ? '등록 중…' : '동행자 고객 등록'}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              )}
+
               {/* 환자 정보 (+ 담당 상담사 RELOCATE from 2번구역) */}
               <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3 shadow-sm flex-shrink-0">
                 <SectionHeader accent="teal">환자 정보</SectionHeader>
@@ -1577,7 +1712,7 @@ export function ReservationDetailPopup({
                       <Select
                         value={selectedConsultantId || '__none__'}
                         onValueChange={saveConsultant}
-                        disabled={consultantSaving || !reservation.customer_id}
+                        disabled={consultantSaving || !effectiveCustomerId}
                       >
                         <SelectTrigger className="h-8 text-xs" data-testid="popup-consultant">
                           {/* AC1: 트리거 표시명을 value→이름으로 직접 해석(아이템 등록 타이밍 무관, UUID 비노출).
@@ -1640,7 +1775,7 @@ export function ReservationDetailPopup({
                     variant="outline"
                     className="self-end h-7 text-xs"
                     onClick={saveCustomerMemo}
-                    disabled={memoSaving || !reservation.customer_id}
+                    disabled={memoSaving || !effectiveCustomerId}
                   >
                     {memoSaving ? '저장 중…' : '고객메모 저장'}
                   </Button>
@@ -2052,7 +2187,15 @@ export function ReservationDetailPopup({
                 </Button>
                 {reservation.status === 'confirmed' && (
                   <>
-                    <Button variant="outline" size="sm" disabled={busy} onClick={convertToCheckIn}>
+                    {/* T-20260806-foot-COMPANION-CHECKIN-JONGNO-FIX: 동행(effectiveCustomerId 없음)은 승격 前 체크인 차단
+                        (orphan 체크인 방지·AC-2). 비동행/승격완료는 기존대로 활성 → 회귀 0. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !effectiveCustomerId}
+                      title={!effectiveCustomerId ? '동행자 고객 등록 후 체크인 가능' : undefined}
+                      onClick={convertToCheckIn}
+                    >
                       체크인 전환
                     </Button>
                     <Button
