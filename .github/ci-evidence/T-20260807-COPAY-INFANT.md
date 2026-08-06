@@ -6,3 +6,5 @@ reason: main-push CI wedged by phantom run (ci-push-refs/heads/main),
 route: PR-CI on healthy pull_request concurrency group (ci-push-refs/pull/N/merge).
 This marker file is build-neutral; the PR-CI runs full TypeCheck+Vite Build+Critical E2E
 on the tree that includes the COPAY-INFANT 5% live wiring.
+
+retry-trigger: 6ce87522
