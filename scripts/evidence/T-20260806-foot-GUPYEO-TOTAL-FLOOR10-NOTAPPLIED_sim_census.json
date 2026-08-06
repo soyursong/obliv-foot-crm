@@ -1,0 +1,273 @@
+{
+  "target": "rxlomoozakkjesdqjtvd",
+  "snapshot_note": "a1973d0c=342, live moved forward",
+  "printed_total": 700,
+  "applicable": 638,
+  "baseline_compliant": 292,
+  "post_compliant": 638,
+  "post_violations": 0,
+  "noncov_changed": 0,
+  "detail_changed": 0,
+  "guard_payment_rows": 135,
+  "guard_value_changed": 0,
+  "by_form": {
+    "bill_receipt": {
+      "n": 35,
+      "base": 29,
+      "post": 30,
+      "viol": 0,
+      "na": 5
+    },
+    "rx_standard": {
+      "n": 202,
+      "base": 78,
+      "post": 164,
+      "viol": 0,
+      "na": 38
+    },
+    "bill_detail": {
+      "n": 187,
+      "base": 76,
+      "post": 184,
+      "viol": 0,
+      "na": 3
+    },
+    "koh_result": {
+      "n": 28,
+      "base": 17,
+      "post": 26,
+      "viol": 0,
+      "na": 2
+    },
+    "treat_confirm": {
+      "n": 6,
+      "base": 5,
+      "post": 5,
+      "viol": 0,
+      "na": 1
+    },
+    "referral_letter": {
+      "n": 9,
+      "base": 5,
+      "post": 8,
+      "viol": 0,
+      "na": 1
+    },
+    "opinion_doc": {
+      "n": 12,
+      "base": 11,
+      "post": 11,
+      "viol": 0,
+      "na": 1
+    },
+    "treat_confirm_code": {
+      "n": 18,
+      "base": 4,
+      "post": 12,
+      "viol": 0,
+      "na": 6
+    },
+    "treat_confirm_nocode": {
+      "n": 7,
+      "base": 1,
+      "post": 6,
+      "viol": 0,
+      "na": 1
+    },
+    "visit_confirm": {
+      "n": 14,
+      "base": 6,
+      "post": 13,
+      "viol": 0,
+      "na": 1
+    },
+    "medical_record_request": {
+      "n": 5,
+      "base": 3,
+      "post": 4,
+      "viol": 0,
+      "na": 1
+    },
+    "bill_receipt_new": {
+      "n": 173,
+      "base": 55,
+      "post": 171,
+      "viol": 0,
+      "na": 2
+    },
+    "refund_consent": {
+      "n": 1,
+      "base": 1,
+      "post": 1,
+      "viol": 0,
+      "na": 0
+    },
+    "first_visit_mgmt_record": {
+      "n": 3,
+      "base": 1,
+      "post": 3,
+      "viol": 0,
+      "na": 0
+    }
+  },
+  "verdict": "PASS",
+  "violation_samples": [],
+  "change_samples": [
+    {
+      "id": "d2ded85a",
+      "form": "bill_receipt",
+      "before": {
+        "copay": 18060,
+        "fund": 0,
+        "total": [
+          25280,
+          25280
+        ]
+      },
+      "after": {
+        "copay": 18000,
+        "fund": 60,
+        "total": [
+          25280,
+          25280
+        ]
+      }
+    },
+    {
+      "id": "3e15ccdc",
+      "form": "koh_result",
+      "before": {
+        "copay": 29380,
+        "fund": 0,
+        "total": [
+          0
+        ]
+      },
+      "after": {
+        "copay": 29300,
+        "fund": 80,
+        "total": [
+          0
+        ]
+      }
+    },
+    {
+      "id": "cc3cfc3a",
+      "form": "rx_standard",
+      "before": {
+        "copay": 29380,
+        "fund": 20580,
+        "total": [
+          329380,
+          329380
+        ]
+      },
+      "after": {
+        "copay": 29300,
+        "fund": 20660,
+        "total": [
+          329380,
+          329380
+        ]
+      }
+    },
+    {
+      "id": "d0639991",
+      "form": "bill_detail",
+      "before": {
+        "copay": 29380,
+        "fund": 20580,
+        "total": [
+          329380,
+          329380
+        ]
+      },
+      "after": {
+        "copay": 29300,
+        "fund": 20660,
+        "total": [
+          329380,
+          329380
+        ]
+      }
+    },
+    {
+      "id": "0f67555b",
+      "form": "treat_confirm_code",
+      "before": {
+        "copay": 29380,
+        "fund": 0,
+        "total": [
+          29380
+        ]
+      },
+      "after": {
+        "copay": 29300,
+        "fund": 80,
+        "total": [
+          29380
+        ]
+      }
+    },
+    {
+      "id": "d382d02c",
+      "form": "bill_receipt_new",
+      "before": {
+        "copay": 8700,
+        "fund": 20675,
+        "total": [
+          8800,
+          8800
+        ]
+      },
+      "after": {
+        "copay": 8700,
+        "fund": 20670,
+        "total": [
+          8800,
+          8800
+        ]
+      }
+    },
+    {
+      "id": "78649b2c",
+      "form": "bill_receipt_new",
+      "before": {
+        "copay": 8700,
+        "fund": 20675,
+        "total": [
+          8800,
+          8800
+        ]
+      },
+      "after": {
+        "copay": 8700,
+        "fund": 20670,
+        "total": [
+          8800,
+          8800
+        ]
+      }
+    },
+    {
+      "id": "aae9b914",
+      "form": "bill_detail",
+      "before": {
+        "copay": 8700,
+        "fund": 20675,
+        "total": [
+          269380,
+          269380
+        ]
+      },
+      "after": {
+        "copay": 8700,
+        "fund": 20670,
+        "total": [
+          269380,
+          269380
+        ]
+      }
+    }
+  ]
+}

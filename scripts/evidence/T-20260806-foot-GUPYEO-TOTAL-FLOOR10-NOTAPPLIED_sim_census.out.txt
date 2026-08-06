@@ -1,0 +1,41 @@
+✅ target=prod rxlomoozakkjesdqjtvd · status='printed' 전수 N=700 (a1973d0c 스냅샷=342, 이후 전진)
+
+════════ 전수 시뮬레이션 결과 (AC-4) ════════
+적용대상(급여 토큰 보유) applicable   : 638
+수정 전 정합 baseline compliant       : 292 (45.8%)  ← 결함 재현(핸드오프 68/342≈23%)
+수정 후 정합 post-fix compliant       : 638 / 638  (100.0%)
+수정 후 위반 post-fix violations      : 0
+④ 비급여 값 변경 (must 0)             : 0
+detail_total/subtotal 변경 (must 0)   : 0
+⑥가드 결제액-total row 수             : 135
+⑥가드 결제액-total 값 변경 (must 0)   : 0  ← 결제액 진료비총액으로 안 날아감
+
+════════ 양식별 (수정 전→후 정합) ════════
+  rx_standard                  N=202 비적용= 38 수정전정합= 78 수정후정합=164/164 위반=0
+  bill_detail                  N=187 비적용=  3 수정전정합= 76 수정후정합=184/184 위반=0
+  bill_receipt_new             N=173 비적용=  2 수정전정합= 55 수정후정합=171/171 위반=0
+  bill_receipt                 N= 35 비적용=  5 수정전정합= 29 수정후정합= 30/30 위반=0
+  koh_result                   N= 28 비적용=  2 수정전정합= 17 수정후정합= 26/26 위반=0
+  treat_confirm_code           N= 18 비적용=  6 수정전정합=  4 수정후정합= 12/12 위반=0
+  visit_confirm                N= 14 비적용=  1 수정전정합=  6 수정후정합= 13/13 위반=0
+  opinion_doc                  N= 12 비적용=  1 수정전정합= 11 수정후정합= 11/11 위반=0
+  referral_letter              N=  9 비적용=  1 수정전정합=  5 수정후정합=  8/8 위반=0
+  treat_confirm_nocode         N=  7 비적용=  1 수정전정합=  1 수정후정합=  6/6 위반=0
+  treat_confirm                N=  6 비적용=  1 수정전정합=  5 수정후정합=  5/5 위반=0
+  medical_record_request       N=  5 비적용=  1 수정전정합=  3 수정후정합=  4/4 위반=0
+  first_visit_mgmt_record      N=  3 비적용=  0 수정전정합=  1 수정후정합=  3/3 위반=0
+  refund_consent               N=  1 비적용=  0 수정전정합=  1 수정후정합=  1/1 위반=0
+
+════════ 수정 전→후 변경 샘플 (결함→정합) ════════
+    {"id":"d2ded85a","form":"bill_receipt","before":{"copay":18060,"fund":0,"total":[25280,25280]},"after":{"copay":18000,"fund":60,"total":[25280,25280]}}
+    {"id":"3e15ccdc","form":"koh_result","before":{"copay":29380,"fund":0,"total":[0]},"after":{"copay":29300,"fund":80,"total":[0]}}
+    {"id":"cc3cfc3a","form":"rx_standard","before":{"copay":29380,"fund":20580,"total":[329380,329380]},"after":{"copay":29300,"fund":20660,"total":[329380,329380]}}
+    {"id":"d0639991","form":"bill_detail","before":{"copay":29380,"fund":20580,"total":[329380,329380]},"after":{"copay":29300,"fund":20660,"total":[329380,329380]}}
+    {"id":"0f67555b","form":"treat_confirm_code","before":{"copay":29380,"fund":0,"total":[29380]},"after":{"copay":29300,"fund":80,"total":[29380]}}
+    {"id":"d382d02c","form":"bill_receipt_new","before":{"copay":8700,"fund":20675,"total":[8800,8800]},"after":{"copay":8700,"fund":20670,"total":[8800,8800]}}
+    {"id":"78649b2c","form":"bill_receipt_new","before":{"copay":8700,"fund":20675,"total":[8800,8800]},"after":{"copay":8700,"fund":20670,"total":[8800,8800]}}
+    {"id":"aae9b914","form":"bill_detail","before":{"copay":8700,"fund":20675,"total":[269380,269380]},"after":{"copay":8700,"fund":20670,"total":[269380,269380]}}
+
+✅ PASS — 수정 후 정합 638/638·위반 0·비급여변경 0·detail변경 0·결제액total변경 0
+
+📄 evidence → scripts/evidence/T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED_sim_census.json
