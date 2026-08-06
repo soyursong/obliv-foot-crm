@@ -87,15 +87,14 @@ WHERE tc.n=2 AND p.gap_sec>=0 AND p.gap_sec<=120 AND p.approval_amount IN (100,5
 -- reconciliation_daily — up.sql §3 를 직접 소싱해 컴파일(재기재 생략, up.sql 이 SSOT). 여기선 seed·VG assert 집중.
 -- (supervisor MIG-GATE 는 up.sql 전문을 이 BEGIN..ROLLBACK 로 실행 — 본 파일은 컬럼/seed/VG assert 검증 목적.)
 
--- 470 단일행 seed (up.sql §4 verbatim)
-WITH foot_clinic AS (
-  SELECT id AS clinic_id FROM public.clinics WHERE business_no='511-60-00988' ORDER BY id LIMIT 1
-)
+-- 470 단일행 seed (up.sql §4 verbatim — FIX: 무조건 단일행 VALUES, clinic_id best-effort NULL)
 INSERT INTO public.redpay_terminal_registry
   (clinic_id, domain, merchant_id, tid, terminal_label, active, reconcile_excluded, source, verified_at)
-SELECT fc.clinic_id, 'foot', '1047479470', '1047479470', '풋(시험검증)', true, true,
+VALUES (
+  (SELECT id FROM public.clinics WHERE business_no='511-60-00988' ORDER BY id LIMIT 1),  -- best-effort, 미발견 시 NULL
+  'foot', '1047479470', '1047479470', '풋(시험검증)', true, true,
   '시험용 검증단말(reconcile_excluded=true). DRYRUN.', now()
-FROM foot_clinic fc
+)
 ON CONFLICT (merchant_id) DO UPDATE SET
   active=EXCLUDED.active, reconcile_excluded=EXCLUDED.reconcile_excluded, tid=EXCLUDED.tid,
   terminal_label=EXCLUDED.terminal_label, source=EXCLUDED.source, verified_at=EXCLUDED.verified_at, updated_at=now();

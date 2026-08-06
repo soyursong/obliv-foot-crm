@@ -271,20 +271,19 @@ GRANT SELECT ON public.v_redpay_reconciliation_daily TO authenticated;
 --      1047* 는 tid-format → 기존 merchant_id(전부 1777*) 와 UNIQUE 무충돌. #2 MERNO 게이트는
 --      (merchant_id=v_merno OR tid=v_merno OR v_merno=ANY superseded) → merchant_id·tid 둘 다 470 로
 --      셀프앵커 → merchant 값이 470 로 오면 통과. 470=RedPay-blind(raw 0) → 정산 소비처 무영향(격리).
---    ★clinic_id = business_no 511-60-00988 클리닉(best-effort·원 seed 패턴 계승·RLS 앵커).
+--    ★clinic_id = best-effort subquery(business_no 511-60-00988·미발견 시 NULL — nullable 컬럼).
+--      ⚠FIX(MIG-GATE NO-GO seed_noop_clinic_anchor): 구 seed 는 WITH foot_clinic AS(SELECT ...
+--      WHERE business_no='511-60-00988') + INSERT..SELECT..FROM foot_clinic 구조 →
+--      prod clinics 에 business_no=511-60-00988 행 부재(구 bizno·매핑행 無) → CTE 0행 →
+--      INSERT 0행 silent no-op(470 registry 미편입·AC-4 실패). 게이트 제거 + 무조건 단일행 삽입으로 재작성.
+--      clinic anchor: #1 게이트(tidRegistryGate)·#2 record_planb MERNO 는 domain='foot' AND active 로
+--      resolve(clinic_id 무관) → clinic_id=NULL 로도 470 선택/결제 가능(기존 17 foot seed 가 이미 clinic_id=NULL·precedented).
 --    멱등: ON CONFLICT(merchant_id) DO UPDATE(재실행 시 active/reconcile_excluded 재설정 무해).
 -- ============================================================
-WITH foot_clinic AS (
-  SELECT id AS clinic_id
-  FROM public.clinics
-  WHERE business_no = '511-60-00988'
-  ORDER BY id
-  LIMIT 1
-)
 INSERT INTO public.redpay_terminal_registry
   (clinic_id, domain, merchant_id, tid, terminal_label, active, reconcile_excluded, source, verified_at)
-SELECT
-  fc.clinic_id,
+VALUES (
+  (SELECT id FROM public.clinics WHERE business_no = '511-60-00988' ORDER BY id LIMIT 1),  -- best-effort, 미발견 시 NULL
   'foot',
   '1047479470',        -- merchant_id (TID self-anchor — 실 merchant_id 미제공, 아래 source provenance)
   '1047479470',        -- tid (reporter 제공·#1 게이트 selectability 앵커)
@@ -293,9 +292,10 @@ SELECT
   true,                -- reconcile_excluded: #3~#7 정산/대사 소비처 전부 배제(방화벽)
   '시험용 검증단말(reconcile_excluded=true). 구 bizno 511-60-00988·RedPay 전기간 조회 0(정산 오염 0). '
     'merchant_id=TID self-anchor(실 RedPay merchant_id 미제공·reporter 최필경 TID만 제공). '
+    'clinic_id=best-effort(511-60-00988 매핑행 부재 시 NULL·기존 17 foot seed precedented). '
     'T-20260806-foot-TESTTID-479470-PERSEAT-REGISTER-ENABLE / DA-20260806-foot-TESTTID-479470.',
   now()
-FROM foot_clinic fc
+)
 ON CONFLICT (merchant_id) DO UPDATE SET
   active             = EXCLUDED.active,
   reconcile_excluded = EXCLUDED.reconcile_excluded,
