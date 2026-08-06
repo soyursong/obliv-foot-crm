@@ -42,6 +42,8 @@ import {
 } from '@/components/ui/dialog';
 import { AmountInput, parseAmountRaw } from '@/components/ui/AmountInput';
 import { formatAmount } from '@/lib/format';
+// ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 최소금액(5만원, spec ①) + 한글표기 파생 SSOT.
+import { CBAND_INSTALLMENT_MIN_AMOUNT, formatInstallmentKo } from '@/lib/cband/protocol';
 import {
   isCbandPayEnabled, approve, precheckConcurrentPayment,
   type PaymentFlowResult, type ConcurrencyDecision,
@@ -60,6 +62,25 @@ import {
 } from '@/lib/cband/tidRegistryGate';
 import { useAuth } from '@/lib/auth';
 import { hasOpsAuthority } from '@/lib/permissions';
+
+/**
+ * ★할부 개월 선택지 — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT (spec ①·scalp2 INSTALLMENT-BTN-1TO12 준용).
+ *   일시불(0) + 2~12개월. 카드 관행상 1개월=일시불 → 1 제외. value=개월수(0=일시불), payments.installment 착지값.
+ */
+const CBAND_INSTALLMENT_OPTIONS: readonly { value: number; label: string }[] = [
+  { value: 0, label: '일시불' },
+  { value: 2, label: '2개월' },
+  { value: 3, label: '3개월' },
+  { value: 4, label: '4개월' },
+  { value: 5, label: '5개월' },
+  { value: 6, label: '6개월' },
+  { value: 7, label: '7개월' },
+  { value: 8, label: '8개월' },
+  { value: 9, label: '9개월' },
+  { value: 10, label: '10개월' },
+  { value: 11, label: '11개월' },
+  { value: 12, label: '12개월' },
+] as const;
 
 interface Props {
   checkInId: string;
@@ -250,6 +271,8 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState('');
+  // ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 개월(0=일시불). 5만원↓/일시불이면 HALBU='00' 전송.
+  const [installment, setInstallment] = useState(0);
   const [ui, setUi] = useState<UiState>('idle');
   const [result, setResult] = useState<PaymentFlowResult | null>(null);
   // ★AC-6-2 동시결제 서버 재확인 결과(팝업 open 직전).
@@ -346,6 +369,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
   const canPay = amountNum > 0 && ui !== 'sending';
+  // ★spec ① 5만원 미만 할부 잠금 — 금액 < 50,000 이면 할부 선택 비활성(일시불 강제). 카드사 규정.
+  const installmentAllowed = amountNum >= CBAND_INSTALLMENT_MIN_AMOUNT;
+  // 실효 할부개월 — 잠금 시(또는 일시불) 항상 0. 이 값이 approve() 로 전달·payments.installment 착지.
+  const effectiveInstallment = installmentAllowed && installment > 1 ? installment : 0;
 
   async function onApprove() {
     if (!(amountNum > 0)) return;
@@ -367,7 +394,12 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     cancelProbe(); // ★U2: 결제 소켓 열기 전 탐침 소켓 확실히 종료(동시 1개). send 내부에서도 재호출됨.
     try {
       const r = await approve(
-        { tid: activeCfg.tid, merno: activeCfg.merno, catPort: activeCfg.catPort, amount: amountNum, clinicId, customerId, checkInId },
+        {
+          tid: activeCfg.tid, merno: activeCfg.merno, catPort: activeCfg.catPort,
+          amount: amountNum, clinicId, customerId, checkInId,
+          // ★HALBU 가변 전송 — 실효 개월(5만원↓/일시불=0 → HALBU "00", 회귀 무영향). formatHalbu 가 "02"~"12" 조립.
+          installmentMonths: effectiveInstallment,
+        },
         supabaseAttemptStore,
       );
       if (!mounted.current) return;
@@ -386,6 +418,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   function reset() {
     setUi('idle');
     setResult(null);
+    setInstallment(0);   // ★할부 선택 초기화(팝업 open/재시도 시 일시불 default).
     // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 팝업 open(onEntryClick)/재시도 시 금액칸 = 미납잔액 default.
     //   ≤0/미전달이면 defaultAmountStr='' → 기존 빈칸(수동입력) 동작 그대로. 편집(override) 가능(readonly 아님).
     setAmount(defaultAmountStr);
@@ -514,6 +547,51 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                   <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
                 )}
               </div>
+              {/* ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 개월 선택(일시불/2~12개월).
+                  spec ①: 금액 < 5만원이면 할부 비활성(일시불 강제) + 안내문구. 태블릿 큰 버튼·teal-emerald·한국어. */}
+              <div className="space-y-2" data-testid="cband-installment-selector">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">할부 개월</label>
+                  {!installmentAllowed && (
+                    <span className="text-xs text-gray-400" data-testid="cband-installment-locked-hint">
+                      5만원 이상 결제 시 할부 선택 가능합니다
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {CBAND_INSTALLMENT_OPTIONS.map((opt) => {
+                    const isLump = opt.value === 0;
+                    // 5만원 미만이면 일시불만 활성(할부 잠금). 일시불은 언제나 선택 가능.
+                    const optDisabled = ui === 'sending' || (!installmentAllowed && !isLump);
+                    const selected = installmentAllowed ? installment === opt.value : isLump;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={optDisabled}
+                        data-testid={`cband-installment-opt-${opt.value}`}
+                        aria-pressed={selected}
+                        onClick={() => setInstallment(opt.value)}
+                        className={
+                          'min-w-[64px] rounded-lg border px-3 py-2.5 text-sm font-medium transition ' +
+                          (selected
+                            ? 'border-emerald-500 bg-emerald-600 text-white'
+                            : optDisabled
+                              ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300'
+                              : 'border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50')
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {installmentAllowed && effectiveInstallment > 0 && (
+                  <p className="text-right text-xs text-emerald-700" data-testid="cband-installment-summary">
+                    {formatInstallmentKo(effectiveInstallment)} 할부로 결제합니다
+                  </p>
+                )}
+              </div>
               {/* ★T-20260805-foot-PLANA-PERSEAT-TID-REGISTRY-GATE (AC-2/AC-3) — 미등록 TID soft-warn 배너.
                   이 PC 단말 번호(TID)가 정산 단말 목록(registry)에 없으면 안내 + (관리자) 계속 사용 승인.
                   ★결제는 막지 않는다(soft) — 잘못된 단말로 결제 시 정산 사각 위험을 사용자에게 알리는 용도. */}
@@ -603,6 +681,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
               </div>
               <p className="text-sm text-emerald-900">{result.userMessage}</p>
               {result.authNo && <p className="text-xs text-gray-600">승인번호: {result.authNo}</p>}
+              {/* ★spec ② 할부 한글표기 — 승인 완료 화면에 결제 유형 노출(일시불/N개월). */}
+              <p className="text-xs text-gray-600" data-testid="cband-approved-installment">
+                결제 유형: {formatInstallmentKo(effectiveInstallment)}
+              </p>
             </div>
           )}
 

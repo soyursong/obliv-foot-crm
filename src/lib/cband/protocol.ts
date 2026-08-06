@@ -244,6 +244,14 @@ export interface NormalizedResponse {
   /** 카드 관련 부가정보(카드사·할부 등, 있으면 원문 유지). */
   cardName: string | null;
   /**
+   * ★응답 HALBU(단말이 되돌려준 실제 적용 개월코드) — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT(spec ③).
+   *   실측(MSG-20260806-121820-iyn7): 승인 HALBU "03" → 응답 HALBU "03"(그대로 echo). 취소도 원거래 동일값 echo.
+   *   ★spec ③ "응답값(단말기가 돌려준 실제 적용 개월코드) 저장" 착지 = cband_payment_attempts.raw_response(jsonb).
+   *     요청값은 payments.installment(int) canonical + formatHalbu 파생 = 요청/응답 둘 다 DB 확보(신규 컬럼 0).
+   *   없으면 null. 재-derive 안 함(as-is echo 캡처).
+   */
+  halbu: string | null;
+  /**
    * ★마스킹 카드번호(CARDNO) — 단말이 이미 마스킹해 반환한 값을 **verbatim** 만 캡처(예: '55318440****364*').
    *   DA-20260804-FOOT-CBAND-CARDNO-MASKED-PLACEMENT(§7-3): 재-mask/재-derive/un-mask 금지·평문 PAN 저장 절대 금지.
    *   착지홈 = payments.card_no_masked(§7-1 PRIMARY). 마스킹 마커(별표/X) 없는 값은 캡처하지 않음(null) — 평문 PAN 유입 차단.
@@ -406,6 +414,24 @@ export function formatHalbu(months?: number | null): string {
   }
   return String(months).padStart(2, '0');
 }
+
+/**
+ * ★할부 한글 표기 파생 — spec ②(레드페이 엑셀 형식 "일시불"/"N개월").
+ *   T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT.
+ *   저장은 payments.installment(int) canonical 1곳 → 표시 시 이 순수함수로 한글 파생(중복 저장 안 함).
+ *   · undefined/null/0/1 = "일시불" / 2~12 = "N개월". 숫자코드 저장 금지(spec ②) — 표시전용 파생.
+ */
+export function formatInstallmentKo(months?: number | null): string {
+  if (months == null || months <= 1) return '일시불';
+  return `${months}개월`;
+}
+
+/**
+ * ★할부 최소 결제금액(카드사 규정) — spec ①.
+ *   실데이터 1,217건 최소금액=정확히 50,000원, 5만원 미만 할부 0건.
+ *   결제 금액 < 이 값 → 할부 선택 UI 비활성(일시불 강제). FE 게이트 + (백스톱) 상위 판정 공용 SSOT.
+ */
+export const CBAND_INSTALLMENT_MIN_AMOUNT = 50_000 as const;
 
 /**
  * ★body.CAT_BAUDRATE — CAT 시리얼 통신속도. "38400" 고정(현장 단말 세팅 SSOT,
@@ -655,6 +681,8 @@ export function normalize(parsed: Record<string, unknown> | null): NormalizedRes
     tranTime: pick(raw, ['TRANTIME', 'TRAN_TIME']),
     // ★ISSUECARD(발급사)/PURCHASECARD(매입사)가 실측 정본. 종전 추정 별칭도 폴백.
     cardName: pick(raw, ['ISSUECARD', 'PURCHASECARD', 'CARDNAME', 'ISSUER', 'CARD_NM', 'CARDCO']),
+    // ★응답 HALBU(실제 적용 개월코드) echo — spec ③ 응답값 저장 근거. 없으면 null.
+    halbu: pick(raw, ['HALBU', 'INSTALLMENT', 'INSTALLMENTMONTH']),
     // ★CARDNO(마스킹) verbatim 캡처 — payments.card_no_masked 착지(DA §7). 평문 PAN 은 null(캡처 안 함).
     cardNoMasked: extractMaskedCardNo(raw),
     raw,

@@ -234,7 +234,12 @@ export const supabaseAttemptStore: AttemptStore = {
         customer_id: rec.customerId,
         amount: rec.amount,
         method: 'card',
-        installment: 0,
+        // ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT(spec ②③) — 요청 할부개월 canonical 착지(int).
+        //   일시불=0, N개월=N. 기존 INTEGER DEFAULT 0 컬럼 재사용(신규 컬럼 0 → DA CONSULT 불요, 기존 스키마 충족).
+        //   한글표기("일시불"/"N개월")=formatInstallmentKo(installment) 파생 · 요청HALBU=formatHalbu(installment) 파생.
+        //   응답HALBU(단말 echo)=cband_payment_attempts.raw_response.halbu(jsonb) → 요청/응답 둘 다 DB 확보.
+        //   ★취소(refund)행도 원거래와 동일 개월 각인(할부 복원 반영) — installmentMonths=원거래값(cancel 경로 주입).
+        installment: rec.installmentMonths && rec.installmentMonths > 1 ? rec.installmentMonths : 0,
         payment_type: isCancel ? 'refund' : 'payment',
         external_approval_no: rec.authNo,     // ★K1 AUTHNO canonical home(LIVE·matcher 독출=dedup 앵커).
         external_tid: rec.tid,                // ★K1 TID(LIVE·matcher 독출=dedup 앵커).
