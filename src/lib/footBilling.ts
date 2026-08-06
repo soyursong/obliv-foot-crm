@@ -22,7 +22,9 @@
  */
 import { type InsuranceGrade, getBaseCopayRate, copayFromBase } from './insurance';
 import { supabase } from './supabase';
-import { formatAmount, parseAmount } from './format';
+import { formatAmount, parseAmount, todaySeoulISODate } from './format';
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 파생 등급(elderly_flat/infant) SSOT.
+import { deriveAgeCopayGrade } from './customerAge';
 
 // [CI-UNBLOCK] getBaseCopayRate 재수출(facade). footBilling 은 급여 본인부담 산정의 SSOT 파사드라
 //   copay 기본률 조회를 이 모듈 표면에서 함께 노출한다. T-20260715-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY
@@ -514,7 +516,8 @@ export async function loadEffectiveInsuranceGrade(
   checkInId: string,
 ): Promise<InsuranceGrade | null> {
   const live = await loadCustomerInsuranceGrade(customerId);
-  if (live) return live; // 등급 존재 → 기존 경로 그대로(회귀 0)
+  // 명시 등급(unverified 제외) → 기존 경로 그대로(회귀 0). 스태프/조회 확정값은 나이 파생이 덮지 않는다.
+  if (live && live !== 'unverified') return live;
 
   // 폴백: 이 방문에 저장된 급여 계산 당시 등급(service_charges.customer_grade_at_charge).
   //   is_insurance_covered 급여 행에서만 채택('manual'/비급여 행 제외) — 유효 covered 등급만.
@@ -529,7 +532,57 @@ export async function loadEffectiveInsuranceGrade(
     const g = r.customer_grade_at_charge as InsuranceGrade | null;
     if (r.is_insurance_covered && g && COVERED_GRADES.has(g)) return g;
   }
-  return null;
+
+  // ── T-20260720-foot-COPAY-AGE-DERIVED-AUTO (나이 파생, ADDITIVE) ──────────────────
+  //   등급 미설정(null)/unverified 이고 저장 charge 등급도 없을 때만: 생년월일로 노인정액(65세+)·
+  //   영유아(6세미만) 등급을 **외부 자격조회 없이** 자동판정한다(라이브 89% 등급 미설정 대응, §2/§6).
+  //   생년 소스 = 서버 RPC fn_customer_birthdates(세기코드 정확판정, rrn 평문 미노출) — 클라 세기
+  //   휴리스틱 금지(§3). 나이 미상(생년 파싱 불가) → null 반환 → 기존 폴백 위임(등급 날조 금지, AC-8).
+  //   ⚠ 명시 등급 미접촉(위에서 early-return) + non-throwing(판정 실패가 빌링을 막지 않음, 회귀 0).
+  //   ⚠ infant 세부율(1세미만 5% vs 6세미만 21%)은 grade='infant'(→21%)로 수렴한다 — grade-only 계약
+  //     (calcCopayment RPC 미러 불변). 1세미만 5% 정밀적용은 SSOT deriveAgeCopayGrade.rate 로 판정되며
+  //     (단위테스트 AC-4 검증), 라이브 배선(rate override)은 별도 트랙(풋=영유아 극희소).
+  const ageGrade = await deriveAgeGradeForCheckIn(customerId, checkInId);
+  if (ageGrade) return ageGrade;
+
+  return live ?? null; // unverified 였다면 그대로 보존(무회귀), 아니면 null(기존 폴백 경로 유지)
+}
+
+/**
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO — 방문(check_in)의 고객 생년월일로 나이 파생 등급 판정.
+ *
+ * 생년 소스 = 서버 RPC fn_customer_birthdates(p_clinic_id, p_ids) → 'YYYY-MM-DD'(세기 정확, PHI 미노출).
+ *   clinic_id 는 방문(check_ins)에서 취득. 65세+ → elderly_flat / 6세미만 → infant.
+ *   나이 미상/조회 실패 → null(등급 날조 금지). best-effort — throw 하지 않는다.
+ */
+async function deriveAgeGradeForCheckIn(
+  customerId: string | null | undefined,
+  checkInId: string,
+): Promise<InsuranceGrade | null> {
+  if (!customerId) return null;
+  try {
+    const { data: ci } = await supabase
+      .from('check_ins')
+      .select('clinic_id')
+      .eq('id', checkInId)
+      .maybeSingle();
+    const clinicId = (ci?.clinic_id ?? null) as string | null;
+    if (!clinicId) return null;
+
+    const { data, error } = await supabase.rpc('fn_customer_birthdates', {
+      p_clinic_id: clinicId,
+      p_ids: [customerId],
+    });
+    if (error || !data) return null;
+    const rows = data as Array<{ customer_id: string; birth_date_display: string | null }>;
+    const birth = rows.find((r) => r.customer_id === customerId)?.birth_date_display ?? null;
+    if (!birth) return null;
+
+    return deriveAgeCopayGrade(birth, todaySeoulISODate())?.grade ?? null;
+  } catch (e) {
+    console.warn('[footBilling] 나이 파생 등급 판정 실패 — 기존 폴백 위임:', e);
+    return null;
+  }
 }
 
 /**

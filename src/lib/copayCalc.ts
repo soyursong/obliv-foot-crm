@@ -7,6 +7,13 @@
  * 서버 RPC calc_copayment와 동일 로직.
  * 클라이언트 미리보기 + 단위테스트용.
  * 순수 함수 — 외부 의존 없음, import type만 허용.
+ *
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§2/§4): 이 함수는 **등급을 입력으로 받는다** — RPC 미러
+ *   불변(grade-based). elderly_flat·infant 는 자격등급이 아니라 나이 파생 속성이므로, 그 등급을
+ *   생년월일로 결정하는 것은 이 계산 **이전** 단계(customerAge.ts deriveAgeCopayGrade →
+ *   loadEffectiveInsuranceGrade)에서 수행된다. 여기서는 이미 해소된 등급으로 산식만 적용한다
+ *   (나이 계산 사본 신설 금지, §3/§9). 자격 미확인(등급 미상 + 나이 미상)이면 상위에서 등급을 날조하지
+ *   않고 null 로 위임 → 아래 blockedResult/폴백 경로가 처리한다(임의 폴백 금지, §6/AC-8).
  */
 
 import type { InsuranceGrade } from './insurance';

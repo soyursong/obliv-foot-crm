@@ -354,6 +354,11 @@ export default defineConfig({
         '**/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts',
         // T-20260520-ins-COPAY-CALC AC-4: 본인부담 산출 순수 함수 단위테스트 (20 TC)
         '**/insurance-calc.spec.ts',
+        // T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 파생 본인부담 자동판정 — 나이 SSOT(customerAge.ts)
+        //   순수함수(computeAgeFromBirth/deriveAgeCopayGrade/resolveEffectiveGradeWithAge) AC-1~10 +
+        //   세기 하드코딩 26 제거(2027 시한폭탄) + SSOT 수렴 정적 가드. auth/server 불요·결정론.
+        '**/customer-age.spec.ts',
+        '**/T-20260720-foot-COPAY-AGE-DERIVED-AUTO.spec.ts',
         // T-20260602-multi-CALLBACK-EF-4-NEW: 도파민 콜백 outbox 정적 검증 (마이그레이션/EF/롤백 파일 단언, browser 불필요)
         '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
         // T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT: 풋→도파민 lifecycle emit(step2) — reschedule CHECK+트리거,

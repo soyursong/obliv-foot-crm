@@ -1,5 +1,8 @@
 // 금액/번호 포맷 — 풋센터 규칙: 천단위 콤마만, 화폐 단위(₩, 원) 표기 안 함
 
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§5): 세기·만나이 판정은 나이 SSOT(customerAge.ts)에 위임.
+import { parseBirthYMD, computeAgeFromBirth } from './customerAge';
+
 export function formatAmount(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '0';
   return Math.round(value).toLocaleString('ko-KR');
@@ -210,72 +213,35 @@ export function chartNoBadge(chart_number: string | number | null | undefined): 
 
 /**
  * T-20260613-foot-DOCDASH-CALLUX-3FIX AC-1: 생년(만나이) 표기 헬퍼.
- * customers.birth_date 는 YYMMDD 6자리 텍스트(예: '900515'). 세기(19/20) 정보가 없어
- * 2자리 연도로 세기를 추정한다: YY ≤ 현재연도 2자리면 2000년대, 아니면 1900년대.
- *   (예: 2026년 기준 '90'→1990, '05'→2005, '27'→1927). 풋센터 환자 연령대(영유아~노년)에서
- *   미래 출생연도를 만들지 않는 보수적 규칙.
+ * customers.birth_date 는 YYMMDD 6자리 또는 서버 RPC(fn_customer_birthdates) 'YYYY-MM-DD'(8자리 완전연도).
  * presentation only — 저장값 미변경. 출력: "1990 (만 35세)".
  * 파싱 불가/결측이면 '' (호출부가 '—' 표기). 나이 이상치(>130 또는 음수)면 연도만 표기.
  *
- * T-20260729-foot-JINRYO-ALIMPAN-3COL-DATA-CONNECT (refix-2, 버그(b)): 8자리 '완전연도' 입력도 흡수.
- *   진료 알림판 3컬럼 연동은 생년 소스를 서버 RPC(fn_customer_birthdates)로 바꿨는데, 그 반환값은
- *   'YYYY-MM-DD'(완전연도, 예 '1990-12-14')다. 기존 로직은 무조건 앞 6자리를 YYMMDD 로 봐서
- *   '199012'→YY=19/MM=90 → 파싱실패('') 로 전 환자 '—' 회귀를 유발했다. → 자릿수로 분기:
- *     · digits.length===8 → YYYYMMDD(완전연도, 세기추정 불요)
- *     · 그 외(≥6)         → YYMMDD(2자리연도, 세기 휴리스틱) [기존 동작 무회귀]
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§5 SSOT 수렴): 세기 판정·만나이 계산은 나이 판정 SSOT
+ *   (customerAge.ts parseBirthYMD / computeAgeFromBirth)에 **위임**한다. 이 함수는 표시 전용 —
+ *   자체 세기 휴리스틱·나이 산식 사본을 두지 않는다(사본 증식 방지, §3/§9). 기준일 = KST(todaySeoulISODate).
+ *   기준연도 동적 세기(하드코딩 연도 없음) → 2027 시한폭탄 없음. 출력 포맷/결측 규약 무변경(무회귀).
  */
 export function birthYearAgeDisplay(birth_date: string | null | undefined): string {
-  if (!birth_date) return '';
-  const digits = String(birth_date).replace(/\D/g, '');
-  if (digits.length < 6) return '';
-  const now = new Date();
-  let birthYear: number;
-  let mm: number;
-  let dd: number;
-  if (digits.length === 8) {
-    // YYYYMMDD (fn_customer_birthdates 서버 파생값 = 완전연도, 세기 정확)
-    birthYear = Number(digits.slice(0, 4));
-    mm = Number(digits.slice(4, 6));
-    dd = Number(digits.slice(6, 8));
-    if (Number.isNaN(birthYear) || birthYear < 1850 || birthYear > now.getFullYear()) return '';
-  } else {
-    // YYMMDD (레거시 2자리연도 — 세기 휴리스틱). 기존 동작 그대로.
-    const yy = Number(digits.slice(0, 2));
-    mm = Number(digits.slice(2, 4));
-    dd = Number(digits.slice(4, 6));
-    if (Number.isNaN(yy)) return '';
-    const curYY = now.getFullYear() % 100;
-    const century = yy <= curYY ? 2000 : 1900;
-    birthYear = century + yy;
-  }
-  if (Number.isNaN(mm) || Number.isNaN(dd)) return '';
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
-  let age = now.getFullYear() - birthYear;
-  const curMonth = now.getMonth() + 1;
-  const curDay = now.getDate();
-  // 올해 생일이 아직 안 지났으면 만나이 -1
-  if (curMonth < mm || (curMonth === mm && curDay < dd)) age -= 1;
-  if (age < 0 || age > 130) return String(birthYear); // 이상치 → 연도만
-  return `${birthYear} (만 ${age}세)`;
+  const todayISO = todaySeoulISODate();
+  const p = parseBirthYMD(birth_date, todayISO);
+  if (!p) return '';
+  const age = computeAgeFromBirth(birth_date, todayISO);
+  if (age == null) return String(p.year); // 이상치 → 연도만
+  return `${p.year} (만 ${age}세)`;
 }
 
 /**
- * T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 YYMMDD → 'YYYY.MM.DD' 표기.
- * 클라이언트 fallback 전용 — 서버 RPC fn_customer_birthdates(세기코드 정확)가 없거나
- * birth_date 컬럼만 있을 때 사용. 세기는 휴리스틱(YY ≤ 현재연도 2자리 → 2000년대, 아니면 1900년대).
+ * T-20260613-foot-CUSTLIST-BIRTHDATE-FROM-RRN: 생년월일 → 'YYYY.MM.DD' 표기.
+ * 서버 RPC fn_customer_birthdates(세기코드 정확) 파생값 'YYYY-MM-DD'(8자리) 또는 레거시 6자리 YYMMDD.
  * presentation only. 파싱 불가/결측이면 '' (호출부가 '-' 표기). rrn 미사용(평문 디코딩 없음).
  * T-20260630-foot-DATEFMT-YMD-RELATIVE-PURGE(AC-1): 구분자 하이픈→점(YYYY.MM.DD)으로 통일.
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§5): 세기 판정을 나이 SSOT(parseBirthYMD)에 위임(사본 제거).
  */
 export function birthDateYMD(birth_date: string | null | undefined): string {
-  if (!birth_date) return '';
-  const digits = String(birth_date).replace(/\D/g, '');
-  if (digits.length < 6) return '';
-  const yy = Number(digits.slice(0, 2));
-  const mm = Number(digits.slice(2, 4));
-  const dd = Number(digits.slice(4, 6));
-  if (Number.isNaN(yy) || Number.isNaN(mm) || Number.isNaN(dd)) return '';
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
-  const curYY = new Date().getFullYear() % 100;
-  const fullYear = yy <= curYY ? 2000 + yy : 1900 + yy;
-  return `${fullYear}.${digits.slice(2, 4)}.${digits.slice(4, 6)}`;
+  const p = parseBirthYMD(birth_date, todaySeoulISODate());
+  if (!p) return '';
+  const mm = String(p.month).padStart(2, '0');
+  const dd = String(p.day).padStart(2, '0');
+  return `${p.year}.${mm}.${dd}`;
 }

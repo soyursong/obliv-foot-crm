@@ -20,16 +20,27 @@ export { getBaseCopayRate, copayFromBase, copayBasisText, calcCopayment as calcC
 
 // ── 자격등급 타입 ───────────────────────────────────────────────────────────
 
+// ── 자격등급 축 vs 나이 파생 축 ────────────────────────────────────────────────
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§2 핵심 설계 전환):
+//   InsuranceGrade 는 두 개의 **직교 축**을 한 enum 에 담는다 —
+//     (A) 자격등급 축(외부 조회 필요): general·low_income_*·medical_aid_*·foreigner·unverified.
+//         공단 자격조회로만 확정되며, 라이브 고객 89%가 미설정(unverified/null).
+//     (B) 나이 파생 축(외부 조회 불요): infant·elderly_flat.
+//         **자격이 아니라 생년월일만으로 확정되는 속성**이다(만6세미만 / 만65세이상). 따라서 수기 등급입력에
+//         묶어두지 않고 customers 생년월일(fn_customer_birthdates RPC)로 자동판정한다(customerAge.ts
+//         deriveAgeCopayGrade). enum 값 자체는 유지(마이그 유발 방지) — 판정 소스만 '수기입력'→'나이 파생'.
+//   ⚠ elderly_flat/infant 가 등급 컬럼(customers.insurance_grade)에 명시 저장돼 있으면 그 값을 존중하되,
+//     미설정/unverified 인 89% 구간은 나이로 자동 채운다(loadEffectiveInsuranceGrade). 계산 산식은 불변.
 export type InsuranceGrade =
-  | 'general'          // 일반 30%
-  | 'low_income_1'     // 차상위 1종 면제 (의원 외래 0원) — 종전 14% 오적용 정정(v1.6)
-  | 'low_income_2'     // 차상위 2종 정액 1,000원 (의원 외래) — 종전 14% 오적용 정정(v1.6)
-  | 'medical_aid_1'    // 의료급여 1종 정액 1,000원 (의원 외래)
-  | 'medical_aid_2'    // 의료급여 2종 정액 1,000원 (의원 외래) — 종전 15% 오적용 정정(v1.6)
-  | 'infant'           // 만6세 미만 21%
-  | 'elderly_flat'     // 만65세 노인 (외래 4구간 정률제: 정액 1,500 / 10 / 20 / 30%)
-  | 'foreigner'        // 외국인 (전액 비급여)
-  | 'unverified';      // 미확인
+  | 'general'          // [자격축] 일반 30%
+  | 'low_income_1'     // [자격축] 차상위 1종 면제 (의원 외래 0원) — 종전 14% 오적용 정정(v1.6)
+  | 'low_income_2'     // [자격축] 차상위 2종 정액 1,000원 (의원 외래) — 종전 14% 오적용 정정(v1.6)
+  | 'medical_aid_1'    // [자격축] 의료급여 1종 정액 1,000원 (의원 외래)
+  | 'medical_aid_2'    // [자격축] 의료급여 2종 정액 1,000원 (의원 외래) — 종전 15% 오적용 정정(v1.6)
+  | 'infant'           // [나이 파생축] 만6세 미만 (생년월일 파생, 조회 불요). 1세미만 5%/6세미만 21%
+  | 'elderly_flat'     // [나이 파생축] 만65세 이상 (생년월일 파생, 조회 불요). 외래 4구간 정률제
+  | 'foreigner'        // [자격축] 외국인 (전액 비급여)
+  | 'unverified';      // [자격축] 미확인 (미설정 89% — 나이 파생으로 노인/영유아만 자동 확정)
 
 export type InsuranceGradeSource =
   | 'jeoneung_crm'

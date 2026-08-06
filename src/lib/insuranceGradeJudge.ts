@@ -20,6 +20,9 @@
  */
 
 import type { InsuranceGrade } from './insurance';
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 산식 SSOT 위임(사본 증식 방지).
+import { computeAgeFromBirth } from './customerAge';
+import { seoulISODate } from './format';
 
 // ── 입력/출력 타입 ────────────────────────────────────────────────────────────
 
@@ -270,11 +273,11 @@ export function judgeInsuranceGrade(input: JudgeInput): JudgeResult {
  * 생년 문자열 → 만나이(number) | null.
  *
  * 우선 소스는 서버 RPC(fn_customer_birthdates) 파생값 'YYYY-MM-DD'(완전연도, 세기 정확) —
- * 호출부가 이 값을 넘긴다(REDEFINITION_RISK: 나이 SSOT=RPC 재사용, 클라 세기-휴리스틱 신설 금지).
+ * 호출부가 이 값을 넘긴다. 레거시 YYMMDD(6자리)도 흡수(동적 세기 경계 → 2027 시한폭탄 없음).
  *
- * RPC 미가용 폴백으로 YYMMDD(2자리 연도)도 흡수하되 세기 경계를 **동적**으로 안전 처리
- * (하드코딩 연도 없음 → 2027 시한폭탄 방지). format.ts birthYearAgeDisplay 와 동일한
- * 동적 규칙(yy ≤ 현재연도 2자리 → 2000년대, 아니면 1900년대)을 재사용.
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§3/§9 SSOT 수렴): 세기·만나이 산식은 나이 SSOT
+ *   (customerAge.ts computeAgeFromBirth)에 **위임**한다 — 이 모듈 자체 사본 삭제(사본 증식 방지).
+ *   nowMs(ms) → KST 날짜(seoulISODate)로 환산해 SSOT 에 넘긴다(기준시각 KST 고정).
  *
  * @param nowMs 현재시각(ms). 순수함수 유지(테스트 결정성) — 호출부가 Date.now() 주입.
  */
@@ -282,34 +285,5 @@ export function ageFromBirthValue(
   birth: string | null | undefined,
   nowMs: number,
 ): number | null {
-  if (!birth) return null;
-  const digits = String(birth).replace(/\D/g, '');
-  if (digits.length < 6) return null;
-  const now = new Date(nowMs);
-  let birthYear: number;
-  let mm: number;
-  let dd: number;
-  if (digits.length >= 8) {
-    // YYYYMMDD (완전연도 — 세기 정확, RPC 'YYYY-MM-DD' 소스)
-    birthYear = Number(digits.slice(0, 4));
-    mm = Number(digits.slice(4, 6));
-    dd = Number(digits.slice(6, 8));
-    if (Number.isNaN(birthYear) || birthYear < 1850 || birthYear > now.getFullYear()) return null;
-  } else {
-    // YYMMDD (레거시 2자리연도 — 동적 세기 경계)
-    const yy = Number(digits.slice(0, 2));
-    mm = Number(digits.slice(2, 4));
-    dd = Number(digits.slice(4, 6));
-    if (Number.isNaN(yy)) return null;
-    const curYY = now.getFullYear() % 100;
-    birthYear = (yy <= curYY ? 2000 : 1900) + yy;
-  }
-  if (Number.isNaN(mm) || Number.isNaN(dd)) return null;
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-  let age = now.getFullYear() - birthYear;
-  const curMonth = now.getMonth() + 1;
-  const curDay = now.getDate();
-  if (curMonth < mm || (curMonth === mm && curDay < dd)) age -= 1;
-  if (age < 0 || age > 130) return null;
-  return age;
+  return computeAgeFromBirth(birth, seoulISODate(nowMs));
 }
