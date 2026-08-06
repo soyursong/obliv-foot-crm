@@ -1,4 +1,4 @@
--- ROLLBACK: 20260807120000_foot_package_payments_cband_cat_canon.sql
+-- ROLLBACK: 20260807130000_foot_package_payments_cband_cat_canon.sql
 -- T-20260806-foot-PLANA-PKG-PAY-EXPAND / DA-20260806-foot-PLANA-PKG-PAY-LANDING-MODEL(b)
 -- ADDITIVE 역: net-new 인덱스·FK·payment_attempt_id 컬럼만 제거.
 -- ★external_approval_no/external_tid 는 DROP 하지 않는다 — mig 20260523040000(PAY-INPUT-001) 소유의

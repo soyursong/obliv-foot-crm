@@ -26,8 +26,8 @@
 -- 무회귀: ADDITIVE-ONLY(ADD COLUMN IF NOT EXISTS + FK + partial UNIQUE INDEX). 기존 package_payments 행 무변
 --   (default NULL). 파괴변경 0·롤백대칭. cross-product 충돌 0(foot-local·sibling 강제 0).
 -- 선행: 20260731190000_foot_cband_payment_attempts.sql (FK 참조 대상 테이블).
--- rollback: 20260807120000_foot_package_payments_cband_cat_canon.rollback.sql
--- dryrun  : 20260807120000_foot_package_payments_cband_cat_canon.dryrun.mjs (No-Persistence: txn-strip + ROLLBACK + post-probe)
+-- rollback: 20260807130000_foot_package_payments_cband_cat_canon.rollback.sql
+-- dryrun  : 20260807130000_foot_package_payments_cband_cat_canon.dryrun.mjs (No-Persistence: txn-strip + ROLLBACK + post-probe)
 -- ============================================================
 
 BEGIN;
