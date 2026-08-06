@@ -92,7 +92,13 @@ export interface CheckInRealtimeRow {
   [key: string]: unknown;
 }
 
-/** Prescription row from prescriptions + prescription_items join */
+/**
+ * @deprecated T-20260806-foot-RX-PERSIST-FORWARDFIX / DA-20260806-foot-RX-PERSIST-SSOT.
+ *   `prescriptions` / `prescription_items` 테이블 = DEAD SKELETON (INSERT 코드 전무).
+ *   ★ 처방전 발행 이력 canonical SSOT = form_submissions(처방전 = form_key 'rx_standard').
+ *   조회/투영은 RxIssuanceRow(@/lib/rxIssuanceHistory) 사용. prescriptions write 경로 신설 금지(되살리기 금지).
+ *   (본 타입은 dead skeleton 표식으로만 존치 — 신규 소비처 추가 금지.)
+ */
 export interface PrescriptionRow {
   id: string;
   prescribed_by_name: string | null;
@@ -102,6 +108,7 @@ export interface PrescriptionRow {
   prescription_items?: PrescriptionItemRow[];
 }
 
+/** @deprecated dead skeleton — 상기 PrescriptionRow 참조(canonical = form_submissions). */
 export interface PrescriptionItemRow {
   id: string;
   medication_name: string;

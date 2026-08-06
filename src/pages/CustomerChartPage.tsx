@@ -44,7 +44,9 @@ import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
-import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
+import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, Reservation, VisitType } from '@/lib/types';
+// T-20260806-foot-RX-PERSIST-FORWARDFIX: 처방전 발행 이력 canonical SSOT = form_submissions(처방전). 발행 이력 축 투영 헬퍼.
+import { mapRxIssuanceRows, RX_ISSUANCE_FORM_KEY, type RxIssuanceRow, type RawFormSubmissionRow } from '@/lib/rxIssuanceHistory';
 import { TREATMENT_TYPES, treatmentTypeLabel, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 // T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 예방콜 결과 read-only 배지(상태 무관)
 import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
@@ -2824,7 +2826,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: 모달 진입 mode — '당일 서류 발행'(true)이면
   //   DocumentPrintPanel 이 이전 발행분 재출력 인터셉트/프리필 없이 빈 신규 발행으로 진입. '서류 재출력'(false)=STAGE2 유지.
   const [docReissueNewMode, setDocReissueNewMode] = useState(false);
-  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
+  const [prescriptions, setPrescriptions] = useState<RxIssuanceRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
   // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
@@ -3354,11 +3356,20 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
 
       if (checkInIds.length > 0) {
         const [rxRes, consentRes] = await Promise.all([
+          // T-20260806-foot-RX-PERSIST-FORWARDFIX (AC2/VG1/VG3):
+          //   ★ canonical SSOT = form_submissions(처방전 = form_key 'rx_standard'). DA-20260806-foot-RX-PERSIST-SSOT.
+          //   [폐기] dead 'prescriptions' 테이블 조회 — INSERT 코드 전무(skeleton)라 항상 0건 → 처방 이력 미표시(실사고).
+          //     되살리기·write 신설 금지(dual-source drift 안티패턴). 발행 이력 = form_submissions 단일 원장.
+          //   VG1: form_templates!inner(form_key='rx_standard')로 처방전만 필터(소견서/KOH/진단서 혼입 0).
+          //   VG3: 발행 이력 축(form_submissions)만 소비 — 처방 기록 축(medical_charts.prescription_items) 조인 금지.
+          //   VG2: 투영은 mapRxIssuanceRows 화이트리스트(교부일·처방의료인·진단·교부번호·약품명) — RRN/풀전화/차트번호 미노출.
           supabase
-            .from('prescriptions')
-            .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
-            .in('check_in_id', checkInIds)
-            .order('prescribed_at', { ascending: false })
+            .from('form_submissions')
+            .select('id, printed_at, created_at, field_data, form_templates!inner(form_key)')
+            .eq('customer_id', customerId)
+            .eq('is_deleted', false)
+            .eq('form_templates.form_key', RX_ISSUANCE_FORM_KEY)
+            .order('printed_at', { ascending: false, nullsFirst: false })
             .limit(20),
           supabase
             .from('consent_forms')
@@ -3366,7 +3377,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             .in('check_in_id', checkInIds)
             .order('signed_at', { ascending: false }),
         ]);
-        setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
+        setPrescriptions(mapRxIssuanceRows((rxRes.data ?? []) as RawFormSubmissionRow[]));
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
       }
 
@@ -6776,25 +6787,22 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 <DocumentViewer customerId={customer.id} />
               </div>
 
-              {/* 처방전 */}
+              {/* 처방전 — T-20260806-foot-RX-PERSIST-FORWARDFIX: 발행 이력 축(form_submissions) 투영(교부일·처방의료인·진단·교부번호·약품명). */}
               {prescriptions.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
                   <div className="font-semibold text-muted-foreground">처방전</div>
                   {prescriptions.map((rx) => (
                     <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
                       <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                        <span>{formatDateDots(rx.prescribed_at)}</span>
-                        {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
+                        <span>{rx.issued_at ? formatDateDots(rx.issued_at) : '-'}</span>
+                        {rx.prescriber_name && <span>{rx.prescriber_name}</span>}
                       </div>
+                      {rx.issue_no && <div className="text-muted-foreground mb-0.5">교부번호: {rx.issue_no}</div>}
                       {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
-                      {rx.prescription_items && rx.prescription_items.length > 0 && (
+                      {rx.medications.length > 0 && (
                         <div className="space-y-0.5 mt-1">
-                          {rx.prescription_items.map((item, idx) => (
-                            <div key={idx} className="text-muted-foreground">
-                              {item.medication_name}
-                              {item.dosage && ` · ${item.dosage}`}
-                              {item.duration_days && ` · ${item.duration_days}일`}
-                            </div>
+                          {rx.medications.map((name, idx) => (
+                            <div key={idx} className="text-muted-foreground">{name}</div>
                           ))}
                         </div>
                       )}
