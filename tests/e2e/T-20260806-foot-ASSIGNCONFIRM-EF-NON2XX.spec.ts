@@ -58,12 +58,15 @@ function confirmHandler(): string {
 test('시나리오1: 성공 경로 불변 — 발송 완료 토스트 + consult_notify_status 재조회(load) 유지', () => {
   const h = confirmHandler();
   expect(h).toContain('상담대기방 발송 완료');
-  expect(h).toContain('이미 발송된 건입니다.');
-  expect(h).toMatch(/void load\(\)/); // '발송됨' 반영 재조회
+  // ★ T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN: alreadySent 문구 '이미 발송된' → '이미 확정된' (decouple).
+  expect(h).toContain('이미 확정된 건입니다.');
+  expect(h).toMatch(/void load\(\)/); // '발송됨'/'발송 대기'/'발송실패' 반영 재조회
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 2: 재현(버그) → fix — non-2xx 시 실제 EF 사유 노출 + 채널실패 친화 매핑
+//   ★ decouple 이후: channel_not_found 는 2xx 경로로 오므로 이 error 분기는 진짜 [확정] 실패(인증/enqueue)만 처리.
+//     단 EF 응답본문 파싱 + 친화 매핑 로직 자체는 유지(제네릭 non-2xx 대비) → 아래 단언 유효.
 // ─────────────────────────────────────────────────────────────────────────────
 test('시나리오2-a: non-2xx 시 error.context 응답 본문을 읽어 실 사유를 노출(불투명 generic 오류 대체)', () => {
   const h = confirmHandler();
@@ -90,13 +93,19 @@ test('시나리오2-c: 현장 토스트에 raw slack 코드 문자열을 직접 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 시나리오 3: 안전 불변 — EF 멱등/롤백/RED LINE 무훼손(FE-only fix)
+// 시나리오 3: 안전 불변 — EF 멱등/RED LINE 무훼손
 // ─────────────────────────────────────────────────────────────────────────────
-test('안전 불변: Slack 발송 실패 시 EF 는 claim 롤백(sending→NULL) 유지 → 재시도 가능', () => {
+// ★ SUPERSEDED by T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN (canon-conformance):
+//   구 계약(발송 실패 시 claim 롤백 sending→NULL + 502 non-2xx)은 [확정]↔발송 tight-coupling 으로,
+//   Slack 채널 소멸 하나가 상담배정 확정 전면차단(P0)한 원인 = 버그로 판정. 이번 decouple 이 의도 semantic 복원.
+//   신 계약: claim 은 [확정]으로 영속(발송 실패해도 롤백 안 함) + 2xx. 발송은 outbox/retry/DLQ 로 강등.
+test('안전 불변(갱신·decouple): 발송 실패 시 claim 롤백/502 제거 — claim 은 [확정]으로 영속 + 2xx', () => {
   const src = read(EF);
-  expect(src).toContain('Slack 발송 실패');
-  // 발송 실패 분기에서 status='sending'·by=userId 조건부 롤백
-  expect(src).toMatch(/consult_notify_status:\s*null[\s\S]*?eq\("consult_notify_status",\s*"sending"\)/);
+  // 구 502 non-2xx 전파 + claim 롤백(sending→NULL) 경로 제거됨
+  expect(src).not.toContain('Slack 발송 실패: ${sent.error');
+  expect(src).not.toMatch(/consult_notify_status:\s*null[\s\S]{0,120}consult_notify_by:\s*null/);
+  // [확정] 성공 = claim 영속 후 2xx({ok,confirmed})
+  expect(src).toMatch(/return json\(\{\s*ok:\s*true,\s*confirmed:\s*true/);
 });
 
 test('안전 불변: RED LINE INV-1 — claim SET 절은 consult_notify_* 만, 매출귀속(consultant_id) 무접촉', () => {

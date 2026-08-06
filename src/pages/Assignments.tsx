@@ -1599,20 +1599,24 @@ export default function Assignments() {
   const doConfirmNotify = async (r: TodayDistRow) => {
     if (!clinic || notifyingId) return;
     if (r.role !== 'consult') return; // '상담 대기중' 발송 = 상담 배정 한정
-    if (r.notifyStatus === 'sent' || r.notifyStatus === 'sending') return; // 이미 발송됨/발송중(멱등)
+    // 멱등: 이미 확정된 건(발송됨/발송대기/발송실패) 재확정 금지. ('failed'=확정됨·발송만 실패 → 재확정 불가.)
+    if (r.notifyStatus === 'sent' || r.notifyStatus === 'sending' || r.notifyStatus === 'failed') return;
     setNotifyingId(r.id);
     try {
       const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.SEND_CONSULT_NOTIFY, {
         body: { check_in_id: r.checkIn.id, clinic_id: clinic.id, inflow: r.inflow },
       });
-      const res = (data ?? {}) as { ok?: boolean; sent?: boolean; alreadySent?: boolean; error?: string };
+      // T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN: [확정]↔발송 decouple.
+      //   EF 는 claim 영속 시 항상 2xx({ok,confirmed,delivery}) 반환 — Slack 발송 실패는 더 이상 non-2xx 로
+      //   전파되지 않는다(발송=side-effect). 여기서 error/ok===false 는 진짜 [확정] 실패(인증/enqueue/검증)만 의미.
+      const res = (data ?? {}) as {
+        ok?: boolean; confirmed?: boolean; alreadySent?: boolean; error?: string;
+        delivery?: { delivered?: boolean; terminal?: boolean; error?: string };
+      };
       if (error || res.error || res.ok === false) {
-        // T-20260806-foot-ASSIGNCONFIRM-EF-NON2XX: EF non-2xx(FunctionsHttpError) 시 supabase-js 는
-        //   data=null · error=generic("Edge Function returned a non-2xx status code") 로 반환 → 실제 원인
-        //   (EF 응답 본문, 예: "Slack 발송 실패: channel_not_found")이 삼켜져 현장은 불투명한 오류만 본다.
-        //   → error.context(Response) 본문을 읽어 실 사유를 노출하고, 채널 접근 실패(channel_not_found 등)는
-        //     raw slack 코드를 감추고 현장 친화 한국어로 매핑(field_lang_dict 게이트).
-        let msg = res.error ?? '발송 실패';
+        // 진짜 [확정] 실패(non-2xx): EF 응답 본문(FunctionsHttpError.context)에서 실 사유 노출 + 친화 매핑.
+        //   (인증/권한/enqueue 롤백 등. channel_not_found 는 이제 2xx 경로로 오므로 여기 도달하지 않음.)
+        let msg = res.error ?? '확정 실패';
         const ctx = (error as { context?: Response } | null)?.context;
         if (ctx && typeof ctx.json === 'function') {
           try {
@@ -1621,7 +1625,7 @@ export default function Assignments() {
           } catch {
             /* 본문 파싱 실패 → 기존 msg 유지 */
           }
-        } else if (error?.message && msg === '발송 실패') {
+        } else if (error?.message && msg === '확정 실패') {
           msg = error.message;
         }
         if (/channel_not_found|not_in_channel|is_archived/i.test(msg)) {
@@ -1631,14 +1635,21 @@ export default function Assignments() {
         toast.error(msg);
         return;
       }
+      // ── [확정] 성공(2xx). 발송(delivery)은 별개 side-effect — 실패해도 확정은 성립. ──
       if (res.alreadySent) {
-        toast.success('이미 발송된 건입니다.');
+        toast.success('이미 확정된 건입니다.');
+      } else if (res.delivery && res.delivery.delivered === false) {
+        // 확정은 성공했으나 상담대기방 알림 발송은 대기/실패. 스태프에게 gap 인지시킴(VG4).
+        toast.success(`${staffName(r.staffId)} · ${r.customerName}님 상담 배정 확정 완료`);
+        toast.warning(
+          '상담대기방 알림 발송은 대기/실패 상태입니다 — 목록의 발송 상태(발송실패 배지)를 확인해주세요.',
+        );
       } else {
         toast.success(`${staffName(r.staffId)} · ${r.customerName}님 상담대기방 발송 완료`);
       }
-      void load(); // consult_notify_status 재조회 → '발송됨' 반영
+      void load(); // consult_notify_status 재조회 → '발송됨'/'발송 대기'/'발송실패' 반영
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '발송 실패');
+      toast.error(e instanceof Error ? e.message : '확정 실패');
     } finally {
       setNotifyingId(null);
     }
@@ -2185,16 +2196,28 @@ export default function Assignments() {
                         멱등: 서버 조건부 claim + notifyStat!=='미확정' 시 버튼 비노출 → 이중발송 방지.
                         T-20260729-foot-CONFIRM-BTN-ROLE-OPEN: 역할 제한(canEditDistribution) 제거 —
                           코디네이터 포함 전 역할이 [확정] 버튼 표시+클릭 가능. '미확정' 텍스트 폴백 렌더 경로도 제거.
-                          (총괄 지시: 접근제어 완화. sent/sending 건은 role 무관 배지로 멱등 유지.) */}
+                          (총괄 지시: 접근제어 완화. sent/sending 건은 role 무관 배지로 멱등 유지.)
+                        T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN: [확정]↔발송 decouple.
+                          'sending'=확정됨·발송대기(outbox 재시도 중), 'sent'=발송완료, 'failed'=확정됐으나 상담대기방
+                          알림 발송 종단실패(채널 소멸 등) → 스태프 인지용 '발송실패' 배지(VG4 가시화). 확정 자체는 성립. */}
                     {activeTab === 'consult' && (
                       <td className="px-2 py-2 text-right">
                         {r.notifyStatus === 'sent' ? (
                           <Badge variant="teal" className="font-normal" data-testid={`dist-notify-sent-${r.id}`}>
                             발송됨
                           </Badge>
+                        ) : r.notifyStatus === 'failed' ? (
+                          <Badge
+                            variant="destructive"
+                            className="font-normal"
+                            data-testid={`dist-notify-failed-${r.id}`}
+                            title="상담 배정은 확정됐으나 상담대기방 알림 발송에 실패했습니다(채널 접근 불가 등). 관리자에게 채널 확인을 요청해주세요."
+                          >
+                            발송실패
+                          </Badge>
                         ) : r.notifyStatus === 'sending' ? (
                           <Badge variant="secondary" className="font-normal" data-testid={`dist-notify-sending-${r.id}`}>
-                            발송중
+                            발송 대기
                           </Badge>
                         ) : (
                           <Button

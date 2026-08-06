@@ -107,49 +107,50 @@ test('변경2(QA-FIX A안): 담당실장 Slack ID 해소 = staff.slack_user_id �
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 3: 이중발송 방지 (멱등, 3-state)
 // ─────────────────────────────────────────────────────────────────────────────
-test('시나리오3: EF 조건부 claim (WHERE status IS NULL → sending) rows-affected 가드', () => {
+// ★ SUPERSEDED by T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN (canon-conformance):
+//   인라인 claim/승격/롤백이 원자적 RPC(enqueue_consult_notify) + decouple(발송=outbox/retry/DLQ)로 이동.
+//   claim(NULL→sending)=[확정] 영속. 발송 실패 시 sending→NULL 롤백/502 제거(구 tight-coupling=P0 원인=버그).
+test('시나리오3(decouple): 조건부 claim(status NULL→sending)은 enqueue_consult_notify RPC 경유 + 멱등 alreadySent', () => {
   const src = read(EF);
-  // claim: status NULL → 'sending' (3-state R3, sent_at/slack_ts 미기록)
-  expect(src).toMatch(/consult_notify_status: "sending"/);
-  expect(src).toMatch(/\.is\("consult_notify_status", null\)\s*\n?\s*\.select\("id"\)/);
-  // rows-affected 0 → alreadySent (이중발송 차단)
-  expect(src).toMatch(/if \(!claimed \|\| claimed\.length === 0\) \{[\s\S]*?alreadySent: true/);
+  expect(src).toContain('enqueue_consult_notify');
+  // 멱등: claim 안 됨(race/already) → 2xx alreadySent (이중확정 차단)
+  expect(src).toMatch(/rpc\.claimed !== true[\s\S]{0,220}alreadySent: true/);
 });
 
-test('시나리오3: 발송 성공 시에만 sending → sent 승격 (+slack_ts), 실패 시 sending → NULL 롤백', () => {
+test('시나리오3(decouple): 발송 성공 시 outbox delivered + check_ins sending→sent 승격 / 실패 시 롤백 없음', () => {
   const src = read(EF);
-  // 승격
-  expect(src).toMatch(/consult_notify_status: "sent",\s*\n?\s*consult_notify_sent_at: new Date\(\)\.toISOString\(\),\s*\n?\s*consult_notify_slack_ts: sent\.ts/);
-  expect(src).toMatch(/\.eq\("consult_notify_status", "sending"\)\.eq\("consult_notify_by", userId\)/);
-  // 실패 롤백
-  expect(src).toMatch(/if \(!sent\.ok\) \{[\s\S]*?consult_notify_status: null, consult_notify_by: null/);
+  expect(src).toMatch(/status:\s*"delivered"/);
+  expect(src).toMatch(/consult_notify_status:\s*"sent"[\s\S]{0,240}eq\("consult_notify_status",\s*"sending"\)/);
+  // 발송 실패 시 sending→NULL 롤백 경로 제거됨(claim=[확정] 영속)
+  expect(src).not.toMatch(/consult_notify_status:\s*null,\s*consult_notify_by:\s*null/);
 });
 
-test('시나리오3: FE 도 sent/sending 이면 재발송 차단 + 버튼 비노출(발송됨/발송중 배지)', () => {
+test('시나리오3(decouple): FE 확정건(sent/sending/failed) 재발송 차단 + 배지(발송됨/발송 대기/발송실패)', () => {
   const src = read(PAGE);
-  expect(src).toMatch(/if \(r\.notifyStatus === 'sent' \|\| r\.notifyStatus === 'sending'\) return/);
-  // 상태별 표시
+  expect(src).toMatch(/notifyStatus === 'sent' \|\| .*notifyStatus === 'sending' \|\| .*notifyStatus === 'failed'.*return/);
   expect(src).toMatch(/r\.notifyStatus === 'sent' \?[\s\S]*?발송됨/);
-  expect(src).toMatch(/r\.notifyStatus === 'sending' \?[\s\S]*?발송중/);
+  expect(src).toMatch(/r\.notifyStatus === 'sending' \?[\s\S]*?발송 대기/);
+  expect(src).toMatch(/r\.notifyStatus === 'failed' \?[\s\S]*?발송실패/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RED LINE INV-1: 발송 트리거/UI/표시명만 — 매출귀속(assigned_consultant_id) 무접촉
 // ─────────────────────────────────────────────────────────────────────────────
-test('RED LINE INV-1: EF 의 모든 .update() SET 절은 consult_notify_* 컬럼만 — 매출귀속/배정 포인터 무접촉', () => {
+// ★ decouple(T-20260806-...HARDEN): EF 가 이제 consult_notify_outbox(별도 테이블)도 update → check_ins update 로 범위 축소.
+//   INV-1 본질(매출귀속 consultant_id/assigned_consultant_id/therapist_id write 0)은 그대로 강제.
+test('RED LINE INV-1: 매출귀속 write 0 + check_ins update SET 절은 consult_notify_* 만 (outbox update 는 별도 테이블)', () => {
   const code = read(EF)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '');
-  // 매출귀속 앵커는 코드 어디에도 write 없음 (customers 소재, EF 는 check_ins 만)
+  // 매출귀속 앵커는 코드 어디에도 write 없음 (customers 소재, EF 는 check_ins/outbox 만)
   expect(code).not.toMatch(/assigned_consultant_id/);
   expect(code).not.toMatch(/from\("customers"\)/);
-  // 모든 .update({ ... }) payload 추출 → consultant_id/therapist_id 를 SET 하지 않음(DA Q3 가드: consult_notify_* 만).
-  const updateBlocks = code.match(/\.update\(\{[\s\S]*?\}\)/g) ?? [];
-  expect(updateBlocks.length).toBeGreaterThan(0);
-  for (const blk of updateBlocks) {
+  // check_ins.update({...}) 블록만 추출 → SET 키 전부 consult_notify_ 접두 (배정/매출귀속 포인터 무접촉).
+  const checkInUpdates = code.match(/from\("check_ins"\)\s*\.update\(\{[\s\S]*?\}\)/g) ?? [];
+  expect(checkInUpdates.length).toBeGreaterThan(0);
+  for (const blk of checkInUpdates) {
     expect(blk).not.toMatch(/\bconsultant_id\b/);
     expect(blk).not.toMatch(/\btherapist_id\b/);
-    // SET 되는 키는 전부 consult_notify_ 접두
     const keys = (blk.match(/(\w+):/g) ?? []).map((k) => k.replace(':', ''));
     for (const key of keys) expect(key.startsWith('consult_notify_')).toBe(true);
   }

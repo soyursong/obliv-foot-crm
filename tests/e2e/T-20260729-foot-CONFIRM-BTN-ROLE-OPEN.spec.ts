@@ -83,19 +83,21 @@ test('시나리오2: EF 발송 포맷/상담대기방 C0B4HEC9SHH 무접촉 (FE 
 // ─────────────────────────────────────────────────────────────────────────────
 // 시나리오 3: 멱등 role 무관 (sent/sending 건은 role 무관 배지/비활성, 이중발송 차단 유지)
 // ─────────────────────────────────────────────────────────────────────────────
-test('시나리오3: sent → 발송됨 배지 / sending → 발송중 배지 (role 무관, 버튼 비노출)', () => {
+// ★ T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN: 'sending' 배지 라벨 '발송중'→'발송 대기'(decouple 정확성),
+//   'failed'(발송실패) 배지 추가. 멱등 가드에 'failed' 포함.
+test('시나리오3: sent → 발송됨 배지 / sending → 발송 대기 배지 (role 무관, 버튼 비노출)', () => {
   const src = read(PAGE);
   const cell = confirmCell(src);
   expect(cell).toMatch(/r\.notifyStatus === 'sent' \?[\s\S]*?dist-notify-sent[\s\S]*?발송됨/);
-  expect(cell).toMatch(/r\.notifyStatus === 'sending' \?[\s\S]*?dist-notify-sending[\s\S]*?발송중/);
-  // sent/sending 배지는 role 게이트 밖(전 역할 동일하게 완료 상태를 봄)
-  const sentSendingSeg = cell.slice(0, cell.indexOf('<Button'));
-  expect(sentSendingSeg).not.toContain('canEditDistribution');
+  expect(cell).toMatch(/r\.notifyStatus === 'sending' \?[\s\S]*?dist-notify-sending[\s\S]*?발송 대기/);
+  // sent/failed/sending 배지는 role 게이트 밖(전 역할 동일하게 상태를 봄)
+  const badgeSeg = cell.slice(0, cell.indexOf('<Button'));
+  expect(badgeSeg).not.toContain('canEditDistribution');
 });
 
-test('시나리오3: doConfirmNotify 멱등 가드 유지 — sent/sending 이면 재발송 차단 (role 무관)', () => {
+test('시나리오3: doConfirmNotify 멱등 가드 유지 — sent/sending/failed 이면 재발송 차단 (role 무관)', () => {
   const src = read(PAGE);
-  expect(src).toMatch(/if \(r\.notifyStatus === 'sent' \|\| r\.notifyStatus === 'sending'\) return/);
+  expect(src).toMatch(/notifyStatus === 'sent' \|\| r\.notifyStatus === 'sending' \|\| r\.notifyStatus === 'failed'\) return/);
   // 상담 배정 한정(치료 탭 무의미)은 유지
   expect(src).toMatch(/if \(r\.role !== 'consult'\) return/);
 });
