@@ -2154,7 +2154,7 @@ const BILL_RECEIPT_NEW_HTML = `
     @page { size:A4 portrait; margin:0; }
     /* T-20260729-foot-DOC-LAYOUT-FIX ①: A4 중앙정렬 — width 210mm→190mm + margin:0 auto
        (T-20260629 누락 버그 수정: 210mm full-bleed 는 @page margin:0 에서 좌측 앵커 쏠림. 190mm+auto = 좌우 10mm belt 중앙). */
-    .rn-wrap { width:190mm; padding:5mm 7mm; margin:0 auto; }
+    .rn-wrap { width:190mm; padding:5mm 7mm; margin:0 auto; min-height:auto; }
     body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   }
 </style>

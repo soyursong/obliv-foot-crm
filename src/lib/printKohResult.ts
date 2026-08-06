@@ -84,7 +84,7 @@ export function printKohResult(fieldData: unknown): boolean {
   //   인쇄일시·제목 헤더가 자동 삽입됨. @page margin:0 으로 여백 박스를 없애 헤더 제거(콘텐츠 공백은 body padding).
   win.document.write(
     `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>검사결과 보고서</title>` +
-      `<style>@page { size: A4 portrait; margin: 0; } html, body { margin: 0; } body { box-sizing: border-box; padding: 12mm; }</style></head><body>${html}` +
+      `<style>@page { size: A4 portrait; margin: 0; } html, body { margin: 0; } body { box-sizing: border-box; padding: 12mm; } @media print { body { padding:0 } }</style></head><body>${html}` +
       `<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`,
   );
   win.document.close();
