@@ -2304,19 +2304,11 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                           );
                         })()}
                         {/* T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' (AC-1 라벨 결제담당→담당자) */}
-                        {/* T-20260805-foot-CLOSING-PAYDETAIL-REFUND-PROCESSOR-DISPLAY: 환불 행에 '환불처리 직원명'(created_by) 병기.
-                            매출집계>환자별 탭(SalesPatientTab '처리 직원명') parity. staff_name(배정담당)과 별개 축 — 라벨로 명시 구분. 미기록 '—'. */}
+                        {/* T-20260806-foot-CLOSING-REFUND-PROCESSOR-BADGE-REPOSITION: '환불처리 직원명' 서브라인을
+                            담당자(중앙) 컬럼 → 오른쪽 배지 셀(패키지/환불/완료 배지 옆)로 이동(김주연 총괄, 스크린샷 빨간 화살표 위치).
+                            담당자 셀은 staff_name(배정담당)만 표시로 원복. 표시 로직/null 가드는 predecessor(9802b523) 그대로 유지·포지셔닝만 변경. */}
                         <td className="px-2 py-1.5 text-xs">
                           {r.staff_name ?? <span className="text-muted-foreground/60">미지정</span>}
-                          {(() => {
-                            const rp = refundProcessorForRow(r);
-                            if (!rp.has) return null;
-                            return (
-                              <div className="text-[10px] text-red-600 leading-tight" data-testid="closing-paydetail-refund-processor">
-                                환불처리 {rp.name ?? '—'}
-                              </div>
-                            );
-                          })()}
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                           {r.payment_type === 'refund' ? '-' : ''}{formatAmount(r.amount)}
@@ -2377,6 +2369,18 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                               <Badge variant="outline" className="text-[10px] whitespace-nowrap shrink-0 border-red-300 text-red-500" data-testid="fully-refunded-badge">완료</Badge>
                             )}
                           </div>
+                          {/* T-20260806-foot-CLOSING-REFUND-PROCESSOR-BADGE-REPOSITION: '환불처리 직원명'을 담당자(중앙) 컬럼에서
+                              여기 배지 셀(패키지/환불/완료 배지 아래·환불 버튼 쪽)로 이동 표시(김주연 총괄, 스크린샷 빨간 화살표 위치).
+                              표시 판정(refundProcessorForRow)·null 가드('—')는 predecessor(9802b523) 그대로 재사용, 포지셔닝만 변경. */}
+                          {(() => {
+                            const rp = refundProcessorForRow(r);
+                            if (!rp.has) return null;
+                            return (
+                              <div className="text-[10px] text-red-600 leading-tight text-center mt-0.5" data-testid="closing-paydetail-refund-processor">
+                                환불처리 {rp.name ?? '—'}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-1 py-1.5 text-center">
                           <div className="flex items-center justify-center gap-1">
