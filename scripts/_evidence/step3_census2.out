@@ -1,0 +1,180 @@
+
+===== I3c_FIX_policy_refs_per_helper =====
+[
+ {
+  "helper": "current_user_is_admin_or_manager",
+  "n": 5,
+  "policies": "check_ins.check_ins_delete_admin, daily_closings.daily_closings_write, insurance_sync_runs.insurance_sync_runs_read_admin, packages.packages_delete_admin, payments.payments_delete_admin"
+ },
+ {
+  "helper": "is_admin (word-boundary, excl is_admin_or_manager)",
+  "n": 0,
+  "policies": null
+ },
+ {
+  "helper": "is_admin (STRICT: is_admin( call only)",
+  "n": 0,
+  "policies": null
+ },
+ {
+  "helper": "is_manager_or_above",
+  "n": 0,
+  "policies": null
+ }
+]
+
+===== I3a_FIX_function_callers =====
+[]
+
+===== I3b_FIX_view_callers =====
+[]
+
+===== I4_FIX_account_census =====
+[
+ {
+  "role": "admin",
+  "approved": true,
+  "active": false,
+  "n": 1
+ },
+ {
+  "role": "admin",
+  "approved": true,
+  "active": true,
+  "n": 12
+ },
+ {
+  "role": "consultant",
+  "approved": true,
+  "active": false,
+  "n": 2
+ },
+ {
+  "role": "consultant",
+  "approved": true,
+  "active": true,
+  "n": 8
+ },
+ {
+  "role": "coordinator",
+  "approved": false,
+  "active": false,
+  "n": 4
+ },
+ {
+  "role": "coordinator",
+  "approved": true,
+  "active": true,
+  "n": 4
+ },
+ {
+  "role": "director",
+  "approved": true,
+  "active": true,
+  "n": 2
+ },
+ {
+  "role": "manager",
+  "approved": true,
+  "active": true,
+  "n": 3
+ },
+ {
+  "role": "staff",
+  "approved": true,
+  "active": true,
+  "n": 7
+ },
+ {
+  "role": "therapist",
+  "approved": true,
+  "active": false,
+  "n": 4
+ },
+ {
+  "role": "therapist",
+  "approved": true,
+  "active": true,
+  "n": 11
+ },
+ {
+  "role": "tm",
+  "approved": true,
+  "active": true,
+  "n": 4
+ }
+]
+
+===== I4d_SETDIFF_per_surface =====
+[
+ {
+  "surface": "admin_manager (current_user_is_admin_or_manager helper)",
+  "role_members": 16,
+  "new_eligible": 15,
+  "setdiff_lockout": 1,
+  "lo_approved_inactive": 1,
+  "lo_notapproved": 0
+ },
+ {
+  "surface": "admin (is_admin / user_profiles_delete_admin)",
+  "role_members": 13,
+  "new_eligible": 12,
+  "setdiff_lockout": 1,
+  "lo_approved_inactive": 1,
+  "lo_notapproved": 0
+ },
+ {
+  "surface": "mgr_or_above (is_manager_or_above)",
+  "role_members": 16,
+  "new_eligible": 15,
+  "setdiff_lockout": 1,
+  "lo_approved_inactive": 1,
+  "lo_notapproved": 0
+ },
+ {
+  "surface": "floor6menu {consultant,coordinator,therapist}",
+  "role_members": 33,
+  "new_eligible": 23,
+  "setdiff_lockout": 10,
+  "lo_approved_inactive": 6,
+  "lo_notapproved": 4
+ },
+ {
+  "surface": "therapist (check_ins carve->gate)",
+  "role_members": 15,
+  "new_eligible": 11,
+  "setdiff_lockout": 4,
+  "lo_approved_inactive": 4,
+  "lo_notapproved": 0
+ },
+ {
+  "surface": "write4 {admin,manager,consultant,coordinator}",
+  "role_members": 34,
+  "new_eligible": 27,
+  "setdiff_lockout": 7,
+  "lo_approved_inactive": 3,
+  "lo_notapproved": 4
+ },
+ {
+  "surface": "write5 +therapist",
+  "role_members": 49,
+  "new_eligible": 38,
+  "setdiff_lockout": 11,
+  "lo_approved_inactive": 7,
+  "lo_notapproved": 4
+ },
+ {
+  "surface": "director_admin {director,admin}",
+  "role_members": 15,
+  "new_eligible": 14,
+  "setdiff_lockout": 1,
+  "lo_approved_inactive": 1,
+  "lo_notapproved": 0
+ }
+]
+
+===== I4e_false_lockout_sanity =====
+{
+ "note": "per-surface setdiff_lockout above must all be ¬(approved∧active) by construction; approved∧active can never be in OLD∖NEW since NEW=OLD∩(approved∧active)",
+ "placeholder_rows": []
+}

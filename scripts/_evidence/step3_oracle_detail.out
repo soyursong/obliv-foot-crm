@@ -1,0 +1,463 @@
+
+===== UNCOVERED_32_full_predicates =====
+[
+ {
+  "tablename": "assignment_daily_target_config",
+  "policyname": "adtc_write",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = assignment_daily_target_config.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = assignment_daily_target_config.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "assignment_leadsource_policy",
+  "policyname": "alp_write",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = assignment_leadsource_policy.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = assignment_leadsource_policy.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "assignment_ranking_weights",
+  "policyname": "arw_write",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = assignment_ranking_weights.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = assignment_ranking_weights.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "attendance_audit",
+  "policyname": "attendance_audit_select_mgr",
+  "cmd": "SELECT",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles up\n  WHERE ((up.id = auth.uid()) AND (up.clinic_id = attendance_audit.clinic_id) AND (up.active = true) AND (up.approved = true) AND (up.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "attendance_device",
+  "policyname": "attendance_device_select_mgr",
+  "cmd": "SELECT",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles up\n  WHERE ((up.id = auth.uid()) AND (up.clinic_id = attendance_device.clinic_id) AND (up.active = true) AND (up.approved = true) AND (up.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "attendance_punch",
+  "policyname": "attendance_punch_select_mgr",
+  "cmd": "SELECT",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles up\n  WHERE ((up.id = auth.uid()) AND (up.clinic_id = attendance_punch.clinic_id) AND (up.active = true) AND (up.approved = true) AND (up.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "clinic_dashboard_layouts",
+  "policyname": "clinic_dashboard_layouts_delete",
+  "cmd": "DELETE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "clinic_dashboard_layouts",
+  "policyname": "clinic_dashboard_layouts_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "clinic_dashboard_layouts",
+  "policyname": "clinic_dashboard_layouts_update",
+  "cmd": "UPDATE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_dashboard_layouts.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "clinic_memos",
+  "policyname": "clinic_memos_delete",
+  "cmd": "DELETE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "clinic_memos",
+  "policyname": "clinic_memos_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "clinic_memos",
+  "policyname": "clinic_memos_update",
+  "cmd": "UPDATE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = clinic_memos.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "document_templates",
+  "policyname": "admin_write_document_templates",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])) AND (user_profiles.active = true))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_delete",
+  "cmd": "DELETE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_delete_coordinator",
+  "cmd": "DELETE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = 'coordinator'::text))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_insert_coordinator",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = 'coordinator'::text))))"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_update",
+  "cmd": "UPDATE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_update_coordinator",
+  "cmd": "UPDATE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = duty_roster.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = 'coordinator'::text))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "phrase_templates",
+  "policyname": "admin_write_phrase_templates",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])) AND (user_profiles.active = true))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "phrase_templates",
+  "policyname": "staffarea_write_phrases",
+  "cmd": "ALL",
+  "qual": "((phrase_type = ANY (ARRAY['pen_chart'::text, 'customer_chart'::text])) AND (EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text, 'part_lead'::text, 'staff'::text])) AND (user_profiles.active = true)))))",
+  "with_check": "((phrase_type = ANY (ARRAY['pen_chart'::text, 'customer_chart'::text])) AND (EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text, 'part_lead'::text, 'staff'::text])) AND (user_profiles.active = true)))))"
+ },
+ {
+  "tablename": "prescription_sets",
+  "policyname": "admin_write_prescription_sets",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])) AND (user_profiles.active = true))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "quick_rx_buttons",
+  "policyname": "admin_write_quick_rx_buttons",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])) AND (user_profiles.active = true))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "redpay_ingestion_gap_log",
+  "policyname": "redpay_gap_select_admin",
+  "cmd": "SELECT",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles up\n  WHERE ((up.id = auth.uid()) AND (up.active = true) AND (up.approved = true) AND (up.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "reservation_registrars",
+  "policyname": "resv_registrars_delete",
+  "cmd": "DELETE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "reservation_registrars",
+  "policyname": "resv_registrars_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "reservation_registrars",
+  "policyname": "resv_registrars_update",
+  "cmd": "UPDATE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = reservation_registrars.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "room_role_mapping",
+  "policyname": "room_role_write",
+  "cmd": "ALL",
+  "qual": "(clinic_id IN ( SELECT user_profiles.clinic_id\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])) AND (user_profiles.active = true))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "staff_attendance",
+  "policyname": "staff_attendance_delete",
+  "cmd": "DELETE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = staff_attendance.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "staff_attendance",
+  "policyname": "staff_attendance_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = staff_attendance.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))"
+ },
+ {
+  "tablename": "staff_attendance",
+  "policyname": "staff_attendance_update",
+  "cmd": "UPDATE",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.clinic_id = staff_attendance.clinic_id) AND (user_profiles.active = true) AND (user_profiles.approved = true) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text])))))",
+  "with_check": ""
+ },
+ {
+  "tablename": "super_phrases",
+  "policyname": "admin_write_super_phrases",
+  "cmd": "ALL",
+  "qual": "(EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])) AND (user_profiles.active = true))))",
+  "with_check": ""
+ }
+]
+
+===== UNCOVERED_32_classification =====
+[
+ {
+  "policyname": "adtc_write",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "alp_write",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "arw_write",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "attendance_audit_select_mgr",
+  "cmd": "SELECT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "attendance_device_select_mgr",
+  "cmd": "SELECT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "attendance_punch_select_mgr",
+  "cmd": "SELECT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "clinic_dashboard_layouts_delete",
+  "cmd": "DELETE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "clinic_dashboard_layouts_insert",
+  "cmd": "INSERT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "clinic_dashboard_layouts_update",
+  "cmd": "UPDATE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "clinic_memos_delete",
+  "cmd": "DELETE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "clinic_memos_insert",
+  "cmd": "INSERT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "clinic_memos_update",
+  "cmd": "UPDATE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "admin_write_document_templates",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "duty_roster_delete",
+  "cmd": "DELETE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "duty_roster_delete_coordinator",
+  "cmd": "DELETE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "duty_roster_insert",
+  "cmd": "INSERT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "duty_roster_insert_coordinator",
+  "cmd": "INSERT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "duty_roster_update",
+  "cmd": "UPDATE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "duty_roster_update_coordinator",
+  "cmd": "UPDATE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "admin_write_phrase_templates",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "staffarea_write_phrases",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "admin_write_prescription_sets",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "admin_write_quick_rx_buttons",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "redpay_gap_select_admin",
+  "cmd": "SELECT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "resv_registrars_delete",
+  "cmd": "DELETE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "resv_registrars_insert",
+  "cmd": "INSERT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "resv_registrars_update",
+  "cmd": "UPDATE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "room_role_write",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "staff_attendance_delete",
+  "cmd": "DELETE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "staff_attendance_insert",
+  "cmd": "INSERT",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "staff_attendance_update",
+  "cmd": "UPDATE",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ },
+ {
+  "policyname": "admin_write_super_phrases",
+  "cmd": "ALL",
+  "uses_current_user_role": false,
+  "uses_3helper": false,
+  "row_role_col_only_FALSEPOS": true
+ }
+]
+
+===== SUMMARY =====
+{
+ "total": 32,
+ "genuine_ungated_authz": 0,
+ "false_positive_row_role_col": 32
+}

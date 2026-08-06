@@ -1,0 +1,1309 @@
+
+===== I1_helper_defs =====
+[
+ {
+  "fn": "current_user_is_admin_or_manager",
+  "has_gate": false,
+  "def": "CREATE OR REPLACE FUNCTION public.current_user_is_admin_or_manager()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE(role IN ('admin','manager'), FALSE)\n  FROM user_profiles WHERE id = auth.uid()\n$function$\n"
+ },
+ {
+  "fn": "current_user_role",
+  "has_gate": false,
+  "def": "CREATE OR REPLACE FUNCTION public.current_user_role()\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT role::text FROM user_profiles WHERE id = auth.uid()\n$function$\n"
+ },
+ {
+  "fn": "current_user_staff_id",
+  "has_gate": false,
+  "def": "CREATE OR REPLACE FUNCTION public.current_user_staff_id()\n RETURNS uuid\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT id FROM staff WHERE user_id = auth.uid() LIMIT 1\n$function$\n"
+ },
+ {
+  "fn": "is_admin",
+  "has_gate": false,
+  "def": "CREATE OR REPLACE FUNCTION public.is_admin()\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n  SELECT UPPER(COALESCE(public.current_user_role(), '')) = 'ADMIN';\n$function$\n"
+ },
+ {
+  "fn": "is_admin_or_manager",
+  "has_gate": true,
+  "def": "CREATE OR REPLACE FUNCTION public.is_admin_or_manager()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT is_approved_user()\n     AND current_user_role() IN ('admin','manager','director');\n$function$\n"
+ },
+ {
+  "fn": "is_approved_user",
+  "has_gate": true,
+  "def": "CREATE OR REPLACE FUNCTION public.is_approved_user()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM user_profiles\n    WHERE id = auth.uid()\n      AND COALESCE(approved, false) = true\n      AND COALESCE(active, true) = true\n  );\n$function$\n"
+ },
+ {
+  "fn": "is_manager_or_above",
+  "has_gate": false,
+  "def": "CREATE OR REPLACE FUNCTION public.is_manager_or_above()\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n  SELECT public.role_level(public.current_user_role()) >= 1;\n$function$\n"
+ },
+ {
+  "fn": "role_level",
+  "has_gate": false,
+  "def": "CREATE OR REPLACE FUNCTION public.role_level(role_text text)\n RETURNS integer\n LANGUAGE sql\n IMMUTABLE\nAS $function$\n  SELECT CASE UPPER(COALESCE(role_text, ''))\n    WHEN 'AGENT' THEN 0\n    WHEN 'PART_LEADER' THEN 1\n    WHEN 'TEAM_LEADER' THEN 2\n    WHEN 'MANAGER' THEN 2\n    WHEN 'ADMIN' THEN 3\n    ELSE -1\n  END;\n$function$\n"
+ }
+]
+
+===== I2_all_policies_on_touch_tables =====
+[
+ {
+  "tablename": "chart_doctor_memos",
+  "policyname": "cdm_director_clinic_v2",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(((clinic_id = (current_user_clinic_id())::text) AND (EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['director'::text, 'admin'::text])))))) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text]))))",
+  "with_check": "(((clinic_id = (current_user_clinic_id())::text) AND (EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['director'::text, 'admin'::text])))))) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text]))))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "anon_insert_checkin_self",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{anon}",
+  "qual": "",
+  "with_check": "((clinic_id IS NOT NULL) AND (status = ANY (ARRAY['registered'::text, 'treatment_waiting'::text, 'consult_waiting'::text, 'receiving'::text])))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_consult_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_consult_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_consultant_or_above() AND ((consultant_id IS NULL) OR (consultant_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_coord_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_coord_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_coordinator_or_above() AND (status = ANY (ARRAY['registered'::text, 'checklist'::text, 'exam_waiting'::text, 'consult_waiting'::text, 'cancelled'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_delete_admin",
+  "cmd": "DELETE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_flag_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_floor_dashboard_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text, 'technician'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text, 'technician'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_register_unlock_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_therap_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_therapist_or_technician() AND ((therapist_id = current_staff_id()) OR (technician_id = current_staff_id()) OR is_admin_or_manager()) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_update_privileged",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_update_therapist_own",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customer_reservation_memos",
+  "policyname": "clinic_isolation_crm_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(clinic_id = current_user_clinic_id())"
+ },
+ {
+  "tablename": "customer_reservation_memos",
+  "policyname": "clinic_isolation_crm_select",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(clinic_id = current_user_clinic_id())",
+  "with_check": ""
+ },
+ {
+  "tablename": "customer_reservation_memos",
+  "policyname": "manage_update_crm",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))",
+  "with_check": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))"
+ },
+ {
+  "tablename": "customer_treatment_memos",
+  "policyname": "clinic_isolation_ctm_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(clinic_id = current_user_clinic_id())"
+ },
+ {
+  "tablename": "customer_treatment_memos",
+  "policyname": "clinic_isolation_ctm_select",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(clinic_id = current_user_clinic_id())",
+  "with_check": ""
+ },
+ {
+  "tablename": "customer_treatment_memos",
+  "policyname": "manage_update_ctm",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))",
+  "with_check": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "anon_insert_customer_self_checkin",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{anon}",
+  "qual": "",
+  "with_check": "(clinic_id IS NOT NULL)"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_consult_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_consultant_or_above() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_coord_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((is_coordinator_or_above() OR is_consultant_or_above()) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_coord_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_coordinator_or_above() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_register_unlock_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_staff_select",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_floor_staff() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_staff_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_floor_staff() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_floor_staff() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_therap_update_6menu",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = 'therapist'::text) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = 'therapist'::text) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_finance_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_consultant_or_above() OR is_coordinator_or_above())",
+  "with_check": ""
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{public}",
+  "qual": "(is_approved_user() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_staff_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_floor_staff()",
+  "with_check": ""
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_staff_unlock_6menu",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_therapist_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_therapist_or_technician()",
+  "with_check": ""
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_write",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "current_user_is_admin_or_manager()",
+  "with_check": "current_user_is_admin_or_manager()"
+ },
+ {
+  "tablename": "daily_room_status",
+  "policyname": "daily_room_status_admin_manager_write",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "daily_room_status",
+  "policyname": "daily_room_status_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "daily_room_status",
+  "policyname": "daily_room_status_staff_own_write",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (current_user_role() = 'staff'::text) AND (EXISTS ( SELECT 1\n   FROM room_assignments ra\n  WHERE ((ra.clinic_id = daily_room_status.clinic_id) AND (ra.room_name = daily_room_status.room_name) AND (ra.staff_id = current_staff_id())))))",
+  "with_check": "(is_approved_user() AND (current_user_role() = 'staff'::text) AND (EXISTS ( SELECT 1\n   FROM room_assignments ra\n  WHERE ((ra.clinic_id = daily_room_status.clinic_id) AND (ra.room_name = daily_room_status.room_name) AND (ra.staff_id = current_staff_id())))))"
+ },
+ {
+  "tablename": "daily_room_status",
+  "policyname": "daily_room_status_staff_unlock_6menu",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "insurance_sync_runs",
+  "policyname": "insurance_sync_runs_read_admin",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{public}",
+  "qual": "current_user_is_admin_or_manager()",
+  "with_check": ""
+ },
+ {
+  "tablename": "medical_charts",
+  "policyname": "mc_clinic_isolated_v3",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((clinic_id = (current_user_clinic_id())::text) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text, 'manager'::text, 'coordinator'::text]))))",
+  "with_check": "((clinic_id = (current_user_clinic_id())::text) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text, 'manager'::text, 'coordinator'::text]))))"
+ },
+ {
+  "tablename": "medical_charts",
+  "policyname": "mc_deleted_rows_director_only",
+  "cmd": "SELECT",
+  "permissive": "RESTRICTIVE",
+  "roles": "{authenticated}",
+  "qual": "((is_deleted = false) OR (current_user_role() = ANY (ARRAY['director'::text, 'admin'::text])))",
+  "with_check": ""
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_consult_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_consultant_or_above() AND (payment_type = 'payment'::text))"
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "true",
+  "with_check": ""
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_staff_unlock_6menu",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_write",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_consult_iru",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "is_consultant_or_above()"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_consult_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_consultant_or_above()",
+  "with_check": "is_consultant_or_above()"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_coord_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "is_coordinator_or_above()"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_coord_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_coordinator_or_above()",
+  "with_check": "is_coordinator_or_above()"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "true",
+  "with_check": ""
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_therap_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_therapist_or_technician() AND ((performed_by IS NULL) OR (performed_by = current_staff_id())))"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_therap_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_therapist_or_technician() AND (performed_by = current_staff_id()))",
+  "with_check": "(is_therapist_or_technician() AND (performed_by = current_staff_id()))"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_write",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_consult_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_consultant_or_above() AND (status = ANY (ARRAY['active'::text, 'completed'::text])))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_consult_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_consultant_or_above() AND (status <> ALL (ARRAY['refunded'::text, 'transferred'::text])))",
+  "with_check": "(is_consultant_or_above() AND (status <> ALL (ARRAY['refunded'::text, 'transferred'::text])))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_delete_admin",
+  "cmd": "DELETE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "current_user_is_admin_or_manager()",
+  "with_check": ""
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "true",
+  "with_check": ""
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_staff_unlock_6menu",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "(is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_consult_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_consultant_or_above() AND (payment_type = 'payment'::text) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_coord_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_coordinator_or_above() AND (payment_type = 'payment'::text) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_delete_admin",
+  "cmd": "DELETE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(is_approved_user() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_therap_insert",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(is_therapist_or_technician() AND (payment_type = 'payment'::text) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "prescription_contraindications",
+  "policyname": "rx_contra_admin_write",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = 'admin'::text)",
+  "with_check": "(current_user_role() = 'admin'::text)"
+ },
+ {
+  "tablename": "prescription_contraindications",
+  "policyname": "rx_contra_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "true",
+  "with_check": ""
+ },
+ {
+  "tablename": "services",
+  "policyname": "anon_service_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{anon}",
+  "qual": "true",
+  "with_check": ""
+ },
+ {
+  "tablename": "services",
+  "policyname": "services_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "services",
+  "policyname": "services_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "services",
+  "policyname": "services_staff_unlock_6menu",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_approved_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_coordinator_insert_staffcrud",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_coordinator_update_staffcrud",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))",
+  "with_check": "((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))"
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_insert_staff",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text, 'part_lead'::text, 'staff'::text])))"
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_read_clinic",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(clinic_id = current_user_clinic_id())",
+  "with_check": ""
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_update_staff",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text, 'part_lead'::text, 'staff'::text])))",
+  "with_check": "(clinic_id = current_user_clinic_id())"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "allow_insert_own_profile",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "(id = auth.uid())"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "approved users read all profiles",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_admin_all",
+  "cmd": "ALL",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_admin_or_manager()",
+  "with_check": "is_admin_or_manager()"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_delete_admin",
+  "cmd": "DELETE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(current_user_role() = 'admin'::text)",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_insert_admin",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((current_user_role() = 'admin'::text) OR (id = auth.uid()))"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_peer_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "is_approved_user()",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_read_own",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((id = auth.uid()) OR (current_user_role() = 'admin'::text))",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_self_read",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(id = auth.uid())",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_self_update",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(id = auth.uid())",
+  "with_check": "(id = auth.uid())"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_update_own_or_admin",
+  "cmd": "UPDATE",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "((id = auth.uid()) OR (current_user_role() = 'admin'::text))",
+  "with_check": "((id = auth.uid()) OR (current_user_role() = 'admin'::text))"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "users read own profile",
+  "cmd": "SELECT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "(id = auth.uid())",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "users_insert_own_unapproved_profile",
+  "cmd": "INSERT",
+  "permissive": "PERMISSIVE",
+  "roles": "{authenticated}",
+  "qual": "",
+  "with_check": "((id = auth.uid()) AND (COALESCE(approved, false) = false) AND (COALESCE(role, 'staff'::text) <> 'admin'::text))"
+ }
+]
+
+===== I2b_named_target_policies =====
+[
+ {
+  "tablename": "chart_doctor_memos",
+  "policyname": "cdm_director_clinic_v2",
+  "cmd": "ALL",
+  "qual": "(((clinic_id = (current_user_clinic_id())::text) AND (EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['director'::text, 'admin'::text])))))) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text]))))",
+  "with_check": "(((clinic_id = (current_user_clinic_id())::text) AND (EXISTS ( SELECT 1\n   FROM user_profiles\n  WHERE ((user_profiles.id = auth.uid()) AND (user_profiles.role = ANY (ARRAY['director'::text, 'admin'::text])))))) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text]))))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_delete_admin",
+  "cmd": "DELETE",
+  "qual": "(current_user_is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_update_privileged",
+  "cmd": "UPDATE",
+  "qual": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_update_therapist_own",
+  "cmd": "UPDATE",
+  "qual": "((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = 'therapist'::text) AND (therapist_id = current_user_staff_id()) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "customer_consult_memos",
+  "policyname": "manage_update_ccm",
+  "cmd": "UPDATE",
+  "qual": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))",
+  "with_check": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))"
+ },
+ {
+  "tablename": "customer_reservation_memos",
+  "policyname": "manage_update_crm",
+  "cmd": "UPDATE",
+  "qual": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))",
+  "with_check": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))"
+ },
+ {
+  "tablename": "customer_treatment_memos",
+  "policyname": "manage_update_ctm",
+  "cmd": "UPDATE",
+  "qual": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))",
+  "with_check": "((created_by = (auth.jwt() ->> 'email'::text)) OR (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_therap_update_6menu",
+  "cmd": "UPDATE",
+  "qual": "((current_user_role() = 'therapist'::text) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = 'therapist'::text) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_staff_unlock_6menu",
+  "cmd": "ALL",
+  "qual": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_write",
+  "cmd": "ALL",
+  "qual": "current_user_is_admin_or_manager()",
+  "with_check": "current_user_is_admin_or_manager()"
+ },
+ {
+  "tablename": "daily_room_status",
+  "policyname": "daily_room_status_staff_unlock_6menu",
+  "cmd": "ALL",
+  "qual": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "form_submissions",
+  "policyname": "fs_deleted_rows_director_only",
+  "cmd": "SELECT",
+  "qual": "((deleted_at IS NULL) OR (current_user_role() = ANY (ARRAY['director'::text, 'admin'::text])))",
+  "with_check": ""
+ },
+ {
+  "tablename": "form_submissions_audit_log",
+  "policyname": "fsal_select_director_admin",
+  "cmd": "SELECT",
+  "qual": "(current_user_role() = ANY (ARRAY['director'::text, 'admin'::text]))",
+  "with_check": ""
+ },
+ {
+  "tablename": "insurance_sync_runs",
+  "policyname": "insurance_sync_runs_read_admin",
+  "cmd": "SELECT",
+  "qual": "current_user_is_admin_or_manager()",
+  "with_check": ""
+ },
+ {
+  "tablename": "medical_charts",
+  "policyname": "mc_clinic_isolated_v3",
+  "cmd": "ALL",
+  "qual": "((clinic_id = (current_user_clinic_id())::text) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text, 'manager'::text, 'coordinator'::text]))))",
+  "with_check": "((clinic_id = (current_user_clinic_id())::text) OR ((current_user_clinic_id() IS NULL) AND (current_user_role() = ANY (ARRAY['admin'::text, 'director'::text, 'manager'::text, 'coordinator'::text]))))"
+ },
+ {
+  "tablename": "medical_charts",
+  "policyname": "mc_deleted_rows_director_only",
+  "cmd": "SELECT",
+  "qual": "((is_deleted = false) OR (current_user_role() = ANY (ARRAY['director'::text, 'admin'::text])))",
+  "with_check": ""
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_staff_unlock_6menu",
+  "cmd": "ALL",
+  "qual": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_write",
+  "cmd": "ALL",
+  "qual": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))"
+ },
+ {
+  "tablename": "package_progress_plans",
+  "policyname": "ppp_write",
+  "cmd": "ALL",
+  "qual": "((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))",
+  "with_check": "((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text])))"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_write",
+  "cmd": "ALL",
+  "qual": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_delete_admin",
+  "cmd": "DELETE",
+  "qual": "current_user_is_admin_or_manager()",
+  "with_check": ""
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_staff_unlock_6menu",
+  "cmd": "ALL",
+  "qual": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_update",
+  "cmd": "UPDATE",
+  "qual": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text]))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_delete_admin",
+  "cmd": "DELETE",
+  "qual": "(current_user_is_admin_or_manager() AND (clinic_id = current_user_clinic_id()))",
+  "with_check": ""
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_insert",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_update",
+  "cmd": "UPDATE",
+  "qual": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))",
+  "with_check": "((current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])) AND (clinic_id = current_user_clinic_id()))"
+ },
+ {
+  "tablename": "prescription_contraindications",
+  "policyname": "rx_contra_admin_write",
+  "cmd": "ALL",
+  "qual": "(current_user_role() = 'admin'::text)",
+  "with_check": "(current_user_role() = 'admin'::text)"
+ },
+ {
+  "tablename": "services",
+  "policyname": "services_staff_unlock_6menu",
+  "cmd": "ALL",
+  "qual": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))",
+  "with_check": "(current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text]))"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_coordinator_insert_staffcrud",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_coordinator_update_staffcrud",
+  "cmd": "UPDATE",
+  "qual": "((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))",
+  "with_check": "((current_user_role() = 'coordinator'::text) AND (clinic_id = current_user_clinic_id()) AND (role <> 'director'::text))"
+ },
+ {
+  "tablename": "staff_auth_action_audit",
+  "policyname": "saaa_admin_read",
+  "cmd": "SELECT",
+  "qual": "(current_user_role() = 'admin'::text)",
+  "with_check": ""
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_insert_staff",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text, 'part_lead'::text, 'staff'::text])))"
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_update_staff",
+  "cmd": "UPDATE",
+  "qual": "((clinic_id = current_user_clinic_id()) AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'director'::text, 'consultant'::text, 'coordinator'::text, 'therapist'::text, 'part_lead'::text, 'staff'::text])))",
+  "with_check": "(clinic_id = current_user_clinic_id())"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_delete_admin",
+  "cmd": "DELETE",
+  "qual": "(current_user_role() = 'admin'::text)",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_insert_admin",
+  "cmd": "INSERT",
+  "qual": "",
+  "with_check": "((current_user_role() = 'admin'::text) OR (id = auth.uid()))"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_read_own",
+  "cmd": "SELECT",
+  "qual": "((id = auth.uid()) OR (current_user_role() = 'admin'::text))",
+  "with_check": ""
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_update_own_or_admin",
+  "cmd": "UPDATE",
+  "qual": "((id = auth.uid()) OR (current_user_role() = 'admin'::text))",
+  "with_check": "((id = auth.uid()) OR (current_user_role() = 'admin'::text))"
+ }
+]
+
+===== I3a_function_callers_of_3_helpers =====
+[]
+
+===== I3b_view_callers_of_3_helpers =====
+[]
+
+===== I3c_policy_refs_per_helper =====
+[
+ {
+  "helper": "current_user_is_admin_or_manager",
+  "policy_count": 5,
+  "policies": "check_ins.check_ins_delete_admin, daily_closings.daily_closings_write, insurance_sync_runs.insurance_sync_runs_read_admin, packages.packages_delete_admin, payments.payments_delete_admin"
+ },
+ {
+  "helper": "is_admin",
+  "policy_count": 53,
+  "policies": "check_in_services.check_in_services_admin_all, check_ins.check_ins_admin_all, check_ins.check_ins_consult_update, check_ins.check_ins_delete_admin, check_ins.check_ins_therap_update, checklists.checklists_admin_all, clinic_doctors.clinic_doctors_write, clinic_holidays.clinic_holidays_admin_all, clinic_schedules.clinic_schedules_admin_all, clinics.clinics_admin_all, consent_forms.consent_forms_admin_all, consent_templates.consent_templates_admin_all, customers.customers_admin_all, daily_closings.daily_closings_admin_all, daily_closings.daily_closings_write, daily_room_status.daily_room_status_admin_manager_write, form_templates.form_templates_admin_all, handover_checklist_items.handover_checklist_delete, handover_notes.handover_notes_delete, insurance_documents.insurance_documents_admin_all, insurance_receipts.insurance_receipts_admin_all, insurance_sync_runs.insurance_sync_runs_read_admin, medications.medications_admin_all, monthly_sales_targets.monthly_sales_targets_insert, monthly_sales_targets.monthly_sales_targets_update, notifications.notifications_admin_all, package_credit_ledger.pkg_credit_ledger_insert, package_payments.package_payments_admin_all, package_sessions.package_sessions_admin_all, package_tiers.package_tiers_admin_all, packages.packages_admin_all, packages.packages_delete_admin, payment_code_claims.payment_code_claims_admin_all, payment_codes.payment_codes_admin_all, payments.payments_admin_all, payments.payments_delete_admin, phi_access_log.phi_access_log_admin_read, prescription_code_allowlist.prescription_code_allowlist_admin_all, prescription_codes.prescription_codes_admin_all, prescription_items.prescription_items_admin_all, prescriptions.prescriptions_admin_all, progress_result_images.pri_admin_insert, progress_result_images.pri_admin_select, progress_result_images.pri_own_delete, reservation_logs.reservation_logs_admin_all, reservations.reservations_admin_all, room_assignments.room_assignments_admin_all, rooms.rooms_admin_all, service_payment_codes.service_payment_codes_admin_all, services.services_admin_all, staff.staff_admin_all, status_transitions.status_transitions_admin_all, user_profiles.user_profiles_admin_all"
+ }
+]
+file:///Users/domas/GitHub/_wt-foot-rls-adminfunc-gate/scripts/dryrun_lib.mjs:79
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${t}`);
+                   ^
+
+Error: HTTP 400: {"message":"Failed to run sql query: ERROR:  42703: column \"approval_status\" does not exist\nLINE 3:          approval_status,\n                 ^\n"}
+    at q (file:///Users/domas/GitHub/_wt-foot-rls-adminfunc-gate/scripts/dryrun_lib.mjs:79:20)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///Users/domas/GitHub/_wt-foot-rls-adminfunc-gate/scripts/T-20260806-foot-RLS-ADMINFUNC-UNGATED-PHILEAK-INHERIT-SWEEP_step3_introspect.mjs:126:15
+
+Node.js v26.4.0

@@ -1,0 +1,14 @@
+== dry-run 20260807100000_foot_rls_adminfunc_ungated_gate_sweep.sql ==
+   stripped top-level txn-control (INV-5): (none)
+   harness response: []
+   post-probe [fn current_user_is_admin_or_manager still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [fn is_admin still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [fn is_manager_or_above still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [policy daily_closings_staff_unlock_6menu.qual still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [policy payments_insert.with_check still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [policy customers_therap_update_6menu.qual still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [policy user_profiles_read_own.qual still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [policy mc_clinic_isolated_v3.qual still ungated (gate not persisted)] absent? -> [{"absent":true}]
+   post-probe [policy manage_update_ccm.qual still ungated (gate not persisted)] absent? -> [{"absent":true}]
+
+== DRY-RUN PASS == (txn-control stripped · plpgsql exception-rollback · post-probe absent) (RLS admin-func ungated gate sweep — modify-only, gate-absent post-probe)

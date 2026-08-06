@@ -1,0 +1,632 @@
+
+===== ORACLE_all_ungated_predicates =====
+[
+ {
+  "tablename": "assignment_daily_target_config",
+  "policyname": "adtc_write",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "assignment_leadsource_policy",
+  "policyname": "alp_write",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "assignment_ranking_weights",
+  "policyname": "arw_write",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "attendance_audit",
+  "policyname": "attendance_audit_select_mgr",
+  "cmd": "SELECT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "attendance_device",
+  "policyname": "attendance_device_select_mgr",
+  "cmd": "SELECT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "attendance_punch",
+  "policyname": "attendance_punch_select_mgr",
+  "cmd": "SELECT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "chart_doctor_memos",
+  "policyname": "cdm_director_clinic_v2",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_delete_admin",
+  "cmd": "DELETE",
+  "disposition": "HELPER-HEALED (chokepoint)"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_insert",
+  "cmd": "INSERT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_update_privileged",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "check_ins",
+  "policyname": "check_ins_update_therapist_own",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "clinic_dashboard_layouts",
+  "policyname": "clinic_dashboard_layouts_delete",
+  "cmd": "DELETE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "clinic_dashboard_layouts",
+  "policyname": "clinic_dashboard_layouts_insert",
+  "cmd": "INSERT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "clinic_dashboard_layouts",
+  "policyname": "clinic_dashboard_layouts_update",
+  "cmd": "UPDATE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "clinic_memos",
+  "policyname": "clinic_memos_delete",
+  "cmd": "DELETE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "clinic_memos",
+  "policyname": "clinic_memos_insert",
+  "cmd": "INSERT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "clinic_memos",
+  "policyname": "clinic_memos_update",
+  "cmd": "UPDATE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "customer_consult_memos",
+  "policyname": "manage_update_ccm",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "customer_reservation_memos",
+  "policyname": "manage_update_crm",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "customer_treatment_memos",
+  "policyname": "manage_update_ctm",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "customers",
+  "policyname": "customers_therap_update_6menu",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_staff_unlock_6menu",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "daily_closings",
+  "policyname": "daily_closings_write",
+  "cmd": "ALL",
+  "disposition": "HELPER-HEALED (chokepoint)"
+ },
+ {
+  "tablename": "daily_room_status",
+  "policyname": "daily_room_status_staff_unlock_6menu",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "document_templates",
+  "policyname": "admin_write_document_templates",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_delete",
+  "cmd": "DELETE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_delete_coordinator",
+  "cmd": "DELETE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_insert",
+  "cmd": "INSERT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_insert_coordinator",
+  "cmd": "INSERT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_update",
+  "cmd": "UPDATE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "duty_roster",
+  "policyname": "duty_roster_update_coordinator",
+  "cmd": "UPDATE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "form_submissions",
+  "policyname": "fs_deleted_rows_director_only",
+  "cmd": "SELECT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "form_submissions_audit_log",
+  "policyname": "fsal_select_director_admin",
+  "cmd": "SELECT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "insurance_sync_runs",
+  "policyname": "insurance_sync_runs_read_admin",
+  "cmd": "SELECT",
+  "disposition": "HELPER-HEALED (chokepoint)"
+ },
+ {
+  "tablename": "medical_charts",
+  "policyname": "mc_clinic_isolated_v3",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "medical_charts",
+  "policyname": "mc_deleted_rows_director_only",
+  "cmd": "SELECT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_staff_unlock_6menu",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "package_payments",
+  "policyname": "package_payments_write",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "package_progress_plans",
+  "policyname": "ppp_write",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "package_sessions",
+  "policyname": "package_sessions_write",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_delete_admin",
+  "cmd": "DELETE",
+  "disposition": "HELPER-HEALED (chokepoint)"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_insert",
+  "cmd": "INSERT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_staff_unlock_6menu",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "packages",
+  "policyname": "packages_update",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_delete_admin",
+  "cmd": "DELETE",
+  "disposition": "HELPER-HEALED (chokepoint)"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_insert",
+  "cmd": "INSERT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "payments",
+  "policyname": "payments_update",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "phrase_templates",
+  "policyname": "admin_write_phrase_templates",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "phrase_templates",
+  "policyname": "staffarea_write_phrases",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "prescription_contraindications",
+  "policyname": "rx_contra_admin_write",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "prescription_sets",
+  "policyname": "admin_write_prescription_sets",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "quick_rx_buttons",
+  "policyname": "admin_write_quick_rx_buttons",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "redpay_ingestion_gap_log",
+  "policyname": "redpay_gap_select_admin",
+  "cmd": "SELECT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "reservation_registrars",
+  "policyname": "resv_registrars_delete",
+  "cmd": "DELETE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "reservation_registrars",
+  "policyname": "resv_registrars_insert",
+  "cmd": "INSERT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "reservation_registrars",
+  "policyname": "resv_registrars_update",
+  "cmd": "UPDATE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "room_role_mapping",
+  "policyname": "room_role_write",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "services",
+  "policyname": "services_staff_unlock_6menu",
+  "cmd": "ALL",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_coordinator_insert_staffcrud",
+  "cmd": "INSERT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "staff",
+  "policyname": "staff_coordinator_update_staffcrud",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "staff_attendance",
+  "policyname": "staff_attendance_delete",
+  "cmd": "DELETE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "staff_attendance",
+  "policyname": "staff_attendance_insert",
+  "cmd": "INSERT",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "staff_attendance",
+  "policyname": "staff_attendance_update",
+  "cmd": "UPDATE",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "staff_auth_action_audit",
+  "policyname": "saaa_admin_read",
+  "cmd": "SELECT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "super_phrases",
+  "policyname": "admin_write_super_phrases",
+  "cmd": "ALL",
+  "disposition": "⚠ UNCOVERED — INVESTIGATE"
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_insert_staff",
+  "cmd": "INSERT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "treatment_photos",
+  "policyname": "treatment_photos_update_staff",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_delete_admin",
+  "cmd": "DELETE",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_insert_admin",
+  "cmd": "INSERT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_read_own",
+  "cmd": "SELECT",
+  "disposition": "TOUCHED (wrapped)"
+ },
+ {
+  "tablename": "user_profiles",
+  "policyname": "user_profiles_update_own_or_admin",
+  "cmd": "UPDATE",
+  "disposition": "TOUCHED (wrapped)"
+ }
+]
+
+===== ORACLE_UNCOVERED_count =====
+{
+ "total_ungated": 71,
+ "touched": 34,
+ "helper_healed": 5,
+ "uncovered": 32,
+ "uncovered_list": [
+  {
+   "tablename": "assignment_daily_target_config",
+   "policyname": "adtc_write",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "assignment_leadsource_policy",
+   "policyname": "alp_write",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "assignment_ranking_weights",
+   "policyname": "arw_write",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "attendance_audit",
+   "policyname": "attendance_audit_select_mgr",
+   "cmd": "SELECT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "attendance_device",
+   "policyname": "attendance_device_select_mgr",
+   "cmd": "SELECT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "attendance_punch",
+   "policyname": "attendance_punch_select_mgr",
+   "cmd": "SELECT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "clinic_dashboard_layouts",
+   "policyname": "clinic_dashboard_layouts_delete",
+   "cmd": "DELETE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "clinic_dashboard_layouts",
+   "policyname": "clinic_dashboard_layouts_insert",
+   "cmd": "INSERT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "clinic_dashboard_layouts",
+   "policyname": "clinic_dashboard_layouts_update",
+   "cmd": "UPDATE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "clinic_memos",
+   "policyname": "clinic_memos_delete",
+   "cmd": "DELETE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "clinic_memos",
+   "policyname": "clinic_memos_insert",
+   "cmd": "INSERT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "clinic_memos",
+   "policyname": "clinic_memos_update",
+   "cmd": "UPDATE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "document_templates",
+   "policyname": "admin_write_document_templates",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "duty_roster",
+   "policyname": "duty_roster_delete",
+   "cmd": "DELETE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "duty_roster",
+   "policyname": "duty_roster_delete_coordinator",
+   "cmd": "DELETE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "duty_roster",
+   "policyname": "duty_roster_insert",
+   "cmd": "INSERT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "duty_roster",
+   "policyname": "duty_roster_insert_coordinator",
+   "cmd": "INSERT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "duty_roster",
+   "policyname": "duty_roster_update",
+   "cmd": "UPDATE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "duty_roster",
+   "policyname": "duty_roster_update_coordinator",
+   "cmd": "UPDATE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "phrase_templates",
+   "policyname": "admin_write_phrase_templates",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "phrase_templates",
+   "policyname": "staffarea_write_phrases",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "prescription_sets",
+   "policyname": "admin_write_prescription_sets",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "quick_rx_buttons",
+   "policyname": "admin_write_quick_rx_buttons",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "redpay_ingestion_gap_log",
+   "policyname": "redpay_gap_select_admin",
+   "cmd": "SELECT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "reservation_registrars",
+   "policyname": "resv_registrars_delete",
+   "cmd": "DELETE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "reservation_registrars",
+   "policyname": "resv_registrars_insert",
+   "cmd": "INSERT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "reservation_registrars",
+   "policyname": "resv_registrars_update",
+   "cmd": "UPDATE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "room_role_mapping",
+   "policyname": "room_role_write",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "staff_attendance",
+   "policyname": "staff_attendance_delete",
+   "cmd": "DELETE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "staff_attendance",
+   "policyname": "staff_attendance_insert",
+   "cmd": "INSERT",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "staff_attendance",
+   "policyname": "staff_attendance_update",
+   "cmd": "UPDATE",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  },
+  {
+   "tablename": "super_phrases",
+   "policyname": "admin_write_super_phrases",
+   "cmd": "ALL",
+   "disposition": "⚠ UNCOVERED — INVESTIGATE"
+  }
+ ]
+}
