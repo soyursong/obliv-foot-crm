@@ -1,39 +1,44 @@
 /**
- * T-20260806-foot-SALESDOCTOR-COLUMN-REBUILD-4COL (김주연 총괄, C0ATE5P6JTH, human_confirmed)
- * 매출집계 > 담당실장별 탭 — 컬럼 전면 재구성. 기존 6컬럼 전면 대체(SUPERSEDE):
- *   삭제: 담당실장/상담 건 수/비급여 순매출/진찰료/공단부담액(명세)/패키지(선수금)
- *   신규 4열만 유지: [실장] [누적매출] [환불금] [총 매출]
- *   → 07-27 PKG-REVENUE-MISSING + 08-04 STAFF-4METRIC-REDEFINE + 08-04 CONSULT-COUNT-SOURCE
- *     컬럼세트를 reporter '싹 다 제거' 명시 지시로 정당 대체(policy_superseded).
+ * T-20260806-foot-SALESDOCTOR-CUMULATIVE-GROSS-RECOMPUTE (김주연 총괄, forward-iteration of 4COL)
+ * 매출집계 > 담당실장별 탭 — [누적매출]을 gross(환불 차감 前 원본 수납)로 재산식. 환불 단일차감.
  *
- * ── 컬럼 정의 (원문 4항목 직접 지정) ─────────────────────────────────────────────
+ * ── 왜 재산식인가 (부모 4COL 이중차감 RC) ─────────────────────────────────────────
+ *  부모 as-built(aaaafd09): 누적매출 = 랭킹 total_amount verbatim(net, mig 20260724130000)이라
+ *  이미 환불이 차감된 값이었다. 여기서 다시 총매출 = 누적 − 환불금 → 동일 환불이 '이중차감'됐다.
+ *  reporter(총괄) 확정 = 누적매출을 gross(환불 차감 前 원본 수납 합계)로 바꿔 환불이 '한 번만' 빠지게 한다.
+ *  ⇒ 랭킹 verbatim(net) 소비 중단. 누적매출 ≠ 랭킹 탭(랭킹은 net 유지) = reporter 명시 수용(회귀 아님).
+ *
+ * ── 컬럼 정의 (4열 유지, 산식만 개정) ──────────────────────────────────────────────
  *  ① [실장]      = 담당 실장 이름 (사람 grain = staff.id).
- *  ② [누적매출]  = 상담·치료사 배정 > [랭킹] 월매출과 '동일 숫자'로 연동(AC-3).
- *                  ★신규 산식 창작 금지 — 랭킹 SSOT(fetchConsultantPerf.total_amount)를 verbatim 소비.
- *                  랭킹과 직접 대조 검증 가능해야 하므로 재집계하지 않고 그 값을 그대로 표시한다.
- *                  랭킹 귀속축 = customers.assigned_consultant_id(RPC foot_stats_consultant_admin 내부).
- *  ③ [환불금]    = 고객 카드 담당 실장(customers.assigned_staff_id = '2번차트 담당자', human_confirmed)
- *                  기준 귀속 + 그 실장이 '환불처리한 월'(= 환불 트랜잭션 월) 기준 집계(AC-4).
- *                  ★환불처리월 = 환불 payments 행의 accounting_date. sales_common_db 트리거상
- *                    INSERT 시 accounting_date=처리일(now KST)로 세팅되고 origin_tx_date=원거래일이므로,
- *                    accounting_date 윈도우 필터 = '환불처리월'(원 결제월·원 매출발생월 아님)에 정확히 해당.
- *  ④ [총 매출]   = 누적매출 − 환불금 (렌더 시 실시간 계산, AC-5).
+ *  ② [누적매출]  = gross(환불 차감 前 원본 수납 합계). ★랭킹 verbatim 소비 중단(신 직접집계).
+ *                  = (a) 단건(payments) 매출 rows SUM (payment_type≠'refund', status≠deleted) [gross]
+ *                  + (b) 패키지(package_payments) NET (환불=음수상계) [부모와 동일 net]
+ *                  귀속축 = customers.assigned_staff_id('2번차트 담당자', 환불금과 동일축) · accounting_date 윈도우.
+ *  ③ [환불금]    = 단건(payments) 환불 SUM (payment_type='refund'). ★부모 AC-4 그대로 유지 —
+ *                  assigned_staff_id 귀속 + 환불처리월(accounting_date) 윈도우 · 소스=payments only(불변).
+ *  ④ [총 매출]   = 누적매출 − 환불금 (렌더 시 실시간 계산).
  *
- * ── grain 정합 판단(dev, 비블로킹) ────────────────────────────────────────────
- *  누적매출 축(assigned_consultant_id, 랭킹) ≠ 환불금 축(assigned_staff_id, 2번차트). 별개 컬럼이므로
- *  각 컬럼을 reporter 지정 축으로 각각 집계하고, 표는 사람(staff.id) 단위로 병합한다.
- *  누적매출은 랭킹 값 verbatim → AC-3 '동일 숫자' 대조 검증 보장. 랭킹 미포함 실장(환불만 존재)은
- *  누적 0 + 환불금만 표기(숨김 없음). '미지정'(assigned_staff NULL 환불) = 맨 아래.
- *  ※ 랭킹 total_amount 는 이미 환불 차감된 net(consultant축·accounting_date)이라, 본 총매출=누적−환불은
- *    환불을 '2번차트 담당자축·처리월' 기준으로 추가 차감한다(축·날짜기준이 다른 reporter 지정 KPI).
- *    이 semantic 은 planner FOLLOWUP 으로 통보(비블로킹) — 구현은 명시 스펙(AC-3 verbatim + AC-5)대로.
+ * ── 산식 정합 증명 (환불 단일차감) ────────────────────────────────────────────────
+ *  reporter 확정 공식 "총 = gross누적 − 환불금(AC-4=단건환불)" 가 올바른 net 이 되려면
+ *  gross누적 = 단건gross + 패키지net 이어야 한다(수학적 강제):
+ *    총 = (단건gross + 패키지net) − 단건환불 = (단건gross − 단건환불) + 패키지net = 단건net + 패키지net.
+ *  ∴ 단건환불은 정확히 1회(환불금 컬럼)만 차감된다. 패키지환불은 부모와 동일하게 패키지net 안에서 1회
+ *    차감(환불금 컬럼 미표기 = 부모 랭킹net 시절과 동일 취급). 이중차감 없음.
+ *  ★패키지를 net 으로 두는 이유: 부모 환불금(AC-4)이 payments-only(패키지 환불 미포함)이므로,
+ *    패키지 환불은 패키지net 안에 접어 넣어야 정확히 1회 차감된다(풋=패키지 1급 → 매출 보존 필수).
  *
- * ── surface 격리 ────────────────────────────────────────────────────────────
- *  본 컴포넌트는 Sales.tsx(매출집계) 전용. 통계>MTM '04 실장별 실적'(lib/mtmSales.ts)은 별도 surface
- *  (로직 복제본)로 본 티켓 미대상 → 무접촉(무회귀). /admin/sales = RoleGuard admin/manager/director
- *  → fetchConsultantPerf(admin-gated SECDEF) 정당 소비자(회로 42501 위험 없음).
+ * ── grain 정합 판단(dev, 비블로킹) ────────────────────────────────────────────────
+ *  누적/환불/총 3열 전부 동일축(assigned_staff_id = 담당실장='담당실장별' 탭 취지) + 동일 윈도우(accounting_date).
+ *  부모의 축 불일치(누적=consultant랭킹 vs 환불=assigned_staff)를 해소 → 단일축으로 통일.
+ *  랭킹 탭(통계/배정 consultant축·net)과는 별개 surface(무접촉). 누적 ≠ 랭킹 = 설계상 정상.
+ *  '미지정'(assigned_staff NULL) = 맨 아래. 매출/환불 어느 하나라도 있는 실장은 표시(숨김 없음).
  *
- * READ-ONLY. DB 변경 없음(db_change=false, DDL 0).
+ * ── surface 격리 ────────────────────────────────────────────────────────────────
+ *  본 컴포넌트는 Sales.tsx(매출집계) 전용. 통계>MTM '04 실장별 실적'(lib/mtmSales.ts)·랭킹 탭은 별도 surface
+ *  → 본 티켓 무대상·무접촉(무회귀). /admin/sales = RoleGuard admin/manager/director.
+ *  소스(payments/package_payments/customers/staff)는 전부 RLS clinic-scoped 정당 조회.
+ *
+ * READ-ONLY 산식. DB 변경 없음(db_change=false, DDL 0).
  */
 
 import { useMemo } from 'react';
@@ -46,7 +51,6 @@ import {
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
 import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
 
 interface Props {
@@ -57,9 +61,17 @@ const UNASSIGNED = '__UNASSIGNED__';
 
 // ─── DB row types ────────────────────────────────────────────────────────────
 
-/** 환불 payments 행 — 환불금(처리월) 소스 (accounting_date=처리일). */
-interface RefundRow {
+/** 단건 payments 행 (누적 gross + 환불금 소스). status≠deleted, accounting_date 윈도우. */
+interface PaymentRow {
   amount: number;
+  payment_type: string | null; // 'payment' | 'refund'
+  customer_id: string | null;
+}
+
+/** 패키지 package_payments 행 (누적 NET 소스, 환불=음수상계). status 컬럼 부재(foot 실측). */
+interface PkgPaymentRow {
+  amount: number;
+  payment_type: string | null; // 'payment' | 'refund' | 'deposit'…
   customer_id: string | null;
 }
 
@@ -70,13 +82,13 @@ interface StaffNameRow {
 
 // 쿼리 결과 묶음
 interface DoctorTabData {
-  /** 랭킹 SSOT(누적매출 verbatim) — consultant_id·name·total_amount */
-  perfRows: ConsultantRow[];
-  /** 환불 payments(처리월 accounting_date 윈도우) */
-  refunds: RefundRow[];
-  /** customer_id → assigned_staff_id (환불금 귀속: 2번차트 담당자) */
+  /** 단건 결제(payments) — 누적 gross + 환불금 */
+  singlePayments: PaymentRow[];
+  /** 패키지 결제(package_payments) — 누적 NET(환불 음수상계) */
+  pkgPayments: PkgPaymentRow[];
+  /** customer_id → assigned_staff_id (귀속: 2번차트 담당자) */
   custStaffMap: Map<string, string>;
-  /** staff_id → name (랭킹 미포함 환불 실장 이름 해석) */
+  /** staff_id → name */
   staffNameMap: Map<string, string>;
 }
 
@@ -85,9 +97,9 @@ interface DoctorTabData {
 interface StaffStat {
   staffId: string;    // staff UUID or '__UNASSIGNED__'
   staffName: string;  // 실명 or '미지정'
-  /** ② 누적매출 = 랭킹 total_amount(verbatim). 랭킹 미포함 실장 = 0. */
+  /** ② 누적매출(gross) = 단건 gross + 패키지 net. */
   cumulativeRevenue: number;
-  /** ③ 환불금 = assigned_staff_id 귀속 + 환불처리월(accounting_date) SUM (양수 magnitude). */
+  /** ③ 환불금 = 단건(payments) 환불 SUM (양수 magnitude). 부모 AC-4 불변. */
   refundAmount: number;
 }
 
@@ -99,33 +111,49 @@ export function SalesDoctorTab({ filter }: Props) {
   const searchQuery = filter.searchQuery.trim().toLowerCase();
 
   const { data, isLoading } = useQuery<DoctorTabData>({
-    queryKey: ['sales-doctor-4col', clinic?.id, from, to],
+    queryKey: ['sales-doctor-gross', clinic?.id, from, to],
     enabled: !!clinic,
     queryFn: async () => {
-      // 1. 누적매출 = 랭킹 SSOT(fetchConsultantPerf) verbatim 소비.
-      //    ★AC-3: 랭킹 탭 월매출과 '동일 숫자'(직접 대조 검증) → 재집계 금지, 이 값을 그대로 표시.
-      //    admin-gated RPC(foot_stats_consultant_admin) — /admin/sales RoleGuard(admin/manager/director)
-      //    통과분만 도달하므로 42501 위험 없음.
-      const perfRows = await fetchConsultantPerf(clinic!.id, from, to);
-
-      // 2. 환불금 = 환불 payments(payment_type='refund'), accounting_date=처리일 윈도우.
-      //    sales_common_db 트리거: INSERT 시 accounting_date=처리일(now KST) → 처리월 윈도우 = AC-4.
-      const { data: refData, error: refErr } = await supabase
+      // 1. 단건 결제(payments): accounting_date 윈도우 · status≠deleted · payment/refund 전부.
+      //    누적 gross = payment_type≠'refund' SUM · 환불금 = payment_type='refund' SUM.
+      const { data: payData, error: payErr } = await supabase
         .from('payments')
-        .select('amount, customer_id')
+        .select('amount, payment_type, customer_id')
         .eq('clinic_id', clinic!.id)
-        .eq('payment_type', 'refund')
         .not('status', 'eq', 'deleted')
         .gte('accounting_date', from)
         .lte('accounting_date', to);
-      if (refErr) throw refErr;
-      // 방어필터: is_simulation=true 고객 환불 제외(테스트 데이터 오염 방지, 워크인 NULL 보존).
-      const simIds = await getSimulationCustomerIds(clinic!.id);
-      const refunds = excludeSimulationPaymentRows((refData ?? []) as RefundRow[], simIds);
+      if (payErr) throw payErr;
 
-      // 3. 환불 고객 → assigned_staff_id(2번차트 담당자) 매핑
+      // 2. 패키지 결제(package_payments): accounting_date 윈도우. status 컬럼 부재 → 필터 없음(환불=음수상계).
+      //    누적 NET 에 접어 넣음(부모 랭킹net 시절과 동일 취급 → 패키지 환불 1회 차감).
+      const { data: pkgData, error: pkgErr } = await supabase
+        .from('package_payments')
+        .select('amount, payment_type, customer_id')
+        .eq('clinic_id', clinic!.id)
+        .gte('accounting_date', from)
+        .lte('accounting_date', to);
+      if (pkgErr) throw pkgErr;
+
+      // 방어필터: is_simulation=true 고객 결제 제외(테스트 데이터 오염 방지, 워크인 NULL 보존).
+      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const singlePayments = excludeSimulationPaymentRows(
+        (payData ?? []) as PaymentRow[],
+        simIds,
+      );
+      const pkgPayments = excludeSimulationPaymentRows(
+        (pkgData ?? []) as PkgPaymentRow[],
+        simIds,
+      );
+
+      // 3. 결제 고객 → assigned_staff_id(2번차트 담당자) 매핑 (단건 ∪ 패키지 고객).
       const custIds = [
-        ...new Set(refunds.map((r) => r.customer_id).filter(Boolean) as string[]),
+        ...new Set(
+          [
+            ...singlePayments.map((r) => r.customer_id),
+            ...pkgPayments.map((r) => r.customer_id),
+          ].filter(Boolean) as string[],
+        ),
       ];
       const custStaffMap = new Map<string, string>(); // customer_id → staff_id
       if (custIds.length > 0) {
@@ -139,7 +167,7 @@ export function SalesDoctorTab({ filter }: Props) {
         }
       }
 
-      // 4. staff id↔name (랭킹 미포함 환불 실장 이름 해석)
+      // 4. staff id↔name (담당 실장 이름 해석)
       const staffNameMap = new Map<string, string>();
       const { data: staffList, error: staffErr } = await supabase
         .from('staff')
@@ -150,14 +178,14 @@ export function SalesDoctorTab({ filter }: Props) {
         staffNameMap.set(s.id, s.name);
       }
 
-      return { perfRows, refunds, custStaffMap, staffNameMap };
+      return { singlePayments, pkgPayments, custStaffMap, staffNameMap };
     },
   });
 
-  // ── 담당실장별 집계 (사람 grain = staff.id) ──────────────────────────────────
+  // ── 담당실장별 집계 (사람 grain = staff.id, 단일축 assigned_staff_id) ─────────────
   const stats = useMemo<StaffStat[]>(() => {
     const {
-      perfRows = [], refunds = [], custStaffMap = new Map(), staffNameMap = new Map(),
+      singlePayments = [], pkgPayments = [], custStaffMap = new Map(), staffNameMap = new Map(),
     } = data ?? {};
     const map = new Map<string, StaffStat>();
 
@@ -176,26 +204,30 @@ export function SalesDoctorTab({ filter }: Props) {
       return stat;
     };
 
-    // ② 누적매출 = 랭킹 total_amount verbatim (consultant_id = staff.id). AC-3 대조 검증 보장.
-    for (const r of perfRows) {
-      const stat = ensure(r.consultant_id);
-      stat.cumulativeRevenue += r.total_amount ?? 0;
-      // 랭킹 이름을 우선 채택(랭킹 표기와 일치)
-      if (r.name) stat.staffName = r.name;
+    const staffOf = (customerId: string | null): string =>
+      (customerId ? custStaffMap.get(customerId) : undefined) ?? UNASSIGNED;
+
+    // ② 단건(payments): gross → 누적 / refund → 환불금(부모 AC-4).
+    for (const p of singlePayments) {
+      const stat = ensure(staffOf(p.customer_id));
+      if (p.payment_type === 'refund') {
+        stat.refundAmount += Math.abs(p.amount ?? 0);
+      } else {
+        stat.cumulativeRevenue += p.amount ?? 0;
+      }
     }
 
-    // ③ 환불금 = assigned_staff_id 귀속 + 처리월 SUM(양수 magnitude).
-    for (const rf of refunds) {
-      const staffId =
-        (rf.customer_id ? custStaffMap.get(rf.customer_id) : undefined) ?? UNASSIGNED;
-      ensure(staffId).refundAmount += Math.abs(rf.amount ?? 0);
+    // ② 패키지(package_payments): NET(환불 음수상계) → 누적 에 접어 넣음(환불금 컬럼 미표기).
+    for (const pp of pkgPayments) {
+      const net = pp.payment_type === 'refund' ? -(pp.amount ?? 0) : (pp.amount ?? 0);
+      ensure(staffOf(pp.customer_id)).cumulativeRevenue += net;
     }
 
     return Array.from(map.values()).sort((a, b) => {
       // '미지정'은 항상 맨 아래
       if (a.staffId === UNASSIGNED) return 1;
       if (b.staffId === UNASSIGNED) return -1;
-      // 랭킹과 동일하게 누적매출 desc → 총매출 desc → 이름(ko)
+      // 누적매출 desc → 총매출 desc → 이름(ko)
       return (
         b.cumulativeRevenue - a.cumulativeRevenue ||
         (b.cumulativeRevenue - b.refundAmount) - (a.cumulativeRevenue - a.refundAmount) ||
@@ -240,7 +272,7 @@ export function SalesDoctorTab({ filter }: Props) {
       >
         <span className="text-sm text-muted-foreground">해당 기간에 담당실장 데이터가 없습니다</span>
         <span className="text-xs text-muted-foreground">
-          상담·치료사 배정 &gt; 랭킹에 매출이 잡힌 실장이 없으면 표시되지 않습니다
+          담당 실장(2번차트) 기준 수납·환불이 잡힌 실장이 없으면 표시되지 않습니다
         </span>
       </div>
     );
@@ -285,7 +317,7 @@ export function SalesDoctorTab({ filter }: Props) {
                 >
                   {s.staffName}
                 </td>
-                {/* ② 누적매출 (랭킹 연동) */}
+                {/* ② 누적매출 (gross = 단건gross + 패키지net) */}
                 <td
                   data-testid={`sales-doctor-cumulative-${s.staffId}`}
                   className={cn(
@@ -295,7 +327,7 @@ export function SalesDoctorTab({ filter }: Props) {
                 >
                   {formatAmount(Math.round(s.cumulativeRevenue))}원
                 </td>
-                {/* ③ 환불금 (2번차트 담당자·처리월) */}
+                {/* ③ 환불금 (단건 환불 · 2번차트 담당자 · 처리월) */}
                 <td
                   data-testid={`sales-doctor-refund-${s.staffId}`}
                   className={cn(
@@ -349,11 +381,11 @@ export function SalesDoctorTab({ filter }: Props) {
         </tfoot>
       </table>
       <p className="px-3 py-1.5 text-right text-[10px] leading-relaxed text-muted-foreground">
-        * 누적매출 = 상담·치료사 배정 &gt; <span className="font-medium text-teal-700">랭킹</span>의 월매출과 동일 값(연동)
+        * 누적매출 = <span className="font-medium text-teal-700">환불 차감 전</span> 원본 수납 합계(gross) · 담당 실장(2번차트 담당자) 기준
         <br />
-        * 환불금 = 고객 카드 담당 실장(2번차트 담당자) 기준 · <span className="font-medium text-red-600">환불처리한 달</span> 기준 집계
+        * 환불금 = 담당 실장(2번차트 담당자) 기준 · <span className="font-medium text-red-600">환불처리한 달</span> 기준 집계(단건)
         <br />
-        * <span className="font-medium text-teal-700">총 매출 = 누적매출 − 환불금</span>
+        * <span className="font-medium text-teal-700">총 매출 = 누적매출 − 환불금</span> (환불 1회 차감)
       </p>
     </div>
   );
