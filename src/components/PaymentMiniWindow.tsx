@@ -156,6 +156,8 @@ import {
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
   computeBillDetailRounding,
+  // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED: 고시 제19조(끝수계산) 단일 SSOT — 4경로 공통.
+  applyArticle19Rounding,
   // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 외래 본인부담 수납 aggregate 100원 절사 SSOT
   //   (computeBillDetailRounding=floor10 문서 grain 과 분리 — DA-…-COPAY-TRUNCATE-UNIT, 별표2 제19조제1항 다만조항).
   floorOutpatientCopayment,
@@ -2066,6 +2068,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   ⑧ 절사(floorBillReceiptNewPatientTotal) 후 · 행분해(CoveredTokens) 전 순서(§순서강제). 인쇄 ①② 를 수납창
     //   (payCopaymentWithSurcharge/insuranceCoveredWithSurcharge)과 동일 보존식으로 정합 → 수납==인쇄==명세 3경로 동일값(AC-6).
     absorbBillReceiptNewCopayFloorRemainder(enriched);
+    // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 D): 제19조① 급여총액 floor10(②)·본인 floor100(①)·
+    //   공단 끝수흡수(③)·total_amount ⑥가드 SSOT 1회. absorb 이후·CoveredTokens(행 분해) 이전 = Σ(행)=floored aggregate 정합.
+    applyArticle19Rounding(enriched);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
     // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT ⑨(이미 납부한 금액) 선차감 보정 ──────────────
@@ -2998,6 +3003,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         if (visitNoArg) enriched.visit_no = visitNoArg;
         applyNightHolidaySurcharge(enriched, formKey, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
         applyPostSurchargePaidTokens(enriched, formKey, paidBoxCtx, printSettleCtx);
+        // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 D, 전 양식): bill_receipt_new 외 양식(bill_detail·처방전 등)도
+        //   공통 값 객체 enriched 에 급여/총액 토큰을 쓰므로 동일 SSOT 로 제19조 끝수계산 적용. bill_receipt_new 는
+        //   applyPostSurchargePaidTokens 내부(absorb 이후·CoveredTokens 이전)에서 이미 적용됨(중복 no-op).
+        if (formKey !== 'bill_receipt_new') applyArticle19Rounding(enriched);
         return enriched;
       };
 

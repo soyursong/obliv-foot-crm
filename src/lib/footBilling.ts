@@ -973,6 +973,78 @@ export function absorbBillReceiptNewCopayFloorRemainder(values: Record<string, s
 }
 
 /**
+ * T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED — 건강보험 고시 「요양급여비용 청구방법·심사청구서·명세서서식
+ *   및 작성요령」 **제19조(끝수계산)** 를 서류 금액 확정 직후 **1회** 적용하는 단일 SSOT.
+ *   4경로(DPP valuesFor / DPP base / DPP 영수증재발급 bindValues / PMW enriched) 전부 이 함수를 경유해
+ *   같은 방문이 어느 경로로 출력돼도 급여·총액 금액이 규정단위로 동일 산출된다(양식별 분기 신설 금지).
+ *
+ * 규칙(순서 고정):
+ *   ① 본인일부부담금 = floor100(본인 raw)               — 제19조① 단서(외래·약국 본인일부부담금 100원 미만 절사)
+ *   ② 요양급여비용총액 = floor10(본인 raw + 공단 raw)      — 제19조① 본문(요양급여비용총액 등 10원 미만 절사)
+ *   ③ 청구액(공단)   = ② − ①                           — 끝수 자동 공단 흡수(독립 절사 아님, 보존식 base=①+③)
+ *   ④ 비급여        = 무절사                             — 요양급여비용 아님(제19조 대상 아님)
+ *   ⑤ delta = (①+③) − (본인 raw + 공단 raw) (≤ 0)        — 급여분 floor10 변화량
+ *   ⑥ total_amount  = ★가드★ — (본인 raw+공단 raw+비급여) == total_amount 인 건만 +delta, 아니면 **무접촉**
+ *
+ * ★ 법무 경계(형제 T-20260803 legal NO-GO): ①본인 floor100 과 ②급여총액 floor10 은 **서로 다른 절사단위**다.
+ *   각 quantity 에 규정단위를 정확히 적용할 뿐 서류 간 total 을 강제로 같게(equality) 만들지 않는다
+ *   (별표2 제1항 위반 금지 경계 준수 — 서류별 total 이 규정상 달라질 수 있음은 정당).
+ * ★ ⑥ 가드: total_amount 는 경로에 따라 (a)진료비총액(급여+비급여) 또는 (b)실 결제액을 담는다(단일 의미 아님).
+ *   결제액인 건(본인raw+공단raw+비급여 ≠ total_amount)은 **무접촉** — 결제액이 진료비총액으로 덮여 날아가는
+ *   사고를 차단(실측 51건 무접촉·값 변경 0). non_covered 토큰 부재로 비급여 판별 불가한 모호 건도 무접촉(보수).
+ * ★ 무접촉(§4): non_covered/subtotal_noncovered(무절사) · detail_total/detail_subtotal(이미 floor10, 별 grain)
+ *   · patient_amount(수납 grain floor100, floorBillReceiptNewPatientTotal 소관). DB write 0(forward-only 표시 절사).
+ * ★ 번들 전체 floor10 금지: 비급여까지 절사되는 신규버그(DPP:1614/:3553 기록). 급여분(①본인+③공단)만 절사한다.
+ * ★ 순서: applyNightHolidaySurcharge(가산 fold)·absorbBillReceiptNewCopayFloorRemainder **이후**,
+ *   applyBillReceiptNewCoveredTokens(행 분해) **이전** 호출 → Σ(행)=floored aggregate 정합.
+ *   floor100(①)은 멱등이라 absorb 뒤 재적용해도 무회귀 · absorb 미경유 경로(bill_detail/영수증 재발급)에서도 자립 적용.
+ *
+ * @param values 서류 바인딩 토큰 레코드(제자리 변경). 존재하는 토큰만 갱신(양식에 없는 토큰 신설 안 함).
+ */
+export function applyArticle19Rounding(values: Record<string, string>): void {
+  const COPAY_KEYS = ['copayment', 'subtotal_copayment', 'total_copayment']; // 본인일부부담금
+  const FUND_KEYS = ['insurance_covered', 'subtotal_fund', 'total_fund'];     // 공단부담(청구액)
+  const NONCOV_KEYS = ['non_covered', 'subtotal_noncovered', 'total_noncovered']; // 비급여(무절사)
+  const TOTAL_KEYS = ['total_amount', 'subtotal_amount'];                     // 총액(⑥ 가드)
+
+  const firstPresent = (keys: string[]): number | null => {
+    for (const k of keys) {
+      if (k in values) return parseAmount(values[k] ?? '');
+    }
+    return null;
+  };
+
+  const copayRaw = firstPresent(COPAY_KEYS);
+  const fundRaw = firstPresent(FUND_KEYS);
+  if (copayRaw == null && fundRaw == null) return; // 급여 토큰 전무 = 절사 대상 없음(비급여-only/비billing 서류 무접촉)
+  const copay = copayRaw != null && copayRaw > 0 ? copayRaw : 0;
+  const fund = fundRaw != null && fundRaw > 0 ? fundRaw : 0;
+  const gupyeoTotalRaw = copay + fund;
+  if (gupyeoTotalRaw <= 0) return; // 급여 0(비급여-only/등급부재 공단0) — floor10 대상 없음, 무접촉
+
+  // ① 본인 floor100 · ② 급여총액 floor10 · ③ 공단 = ②−①(끝수 공단 흡수). SSOT 재사용(재발명 금지).
+  const copayNew = floorOutpatientCopayment(copay);                              // floor100 (제19조① 단서)
+  const gupyeoTotalNew = computeBillDetailRounding(gupyeoTotalRaw).roundedTotal;  // floor10  (제19조① 본문)
+  const fundNew = Math.max(0, gupyeoTotalNew - copayNew);
+  const delta = gupyeoTotalNew - gupyeoTotalRaw;                                 // ⑤ ≤ 0
+
+  // 존재하는 본인/공단 토큰에만 일관 기입 — 보존식 ①+③=급여총액, 절사단위(floor100/floor10) 분리 보존.
+  for (const k of COPAY_KEYS) if (k in values) values[k] = formatAmount(copayNew);
+  for (const k of FUND_KEYS) if (k in values) values[k] = formatAmount(fundNew);
+
+  // ⑥ total_amount 가드 — 진료비총액(본인raw+공단raw+비급여)인 건만 delta 반영, 결제액 등 다른 의미면 무접촉.
+  const nonCovRaw = firstPresent(NONCOV_KEYS);
+  const nonCov = nonCovRaw != null && nonCovRaw > 0 ? nonCovRaw : 0;
+  const treatmentTotalRaw = gupyeoTotalRaw + nonCov;
+  for (const k of TOTAL_KEYS) {
+    if (!(k in values)) continue;
+    const cur = parseAmount(values[k] ?? '');
+    if (cur === treatmentTotalRaw) values[k] = formatAmount(cur + delta); // 진료비총액 → 급여 floor10 반영
+    // else: 결제액/비급여 미포함 등 다른 의미 → 무접촉(결제액 보존)
+  }
+}
+
+/**
  * T-20260719-foot-BILLRECEIPT-NEWFORM-ITEMFIX AC-② — 진료비 계산서·영수증 신양식 비급여 항목행 category 분해.
  *
  * 배경(버그): 신양식(bill_receipt_new)은 급여 split(본인/공단)을 진찰료 행에 aggregate 표기(3FIX)하고,
