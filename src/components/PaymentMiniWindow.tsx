@@ -83,6 +83,8 @@ import type { CheckIn, Service } from '@/lib/types';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ①: 코밴 CAT 직결결제 버튼을 수납 미니창 맨 아래(수납 옆)로 이관.
 import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+// ★T-20260806-foot-PLANA-SPLIT-MULTIPAY: 분할결제 카드 레그 오케스트레이션(한 수납 N건 순차·부분결제 3옵션).
+import CbandSplitPayDialog from '@/components/CbandSplitPayDialog';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
 // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: 셀프체크인(키오스크) 신규 유입 null-grade 데스크 캡처.
@@ -3066,6 +3068,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const showCardInfo = splitMode
     ? splitRows.some((r) => r.method === 'card')
     : payMethod === 'card';
+  // ★T-20260806-foot-PLANA-SPLIT-MULTIPAY: 분할 카드 레그 금액(>0). CAT 분할결제 오케스트레이션 입력(전송 순서=행 순서).
+  const splitCardAmounts = splitRows.filter((r) => r.method === 'card' && r.amount > 0).map((r) => r.amount);
 
   const addSplitRow = () =>
     setSplitRows((rows) => [...rows, { method: 'card', amount: 0 }]);
@@ -4047,7 +4051,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                   {/* ★① 코밴 CAT 직결결제(플랜A) — 결제 미니창 맨 아래 [수납] 옆(현장 동선: 카드 수납 직전).
                       · 결제수단=카드(단일)일 때만 active. · 분할결제 체크 시 disabled(사유 1줄 노출).
                       · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전). */}
-                  {saved && (payMethod === 'card' || splitMode) && (
+                  {saved && (payMethod === 'card' || splitMode) && !(splitMode && splitCardAmounts.length > 0) && (
                     <CbandPayEntryButton
                       checkInId={checkIn.id}
                       clinicId={checkIn.clinic_id}
@@ -4058,6 +4062,19 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                       //   displayAmount = SUSU/수납 팝업 잔액 계산 SSOT(deductMode ? deductAmount : payableTotalWithSurcharge).
                       //   재사용(신규 산출 금지) — 오기입 방지 초기값만. ≤0 이면 컴포넌트가 자동입력 스킵.
                       defaultAmount={displayAmount}
+                    />
+                  )}
+
+                  {/* ★T-20260806-foot-PLANA-SPLIT-MULTIPAY: 분할결제 + 카드 레그가 있으면 CAT 분할결제 오케스트레이션.
+                      한 수납 N개 카드 레그 순차 전송(각 승인=payments 1행, check_in_id 묶음) + 부분결제 3옵션(재시도/승인분취소/유지).
+                      ★자동취소 금지·하드락 유지·스키마 무접촉(설계 docs/PLANA-SPLIT-MULTIPAY-DESIGN.md).
+                      플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0. */}
+                  {saved && splitMode && splitCardAmounts.length > 0 && (
+                    <CbandSplitPayDialog
+                      checkInId={checkIn.id}
+                      clinicId={checkIn.clinic_id}
+                      customerId={checkIn.customer_id ?? null}
+                      cardAmounts={splitCardAmounts}
                     />
                   )}
                 </div>
