@@ -132,8 +132,19 @@ export interface ConcurrencyDecision {
   userMessage: string;
 }
 
+/**
+ * ★T-20260806-foot-PLANA-SPLIT-MULTIPAY AC-3 — 분할결제 잠금 예외 옵션.
+ *   splitContext=true(분할 세션의 2번째 이후 레그) 이면 소프트 confirm(patient_completed)만 억제한다.
+ *   진짜 동시성 하드락(patient_in_progress·terminal_busy)은 절대 억제하지 않는다(두 실장 동시결제 방어 유지).
+ *   default(미지정) = 기존 동작 완전 동일(회귀 0).
+ */
+export interface ConcurrencyOptions {
+  /** 분할결제 세션 컨텍스트 — 완료건 재결제 소프트 confirm(patient_completed)을 통과시킨다(하드락은 유지). */
+  splitContext?: boolean;
+}
+
 /** OpenPaymentProbe → 분기 결정(순수함수·우선순위: 진행중 > 단말사용중 > 완료). */
-export function classifyConcurrency(probe: OpenPaymentProbe): ConcurrencyDecision {
+export function classifyConcurrency(probe: OpenPaymentProbe, opts: ConcurrencyOptions = {}): ConcurrencyDecision {
   if (probe.patientInProgress) {
     return {
       blocked: true, reason: 'patient_in_progress', allowOverride: false,
@@ -145,6 +156,11 @@ export function classifyConcurrency(probe: OpenPaymentProbe): ConcurrencyDecisio
       blocked: true, reason: 'terminal_busy', allowOverride: false,
       userMessage: '이 카드 단말기가 다른 결제를 처리하고 있습니다. 완료된 뒤 다시 시도해 주세요.',
     };
+  }
+  // ★AC-3: 분할 세션에서는 '이미 결제된 환자'(patient_completed) 소프트 confirm 을 억제(의도된 추가 레그).
+  //   하드락(위 2건)은 이 지점에 도달하기 전에 이미 차단하므로 안전 불변(과잉해제 0).
+  if (opts.splitContext) {
+    return { blocked: false, reason: null, allowOverride: false, userMessage: '' };
   }
   if (probe.patientCompleted) {
     return {
@@ -163,6 +179,7 @@ export function classifyConcurrency(probe: OpenPaymentProbe): ConcurrencyDecisio
 export async function precheckConcurrentPayment(
   q: { clinicId: string; checkInId: string | null; merno: string | null },
   store: AttemptStore,
+  opts: ConcurrencyOptions = {},
 ): Promise<ConcurrencyDecision> {
   // ★T-20260804-foot-CBAND-CANCEL-PAYLOCK-RELEASE-REPAY (RCA 확정 · AC-1/AC-2):
   //   재결제 정밀검사 직전, 자기 check_in 의 고착 'requested' 를 기회주의 스윕으로 해소한다.
@@ -182,7 +199,7 @@ export async function precheckConcurrentPayment(
   if (!store.probeConcurrent) return { blocked: false, reason: null, allowOverride: false, userMessage: '' };
   try {
     const probe = await store.probeConcurrent(q);
-    return classifyConcurrency(probe);
+    return classifyConcurrency(probe, opts);
   } catch (e) {
     // degrade-open: 재확인 실패해도 하드백스톱(insert-first L2)은 유효 → 진행 허용(로그만).
     console.error('동시결제 서버 재확인 실패(degrade-open, L2 하드백스톱 유효):', (e as Error)?.message);
