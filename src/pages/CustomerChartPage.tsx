@@ -44,7 +44,9 @@ import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
-import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
+import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, Reservation, VisitType } from '@/lib/types';
+// T-20260806-foot-RX-PERSIST-FORWARDFIX: 처방전 발행 이력 canonical SSOT = form_submissions(처방전). 발행 이력 축 투영 헬퍼.
+import { mapRxIssuanceRows, RX_ISSUANCE_FORM_KEY, type RxIssuanceRow, type RawFormSubmissionRow } from '@/lib/rxIssuanceHistory';
 import { TREATMENT_TYPES, treatmentTypeLabel, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 // T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 예방콜 결과 read-only 배지(상태 무관)
 import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
@@ -2824,7 +2826,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: 모달 진입 mode — '당일 서류 발행'(true)이면
   //   DocumentPrintPanel 이 이전 발행분 재출력 인터셉트/프리필 없이 빈 신규 발행으로 진입. '서류 재출력'(false)=STAGE2 유지.
   const [docReissueNewMode, setDocReissueNewMode] = useState(false);
-  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
+  const [prescriptions, setPrescriptions] = useState<RxIssuanceRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
   // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
@@ -3354,11 +3356,20 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
 
       if (checkInIds.length > 0) {
         const [rxRes, consentRes] = await Promise.all([
+          // T-20260806-foot-RX-PERSIST-FORWARDFIX (AC2/VG1/VG3):
+          //   ★ canonical SSOT = form_submissions(처방전 = form_key 'rx_standard'). DA-20260806-foot-RX-PERSIST-SSOT.
+          //   [폐기] dead 'prescriptions' 테이블 조회 — INSERT 코드 전무(skeleton)라 항상 0건 → 처방 이력 미표시(실사고).
+          //     되살리기·write 신설 금지(dual-source drift 안티패턴). 발행 이력 = form_submissions 단일 원장.
+          //   VG1: form_templates!inner(form_key='rx_standard')로 처방전만 필터(소견서/KOH/진단서 혼입 0).
+          //   VG3: 발행 이력 축(form_submissions)만 소비 — 처방 기록 축(medical_charts.prescription_items) 조인 금지.
+          //   VG2: 투영은 mapRxIssuanceRows 화이트리스트(교부일·처방의료인·진단·교부번호·약품명) — RRN/풀전화/차트번호 미노출.
           supabase
-            .from('prescriptions')
-            .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
-            .in('check_in_id', checkInIds)
-            .order('prescribed_at', { ascending: false })
+            .from('form_submissions')
+            .select('id, printed_at, created_at, field_data, form_templates!inner(form_key)')
+            .eq('customer_id', customerId)
+            .eq('is_deleted', false)
+            .eq('form_templates.form_key', RX_ISSUANCE_FORM_KEY)
+            .order('printed_at', { ascending: false, nullsFirst: false })
             .limit(20),
           supabase
             .from('consent_forms')
@@ -3366,7 +3377,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             .in('check_in_id', checkInIds)
             .order('signed_at', { ascending: false }),
         ]);
-        setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
+        setPrescriptions(mapRxIssuanceRows((rxRes.data ?? []) as RawFormSubmissionRow[]));
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
       }
 
@@ -3703,11 +3714,39 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 실패:', error.message);
         return 'error';
       }
-      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: rows-affected=0 은 '당일 open check_in 부재'('none')가
+      //   아니라 write 실패(RLS/스코프)다 — 명단행이 실재하는데 갱신이 조용히 튕긴 상태. 'none'(=미반영 안내)로
+      //   오분류하면 "오늘 열린 접수건 없음"이라는 사실과 다른 안내가 나가므로, 'error'(=반영 실패 안내)로 분리한다.
+      if (!data || data.length === 0) {
+        console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 0-row(RLS/스코프 사일런트 실패)');
+        return 'error';
+      }
       setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
       return 'updated';
     },
     [customer, latestCheckIn],
+  );
+
+  // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN (Option A — 가시화, 최소):
+  //   2번 차트 담당자(assigned_staff_id) 저장 후 당일 open check_in 으로의 하향전파 결과를 스태프에게 노출한다.
+  //   기존 문제(latent divergence): latestCheckIn 이 stale(취소/완료/당일 아님/부재)이면 updateTodayOpenCheckInConsultant
+  //     가 'none' 을 반환하고 아무 안내 없이 종료 → 담당자 등록(assigned_staff_id)만 조용히 갱신되고 배정 명단엔
+  //     반영되지 않는데도 스태프는 "등록됐다"고 인지하는 silent no-op.
+  //   FIX: 저장은 그대로 유지하되(assigned_staff_id 무접점), 명단 미반영 사실을 숨기지 않고 안내로 노출한다.
+  //   ★membership 소스(check_ins only·open·today·NOT done/cancelled)는 by-design 확정 계약 — 반영 로직 무변경.
+  //     이 하드닝은 FE 안내만 추가(계약 무접점). 명단 반영 자체가 업무상 필요하면 그건 계약 변경(별도 DA 게이트).
+  //   ※ toast.info/success 는 wrapper 에서 묵음(@/lib/toast) — 스태프가 반드시 봐야 하는 안내이므로
+  //     묵음 제외 채널(warning/error)로 노출한다.
+  const syncChartOwnerToTodayRoster = useCallback(
+    async (staffId: string | null) => {
+      const result = await updateTodayOpenCheckInConsultant(staffId);
+      if (result === 'none') {
+        toast.warning('담당자는 저장됐지만, 오늘 열린 접수건이 없어 배정 명단에는 아직 반영되지 않았습니다. 접수 후 자동 반영됩니다.');
+      } else if (result === 'error') {
+        toast.error('담당자는 저장됐지만 배정 명단 반영에 실패했습니다. 화면을 새로고침해 주세요.');
+      }
+    },
+    [updateTodayOpenCheckInConsultant],
   );
 
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
@@ -6336,7 +6375,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         void (async () => {
                           const { error } = await saveCustomerField({ assigned_staff_id: v });
                           if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
-                          await updateTodayOpenCheckInConsultant(v);
+                          // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 + 명단 미반영/실패 가시화(silent no-op 제거)
+                          await syncChartOwnerToTodayRoster(v);
                         })();
                       }}
                       disabled={savingField}
@@ -6776,25 +6816,22 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 <DocumentViewer customerId={customer.id} />
               </div>
 
-              {/* 처방전 */}
+              {/* 처방전 — T-20260806-foot-RX-PERSIST-FORWARDFIX: 발행 이력 축(form_submissions) 투영(교부일·처방의료인·진단·교부번호·약품명). */}
               {prescriptions.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
                   <div className="font-semibold text-muted-foreground">처방전</div>
                   {prescriptions.map((rx) => (
                     <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
                       <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                        <span>{formatDateDots(rx.prescribed_at)}</span>
-                        {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
+                        <span>{rx.issued_at ? formatDateDots(rx.issued_at) : '-'}</span>
+                        {rx.prescriber_name && <span>{rx.prescriber_name}</span>}
                       </div>
+                      {rx.issue_no && <div className="text-muted-foreground mb-0.5">교부번호: {rx.issue_no}</div>}
                       {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
-                      {rx.prescription_items && rx.prescription_items.length > 0 && (
+                      {rx.medications.length > 0 && (
                         <div className="space-y-0.5 mt-1">
-                          {rx.prescription_items.map((item, idx) => (
-                            <div key={idx} className="text-muted-foreground">
-                              {item.medication_name}
-                              {item.dosage && ` · ${item.dosage}`}
-                              {item.duration_days && ` · ${item.duration_days}일`}
-                            </div>
+                          {rx.medications.map((name, idx) => (
+                            <div key={idx} className="text-muted-foreground">{name}</div>
                           ))}
                         </div>
                       )}
@@ -8804,6 +8841,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
               customerId={customer.id}
               clinicId={customer.clinic_id}
               editable
+              /* T-20260806-foot-NHIS-LOOKUP-SOURCE-UNATTRIBUTED: 포털 딥링크 조회 개시 상태를 전달 →
+                 source 초안을 'hira_lookup' 으로 프리셋(강제 아님, 라디오 선택·기존값 우선). */
+              lookupInProgress={nhis.captureOpen}
               /* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) 프리필 경로 제거 —
                  데스크가 포털에서 확인 후 등급을 직접 선택·저장하는 수기 단일 경로만 유지. */
               onChanged={() => {
@@ -9144,7 +9184,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                       void (async () => {
                         const { error } = await saveCustomerField({ assigned_staff_id: v }); // AC-6 쌍방연동
                         if (error) return; // 영구 저장 실패 시 미전파(saveCustomerField가 toast 처리)
-                        await updateTodayOpenCheckInConsultant(v);
+                        // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 + 명단 미반영/실패 가시화(silent no-op 제거)
+                        await syncChartOwnerToTodayRoster(v);
                       })();
                     }}
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-sage-500 bg-white"
