@@ -34,6 +34,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { formatAmount, chartNoBadge } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useChart } from '@/lib/chartContext';
+import { sessionTypeLabel } from '@/lib/opinionRequest';
 import {
   Dialog,
   DialogContent,
@@ -111,8 +112,27 @@ interface DeductSessionRow {
     podologe_unit_price: number | null;
     trial_unit_price: number | null;
     reborn_unit_price: number | null;
+    // T-20260806-foot-THERAPIST-DEDUCTCOUNT-CUSTLIST-DRILLDOWN:
+    //   차감건수 drill-down 고객 표시용. package → customer 조인(기존 계약, read-only).
+    customer_id: string | null;
+    customers: { id: string; name: string | null; chart_number: string | null } | null;
   } | null;
   performer: { id: string; name: string } | null;
+}
+
+// ── T-20260806-foot-THERAPIST-DEDUCTCOUNT-CUSTLIST-DRILLDOWN ──────────────────────
+//   '차감 건수' 클릭 시 나열할 차감 1건 정보(고객명·차트번호·차감일자·차감항목=시술명).
+//   명단·카운트를 동일 소스(deductSessions, 1쿼리)에서 파생하므로
+//   AC2(명단 건수 == 차감 건수) 정합이 구조적으로 보장된다(직전 지정 수 drill-down 동형).
+interface DeductDetailRow {
+  key: string;
+  customerId: string | null;
+  customerName: string;
+  chartNumber: string | null;
+  /** 차감 날짜 (session_date, YYYY-MM-DD) */
+  deductDate: string | null;
+  /** 차감 항목 = 시술명(간략 KO) */
+  procedure: string;
 }
 
 interface DeductStat {
@@ -212,6 +232,14 @@ export function SalesStaffTab({ filter }: Props) {
     staffName: string;
   } | null>(null);
 
+  // T-20260806-foot-THERAPIST-DEDUCTCOUNT-CUSTLIST-DRILLDOWN:
+  //   '차감 건수' 클릭 → 그 치료사가 차감한 고객 리스트 팝업(Dialog). 고객 클릭 → 2번차트 이동.
+  //   2번차트 라우팅은 기존 자산(useChart().openChart) 재사용 — 신규 라우팅 신설 금지(AC4).
+  const [deductDialog, setDeductDialog] = useState<{
+    staffId: string;
+    staffName: string;
+  } | null>(null);
+
   // accounting_date 기준 조회 — 소급 방지의 핵심 (AC-3) / 수납기준
   const { data: payments = [], isLoading: payLoading } = useQuery<StaffPayRow[]>({
     queryKey: ['sales-staff', clinic?.id, from, to],
@@ -252,7 +280,9 @@ export function SalesStaffTab({ filter }: Props) {
           packages!inner(
             clinic_id,
             heated_unit_price, unheated_unit_price, iv_unit_price,
-            podologe_unit_price, trial_unit_price, reborn_unit_price
+            podologe_unit_price, trial_unit_price, reborn_unit_price,
+            customer_id,
+            customers(id, name, chart_number)
           ),
           performer:staff!performed_by(id, name)
         `)
@@ -494,6 +524,35 @@ export function SalesStaffTab({ filter }: Props) {
     }
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
   }, [deductSessions, designatedMap]);
+
+  // ── T-20260806 차감건수 drill-down: 치료사(performed_by)별 차감 고객 명단 ──────────────
+  //   deductStats.count 와 **동일 소스(deductSessions)·동일 그룹 기준(performer.id)**에서 파생 →
+  //   Σ(명단 건수) === deductStats.count === 표에 보이던 '차감 건수'(AC2 카운트-리스트 정합) 구조 보장.
+  //   (별도 카운트 쿼리 신설 금지 — 지정 수/화장품 drill-down 동형 원칙)
+  const deductDetailByStaff = useMemo<Map<string, DeductDetailRow[]>>(() => {
+    const m = new Map<string, DeductDetailRow[]>();
+    deductSessions.forEach((s, idx) => {
+      const perf = s.performer;
+      if (!perf?.id) return; // 집계와 동일 기준(performer 미기록 세션 제외)
+      const arr = m.get(perf.id) ?? [];
+      const cust = s.packages?.customers ?? null;
+      arr.push({
+        key: `${s.id}-${idx}`,
+        customerId: cust?.id ?? s.packages?.customer_id ?? null,
+        customerName: cust?.name ?? '(고객 미상)',
+        chartNumber: cust?.chart_number ?? null,
+        deductDate: s.session_date,
+        procedure: sessionTypeLabel(s.session_type) || '(항목 미상)',
+      });
+      // ★ 새 버킷 배열을 맵에 반드시 커밋(화장품 drill-down REOPEN 버그 재발 방지).
+      m.set(perf.id, arr);
+    });
+    // 차감 날짜 내림차순(표시 편의, 건수 불변)
+    for (const arr of m.values()) {
+      arr.sort((a, b) => (b.deductDate ?? '').localeCompare(a.deductDate ?? ''));
+    }
+    return m;
+  }, [deductSessions]);
 
   // 검색 필터 — 직원 이름 (글로벌 필터 공통 레이어)
   const filteredPay = useMemo<StaffStat[]>(() => {
@@ -824,6 +883,115 @@ export function SalesStaffTab({ filter }: Props) {
     </Dialog>
   );
 
+  // ── T-20260806 차감 건수 셀 렌더 (클릭 → 차감 고객 리스트 drill-down) ─────────────────
+  //   count>0 → 클릭 가능한 링크형(팝업). count<=0 → 클릭 무반응 텍스트(AC1·AC5).
+  const renderDeductCount = (
+    staffId: string,
+    staffName: string,
+    count: number,
+    testId: string,
+  ) => {
+    if (count <= 0) {
+      return (
+        <span data-testid={testId} className="text-muted-foreground">
+          0
+        </span>
+      );
+    }
+    return (
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={() => setDeductDialog({ staffId, staffName })}
+        className="cursor-pointer font-semibold text-emerald-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-emerald-900"
+        title="차감 고객 리스트 보기"
+      >
+        {count}
+      </button>
+    );
+  };
+
+  // 현재 팝업 대상 치료사의 차감 고객 명단 (동일 소스 파생 → '차감 건수'와 정합).
+  const deductDialogRows = deductDialog
+    ? deductDetailByStaff.get(deductDialog.staffId) ?? []
+    : [];
+
+  // ── 차감 고객 리스트 드릴다운 Dialog (AC2·AC3·AC4·AC5) ───────────────────────────
+  const DeductListDialog = (
+    <Dialog
+      open={!!deductDialog}
+      onOpenChange={(open) => {
+        if (!open) setDeductDialog(null);
+      }}
+    >
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle data-testid="deduct-dialog-title">
+            {deductDialog?.staffName} 치료사 — 차감 고객 리스트
+          </DialogTitle>
+          <DialogDescription>
+            {from} ~ {to} · 차감 {deductDialogRows.length}건 · 고객을 클릭하면 2번차트로 이동합니다.
+          </DialogDescription>
+        </DialogHeader>
+        {deductDialogRows.length === 0 ? (
+          <div
+            data-testid="deduct-dialog-empty"
+            className="py-8 text-center text-sm text-muted-foreground"
+          >
+            차감 내역이 없습니다.
+          </div>
+        ) : (
+          <div className="max-h-[60vh] overflow-auto rounded-lg border text-xs">
+            <table className="w-full border-collapse">
+              <thead className="sticky top-0 z-10 bg-muted/70">
+                <tr>
+                  {['고객성함', '차트번호', '차감 날짜', '차감 항목'].map((h) => (
+                    <th
+                      key={h}
+                      className="whitespace-nowrap border-b px-3 py-2 text-left font-medium text-muted-foreground"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody data-testid="deduct-dialog-list">
+                {deductDialogRows.map((r) => {
+                  const clickable = !!r.customerId;
+                  return (
+                    <tr
+                      key={r.key}
+                      data-testid={`deduct-dialog-row-${r.key}`}
+                      onClick={clickable
+                        ? () => {
+                            openChart(r.customerId!); // 기존 2번차트 라우팅 재사용(AC4)
+                            setDeductDialog(null);
+                          }
+                        : undefined}
+                      className={cn(
+                        'border-b transition',
+                        clickable ? 'cursor-pointer hover:bg-muted/40' : 'text-muted-foreground',
+                      )}
+                    >
+                      <td className="px-3 py-2 font-medium">{r.customerName}</td>
+                      <td className="px-3 py-2 font-mono text-teal-600">
+                        {chartNoBadge(r.chartNumber)}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                        {r.deductDate ?? '—'}
+                      </td>
+                      <td className="px-3 py-2">{r.procedure}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
   // ── 렌더 ────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -887,11 +1055,13 @@ export function SalesStaffTab({ filter }: Props) {
                   className="border-b transition hover:bg-muted/30"
                 >
                   <td className="px-3 py-2 font-medium">{s.staffName}</td>
-                  <td
-                    data-testid={`sales-staff-deduct-count-${s.staffId}`}
-                    className="px-3 py-2 tabular-nums text-center"
-                  >
-                    {s.count}
+                  <td className="px-3 py-2 tabular-nums text-center">
+                    {renderDeductCount(
+                      s.staffId,
+                      s.staffName,
+                      s.count,
+                      `sales-staff-deduct-count-${s.staffId}`,
+                    )}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-center">
                     {renderDesignatedCount(
@@ -955,6 +1125,7 @@ export function SalesStaffTab({ filter }: Props) {
         </div>
         {DesignatedListDialog}
         {CosmeticDetailDialog}
+        {DeductListDialog}
       </div>
     );
   }
