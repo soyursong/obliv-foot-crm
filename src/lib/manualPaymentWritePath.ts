@@ -25,6 +25,7 @@
 import { supabase } from './supabase';
 import { applyStatusFlagTransition, type FlagTransitionActor } from './statusFlagTransition';
 import { triggerReverseMatchForCardPayments } from './redpayReverseMatch';
+import { recordCreditCharge } from './packageCreditLedger';
 
 export type PayMethod = 'card' | 'cash' | 'transfer';
 
@@ -143,6 +144,16 @@ export async function recordManualPayment(
     const total = (sum ?? []).reduce(
       (acc, r) => acc + (r.payment_type === 'refund' ? -r.amount : r.amount), 0);
     await supabase.from('packages').update({ paid_amount: total }).eq('id', attribution.packageId);
+    // T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE: 크레딧 권위 원장(package_credit_ledger)에 charge mirror.
+    //   canonical(package_payments) 기록에 부수하는 best-effort — 실패해도 결제/미수 흐름 무영향(AC3).
+    //   병렬 write 경로 아님(이 SSOT 위 mirror). paid_amount 는 원장에서 파생되는 표시 캐시로 격하 진행.
+    const chargeAmount = splits.reduce((acc, s) => acc + s.amount, 0);
+    if (chargeAmount > 0) {
+      await recordCreditCharge({
+        clinicId, customerId, packageId: attribution.packageId, amount: chargeAmount,
+        memo: memo ?? '수기수납(패키지 잔금)',
+      });
+    }
     return { route: 'package', kanbanResolved: false, splitCount: splits.length };
   }
 

@@ -23,6 +23,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, formatDateTimeDots } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments, effectiveNetPaid } from '@/lib/footBilling';
+import { regeneratePackage } from '@/lib/packageCreditLedger';
 import { cn } from '@/lib/utils';
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
@@ -1469,6 +1470,8 @@ function PackageDetailSheet({
   // T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 복구(환불 오표시 → 활성) / 취소(차감이력 有 → cancelled)
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE: 재생성(구성 변경) — 원장 re-anchor + superseded_by lineage
+  const [regenOpen, setRegenOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!packageId) return;
@@ -1634,6 +1637,8 @@ function PackageDetailSheet({
               {(canWrite !== false) && <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>}
+              {/* T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE: 재생성 = 취소+신규를 원장 re-anchor + superseded_by lineage 로 대체(paid_amount 수동 bump 제거). */}
+              {(canWrite !== false) && <Button variant="outline" size="sm" data-testid="pkg-regen-btn" onClick={() => setRegenOpen(true)}>재생성</Button>}
               {/* T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 취소(차감이력 有 패키지 → cancelled). status='cancelled'=트리거 보호축(early-RETURN)·재역전 없음. 자동환불 안 함(사용분 매출확정·미사용분은 기존 '환불' 버튼). */}
               {(canWrite !== false) && <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" data-testid="pkg-cancel-btn" onClick={() => setCancelOpen(true)}>패키지 취소</Button>}
               {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
@@ -1714,6 +1719,10 @@ function PackageDetailSheet({
         <CancelPackageDialog open={cancelOpen} pkg={pkg} sessions={sessions}
           onOpenChange={setCancelOpen}
           onDone={() => { setCancelOpen(false); reload(); onChanged(); }} />
+        {/* T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE */}
+        <RegeneratePackageDialog open={regenOpen} pkg={pkg} unusedAmountHint={Math.max(0, totalPaid - totalRefunded)}
+          onOpenChange={setRegenOpen}
+          onDone={(newId) => { setRegenOpen(false); onClose(); onChanged(); void newId; }} />
       </SheetContent>
     </Sheet>
   );
@@ -2363,6 +2372,103 @@ function CancelPackageDialog({ open, pkg, sessions, onOpenChange, onDone }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>
           <Button variant="destructive" data-testid="pkg-cancel-submit" disabled={submitting} onClick={process}>취소 처리</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// 패키지 재생성 — T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE
+// 취소+신규+paid_amount 수동 bump 를 원장 re-anchor(charge/use) + superseded_by lineage 로 대체.
+//   · 원본은 cancelled + superseded_by=new.id 로 계보 보존(파괴적 delete 아님).
+//   · 미사용 크레딧(calc_refund_amount 미사용분 상당액)을 원장 transfer(use old / charge new)로 이관 → 고아 credit 0.
+//   · new.paid_amount = 원장 파생값 sync(수동 bump 아님). 정본 write-path 병렬경로 신설 없음.
+// ============================================================
+function RegeneratePackageDialog({ open, pkg, unusedAmountHint, onOpenChange, onDone }: {
+  open: boolean; pkg: PackageListItem; unusedAmountHint: number;
+  onOpenChange: (o: boolean) => void; onDone: (newPackageId: string) => void;
+}) {
+  const { profile } = useAuth();
+  const [name, setName] = useState(pkg.package_name);
+  const [amount, setAmount] = useState(pkg.total_amount);
+  const [reason, setReason] = useState('');
+  const [carry, setCarry] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(pkg.package_name); setAmount(pkg.total_amount); setReason(''); setCarry(null);
+    (async () => {
+      // 미사용분 상당액(참고표시와 동일 SSOT, 무영속 SQL 함수) → 이관 크레딧 프리필.
+      const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: pkg.id });
+      const q = (data ?? null) as { refund_amount?: number } | null;
+      setCarry(q?.refund_amount ?? unusedAmountHint);
+    })();
+  }, [open, pkg, unusedAmountHint]);
+
+  const process = async () => {
+    if (!name.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (!window.confirm(
+      `「${pkg.package_name}」 패키지를 재생성하시겠습니까?\n\n` +
+      `· 원본은 '취소(cancelled)' + 계보 연결로 보존됩니다(이력 삭제 없음).\n` +
+      `· 미사용 크레딧 ${formatAmount(carry ?? 0)} 이 새 패키지로 원장 이관됩니다.`,
+    )) return;
+    setSubmitting(true);
+    try {
+      const res = await regeneratePackage({
+        source: pkg as unknown as Parameters<typeof regeneratePackage>[0]['source'],
+        newTotalAmount: amount,
+        newPackageName: name.trim(),
+        carryCredit: carry ?? undefined,
+        reason: reason.trim() || null,
+        actor: profile?.id ?? null,
+      });
+      toast.success(`재생성 완료 — 크레딧 ${formatAmount(res.carriedCredit)} 이관`);
+      onDone(res.newPackageId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '재생성 실패');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>패키지 재생성</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="rounded-md border border-teal-200 bg-teal-50/50 px-3 py-2.5 text-xs text-teal-800">
+            <div className="font-medium mb-1">재생성 안내</div>
+            <ul className="list-disc pl-4 space-y-0.5 text-teal-700">
+              <li>원본 패키지를 <b>취소 + 계보 연결(superseded_by)</b>로 보존합니다.</li>
+              <li>미사용 크레딧을 <b>원장으로 이관</b>합니다(수동 금액 입력 없음 · 고아 크레딧 0).</li>
+              <li>같은 구성으로 새 활성 패키지를 만듭니다(총 계약금·패키지명은 아래에서 조정 가능).</li>
+            </ul>
+          </div>
+          <div className="space-y-1.5">
+            <Label>새 패키지명</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>새 총 계약금</Label>
+            <AmountInput value={amount} onChange={(raw) => setAmount(Number(raw) || 0)} />
+          </div>
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+            이관 크레딧(미사용분 상당액){' '}
+            <span className="font-semibold tabular-nums">{carry == null ? '계산 중…' : formatAmount(carry)}</span>
+            <span className="text-muted-foreground"> — 원장(charge/use)으로 이관</span>
+          </div>
+          <div className="space-y-1.5">
+            <Label>재생성 사유 (선택)</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: 구성 변경 / 회차 조정" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>
+          <Button data-testid="pkg-regen-submit" disabled={submitting || !name.trim()} onClick={process}>
+            {submitting ? '재생성 중…' : '재생성'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
