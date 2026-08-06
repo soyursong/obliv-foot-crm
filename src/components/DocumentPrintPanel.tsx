@@ -132,6 +132,7 @@ import {
   // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 야간/공휴일/토요일 가산 base 를 진찰료 급여만으로 한정.
   computeConsultationSurchargeBase,
   loadFootBillingItems,
+  loadCustomerInsuranceGrade,
   loadEffectiveInsuranceGrade,
   buildFootBillDetailItems,
   fillBillItemCopayment,
@@ -3778,6 +3779,11 @@ function IssueDialog({
     }
     const amount = parseInt(addServiceAmountStr.replace(/,/g, ''), 10) || svc.price;
     setAddingService(true);
+    // T-20260629-foot-GRADE-ENUM-INSERT-VALIDATE AC-1: 'manual' sentinel(등급 아님, DA FINALIZE REJECT) 제거.
+    //   비급여 수기추가여도 customer_grade_at_charge 는 고객의 실 자격등급 스냅샷이어야 함(감사 정합).
+    //   live 등급 없으면 canonical 'unverified'(등급 미상) 폴백 — INSERT-path 가드(canonical 값-집합) 통과.
+    const gradeSnapshot =
+      (await loadCustomerInsuranceGrade(checkIn.customer_id)) ?? 'unverified';
     const { error } = await supabase.from('service_charges').insert({
       clinic_id: checkIn.clinic_id,
       check_in_id: checkIn.id,
@@ -3788,7 +3794,7 @@ function IssueDialog({
       insurance_covered_amount: 0,
       copayment_amount: amount,
       exempt_amount: 0,
-      customer_grade_at_charge: 'manual',
+      customer_grade_at_charge: gradeSnapshot,
       copayment_rate_at_charge: 1.0,
     });
     if (error) {
