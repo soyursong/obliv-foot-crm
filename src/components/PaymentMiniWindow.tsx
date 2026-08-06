@@ -83,6 +83,7 @@ import type { CheckIn, Service } from '@/lib/types';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ①: 코밴 CAT 직결결제 버튼을 수납 미니창 맨 아래(수납 옆)로 이관.
 import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import { shouldShowCbandEntry } from '@/lib/cband/entryVisibility';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
 // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: 셀프체크인(키오스크) 신규 유입 null-grade 데스크 캡처.
@@ -4094,9 +4095,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                   )}
 
                   {/* ★① 코밴 CAT 직결결제(플랜A) — 결제 미니창 맨 아래 [수납] 옆(현장 동선: 카드 수납 직전).
-                      · 결제수단=카드(단일)일 때만 active. · 분할결제 체크 시 disabled(사유 1줄 노출).
-                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전). */}
-                  {saved && (payMethod === 'card' || splitMode) && (
+                      · 결제수단=카드/패키지 또는 분할결제일 때 노출. · 분할결제 체크 시 disabled(사유 1줄 노출).
+                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전).
+                      ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(reopened 2026-08-07 field-soak NEGATIVE): '패키지'(membership) 탭에도 노출.
+                        reporter(최필경 총괄) 화면=결제 미니창의 카드/패키지 결제수단 탭 — 카드 탭엔 있고 패키지 탭엔 없었음.
+                        기존 카드탭과 동일 컴포넌트/동일 착지경로(checkInId→payments) 재사용(신규 착지·DB변경 0).
+                        AC-2(건당 500만원 사전차단) 공용 전송게이트라 자동 계승. */}
+                  {saved && shouldShowCbandEntry(payMethod, splitMode) && (
                     <CbandPayEntryButton
                       checkInId={checkIn.id}
                       clinicId={checkIn.clinic_id}
