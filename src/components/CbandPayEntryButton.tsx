@@ -43,7 +43,11 @@ import {
 import { AmountInput, parseAmountRaw } from '@/components/ui/AmountInput';
 import { formatAmount } from '@/lib/format';
 // ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 최소금액(5만원, spec ①) + 한글표기 파생 SSOT.
-import { CBAND_INSTALLMENT_MIN_AMOUNT, formatInstallmentKo } from '@/lib/cband/protocol';
+// ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2) — 건당 500만원 초과 사전차단 순수 술어 + 안내문구 SSOT.
+import {
+  CBAND_INSTALLMENT_MIN_AMOUNT, formatInstallmentKo,
+  exceedsPerTxnLimit, perTxnLimitBlockMessage,
+} from '@/lib/cband/protocol';
 import {
   isCbandPayEnabled, approve, precheckConcurrentPayment,
   type PaymentFlowResult, type ConcurrencyDecision,
@@ -83,9 +87,20 @@ const CBAND_INSTALLMENT_OPTIONS: readonly { value: number; label: string }[] = [
 ] as const;
 
 interface Props {
-  checkInId: string;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND — 패키지 탭 결제는 내원(check_in) 비종속 → nullable.
+   *   packageId 모드에서는 null 로 전달(동시성 잠금은 check_in 스코프 → 패키지는 payment_attempt_id 멱등이 1차 방어).
+   */
+  checkInId?: string | null;
   clinicId: string;
   customerId: string | null;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1) — 비-null 이면 이 CAT 결제는 payments 가 아니라
+   *   package_payments 행으로 착지한다(DA(b) canonical · VG-1 firewall). 카드 탭과 동일 버튼(총괄 "패키지 버튼 동일 버튼 생성").
+   */
+  packageId?: string | null;
+  /** ★AC-3: 승인(수납/취소 성립) 후 상위 목록 갱신 콜백(패키지 상세시트 reload). 미전달 = no-op(카드 탭 회귀 0). */
+  onApproved?: () => void;
   /**
    * ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ① — 외부(수납창) 게이팅.
    * true 면 결제 진입을 비활성 렌더(사유 1줄 노출) 한다. 분할결제 선택 시 등 '카드 단일결제가 아닐 때'
@@ -262,7 +277,7 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
 
-export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount }: Props) {
+export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved }: Props) {
   // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value(팝업 open/reset 시 금액칸 초기값).
   //   >0 일 때만 자동입력, ≤0/미전달 → 빈칸(수동입력) 유지. resolveCbandDefaultAmount = 쉼표없는 raw 정수문자열
   //   (AmountInput 이 표시 포맷 담당). 결제·payments write 로직 무접촉(초기값만).
@@ -368,7 +383,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   }
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
-  const canPay = amountNum > 0 && ui !== 'sending';
+  // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 = 섹타나인 자리 한도 → 전송 전 차단.
+  //   패키지 탭(대액 결제 집중)·카드 탭 공용 게이트. overLimit 이면 결제요청 비활성 + 인라인 안내(실장 사유 인지).
+  const overLimit = exceedsPerTxnLimit(amountNum);
+  const canPay = amountNum > 0 && ui !== 'sending' && !overLimit;
   // ★spec ① 5만원 미만 할부 잠금 — 금액 < 50,000 이면 할부 선택 비활성(일시불 강제). 카드사 규정.
   const installmentAllowed = amountNum >= CBAND_INSTALLMENT_MIN_AMOUNT;
   // 실효 할부개월 — 잠금 시(또는 일시불) 항상 0. 이 값이 approve() 로 전달·payments.installment 착지.
@@ -376,6 +394,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
 
   async function onApprove() {
     if (!(amountNum > 0)) return;
+    // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 사전 차단 — 단말 전송 이전에 정지.
+    //   실장이 손님 앞에서 밴 거절(승인 실패)로 막히지 않게, CRM 이 전송 前 사유를 안내한다(전문 미전송).
+    if (overLimit) { setPayBlock(perTxnLimitBlockMessage()); return; }
     // ★② 빈값 전송 차단(pre-daemon): TID 미입력이면 결제 전문 전송 이전에 정지 + 안내.
     const rawCfg = getTerminalConfigRaw();
     if (!rawCfg.tid) { setPayBlock('단말기 번호를 먼저 입력해 주세요.'); return; }
@@ -396,7 +417,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       const r = await approve(
         {
           tid: activeCfg.tid, merno: activeCfg.merno, catPort: activeCfg.catPort,
-          amount: amountNum, clinicId, customerId, checkInId,
+          amount: amountNum, clinicId, customerId, checkInId: checkInId ?? null,
+          // ★PKG-PAY-EXPAND(AC-1): 비-null → package_payments 착지(payments 아님). 카드 탭(미전달)=payments 회귀 0.
+          packageId: packageId ?? null,
           // ★HALBU 가변 전송 — 실효 개월(5만원↓/일시불=0 → HALBU "00", 회귀 무영향). formatHalbu 가 "02"~"12" 조립.
           installmentMonths: effectiveInstallment,
         },
@@ -406,6 +429,8 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       setResult(r);
       // ★ 분류에 따른 정지/성공/실패. ATTENTION 은 절대 자동 재시도하지 않음.
       setUi(r.needsCheck ? 'attention' : r.classification === 'APPROVED' ? 'approved' : 'failed');
+      // ★AC-3: 승인 성립 시 상위 목록 갱신(패키지 잔금·결제이력 즉시 반영). 미전달(카드 탭)=no-op.
+      if (!r.needsCheck && r.classification === 'APPROVED') onApproved?.();
     } catch (e) {
       if (!mounted.current) return;
       // 예외(조립 실패 등)는 안전측(정지)로. 승인 성립 가능성 배제 못하면 확인필요.
@@ -445,7 +470,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     let decision: ConcurrencyDecision = { blocked: false, reason: null, allowOverride: false, userMessage: '' };
     try {
       decision = await precheckConcurrentPayment(
-        { clinicId, checkInId, merno: cfg?.merno ?? null },
+        { clinicId, checkInId: checkInId ?? null, merno: cfg?.merno ?? null },
         supabaseAttemptStore,
       );
     } catch (e) {
@@ -544,7 +569,14 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                   placeholder="0"
                 />
                 {amountNum > 0 && (
-                  <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
+                  <p className={overLimit ? 'text-right text-sm font-semibold text-rose-600' : 'text-right text-sm text-emerald-700'}>{formatAmount(amountNum)}원</p>
+                )}
+                {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 상시 인라인 안내(클릭 전 인지). */}
+                {overLimit && (
+                  <div className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700" data-testid="cband-over-limit-warn">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                    <span>{perTxnLimitBlockMessage()}</span>
+                  </div>
                 )}
               </div>
               {/* ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 개월 선택(일시불/2~12개월).
