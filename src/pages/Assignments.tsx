@@ -1605,14 +1605,15 @@ export default function Assignments() {
       const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.SEND_CONSULT_NOTIFY, {
         body: { check_in_id: r.checkIn.id, clinic_id: clinic.id, inflow: r.inflow },
       });
-      const res = (data ?? {}) as { ok?: boolean; sent?: boolean; alreadySent?: boolean; error?: string };
+      const res = (data ?? {}) as {
+        ok?: boolean; sent?: boolean; confirmed?: boolean; alreadySent?: boolean;
+        notifyPending?: boolean; notifyFailed?: boolean; reason?: string; error?: string;
+      };
+      // T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN: [확정]과 Slack 발송 decouple.
+      //   이제 EF 는 발송 실패에도 2xx([확정] 성공) — 유일한 non-2xx = enqueue(claim+outbox 원자) 자체 실패.
+      //   따라서 error/res.ok===false 는 '확정 실패'(드묾)로만 처리. Slack 발송 실패는 아래 notify* 분기.
       if (error || res.error || res.ok === false) {
-        // T-20260806-foot-ASSIGNCONFIRM-EF-NON2XX: EF non-2xx(FunctionsHttpError) 시 supabase-js 는
-        //   data=null · error=generic("Edge Function returned a non-2xx status code") 로 반환 → 실제 원인
-        //   (EF 응답 본문, 예: "Slack 발송 실패: channel_not_found")이 삼켜져 현장은 불투명한 오류만 본다.
-        //   → error.context(Response) 본문을 읽어 실 사유를 노출하고, 채널 접근 실패(channel_not_found 등)는
-        //     raw slack 코드를 감추고 현장 친화 한국어로 매핑(field_lang_dict 게이트).
-        let msg = res.error ?? '발송 실패';
+        let msg = res.error ?? '확정 처리 실패';
         const ctx = (error as { context?: Response } | null)?.context;
         if (ctx && typeof ctx.json === 'function') {
           try {
@@ -1621,22 +1622,31 @@ export default function Assignments() {
           } catch {
             /* 본문 파싱 실패 → 기존 msg 유지 */
           }
-        } else if (error?.message && msg === '발송 실패') {
+        } else if (error?.message && msg === '확정 처리 실패') {
           msg = error.message;
         }
-        if (/channel_not_found|not_in_channel|is_archived/i.test(msg)) {
-          msg =
-            '상담대기방 발송 채널에 접근할 수 없습니다. 채널이 삭제됐거나 알림봇이 초대되지 않았습니다 — 관리자에게 문의해주세요.';
-        }
-        toast.error(msg);
+        toast.error(`확정 처리에 실패했습니다: ${msg}`);
         return;
       }
+      // ── 2xx: [확정] 성공. Slack 발송 상태(즉시발송/대기/실패)만 분기 안내. ──
       if (res.alreadySent) {
-        toast.success('이미 발송된 건입니다.');
+        toast.confirm('이미 확정된 건입니다.');
+      } else if (res.notifyFailed) {
+        // VG4/VG5 — 확정됐으나 채널 문제로 상담대기방 알림 미발송. 스태프가 gap 을 인지해야 함(묵음 금지).
+        toast.warning(
+          `${r.customerName}님 확정 완료. 다만 상담대기방 알림을 보내지 못했습니다 — ` +
+            '알림방 채널이 삭제됐거나 알림봇이 초대되지 않았습니다. 관리자에게 문의해주세요.',
+        );
+      } else if (res.notifyPending) {
+        // 확정 성공 + 알림은 전송 대기(재시도). 결과는 반드시 보여준다(묵음 금지).
+        toast.confirm(
+          `${r.customerName}님 확정 완료. 상담대기방 알림은 잠시 후 전송됩니다.`,
+        );
       } else {
-        toast.success(`${staffName(r.staffId)} · ${r.customerName}님 상담대기방 발송 완료`);
+        // 정상 즉시 발송 완료.
+        toast.confirm(`${staffName(r.staffId)} · ${r.customerName}님 상담대기방 발송 완료`);
       }
-      void load(); // consult_notify_status 재조회 → '발송됨' 반영
+      void load(); // consult_notify_status 재조회 → 발송됨/발송실패 배지 반영
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '발송 실패');
     } finally {
@@ -2191,6 +2201,16 @@ export default function Assignments() {
                         {r.notifyStatus === 'sent' ? (
                           <Badge variant="teal" className="font-normal" data-testid={`dist-notify-sent-${r.id}`}>
                             발송됨
+                          </Badge>
+                        ) : r.notifyStatus === 'failed' ? (
+                          // T-20260806-DECOUPLE-HARDEN VG4: 확정됐으나 상담대기방 알림 미발송(DLQ) — gap 가시화 배지.
+                          <Badge
+                            variant="destructive"
+                            className="font-normal"
+                            title="확정은 완료됐으나 상담대기방 알림 발송에 실패했습니다(채널 확인 필요). 관리자에게 문의해주세요."
+                            data-testid={`dist-notify-failed-${r.id}`}
+                          >
+                            발송실패
                           </Badge>
                         ) : r.notifyStatus === 'sending' ? (
                           <Badge variant="secondary" className="font-normal" data-testid={`dist-notify-sending-${r.id}`}>
