@@ -176,33 +176,49 @@ async function clickPastCardOrSkipOnAutoNoshow(
   cardLocator: import('@playwright/test').Locator,
   resvId: string,
 ): Promise<void> {
-  try {
-    // 20s: Vite cold-start(첫 페이지 로드 컴파일) + 과거날짜 재조회 지연 흡수
-    //   (QA#3: 첫 gate 실행 시 첫 카드 렌더 16~17s 관측 → 12s tight-timeout flaky RED).
-    await cardLocator.first().waitFor({ state: 'visible', timeout: 20000 });
-    await cardLocator.first().click({ timeout: 10000 });
-    return; // 카드 렌더+클릭 성공 → 정상 행위 검증 진행
-  } catch (e) {
-    const status = await resvStatus(resvId);
-    // 카드 소멸의 "환경(시드 무력화)" 원인 2종은 거짓 RED 가 아니다 → skip:
-    //   (1) status='no_show' : 과거 confirmed 예약이 auto-noshow 배치(Reservations.tsx L948)로 전환.
-    //   (2) status=null      : 시드 row 소멸. (구)dev=prod 단일 Supabase(rxlomoozakkjesdqjtvd)에서 동시 실행
-    //        중인 다른 CI run 의 cleanupAll() bare 마커 전수 DELETE 가 이 run 의 시드까지 휩쓴 cross-run
-    //        sweep race 였다(T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE).
-    //        → T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN 이 시드를 run-scoped 마커
-    //          (`[QA-FIXTURE]|<token>|<ts>`)로 격리해 **이 원인은 구조적으로 제거**됐다(bare-exact 스윕이
-    //          scoped row 를 못 잡음). 그럼에도 극히 드문 잔여(예: 수동 정리)까지 거짓 RED 로 두지 않으려
-    //          이 skip 은 belt-and-suspenders 로 유지한다. row 부재 = 환경이지 회귀가 아니다.
-    //   두 경우 모두 회귀 라인(!isPast)은 G6 정적 가드가 하드락하므로 거짓 RED 를 방지하려 skip 한다.
-    test.skip(
-      status === 'no_show' || status === null,
-      `과거 예약 시드가 환경적으로 무력화됨(status=${status}) — auto-noshow 전환(no_show) 또는 ` +
-        `동시 run 의 QA-FIXTURE 전수 스윕으로 시드 소멸(null). ` +
-        `!isPast 회귀 라인은 G6 정적 가드가 하드락하므로 거짓 RED 방지 위해 skip.`,
-    );
-    // 시드 유효(status='confirmed')인데도 카드가 없거나 클릭 실패면 진짜 회귀/렌더 실패 → 원래 오류 전파.
-    throw e;
+  // ── dnd-kit detach 레이스 흡수: 재로케이트 재시도 루프 ──────────────────────
+  // box2-resv-card(재진)는 dnd-kit draggable 이다(aria-roledescription="draggable").
+  // 과거날짜 타임라인의 초기 데이터 로드/리얼타임 패치가 카드 리스트를 재렌더하면 그
+  // DOM 노드가 waitFor 통과 직후·click 직전에 detach 된다("element was detached from the
+  // DOM"). 단발 waitFor+click 은 이 순간과 겹치면 10s tight-timeout 으로 flaky RED 를
+  // 냈다(T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE: G4 만 detach 로 RED, 직전 커밋은 GREEN,
+  // 문제 커밋은 read-only diag 로 앱코드 무변경 → 순수 flakiness 확증).
+  // → (visible 대기 → click) 한 사이클을 매번 locator 재해석하며 예산 소진까지 재시도한다.
+  //   각 시도가 노드를 새로 잡으므로 detach 된 stale 핸들을 물지 않는다. 총 예산은
+  //   test-timeout(60s) 안에서 콜드스타트+과거날짜 재조회+재시도를 흡수하도록 40s.
+  const budgetDeadline = Date.now() + 40000;
+  let lastErr: unknown = null;
+  while (Date.now() < budgetDeadline) {
+    try {
+      // 15s: Vite cold-start(첫 페이지 로드 컴파일) + 과거날짜 재조회 지연 흡수.
+      await cardLocator.first().waitFor({ state: 'visible', timeout: 15000 });
+      await cardLocator.first().click({ timeout: 8000 });
+      return; // 카드 렌더+클릭 성공 → 정상 행위 검증 진행
+    } catch (e) {
+      lastErr = e;
+      const status = await resvStatus(resvId);
+      // 카드 소멸의 "환경(시드 무력화)" 원인 2종은 거짓 RED 가 아니다 → skip(조건참이면 즉시 skip throw):
+      //   (1) status='no_show' : 과거 confirmed 예약이 auto-noshow 배치(Reservations.tsx L948)로 전환.
+      //   (2) status=null      : 시드 row 소멸. (구)dev=prod 단일 Supabase(rxlomoozakkjesdqjtvd)에서 동시 실행
+      //        중인 다른 CI run 의 cleanupAll() bare 마커 전수 DELETE 가 이 run 의 시드까지 휩쓴 cross-run
+      //        sweep race 였다(T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE).
+      //        → T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN 이 시드를 run-scoped 마커
+      //          (`[QA-FIXTURE]|<token>|<ts>`)로 격리해 **이 원인은 구조적으로 제거**됐다(bare-exact 스윕이
+      //          scoped row 를 못 잡음). 그럼에도 극히 드문 잔여(예: 수동 정리)까지 거짓 RED 로 두지 않으려
+      //          이 skip 은 belt-and-suspenders 로 유지한다. row 부재 = 환경이지 회귀가 아니다.
+      //   두 경우 모두 회귀 라인(!isPast)은 G6 정적 가드가 하드락하므로 거짓 RED 를 방지하려 skip 한다.
+      test.skip(
+        status === 'no_show' || status === null,
+        `과거 예약 시드가 환경적으로 무력화됨(status=${status}) — auto-noshow 전환(no_show) 또는 ` +
+          `동시 run 의 QA-FIXTURE 전수 스윕으로 시드 소멸(null). ` +
+          `!isPast 회귀 라인은 G6 정적 가드가 하드락하므로 거짓 RED 방지 위해 skip.`,
+      );
+      // 시드 유효(status='confirmed') → detach/미render 레이스일 개연 → 짧게 backoff 후 재로케이트 재시도.
+      await page.waitForTimeout(1000);
+    }
   }
+  // 예산 소진: 시드 유효(confirmed)인데도 카드 렌더/클릭이 끝내 실패 → 진짜 회귀/렌더 실패 → 원래 오류 전파.
+  throw lastErr ?? new Error('past card click 재시도 예산(40s) 소진 — 카드 렌더/클릭 실패');
 }
 
 const UNIQ = () => `gate-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
