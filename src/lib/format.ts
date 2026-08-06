@@ -1,5 +1,8 @@
 // 금액/번호 포맷 — 풋센터 규칙: 천단위 콤마만, 화폐 단위(₩, 원) 표기 안 함
 
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 산식 SSOT(age.ts) 위임 (사본 제거).
+import { birthYearAgeLabel, kstTodayISO } from './age';
+
 export function formatAmount(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '0';
   return Math.round(value).toLocaleString('ko-KR');
@@ -225,38 +228,10 @@ export function chartNoBadge(chart_number: string | number | null | undefined): 
  *     · 그 외(≥6)         → YYMMDD(2자리연도, 세기 휴리스틱) [기존 동작 무회귀]
  */
 export function birthYearAgeDisplay(birth_date: string | null | undefined): string {
-  if (!birth_date) return '';
-  const digits = String(birth_date).replace(/\D/g, '');
-  if (digits.length < 6) return '';
-  const now = new Date();
-  let birthYear: number;
-  let mm: number;
-  let dd: number;
-  if (digits.length === 8) {
-    // YYYYMMDD (fn_customer_birthdates 서버 파생값 = 완전연도, 세기 정확)
-    birthYear = Number(digits.slice(0, 4));
-    mm = Number(digits.slice(4, 6));
-    dd = Number(digits.slice(6, 8));
-    if (Number.isNaN(birthYear) || birthYear < 1850 || birthYear > now.getFullYear()) return '';
-  } else {
-    // YYMMDD (레거시 2자리연도 — 세기 휴리스틱). 기존 동작 그대로.
-    const yy = Number(digits.slice(0, 2));
-    mm = Number(digits.slice(2, 4));
-    dd = Number(digits.slice(4, 6));
-    if (Number.isNaN(yy)) return '';
-    const curYY = now.getFullYear() % 100;
-    const century = yy <= curYY ? 2000 : 1900;
-    birthYear = century + yy;
-  }
-  if (Number.isNaN(mm) || Number.isNaN(dd)) return '';
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
-  let age = now.getFullYear() - birthYear;
-  const curMonth = now.getMonth() + 1;
-  const curDay = now.getDate();
-  // 올해 생일이 아직 안 지났으면 만나이 -1
-  if (curMonth < mm || (curMonth === mm && curDay < dd)) age -= 1;
-  if (age < 0 || age > 130) return String(birthYear); // 이상치 → 연도만
-  return `${birthYear} (만 ${age}세)`;
+  // T-20260720-foot-COPAY-AGE-DERIVED-AUTO §3·AC-10: 나이 산식 SSOT(age.ts) 위임.
+  //   자체 세기 휴리스틱·만나이 산술 사본 제거 → 3벌(format/KohReportTab/judge) 수렴.
+  //   기준시각 KST 고정(kstTodayISO). 표시 전용(레거시 2자리 세기 휴리스틱 허용).
+  return birthYearAgeLabel(birth_date, kstTodayISO());
 }
 
 /**

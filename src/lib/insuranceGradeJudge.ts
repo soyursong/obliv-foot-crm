@@ -20,6 +20,8 @@
  */
 
 import type { InsuranceGrade } from './insurance';
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 산식 SSOT(age.ts) 위임 (사본 제거).
+import { ageFromBirth, kstTodayISO } from './age';
 
 // ── 입력/출력 타입 ────────────────────────────────────────────────────────────
 
@@ -282,34 +284,7 @@ export function ageFromBirthValue(
   birth: string | null | undefined,
   nowMs: number,
 ): number | null {
-  if (!birth) return null;
-  const digits = String(birth).replace(/\D/g, '');
-  if (digits.length < 6) return null;
-  const now = new Date(nowMs);
-  let birthYear: number;
-  let mm: number;
-  let dd: number;
-  if (digits.length >= 8) {
-    // YYYYMMDD (완전연도 — 세기 정확, RPC 'YYYY-MM-DD' 소스)
-    birthYear = Number(digits.slice(0, 4));
-    mm = Number(digits.slice(4, 6));
-    dd = Number(digits.slice(6, 8));
-    if (Number.isNaN(birthYear) || birthYear < 1850 || birthYear > now.getFullYear()) return null;
-  } else {
-    // YYMMDD (레거시 2자리연도 — 동적 세기 경계)
-    const yy = Number(digits.slice(0, 2));
-    mm = Number(digits.slice(2, 4));
-    dd = Number(digits.slice(4, 6));
-    if (Number.isNaN(yy)) return null;
-    const curYY = now.getFullYear() % 100;
-    birthYear = (yy <= curYY ? 2000 : 1900) + yy;
-  }
-  if (Number.isNaN(mm) || Number.isNaN(dd)) return null;
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-  let age = now.getFullYear() - birthYear;
-  const curMonth = now.getMonth() + 1;
-  const curDay = now.getDate();
-  if (curMonth < mm || (curMonth === mm && curDay < dd)) age -= 1;
-  if (age < 0 || age > 130) return null;
-  return age;
+  // T-20260720-foot-COPAY-AGE-DERIVED-AUTO §3·AC-10: 나이 산식 SSOT(age.ts) 위임.
+  //   자체 사본 제거 → 기준시각 KST 고정(로컬 TZ new Date(nowMs) → kstTodayISO).
+  return ageFromBirth(birth, kstTodayISO(nowMs));
 }
