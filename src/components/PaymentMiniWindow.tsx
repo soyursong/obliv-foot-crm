@@ -441,14 +441,21 @@ async function persistSubmissionsAndResolveIssueNo(params: {
   checkInId: string;
   customerId: string | null;
   staffId: string | null;
-  autoValues: Record<string, string>;
-  codeItems: SelectedItem[];
-  rxItemDosages?: Record<string, RxDosage>;
+  // T-20260806-PMWSAVE-PRESURCHARGE: autoValues/codeItems/rxItemDosages 는 buildFieldData 클로저에 캡처됨
+  //   (persist 는 print-binding 값을 직접 조립하지 않음) → 개별 전달 제거. 저장본 정합의 단일 소스 = buildFieldData.
   isFallback: boolean;
+  // T-20260806-foot-DOCREPRINT-PMWSAVE-PRESURCHARGE-PARALLEL (부모 FIX-0 동일 패턴):
+  //   저장본(field_data) = 인쇄 바인딩값과 동일 SSOT 빌더로 persist. buildFieldData 는 호출부에서
+  //   buildCodeEnrichedValues → applyNightHolidaySurcharge(가산 fold) → applyPostSurchargePaidTokens(가산後 토큰·10원절사)
+  //   를 순서대로 적용한 print-binding 값을 반환한다(가산前 autoValues 직접 persist 금지 — save↔print divergence 봉인).
+  //   ⚠ 종전 3 persist site(INSERT :field_data / 연번호 update :merged / 처방전 update :rxFieldData)가
+  //     buildCodeEnrichedValues 만 호출 → bill_receipt_new(비연번, INSERT 최종본)·bill_detail(연번 BILL, update 최종본)
+  //     저장본이 가산前값으로 굳어 저장본 재출력 시 verbatim 오발급(실손청구 금액오류). buildFieldData 경유로 정렬.
+  buildFieldData: (formKey: string, rxIssueNo: string | null, visitNo?: string) => Record<string, string>;
   // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: 반환 = 교부번호(rxIssueNo) + 연번호(visit_no) per-template 맵.
   //   기존 rxIssueNo 단일반환 → { rxIssueNo, visitNoByTemplateId } 로 확장. 인쇄 경로가 form_key별 visit_no 를 주입.
 }): Promise<{ rxIssueNo: string | null; visitNoByTemplateId: Map<string, string> }> {
-  const { selected, clinicId, checkInId, customerId, staffId, autoValues, codeItems, rxItemDosages, isFallback } = params;
+  const { selected, clinicId, checkInId, customerId, staffId, isFallback, buildFieldData } = params;
   const hasRx = selected.some((t) => t.form_key === 'rx_standard');
   const issueYmd = format(new Date(), 'yyyyMMdd');    // 교부번호 앞 8자리(YYYYMMDD)
   const issueDateIso = format(new Date(), 'yyyy-MM-dd'); // RPC p_issue_date(date) 파티션 키
@@ -475,7 +482,10 @@ async function persistSubmissionsAndResolveIssueNo(params: {
     check_in_id: checkInId,
     customer_id: customerId,
     issued_by: staffId,
-    field_data: buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, null),
+    // T-20260806-PMWSAVE-PRESURCHARGE site① (INSERT — bill_receipt_new 비연번 최종본):
+    //   가산·항목표·납부박스 fold 반영 print-binding 값으로 persist(가산前 buildCodeEnrichedValues 직접 persist 폐기).
+    //   연번호/교부번호는 아래 update 에서 주입(여기선 null/undefined).
+    field_data: buildFieldData(t.form_key, null, undefined),
     status: 'printed' as const,
     printed_at: nowIso,
   }));
@@ -524,7 +534,10 @@ async function persistSubmissionsAndResolveIssueNo(params: {
       visitNoByTemplateId.set(t.id, docSerial);
       // 처방전 행은 아래 4)에서 issue_no 와 함께 단일 갱신(누적) → 여기서 update 생략(clobber 방지).
       if (t.form_key === 'rx_standard') continue;
-      const merged = { ...buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, null), visit_no: docSerial };
+      // T-20260806-PMWSAVE-PRESURCHARGE site② (연번호 update — bill_detail(BILL) 연번대상 최종본):
+      //   ★실손 청구서류 재출력 결함 지점. 종전 merged=buildCodeEnrichedValues(가산前)+visit_no → 저장본이 가산前값으로
+      //     굳어 verbatim 오발급. buildFieldData 로 가산·항목표 반영 후 visit_no 주입 → 인쇄 바인딩값과 동일 정렬.
+      const merged = buildFieldData(t.form_key, null, docSerial);
       const { error: updErr } = await supabase
         .from('form_submissions')
         .update({ field_data: merged })
@@ -549,10 +562,9 @@ async function persistSubmissionsAndResolveIssueNo(params: {
   //   handlePrint(:3078-3096) 동형: 처방전도 serial-eligible(prefix RX)이므로 위 2)에서 발번된 visit_no 를 함께 merge.
   const rxVisitNo = rxTpl ? visitNoByTemplateId.get(rxTpl.id) : undefined;
   if (rxRowId && (rxIssueNo || rxVisitNo)) {
-    const rxFieldData = {
-      ...buildCodeEnrichedValues(autoValues, codeItems, 'rx_standard', rxItemDosages, rxIssueNo),
-      ...(rxVisitNo ? { visit_no: rxVisitNo } : {}),
-    };
+    // T-20260806-PMWSAVE-PRESURCHARGE: 처방전 저장본도 동일 빌더 경유(surcharge/paid 토큰은 rx_standard 에서 no-op →
+    //   값 불변, 3-site 코드 정합만 확보). 교부번호(rxIssueNo)·연번호(rxVisitNo) 주입은 종전과 동일.
+    const rxFieldData = buildFieldData('rx_standard', rxIssueNo, rxVisitNo);
     const { error: updErr } = await supabase
       .from('form_submissions')
       .update({ field_data: rxFieldData })
@@ -2962,21 +2974,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
           }
         }
       }
-      const isFallback = templates[0]?.id.startsWith('fallback-');
-      const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
-        selected,
-        clinicId: checkIn.clinic_id,
-        checkInId: checkIn.id,
-        customerId: checkIn.customer_id ?? null,
-        staffId,
-        autoValues,
-        codeItems,
-        rxItemDosages,
-        isFallback,
-      });
-
       // ── T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산 판정 기준(진료일=checked_in_at) ──
       //   출력 시점(now)이 아니라 진료 당시로 판정(과거일 출력 정확) — DocumentPrintPanel 동형. checked_in_at 부재 시 now 폴백.
+      //   T-20260806-PMWSAVE-PRESURCHARGE: persist(저장본) 전에 hoist — 저장본이 인쇄 바인딩값과 동일 가산·항목표를 반영하도록
+      //     buildPrintFieldData 가 이 컨텍스트를 소비한다(부모 FIX-0 valuesFor hoist 미러).
       const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
       const surchargeIsCalHoliday = holidayDateSet.has(toLocalDateStr(surchargeRefDate));
       // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
@@ -2985,26 +2986,43 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue })
         : null;
 
+      // ── T-20260806-foot-DOCREPRINT-PMWSAVE-PRESURCHARGE-PARALLEL: print-binding 값 단일 SSOT 빌더 ──
+      //   인쇄(buildPages)와 저장(persistSubmissionsAndResolveIssueNo 3 site)이 **동일 코드**로 field_data 를 만들어
+      //   save↔print divergence 를 구조적으로 봉인한다(부모 FIX-0 DPP 패턴 미러). 순서강제:
+      //     ① buildCodeEnrichedValues(상병/처방약/교부번호 주입) → ② visit_no 주입
+      //     ③ applyNightHolidaySurcharge(가산 fold — bill_receipt_new/bill_detail 만, 그 외 no-op)
+      //     ④ applyPostSurchargePaidTokens(가산後 CoveredTokens·납부박스·10원절사 — bill_receipt_new 만).
+      //   ⚠ 절사(10원) 로직 자체(applyNightHolidaySurcharge/절사 규칙)는 무접촉 — 값 정렬만.
+      const buildPrintFieldData = (formKey: string, rxIssueNoArg: string | null, visitNoArg?: string): Record<string, string> => {
+        const enriched = buildCodeEnrichedValues(autoValues, codeItems, formKey, rxItemDosages, rxIssueNoArg);
+        if (visitNoArg) enriched.visit_no = visitNoArg;
+        applyNightHolidaySurcharge(enriched, formKey, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
+        applyPostSurchargePaidTokens(enriched, formKey, paidBoxCtx, printSettleCtx);
+        return enriched;
+      };
+
+      const isFallback = templates[0]?.id.startsWith('fallback-');
+      const { rxIssueNo, visitNoByTemplateId } = await persistSubmissionsAndResolveIssueNo({
+        selected,
+        clinicId: checkIn.clinic_id,
+        checkInId: checkIn.id,
+        customerId: checkIn.customer_id ?? null,
+        staffId,
+        isFallback,
+        // T-20260806-PMWSAVE-PRESURCHARGE: 저장본 3 site 를 print-binding 빌더로 정렬(가산前 persist 봉인).
+        buildFieldData: buildPrintFieldData,
+      });
+
       // AC-5: bill_detail(진료비세부산정내역)은 landscape 전용 iframe으로 분리
       const landscapeSelected = selected.filter((t) => t.form_key === 'bill_detail');
       const portraitSelected  = selected.filter((t) => t.form_key !== 'bill_detail');
 
       const buildPages = (tmplList: typeof selected) =>
         tmplList.flatMap((t) => {
-          // T-20260517-foot-DOC-CODE-INSERT: 상병코드/처방약 주입
-          // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item rxItemDosages 전달
-          // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): persist된 확정 교부번호(rxIssueNo) 주입 → 인쇄본 = 저장본 동일번호.
-          const enriched = buildCodeEnrichedValues(autoValues, codeItems, t.form_key, rxItemDosages, rxIssueNo);
-          // T-20260723-foot-DOCCONFIRM-SERIAL-ENDDATE-PURPOSE 결함③: persist된 연번호(visit_no) 주입 → 인쇄본 = 저장본 동일번호.
-          const vno = visitNoByTemplateId.get(t.id);
-          if (vno) enriched.visit_no = vno;
-          // T-20260723-foot-NIGHTHOLIDAY-PMW-UNWIRED 수정-A: 야간(공휴일) 가산을 form_key별 복사본(enriched)에 SSOT 헬퍼로 반영.
-          //   bill_receipt_new / bill_detail 만 적용(그 외 no-op). PMW 인쇄 경로엔 수동 override UI 없음 → 빈 집합.
-          //   T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 진찰료-only base 주입(균검사 등 비진찰료 급여 제외).
-          applyNightHolidaySurcharge(enriched, t.form_key, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
-          // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER 결함②: 가산 fold 이후 CoveredTokens·납부박스·10원절사 재계산(DPP 순서 미러).
-          // T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ 요건③: pre-settle [출력]이면 printSettleCtx 전달(선차감 ⑨보정). post-settle 이면 null(현행 실원장 유지).
-          applyPostSurchargePaidTokens(enriched, t.form_key, paidBoxCtx, printSettleCtx);
+          // T-20260517-foot-DOC-CODE-INSERT / RX-DOSAGE-DYNAMIC / RX-PRINT-ISSUENO / DOCCONFIRM-SERIAL / NIGHTHOLIDAY / SAT-SURCHARGE-ORDER:
+          //   인쇄본 = 저장본과 **동일 빌더**(buildPrintFieldData) — persist된 교부번호(rxIssueNo)·연번호(visit_no) 주입 후
+          //   가산 fold + 가산後 토큰까지 동일 순서로 반영(T-20260806-PMWSAVE-PRESURCHARGE 정합).
+          const enriched = buildPrintFieldData(t.form_key, rxIssueNo, visitNoByTemplateId.get(t.id));
           // HTML 양식 우선 (template_format='html' 또는 HTML_TEMPLATE_MAP에 등록된 키)
           if (t.template_format === 'html' || isHtmlTemplate(t.form_key)) {
             // T-20260526-foot-RX-PRINT-DUAL: 처방전(rx_standard) 2장 출력 (약국보관용 + 환자보관용)
