@@ -1607,7 +1607,28 @@ export default function Assignments() {
       });
       const res = (data ?? {}) as { ok?: boolean; sent?: boolean; alreadySent?: boolean; error?: string };
       if (error || res.error || res.ok === false) {
-        toast.error(res.error ?? error?.message ?? '발송 실패');
+        // T-20260806-foot-ASSIGNCONFIRM-EF-NON2XX: EF non-2xx(FunctionsHttpError) 시 supabase-js 는
+        //   data=null · error=generic("Edge Function returned a non-2xx status code") 로 반환 → 실제 원인
+        //   (EF 응답 본문, 예: "Slack 발송 실패: channel_not_found")이 삼켜져 현장은 불투명한 오류만 본다.
+        //   → error.context(Response) 본문을 읽어 실 사유를 노출하고, 채널 접근 실패(channel_not_found 등)는
+        //     raw slack 코드를 감추고 현장 친화 한국어로 매핑(field_lang_dict 게이트).
+        let msg = res.error ?? '발송 실패';
+        const ctx = (error as { context?: Response } | null)?.context;
+        if (ctx && typeof ctx.json === 'function') {
+          try {
+            const body = (await ctx.json()) as { error?: string };
+            if (body?.error) msg = body.error;
+          } catch {
+            /* 본문 파싱 실패 → 기존 msg 유지 */
+          }
+        } else if (error?.message && msg === '발송 실패') {
+          msg = error.message;
+        }
+        if (/channel_not_found|not_in_channel|is_archived/i.test(msg)) {
+          msg =
+            '상담대기방 발송 채널에 접근할 수 없습니다. 채널이 삭제됐거나 알림봇이 초대되지 않았습니다 — 관리자에게 문의해주세요.';
+        }
+        toast.error(msg);
         return;
       }
       if (res.alreadySent) {
