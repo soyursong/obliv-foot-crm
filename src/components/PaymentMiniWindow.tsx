@@ -3707,7 +3707,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                           <Button
                             type="button"
                             size="sm"
-                            className="w-full h-9 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold"
+                            /* T-20260806-DEDUCTBTN-TEXT-TRUNCATE-FIX: nowrap+h-9 클립 → wrap(표시만). */
+                            className="w-full h-auto min-h-9 py-1.5 whitespace-normal leading-tight text-center bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold"
                             disabled={!healthFeeEligible || settled}
                             onClick={() => setHealthFeeApplied(true)}
                           >
