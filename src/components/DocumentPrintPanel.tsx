@@ -637,6 +637,14 @@ const GENERAL_REPRINT_ADMIN_WHITELIST: Record<string, { key: string; label: stri
     { key: 'doctor_name', label: '담당의' },
     { key: 'purpose', label: '용도' },
   ],
+  // 세부산정내역서(실손청구 서류): EDITABLE=발급일만.
+  //   T-20260806-foot-DOCREPRINT-BILLDETAIL-LIVERECALC — 저장본 재출력 대상으로 편입(FIX-0 선행: 저장본이
+  //   인쇄물과 동일해진 뒤에만 유효). LOCKED=항목그리드(items_html)·금액(detail_total/detail_subtotal/
+  //   detail_rounding/subtotal_copayment/subtotal_fund/subtotal_noncovered)·요양기관 정보 → 화이트리스트에서
+  //   제외해 편집 UI 미노출(ReprintViewer LOCKED 방화벽 §handleSaveAdmin 불변식으로 이중 차단).
+  bill_detail: [
+    { key: 'issue_date', label: '발급일' },
+  ],
 };
 const GENERAL_REPRINT_FORM_KEYS = new Set(Object.keys(GENERAL_REPRINT_ADMIN_WHITELIST));
 
@@ -1542,6 +1550,73 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       //     뒤 일괄 INSERT 로 처리(serialIssuedTemplateIds 로 이중 INSERT 차단). RPC 는 기존 배포본 사용(DB 변경 0).
       const perTemplateValues = new Map<string, Record<string, string>>();
       const serialIssuedTemplateIds = new Set<string>();
+      // ── FIX-0 (T-20260806-foot-DOCREPRINT-BILLDETAIL-LIVERECALC): valuesFor(가산·납부박스 fold)를
+      //   연번호 발번 루프 前으로 hoist — 저장본(field_data)을 인쇄 바인딩값과 동일하게 정렬(순서강제 §3-B).
+      // 연번호 발번 양식은 per-template 값(visit_no 주입)으로, 그 외는 공용 autoValues 로 바인딩.
+      // ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (reopen 2026-07-19, field-soak FAIL RC) ──
+      //   가산 자동반영은 미리보기(allValues)에만 있고 이 일괄출력 경로엔 미배선이라 현장 인쇄물에 누락됐다.
+      //   → form_key별 **복사본**에 SSOT 헬퍼를 적용(공유 autoValues 원본 무변경, bill_receipt_new↔bill_detail
+      //   공유키 교차오염 차단). clinic_events 합집합·override 존중.
+      //   (2026-07-19 exfb 포트 갭 close) 판정 기준 refDate = **진료일(checked_in_at)** — body canon
+      //   visitDate=checked_in_at 미러. 출력 시점(now)이 아니라 진료 당시 요일·공휴일·야간을 판정해
+      //   과거일 진료분을 나중에 출력해도 가산 정확(일요일 진료→월요일 출력 시에도 공휴일 가산 유지).
+      const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
+      const surchargeIsCalHoliday = batchHolidayDateSet.has(toLocalDateStr(surchargeRefDate));
+      // 일괄출력은 편집 UI가 없어 수동 override 없음 → 빈 집합(모든 대상 키 자동 folding).
+      const noOverride = new Set<string>();
+      // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
+      //   fbBatch 와 동일 소스(fbItemsBatch/fbGradeBatch, default opts=covered_full) — 진찰료 없으면 null(레거시 폴백).
+      const surchargeConsultBase = fbItemsBatch.length > 0
+        ? computeConsultationSurchargeBase(fbItemsBatch, fbGradeBatch)
+        : null;
+      const valuesFor = (t: FormTemplate): Record<string, string> => {
+        const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };
+        // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE (일괄출력 경로): 신양식 라이브 명시세팅.
+        //   단건(IssueDialog allValues) 경로와 대칭 — 야간가산 fold 이전에 stale service_charges autobind 값을
+        //   라이브(check_in_services=fbBatch)로 force 대입해 bill_detail 과 동일 SSOT 수렴. 신양식 한정(무파괴).
+        if (t.form_key === 'bill_receipt_new' && fbBatch && fbBatch.grandTotal > 0) {
+          applyBillReceiptNewLiveTotals(v, {
+            grandTotal: fbBatch.grandTotal,
+            insuranceCovered: fbBatch.liveBillingValues.insuranceCovered,
+            copayment: fbBatch.liveBillingValues.copayment,
+            nonCovered: fbBatch.liveBillingValues.nonCovered,
+          });
+        }
+        applyNightHolidaySurcharge(
+          v,
+          t.form_key,
+          surchargeIsCalHoliday,
+          noOverride,
+          surchargeRefDate,
+          buildSurchargeDetailRowHtml,
+          surchargeConsultBase, // T-20260725: 진찰료-only base(균검사 등 제외)
+        );
+        // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (일괄출력 경로) ──
+        //   ★야간가산 fold 이후(여기)에 신양식 급여 remainder·납부박스를 계산해 단건(IssueDialog allValues)과 대칭.
+        if (t.form_key === 'bill_receipt_new') {
+          // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1, 일괄인쇄 경로) ──
+          //   [정정] 이전: computeBillDetailRounding(floor10, 번들 전체) → (a) floor10 오적용 + (b) 비급여까지
+          //     절사되는 bundle-floor 신규버그로, 야간·공휴일 급여 진료에서 인쇄 영수증 ⑧(예 7,280) > PMW 수납창
+          //     실수납액(7,200)이 되어 법정서류-실수납 divergence 발생(same-receipt cross-render 불일치).
+          //   [해소] 수납 aggregate grain SSOT floorBillReceiptNewPatientTotal(급여 component 만 floor100·비급여
+          //     무절사)로 통일 → PMW applyPostSurchargePaidTokens 와 동일 값. copay component = v.copayment
+          //     (가산 fold 후 aggregate 급여 본인부담), nonCov = patient_amount − copayment.
+          //   computeBillDetailRounding(floor10)은 bill_detail(세부산정내역서) 문서 grain 전용으로만 유지(§수정2).
+          const rawPatient = parseAmountStr(v.patient_amount);
+          const copayComponent = parseAmountStr(v.copayment);
+          const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
+          if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
+          // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식, AC-6). ⑧절사 후·행분해 전.
+          absorbBillReceiptNewCopayFloorRemainder(v);
+          // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
+          applyBillReceiptNewCoveredTokens(v, batchRnItems);
+          // ── T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (일괄출력 경로, 캐논 supersede) ──
+          //   ⑨=환자부담총액(완납)·⑩=공란·미납=0. 일괄출력은 편집 UI가 없어 결제수단 수기체크 불가 →
+          //   ⑪ 수단칸·현금영수증칸은 공란(현장 수기 체크). 단건 경로와 ⑨/⑩/미납 canon 대칭.
+          applyBillReceiptPreprintPaymethodTokens(v, patientFloored, {});
+        }
+        return v;
+      };
       if (!isFallback && staffId) {
         // 연번호 {prefix}-{YYYYMMDD}-{차트번호 F-XXXX}-{NN} 구성요소인 차트번호 1회 로드(IssueDialog 와 동일 소스).
         let batchChartNo: string | null = null;
@@ -1622,74 +1697,11 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             if (iss) vals = { ...vals, issue_no: iss };
           }
           perTemplateValues.set(t.id, vals);
-          await supabase.from('form_submissions').update({ field_data: vals }).eq('id', inserted.id);
+          // FIX-0 (T-20260806): 저장본을 인쇄 바인딩값(valuesFor=야간·공휴일 가산·신양식 납부박스 fold 이후)과
+          //   동일하게 정렬. perTemplateValues(visit_no/issue_no 주입) → valuesFor 로 fold 후 persist(§3-B 순서강제).
+          await supabase.from('form_submissions').update({ field_data: valuesFor(t) }).eq('id', inserted.id);
         }
       }
-      // 연번호 발번 양식은 per-template 값(visit_no 주입)으로, 그 외는 공용 autoValues 로 바인딩.
-      // ── T-20260717-foot-DOCPRINT-NIGHTHOLIDAY-SURCHARGE-AUTOCALC (reopen 2026-07-19, field-soak FAIL RC) ──
-      //   가산 자동반영은 미리보기(allValues)에만 있고 이 일괄출력 경로엔 미배선이라 현장 인쇄물에 누락됐다.
-      //   → form_key별 **복사본**에 SSOT 헬퍼를 적용(공유 autoValues 원본 무변경, bill_receipt_new↔bill_detail
-      //   공유키 교차오염 차단). clinic_events 합집합·override 존중.
-      //   (2026-07-19 exfb 포트 갭 close) 판정 기준 refDate = **진료일(checked_in_at)** — body canon
-      //   visitDate=checked_in_at 미러. 출력 시점(now)이 아니라 진료 당시 요일·공휴일·야간을 판정해
-      //   과거일 진료분을 나중에 출력해도 가산 정확(일요일 진료→월요일 출력 시에도 공휴일 가산 유지).
-      const surchargeRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
-      const surchargeIsCalHoliday = batchHolidayDateSet.has(toLocalDateStr(surchargeRefDate));
-      // 일괄출력은 편집 UI가 없어 수동 override 없음 → 빈 집합(모든 대상 키 자동 folding).
-      const noOverride = new Set<string>();
-      // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
-      //   fbBatch 와 동일 소스(fbItemsBatch/fbGradeBatch, default opts=covered_full) — 진찰료 없으면 null(레거시 폴백).
-      const surchargeConsultBase = fbItemsBatch.length > 0
-        ? computeConsultationSurchargeBase(fbItemsBatch, fbGradeBatch)
-        : null;
-      const valuesFor = (t: FormTemplate): Record<string, string> => {
-        const v = { ...(perTemplateValues.get(t.id) ?? autoValues) };
-        // T-20260724-foot-BILLRECEIPT-DETAIL-SOURCE-DIVERGENCE (일괄출력 경로): 신양식 라이브 명시세팅.
-        //   단건(IssueDialog allValues) 경로와 대칭 — 야간가산 fold 이전에 stale service_charges autobind 값을
-        //   라이브(check_in_services=fbBatch)로 force 대입해 bill_detail 과 동일 SSOT 수렴. 신양식 한정(무파괴).
-        if (t.form_key === 'bill_receipt_new' && fbBatch && fbBatch.grandTotal > 0) {
-          applyBillReceiptNewLiveTotals(v, {
-            grandTotal: fbBatch.grandTotal,
-            insuranceCovered: fbBatch.liveBillingValues.insuranceCovered,
-            copayment: fbBatch.liveBillingValues.copayment,
-            nonCovered: fbBatch.liveBillingValues.nonCovered,
-          });
-        }
-        applyNightHolidaySurcharge(
-          v,
-          t.form_key,
-          surchargeIsCalHoliday,
-          noOverride,
-          surchargeRefDate,
-          buildSurchargeDetailRowHtml,
-          surchargeConsultBase, // T-20260725: 진찰료-only base(균검사 등 제외)
-        );
-        // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX (일괄출력 경로) ──
-        //   ★야간가산 fold 이후(여기)에 신양식 급여 remainder·납부박스를 계산해 단건(IssueDialog allValues)과 대칭.
-        if (t.form_key === 'bill_receipt_new') {
-          // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1, 일괄인쇄 경로) ──
-          //   [정정] 이전: computeBillDetailRounding(floor10, 번들 전체) → (a) floor10 오적용 + (b) 비급여까지
-          //     절사되는 bundle-floor 신규버그로, 야간·공휴일 급여 진료에서 인쇄 영수증 ⑧(예 7,280) > PMW 수납창
-          //     실수납액(7,200)이 되어 법정서류-실수납 divergence 발생(same-receipt cross-render 불일치).
-          //   [해소] 수납 aggregate grain SSOT floorBillReceiptNewPatientTotal(급여 component 만 floor100·비급여
-          //     무절사)로 통일 → PMW applyPostSurchargePaidTokens 와 동일 값. copay component = v.copayment
-          //     (가산 fold 후 aggregate 급여 본인부담), nonCov = patient_amount − copayment.
-          //   computeBillDetailRounding(floor10)은 bill_detail(세부산정내역서) 문서 grain 전용으로만 유지(§수정2).
-          const rawPatient = parseAmountStr(v.patient_amount);
-          const copayComponent = parseAmountStr(v.copayment);
-          const patientFloored = floorBillReceiptNewPatientTotal(rawPatient, copayComponent);
-          if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
-          // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식, AC-6). ⑧절사 후·행분해 전.
-          absorbBillReceiptNewCopayFloorRemainder(v);
-          // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
-          applyBillReceiptNewCoveredTokens(v, batchRnItems);
-          // ── T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (일괄출력 경로, 캐논 supersede) ──
-          //   ⑨=환자부담총액(완납)·⑩=공란·미납=0. 일괄출력은 편집 UI가 없어 결제수단 수기체크 불가 →
-          //   ⑪ 수단칸·현금영수증칸은 공란(현장 수기 체크). 단건 경로와 ⑨/⑩/미납 canon 대칭.
-          applyBillReceiptPreprintPaymethodTokens(v, patientFloored, {});
-        }
-        return v;
-      };
 
       const htmlTemplates = selectedTemplates.filter((t) => t.template_format === 'html' || isHtmlTemplate(t.form_key));
       const jpgTemplates = selectedTemplates.filter((t) => t.template_format !== 'pdf' && t.template_format !== 'html' && !isHtmlTemplate(t.form_key));
@@ -1783,7 +1795,10 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
             check_in_id: checkIn.id,
             customer_id: checkIn.customer_id,
             issued_by: staffId,
-            field_data: autoValues,
+            // FIX-0 (T-20260806): 저장본 field_data 를 인쇄 바인딩값(valuesFor)으로 교체 — autoValues(가산·
+            //   항목표·납부박스 fold 이전 공통원본)는 인쇄물과 달라 재출력 시 재계산 의존/금액 변동을 유발했다.
+            //   valuesFor 는 form_key별 복사본을 만들어 bill_receipt_new↔bill_detail 공유키 교차오염을 막는다.
+            field_data: valuesFor(t),
             diagnosis_codes: null,
             status: 'printed' as const,
             printed_at: new Date().toISOString(),
