@@ -70,6 +70,12 @@ export interface AttemptRecord {
   checkInId: string | null;
   /** 취소 시 원거래 AUTHNO(승인 시 null). */
   originalAuthNo: string | null;
+  /**
+   * ★할부 개월수 — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT.
+   *   undefined/null/0/1 = 일시불, 2~12 = 개월수. buildMsg 가 HALBU 로 조립, payments.installment(int) 착지.
+   *   취소(0430) 시엔 원거래 승인의 installment 를 그대로 전달(취소 HALBU=원거래 동일값, 실측 MSG-iyn7).
+   */
+  installmentMonths?: number | null;
   status: AttemptStatus;
   /** ★C6 테스트금액(1001~1006) 여부 — attempt·payments is_simulation 각인(매출/감사 제외). */
   isSimulation: boolean;
@@ -409,6 +415,11 @@ export interface PaymentFlowInput {
   /** 취소(0430) 시 원거래 승인번호. */
   originalAuthNo?: string;
   originalAuthDate?: string;
+  /**
+   * ★할부 개월수 — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT.
+   *   승인: 선택 개월수(일시불=undefined/0). 취소: 원거래 승인의 installment 그대로(취소 HALBU=원거래 동일값).
+   */
+  installmentMonths?: number | null;
 }
 
 export interface PaymentFlowResult {
@@ -464,6 +475,8 @@ export async function runPaymentFlow(
     msgTrace,
     originalAuthNo: input.originalAuthNo,
     originalAuthDate: input.originalAuthDate,
+    // ★HALBU 가변 전송 — 승인=선택개월 / 취소=원거래 동일값(실측 MSG-iyn7). formatHalbu 가 "00"/"02"~"12" 조립.
+    installmentMonths: input.installmentMonths,
   });
 
   const baseRec: AttemptRecord = {
@@ -476,6 +489,7 @@ export async function runPaymentFlow(
     customerId: input.customerId,
     checkInId: input.checkInId,
     originalAuthNo: input.originalAuthNo ?? null,
+    installmentMonths: input.installmentMonths ?? null,  // ★payments.installment(int) 착지 — spec ②③ 요청 개월수 canonical
     isSimulation: isSimulationAmount(input.amount),  // ★C6 테스트금액(1001~1006) 격리
     status: 'requested',
   };

@@ -30,6 +30,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { formatAmount } from '@/lib/format';
+import { formatInstallmentKo } from '@/lib/cband/protocol';
 import { cancel, isCbandPayEnabled, type PaymentFlowResult } from '@/lib/cband/paymentFlow';
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { getTerminalConfig } from '@/lib/cband/config';
@@ -52,6 +53,12 @@ export interface CbandTerminalCancelPayment {
   created_at?: string | null;
   /** CAT-origin 판별자(FK). NOT NULL = 플랜A(단말기 직결) 건. */
   payment_attempt_id?: string | null;
+  /**
+   * ★원거래 할부 개월수(payments.installment) — T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT.
+   *   취소 전문 HALBU = 원거래 승인과 동일값(실측 MSG-iyn7: 승인 03 → 취소 03, "00" 아님) → 그대로 cancel() 에 전달.
+   *   일시불(0/null)이면 formatHalbu 가 "00" 조립. 전체취소만(부분취소 불가).
+   */
+  installment?: number | null;
 }
 
 interface Props {
@@ -162,6 +169,9 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
           checkInId: payment.check_in_id ?? null,
           originalAuthNo: authNo,
           originalAuthDate: toYYMMDD(payment.accounting_date ?? payment.created_at) ?? undefined,
+          // ★취소 HALBU = 원거래 동일값(실측 MSG-iyn7). "00" 고정/재시도 금지 — 원거래 installment 그대로 전달.
+          //   refund 행에도 동일 개월 각인(할부 복원 반영). formatHalbu 가 일시불→"00" / N개월→"0N".
+          installmentMonths: payment.installment ?? null,
         },
         supabaseAttemptStore,
       );
@@ -214,6 +224,7 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
               </p>
               <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">취소 금액</span><span className="font-bold tabular-nums text-rose-700">{formatAmount(payment.amount)}원</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">결제 유형</span><span className="font-medium" data-testid="terminal-cancel-installment">{formatInstallmentKo(payment.installment)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">원거래 승인번호</span><span className="font-mono">{payment.external_approval_no}</span></div>
               </div>
             </div>
