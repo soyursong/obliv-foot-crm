@@ -279,7 +279,10 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
   if (loading) return <div className="p-6 text-muted-foreground">배정 설정 불러오는 중…</div>;
 
   return (
-    <div className="space-y-6 pb-10" data-testid="assignment-settings-tab">
+    // T-20260806-foot-ASSIGNSET-UISIZE-HALF-STAFFSPACE-REVERT: 배정 설정 탭 컨테이너 1곳에만 스코프된 균일 스케일
+    //   (.assign-settings-compact{zoom:.7}) 부여 → 항목 밀도 ~50% 축소. 앞선 UISIZE-HALF가 /admin/staff
+    //   전체에 오적용한 zoom 을 총괄 의도대로 이 탭으로 재타깃(스코프 격리, 타 화면 유출 0).
+    <div className="assign-settings-compact space-y-6 pb-10" data-testid="assignment-settings-tab">
       {/* 실행1 — 랭킹 가중치 */}
       <Card>
         <CardHeader>
