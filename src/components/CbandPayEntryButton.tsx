@@ -43,7 +43,11 @@ import {
 import { AmountInput, parseAmountRaw } from '@/components/ui/AmountInput';
 import { formatAmount } from '@/lib/format';
 // ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 최소금액(5만원, spec ①) + 한글표기 파생 SSOT.
-import { CBAND_INSTALLMENT_MIN_AMOUNT, formatInstallmentKo } from '@/lib/cband/protocol';
+// ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2) — 건당 500만원 초과 사전차단 순수 술어 + 안내문구 SSOT.
+import {
+  CBAND_INSTALLMENT_MIN_AMOUNT, formatInstallmentKo,
+  exceedsPerTxnLimit, perTxnLimitBlockMessage,
+} from '@/lib/cband/protocol';
 import {
   isCbandPayEnabled, approve, precheckConcurrentPayment,
   type PaymentFlowResult, type ConcurrencyDecision,
@@ -368,7 +372,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   }
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
-  const canPay = amountNum > 0 && ui !== 'sending';
+  // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 = 섹타나인 자리 한도 → 전송 전 차단.
+  //   패키지 탭(대액 결제 집중)·카드 탭 공용 게이트. overLimit 이면 결제요청 비활성 + 인라인 안내(실장 사유 인지).
+  const overLimit = exceedsPerTxnLimit(amountNum);
+  const canPay = amountNum > 0 && ui !== 'sending' && !overLimit;
   // ★spec ① 5만원 미만 할부 잠금 — 금액 < 50,000 이면 할부 선택 비활성(일시불 강제). 카드사 규정.
   const installmentAllowed = amountNum >= CBAND_INSTALLMENT_MIN_AMOUNT;
   // 실효 할부개월 — 잠금 시(또는 일시불) 항상 0. 이 값이 approve() 로 전달·payments.installment 착지.
@@ -376,6 +383,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
 
   async function onApprove() {
     if (!(amountNum > 0)) return;
+    // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 사전 차단 — 단말 전송 이전에 정지.
+    //   실장이 손님 앞에서 밴 거절(승인 실패)로 막히지 않게, CRM 이 전송 前 사유를 안내한다(전문 미전송).
+    if (overLimit) { setPayBlock(perTxnLimitBlockMessage()); return; }
     // ★② 빈값 전송 차단(pre-daemon): TID 미입력이면 결제 전문 전송 이전에 정지 + 안내.
     const rawCfg = getTerminalConfigRaw();
     if (!rawCfg.tid) { setPayBlock('단말기 번호를 먼저 입력해 주세요.'); return; }
@@ -544,7 +554,14 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                   placeholder="0"
                 />
                 {amountNum > 0 && (
-                  <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
+                  <p className={overLimit ? 'text-right text-sm font-semibold text-rose-600' : 'text-right text-sm text-emerald-700'}>{formatAmount(amountNum)}원</p>
+                )}
+                {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 상시 인라인 안내(클릭 전 인지). */}
+                {overLimit && (
+                  <div className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700" data-testid="cband-over-limit-warn">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                    <span>{perTxnLimitBlockMessage()}</span>
+                  </div>
                 )}
               </div>
               {/* ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 개월 선택(일시불/2~12개월).

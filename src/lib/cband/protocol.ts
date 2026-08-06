@@ -69,6 +69,27 @@ export const UNCLEAR_TXN_CODES: ReadonlySet<string> = new Set<string>([RESPONSE_
 export const PER_TXN_LIMIT_KRW = 5_000_000 as const;
 
 /**
+ * ★건당 한도 초과 판정(순수) — T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2).
+ *   섹타나인(P2) 자리 설정 한도 = 건당 5,000,000원(레드페이 확인). 이 값 **초과**(> 한도)면 단말 전송 시
+ *   밴이 거절하므로, CRM 이 전송 **전** 사전 차단한다(실장이 손님 앞에서 승인 실패로 막히지 않게).
+ *   · amount ≤ PER_TXN_LIMIT_KRW → false(정상 전송). amount > PER_TXN_LIMIT_KRW → true(사전 차단).
+ *   · 비정수·음수·NaN 은 금액 자체가 유효하지 않아 여기서 한도판정 대상이 아님(false, 상위 amount>0 가드가 차단).
+ *   패키지 탭·카드 탭 어느 결제 진입에서도 공용 SSOT — 단말 전송 직전 게이트가 이 술어를 소비한다.
+ */
+export function exceedsPerTxnLimit(amount: number): boolean {
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  return amount > PER_TXN_LIMIT_KRW;
+}
+
+/**
+ * ★건당 한도 초과 안내 문구(현장/실장) — AC-2. 전송 전 차단 사유를 자명한 한국어로 안내한다.
+ *   개발용어 배제. 카드 단말(섹타나인) 자리 한도 = 건당 500만원 확정 사실만 전달(추정 배제).
+ */
+export function perTxnLimitBlockMessage(): string {
+  return `카드 단말기 결제는 1건당 최대 ${PER_TXN_LIMIT_KRW.toLocaleString('ko-KR')}원까지 가능합니다. 금액을 나누어 결제해 주세요.`;
+}
+
+/**
  * ★ ERRCODE(밴/코밴 응답코드) → 현장(실장) 한글 표시 문구 — 표시 전용(additive, classify 무접촉).
  *   T-20260805-foot-PLANA-ERRCODE-HANGUL-8326-UNCLEAR: 종전 DLL_RET(-14/-2) 2개만 매핑 → 나머지 원문 폴백.
  *   여기서 '확인 필요(ATTENTION/UNCLEAR)' 축의 밴 응답코드에 자명한 한글 문구를 부여한다.
