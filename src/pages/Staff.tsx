@@ -91,20 +91,13 @@ export default function StaffPage() {
   });
 
   return (
-    // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경3(1차안, 체감 미달): 외곽 여백(p-4→p-3)·
-    //   섹션 간격(space-y-4→3)만 축소 → 카드 내부 패딩·폰트(text-sm/base/xs)·행높이(h-8/py-1.5)·
-    //   아이콘·버튼 등 시각 질량 대부분 무변경이라 "크기 이전과 동일" 피드백.
-    // T-20260806-foot-STAFFSPACE-UISIZE-HALF-COMPACT (2차, 근본 재조정): piecemeal 여백 조정은 요소를
-    //   빠뜨려 체감이 안 난다는 근본원인을 확인 → /admin/staff 루트에만 스코프된 CSS `zoom`(균일 스케일)로
-    //   전체 요소(폰트·패딩·행높이·아이콘·버튼·카드)를 한 번에 ~0.7배(면적 ≈ 절반 밀도) 축소.
-    //   · 스코프 격리(AC-4): .staff-space-compact 클래스는 이 루트 div 1곳에만 부여 → 공용 ui/card·ui/button
-    //     기본값이나 전역 spacing/font 토큰을 건드리지 않아 타 화면 유출 0.
-    //   · 부모 컴팩트 클래스(p-3/space-y-3)와 이중 축소 아님(zoom은 렌더 배율 별개 축) → 레이아웃 붕괴 없음.
-    //   · Radix Dialog 는 body portal 렌더(이 subtree 밖) → 모달 입력 폼은 원배율 유지(가독·조작성 보존).
-    <div
-      className="staff-space-compact h-full overflow-auto space-y-3 p-3"
-      data-testid="staff-space-root"
-    >
+    // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경3: 직원·공간 화면 컴팩트 재정비(1차안).
+    //   여백/패딩·정보밀도 위주 — 무리한 재배치 없이 외곽 여백(p-4→p-3)·섹션 간격(space-y-4→space-y-3) 축소.
+    //   field-soak 총괄 재확인(반복 시각조정) 전제. — 이 여백/밀도 재정비는 유지한다.
+    // T-20260806-foot-ASSIGNSET-UISIZE-HALF-STAFFSPACE-REVERT (retarget): 앞선 UISIZE-HALF(zoom 0.7)는 /admin/staff 화면
+    //   전체에 균일 스케일을 오적용 → 총괄 실제 의도(배정 설정 탭만 축소)와 불일치. 화면 전체 zoom 클래스를 제거해
+    //   원배율 복구하고, 축소는 AssignmentSettingsTab 컨테이너로 재타깃(.assign-settings-compact)한다.
+    <div className="h-full overflow-auto space-y-3 p-3" data-testid="staff-space-root">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더' 탭 제거 — 최상위 [직원 근무 캘린더]로 승격·흡수 */}
