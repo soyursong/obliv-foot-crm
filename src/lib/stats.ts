@@ -621,6 +621,9 @@ export interface VisitRouteResvRow {
   reservation_date: string;      // yyyy-MM-dd (예약일)
   visit_route: string | null;    // 방문경로(예약경로). NULL/빈값 = 미입력
   status: string;
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄): 체험단 전용 마커. true = 2번 유입경로 차트에서
+  //   방문경로와 별개로 [체험단] 카테고리로 분류(Stream B). canonical inflow_channel(§36 방화벽)와 직교 독립 축.
+  is_trial?: boolean | null;
 }
 
 export async function fetchVisitRouteStats(
@@ -631,17 +634,34 @@ export async function fetchVisitRouteStats(
   const PAGE_SIZE = 1000;
   const all: VisitRouteResvRow[] = [];
   let offset = 0;
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: is_trial 컬럼 미반영 DB(마이그 적용 랙) 대비 graceful.
+  //   컬럼 부재(42703/PGRST) 감지 시 is_trial 제외 select 로 폴백 → [체험단] 0건이되 차트 자체는 정상 렌더.
+  let selectCols = 'id, reservation_date, visit_route, status, is_trial';
   for (let page = 0; page < 30; page++) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('reservations')
-      .select('id, reservation_date, visit_route, status')
+      .select(selectCols)
       .eq('clinic_id', clinicId)
       .eq('status', 'checked_in')                 // 방문 완료(체크인)만. 취소·노쇼 자동 제외.
       .gte('reservation_date', from)              // 시작일 당일 포함
       .lte('reservation_date', to)                // 종료일 당일 포함
       .range(offset, offset + PAGE_SIZE - 1);
+    if (error && selectCols.includes('is_trial') &&
+        (error.code === '42703' || error.code === 'PGRST204' || /is_trial/.test(error.message ?? ''))) {
+      selectCols = 'id, reservation_date, visit_route, status';
+      const retry = await supabase
+        .from('reservations')
+        .select(selectCols)
+        .eq('clinic_id', clinicId)
+        .eq('status', 'checked_in')
+        .gte('reservation_date', from)
+        .lte('reservation_date', to)
+        .range(offset, offset + PAGE_SIZE - 1);
+      data = retry.data;
+      error = retry.error;
+    }
     if (error) throw error;
-    const rows = (data ?? []) as VisitRouteResvRow[];
+    const rows = (data ?? []) as unknown as VisitRouteResvRow[];
     all.push(...rows);
     if (rows.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;

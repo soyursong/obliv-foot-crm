@@ -34,25 +34,36 @@ interface Props {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#a855f7', '#64748b'];
 
 const UNSET_LABEL = '미입력';
+// T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄 confirm 2026-08-07): 체험단(is_trial) 전용 카테고리.
+//   방문경로(visit_route)와 직교한 별도 마커 → 체크된 건은 방문경로 버킷 대신 [체험단] 버킷으로 1회만 계수(총건수 불변).
+//   canonical inflow_channel 11코드/referral_source(§36 방화벽) 무접촉 — display 파생 카테고리로만.
+const TRIAL_LABEL = '[체험단]';
+// is_trial=true 면 [체험단], 아니면 방문경로(NULL/빈값 → '미입력').
+const bucketOf = (r: VisitRouteResvRow): string =>
+  r.is_trial === true ? TRIAL_LABEL : ((r.visit_route ?? '').trim() || UNSET_LABEL);
 
 export default function VisitRouteSection({ rows, loading }: Props) {
   const agg = useMemo(() => {
     // 경로별 건수 집계. NULL/빈값 → '미입력' 버킷(§4 미입력 처리 — 숨기지 않고 별도 집계).
+    //   체험단(is_trial)은 방문경로와 무관하게 [체험단] 별도 버킷(bucketOf) — 1건당 1버킷(총건수 정합 유지).
     const counts = new Map<string, number>();
     for (const r of rows) {
-      const route = (r.visit_route ?? '').trim() || UNSET_LABEL;
+      const route = bucketOf(r);
       counts.set(route, (counts.get(route) ?? 0) + 1);
     }
     const total = rows.length;
     const unsetCount = counts.get(UNSET_LABEL) ?? 0;
 
+    const trialCount = counts.get(TRIAL_LABEL) ?? 0;
     // 렌더 순서용 경로 유니버스: 드롭다운 SSOT 순서 우선 + 데이터에만 있는 값(legacy) 뒤에 append.
-    const presentRoutes = Array.from(counts.keys()).filter((k) => k !== UNSET_LABEL);
+    //   [체험단]·미입력은 방문경로 유니버스에서 제외 후 말미에 별도 배치(색/순서 안정).
+    const presentRoutes = Array.from(counts.keys()).filter((k) => k !== UNSET_LABEL && k !== TRIAL_LABEL);
     const ssotOrdered = (VISIT_ROUTE_OPTIONS as readonly string[]).filter((o) => presentRoutes.includes(o));
     const extras = presentRoutes.filter((p) => !(VISIT_ROUTE_OPTIONS as readonly string[]).includes(p));
-    const orderedRoutes = [...ssotOrdered, ...extras];
+    // [체험단]은 방문경로 뒤·미입력 앞에 별도 카테고리로 배치.
+    const orderedRoutes = [...ssotOrdered, ...extras, ...(trialCount > 0 ? [TRIAL_LABEL] : [])];
 
-    // 누적 막대 범례/색 안정용 키 순서(경로 + 미입력). 색상 index 고정.
+    // 누적 막대 범례/색 안정용 키 순서(경로 + [체험단] + 미입력). 색상 index 고정.
     const routeKeys = [...orderedRoutes, ...(unsetCount > 0 ? [UNSET_LABEL] : [])];
     const colorOf = (route: string) => COLORS[routeKeys.indexOf(route) % COLORS.length];
 
@@ -65,8 +76,9 @@ export default function VisitRouteSection({ rows, loading }: Props) {
       .sort((a, b) => b.count - a.count)
       .map((x) => ({ ...x, ratio: total > 0 ? (x.count / total) * 100 : 0 }));
 
-    // ① 최다 유입 경로: 미입력 제외한 실제 경로 중 최다. 없으면 null → '—'.
-    const topRoute = table.filter((x) => x.route !== UNSET_LABEL).reduce<{ route: string; count: number } | null>(
+    // ① 최다 유입 경로: 미입력·[체험단] 제외한 실제 방문경로 중 최다. 없으면 null → '—'.
+    //   ([체험단]은 유입경로가 아닌 직교 마커 → 최다 유입경로 후보에서 제외.)
+    const topRoute = table.filter((x) => x.route !== UNSET_LABEL && x.route !== TRIAL_LABEL).reduce<{ route: string; count: number } | null>(
       (best, cur) => (best === null || cur.count > best.count ? cur : best),
       null,
     );
@@ -77,7 +89,7 @@ export default function VisitRouteSection({ rows, loading }: Props) {
     // ③ 일별 추이: 일자 × 경로 누적. 날짜 오름차순.
     const dayMap = new Map<string, Record<string, number>>();
     for (const r of rows) {
-      const route = (r.visit_route ?? '').trim() || UNSET_LABEL;
+      const route = bucketOf(r);
       const d = r.reservation_date;
       if (!d) continue;
       if (!dayMap.has(d)) dayMap.set(d, {});

@@ -139,6 +139,9 @@ type CreateReservationParams = {
   //   ⚠ brief_note(텍스트)와 직교한 플래그 — is_healer_intent(영속 컬럼, T-20260614 HEALER-RESV-CLASSIFY-DEF)
   //   write-path(createReservationCanonical, 5699b54) 재사용. 신규 컬럼/저장경로 0(DB 무변경). 캘린더 resvKind→노란박스(#FFFDE7).
   is_healer_intent?: boolean | null;
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄): 예약 화면 '체험단' 전용 체크박스 → is_trial(영속) 위임.
+  //   신규 마커 컬럼(reservations.is_trial, DA GO·ADDITIVE·DEFAULT false). canonical inflow_channel(§36 방화벽)와 직교 독립 축.
+  is_trial?: boolean | null;
   // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로 canonical 코드 + inbound.etc 사유(inflow 축).
   //   예약행 reservations.inflow_channel 영속 + 고객 first_inflow_channel first-write-wins. referral_source(§36 방화벽) 무접점.
   inflow_channel?: string | null;
@@ -298,6 +301,11 @@ export function ReservationDetailPopup({
   //   new-mode 엔 [힐러] 칩 기존재(RESVMEMO-HEALER-CHIP-YELLOWBOX, 6/30) — 본 상태는 그 동선을 예약상세 편집에 parity 확장.
   //   is_healer_intent(영속 컬럼, 신규 스키마 0)를 anchor 예약 기준 토글·[저장] 동봉. brief_note 3종칩과 직교(동시 가능).
   const [detailHealerIntent, setDetailHealerIntent] = useState<boolean>(reservation?.is_healer_intent ?? false);
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄 confirm 2026-08-07): 예약 화면 '체험단' 전용 체크박스.
+  //   is_trial(영속 컬럼, DA GO·ADDITIVE·DEFAULT false) 토글. 신규 접수(new-mode)·예약상세(edit) 양쪽 [저장]에 동봉 위임.
+  //   canonical inflow_channel(§36 방화벽)/방문경로(visit_route)와 직교 독립 축 — 유입 코드 아님. 체크 시 상담 배정 수 집계
+  //   제외(Stream A) + 2번 유입경로 차트 [체험단] 카테고리(Stream B). new/edit 상호배타 렌더 → 단일 상태 공유(진입 시 리셋/프리로드).
+  const [isTrial, setIsTrial] = useState<boolean>(false);
   // T-20260630-foot-RESVPOPUP-TM-REGISTRAR-LOCK: TM 역할은 예약등록자 드롭다운 read-only + 저장 차단.
   const isTmRole = currentUserRole === 'tm';
   // T-20260630-foot-RESVPOPUP-DELBTN-HIDE-TMCODY: TM·코디네이터(coordinator) 역할은 푸터 [예약삭제] 버튼 미렌더(hidden, not disabled).
@@ -321,7 +329,7 @@ export function ReservationDetailPopup({
   const customerMemoBaseline = useRef('');
   const consultantBaseline = useRef('');
   // 예약상세(기존 예약) 편집 필드 baseline — 로드값 대비 변경 여부로 dirty 판정. saveRouteAndRegistrar 성공 시 갱신.
-  const detailBaseline = useRef({ briefNote: '', healer: false, route: '', registrar: '' });
+  const detailBaseline = useRef({ briefNote: '', healer: false, route: '', registrar: '', trial: false });
 
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단)
   const [searchValue, setSearchValue] = useState('');
@@ -351,7 +359,8 @@ export function ReservationDetailPopup({
           newBookingMemo.trim() !== '' ||
           inflowChannel.trim() !== '' ||
           inflowReason.trim() !== '' ||
-          isHealerIntent
+          isHealerIntent ||
+          isTrial // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 체크 시 작성 중(dirty).
         );
       }
       if (!reservation) return false;
@@ -362,6 +371,7 @@ export function ReservationDetailPopup({
         detailHealerIntent !== b.healer ||
         visitRoute !== b.route ||
         registrarId !== b.registrar ||
+        isTrial !== b.trial || // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 마커 변경 시 dirty.
         selectedSlotTime !== null ||
         customerMemo !== customerMemoBaseline.current ||
         selectedConsultantId !== consultantBaseline.current
@@ -506,6 +516,8 @@ export function ReservationDetailPopup({
       // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로 선택/사유 매 진입 클린 리셋(stale 차단).
       setInflowChannel('');
       setInflowReason('');
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 체크박스 매 진입 클린 리셋(stale 차단, 기본 비-체험단).
+      setIsTrial(false);
       // T-20260630-foot-RESV-CUSTCTX-PREFILL: 고객 컨텍스트로 진입(동선1·2)이면 해당 고객 자동 prefill(재진),
       //   아니면 기존 빈 진입(검색창 활성, AC4 회귀 0). 고객 prefill 은 검색 선택과 동일 경로(handleSelectOtherCustomer)
       //   재사용 → 1번구역(고객정보·패키지·치료내역) 자동 로드 + 이름·연락처 populate. 🔒 L-002: 생성 로직 무변경(인젝션 0).
@@ -540,12 +552,14 @@ export function ReservationDetailPopup({
       // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 닫힘/new-mode 진입 시 baseline 클린 리셋(stale dirty 차단).
       customerMemoBaseline.current = '';
       consultantBaseline.current = '';
-      detailBaseline.current = { briefNote: '', healer: false, route: '', registrar: '' };
+      detailBaseline.current = { briefNote: '', healer: false, route: '', registrar: '', trial: false };
       setVisitRoute('');
       setRegistrarId('');
       setDetailBriefNote('');
       // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC2: 예약 없음(닫힘/new-mode) 시 힐러 칩 상태 클린 리셋.
       setDetailHealerIntent(false);
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 닫힘/new-mode 진입 시 체험단 체크박스 클린 리셋.
+      setIsTrial(false);
       setCancelDialog(false);
       setCancelReason('');
       setSearchValue('');
@@ -574,12 +588,15 @@ export function ReservationDetailPopup({
     setDetailBriefNote(reservation.brief_note ?? '');
     // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC2: 예약 변경 시 [힐러] 칩 상태(is_healer_intent) 재초기화(stale 차단).
     setDetailHealerIntent(reservation.is_healer_intent ?? false);
+    // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 현재 예약의 체험단 마커(is_trial) 프리로드(편집 대상).
+    setIsTrial(reservation.is_trial ?? false);
     // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 예약상세 편집 필드 baseline 갱신(로드된 저장값 기준).
     detailBaseline.current = {
       briefNote: reservation.brief_note ?? '',
       healer: reservation.is_healer_intent ?? false,
       route: reservation.visit_route ?? '',
       registrar: reservation.registrar_id ?? '',
+      trial: reservation.is_trial ?? false,
     };
 
     const customerId = reservation.customer_id;
@@ -939,6 +956,26 @@ export function ReservationDetailPopup({
                 )}
               </div>
             )}
+
+            {/* ── T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄): 체험단 전용 체크박스 ──
+                예약경로/유입경로(canonical inflow, §36 방화벽)와 직교 독립 마커(is_trial). 체크 시 상담 배정 수 집계 제외 +
+                2번 유입경로 차트 [체험단] 카테고리로 분류. 기존 방문경로/유입경로 항목 무변경(별도 표시). */}
+            <label
+              htmlFor="newmode-is-trial"
+              className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs cursor-pointer select-none"
+              data-testid="newmode-is-trial-row"
+            >
+              <input
+                id="newmode-is-trial"
+                type="checkbox"
+                className="h-4 w-4 accent-teal-600"
+                checked={isTrial}
+                onChange={(e) => setIsTrial(e.target.checked)}
+                data-testid="newmode-is-trial-checkbox"
+              />
+              <span className="font-medium">체험단</span>
+              <span className="font-normal text-muted-foreground">(상담 배정 수 집계 제외 · 2번 차트 [체험단] 분류)</span>
+            </label>
 
             {/* AC6: 간략메모 — 발톱무좀/내성발톱/발각질케어 3종 체크박스 + 직접입력(brief_note).
                 T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX (김주연 총괄): 4번째 [힐러] 칩 추가.
@@ -1320,19 +1357,32 @@ export function ReservationDetailPopup({
       registrar_id: registrarId === '' ? null : registrarId,
       registrar_name: reg ? reg.name : null,
     };
-    const { error } = await supabase
+    const updatePayload = {
+      visit_route: visitRoute === '' ? null : visitRoute,
+      // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT AC2: 간략메모(brief_note)도 [저장]에 동봉 영속.
+      //   기존 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 통합시간표 명단 표시(AC1) 즉시 반영.
+      brief_note: detailBriefNote.trim() || null,
+      // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC4: [힐러] 칩(is_healer_intent)도 동일 [저장] 경로에 동봉 영속.
+      //   기존 영속 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 캘린더/통합시간표 노란박스(healer) 즉시 연동.
+      is_healer_intent: detailHealerIntent,
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 마커(is_trial)도 동일 [저장] 경로에 동봉 영속.
+      //   신규 마커 컬럼(DA GO·ADDITIVE). 저장 후 상담 배정 수 집계 제외 + 2번 차트 [체험단] 즉시 반영.
+      is_trial: isTrial,
+      ...registrarFields,
+    };
+    let { error } = await supabase
       .from('reservations')
-      .update({
-        visit_route: visitRoute === '' ? null : visitRoute,
-        // T-20260708-foot-BRIEFMEMO-TIMETABLE-CHIPONLY-EDIT AC2: 간략메모(brief_note)도 [저장]에 동봉 영속.
-        //   기존 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 통합시간표 명단 표시(AC1) 즉시 반영.
-        brief_note: detailBriefNote.trim() || null,
-        // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC4: [힐러] 칩(is_healer_intent)도 동일 [저장] 경로에 동봉 영속.
-        //   기존 영속 컬럼 update — 신규 스키마 0. 저장 후 onChanged() → 캘린더/통합시간표 노란박스(healer) 즉시 연동.
-        is_healer_intent: detailHealerIntent,
-        ...registrarFields,
-      })
+      .update(updatePayload)
       .eq('id', reservation.id);
+    // 컬럼 미반영 DB(마이그 적용 랙: 42703/PGRST204)면 is_trial 제외 후 재시도 → 기존 필드 저장은 정상 보존(graceful).
+    if (error && (error.code === '42703' || error.code === 'PGRST204' || /is_trial/.test(error.message ?? ''))) {
+      const { is_trial: _omitTrial, ...payloadNoTrial } = updatePayload;
+      void _omitTrial;
+      ({ error } = await supabase
+        .from('reservations')
+        .update(payloadNoTrial)
+        .eq('id', reservation.id));
+    }
     if (error) { setRouteSaving(false); toast.error(`저장 실패: ${error.message}`); return; }
     // T-20260714-foot-RESVROUTE-VISITCHANNEL-ALWAYSYNC (AC-2/G1/G2/blast-radius): 예약상세 [저장] 시 예약경로 → 2번차트 방문경로(customers.visit_route) 동기.
     //   기존엔 reservations.visit_route 만 갱신 → customers.visit_route 미연동(예약상세 write-path 누락)이 현장 '전부 미연동' RC.
@@ -1358,6 +1408,7 @@ export function ReservationDetailPopup({
       healer: detailHealerIntent,
       route: visitRoute,
       registrar: isTmRole ? detailBaseline.current.registrar : registrarId,
+      trial: isTrial, // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 저장 후 체험단 baseline 동기화(dirty 해제).
     };
     toast.success('예약 정보 저장됨');
     onChanged();
@@ -1459,6 +1510,8 @@ export function ReservationDetailPopup({
       booking_memo: newBookingMemo.trim() || null,
       // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩 → is_healer_intent(영속) 위임. parent createReservationCanonical 가 기존 write-path 로 저장.
       is_healer_intent: isHealerIntent,
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 체크박스 → is_trial(영속) 위임(DEFAULT false·PGRST204 내성).
+      is_trial: isTrial,
       // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 신규 접수 유입경로(canonical) + inbound.etc 사유 위임.
       //   기존 고객(loadedMatch)은 미선택 → null(parent 가 first_inflow_channel 자동상속). §36: inflow 축만 접촉.
       inflow_channel: (!loadedMatch && inflowChannel) ? inflowChannel : null,

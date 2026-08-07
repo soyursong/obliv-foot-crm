@@ -101,6 +101,11 @@ const THERAPY_FLOW: CheckInStatus[] = [
 ];
 const PULL_WAIT_STATUSES: CheckInStatus[] = ['consult_waiting', 'treatment_waiting'];
 const PULL_THRESHOLD_MIN = 10; // 미배정 대기 강조(amber) 임계. 당김 후보 자격 자체는 '미배정'만(PULLCAND-ASSIGNED-EXCLUDE)
+// T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄): 체험단 배정 제외 적용 시점 = 2026-08-01~ 당월.
+//   AC-2/AC-3: 7월 이전 누적 무변경. 이 경계일(KST) 이전 배정은 is_trial=true 여도 제외 미적용(forward-only).
+//   (신규 마커 DEFAULT false + forward-only 라 pre-8/1 행은 원천적으로 false 지만, 8월 이후 예약을 소급편집해도
+//    July 카운트가 흔들리지 않도록 배정 시각(checked_in_at) 기준 명시 가드를 둔다.)
+const TRIAL_EXCL_FROM_ISO = '2026-08-01';
 
 // ── T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC: 랭킹 탭 날짜 구간 헬퍼(KST, DATE-only 순수) ──
 //   fetchConsultantPerf(from,to) 는 DATE 문자열(YYYY-MM-DD)을 받는다(기존 monthStart 호출과 동일 grain).
@@ -406,6 +411,11 @@ export default function Assignments() {
   const [monthResvSourceSystem, setMonthResvSourceSystem] = useState<Map<string, string | null>>(
     new Map(),
   );
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄 confirm 2026-08-07): 당월 check_ins 의
+  //   reservation.is_trial(체험단 마커) 맵. Stream A — '상담 배정 수'(직원별 누적/랭킹)에서 체험단 배정 제외용.
+  //   DA CONSULT-REPLY(MSG-20260807-164856-vg1k) VG3: LEFT JOIN 등가(walk-in reservation_id NULL 은 맵 미포함
+  //   → 비-trial 정상 count 생존, INNER JOIN drop 금지) + COALESCE(is_trial,false)=true 만 제외. read-only 참조.
+  const [monthResvTrialMap, setMonthResvTrialMap] = useState<Map<string, boolean>>(new Map());
   const [slotEnter, setSlotEnter] = useState<Map<string, string>>(new Map());
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -610,20 +620,33 @@ export default function Assignments() {
         new Set(monthCi.map((c) => c.reservation_id).filter(Boolean)),
       ) as string[];
       const monthResvSrcMap = new Map<string, string | null>();
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 동일 fetch 로 is_trial(체험단 마커) 동반 조회 →
+      //   Stream A 배정 수 제외맵(reservation_id → is_trial). 컬럼 미반영 DB(마이그 적용 랙)면 값 부재 → 폴백 false.
+      const monthResvTrial = new Map<string, boolean>();
       if (monthResvIds.length > 0) {
         const CHUNK = 200;
         for (let i = 0; i < monthResvIds.length; i += CHUNK) {
           const slice = monthResvIds.slice(i, i + CHUNK);
-          const { data: rsvRows } = await supabase
+          let { data: rsvRows, error: rsvErr } = await supabase
             .from('reservations')
-            .select('id, source_system')
+            .select('id, source_system, is_trial')
             .in('id', slice);
-          for (const r of (rsvRows ?? []) as Array<{ id: string; source_system: string | null }>) {
+          // 컬럼 미반영 DB(마이그 적용 랙: 42703/PGRST204)면 is_trial 제외 후 재조회 → source_system 폴백 라벨 보존.
+          if (rsvErr && (rsvErr.code === '42703' || rsvErr.code === 'PGRST204' || /is_trial/.test(rsvErr.message ?? ''))) {
+            const retry = await supabase
+              .from('reservations')
+              .select('id, source_system')
+              .in('id', slice);
+            rsvRows = retry.data as typeof rsvRows;
+          }
+          for (const r of (rsvRows ?? []) as Array<{ id: string; source_system: string | null; is_trial?: boolean | null }>) {
             monthResvSrcMap.set(r.id, r.source_system ?? null);
+            if (r.is_trial === true) monthResvTrial.set(r.id, true);
           }
         }
       }
       setMonthResvSourceSystem(monthResvSrcMap);
+      setMonthResvTrialMap(monthResvTrial);
       // T-20260727 RECLASS 2A: 월간 상담 축(monthAxisOf)도 **check_in 레코드 단위(시점정합)** recency 로 판정.
       //   RC = 고객단위 판정이 과거날짜 자기 첫 완료방문을 "과거 done" 으로 잡아 순수초진을 재진 오승격.
       //   per-checkin 판정 = 각 배정 check_in 을 그 방문 시각 이전 done 방문에 대해서만 판정(+owner-forced pin).
@@ -859,7 +882,17 @@ export default function Assignments() {
       //   재배정(done)되면 두 실장 팝업에 동시 노출(F-5247 장홍석: 최현희 cancelled + 강경민 done). 당월 유령후보 9건.
       //   done 은 완료된 실제 배정이므로 유지 — cancelled 만 배제(원내 대기 목록의 done/cancelled 제외와 정합).
       if (ci.status === 'cancelled') continue;
-      if (ci.consultant_id) {
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄 confirm 2026-08-07): 체험단(is_trial) 배정은
+      //   '상담 배정 수'(직원별 누적)에서 제외. DA VG3 = LEFT JOIN 등가: reservation_id 존재 + 그 예약 is_trial=true
+      //   인 경우만 제외(walk-in reservation_id NULL 은 맵 미포함 → 비-trial 정상 count 생존, INNER JOIN drop 금지).
+      //   scope = 8/1~ (checked_in_at KST 기준, 7월 이전 무변경). ⚠ 상담축 한정 — 치료(therapist)축 카운트는 불변.
+      const ciDateIso = ci.checked_in_at ? seoulISODate(ci.checked_in_at) : null;
+      const isTrialAssign =
+        !!ci.reservation_id &&
+        monthResvTrialMap.get(ci.reservation_id) === true &&
+        ciDateIso != null &&
+        ciDateIso >= TRIAL_EXCL_FROM_ISO;
+      if (ci.consultant_id && !isTrialAssign) {
         const s = staff.find((x) => x.id === ci.consultant_id);
         // T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID 결정①(방법 C · 김주연 총괄 confirm 2026-08-07):
         //   KPI '상담 배정 수'(직원별 누적) = [확정] 클릭된 배정만 count. [확정] 미클릭(consult_notify_status IS NULL)
@@ -925,7 +958,7 @@ export default function Assignments() {
     return Array.from(byId.values())
       .filter((st) => st.staff.role === wantRole)
       .sort((x, y) => y.month.assigned.length - x.month.assigned.length);
-  }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate]);
+  }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate, monthResvTrialMap]);
 
   // T-20260729-foot-ASSIGN-TARGETCOL-STAFFCUMUL-EMPTY-WIRE (총괄 결정 B):
   //   '일일 배정 목표' = (선택일 초진 예약 수) × (그 실장 랭킹 배정 비율). 느슨결합 단일 지점 유지.
@@ -1136,7 +1169,8 @@ export default function Assignments() {
           fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd),
           supabase
             .from('check_ins')
-            .select('consultant_id')
+            // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: reservation_id 동반 조회 → 체험단(is_trial) 배정 제외 join.
+            .select('consultant_id, reservation_id')
             .eq('clinic_id', clinicId)
             .not('consultant_id', 'is', null)
             .is('deleted_at', null)
@@ -1168,9 +1202,27 @@ export default function Assignments() {
         setPrevWeekRevenue(toRevMap(prevPerf));
         setThisWeekRevenue(toRevMap(thisPerf));
         setPrevMonthRevenue(toRevMap(prevMonthPerf));
+        const dayRows = (dayCi.data ?? []) as { consultant_id: string | null; reservation_id: string | null }[];
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: [랭킹] '당일 배정건수'에서 체험단(is_trial) 배정 제외.
+        //   VG3(LEFT JOIN 등가): reservation_id 있는 배정 中 그 예약 is_trial=true 만 제외(walk-in reservation_id NULL 은
+        //   비-trial 정상 count 생존). scope = 8/1~ (rankingDate 기준, 7월 이전 무변경). 컬럼 미반영 DB 는 조회실패→제외 0.
+        const trialResvIds = new Set<string>();
+        if (rankingDate >= TRIAL_EXCL_FROM_ISO) {
+          const rids = Array.from(new Set(dayRows.map((r) => r.reservation_id).filter(Boolean))) as string[];
+          if (rids.length > 0) {
+            const { data: trialRows, error: trialErr } = await supabase
+              .from('reservations')
+              .select('id')
+              .eq('is_trial', true)
+              .in('id', rids);
+            if (!trialErr) for (const tr of (trialRows ?? []) as Array<{ id: string }>) trialResvIds.add(tr.id);
+          }
+        }
         const dc = new Map<string, number>();
-        for (const r of (dayCi.data ?? []) as { consultant_id: string | null }[]) {
-          if (r.consultant_id) dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
+        for (const r of dayRows) {
+          if (!r.consultant_id) continue;
+          if (r.reservation_id && trialResvIds.has(r.reservation_id)) continue; // 체험단 제외
+          dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
         }
         setDayAssignCounts(dc);
         setMonthInitResvCount(initResv.count ?? 0);

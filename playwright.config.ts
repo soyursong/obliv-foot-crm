@@ -187,6 +187,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단(is_trial) 마커 기준 상담 배정 수 제외 + 2번 차트 [체험단].
+        //   Stream A(VG3 LEFT JOIN 등가·walk-in 생존·forward-only) + Stream B(bucketOf) 순수 결정함수 + 마이그 §36 방화벽
+        //   정적 소스 가드. auth/DB/webServer 불요·결정론. 실 UI+데이터경로 = 컬럼 prod 적용 후 supervisor field-soak.
+        '**/T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2.spec.ts',
         // T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE: 없는 /assets/* 서버오답(HTML 200+immutable) 재발 수정.
         //   자체 wrangler pages dev(프로덕션 CF Pages 런타임)로 dist 서빙 → request 컨텍스트로 DoD#1~3 검증.
         //   auth/DB 불요·결정론. Vite webServer(8091) 미의존(자체 CF 런타임 사용). 상시 감시=ci-push §6 curl 스크립트.
@@ -672,6 +676,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: unit 전용(Stream A/B 순수 결정함수 + 마이그 정적 소스 가드) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2.spec.ts',
         // T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE: unit 전용(자체 wrangler CF 런타임) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(auth)/Vite webServer 유입 차단. unit 에서만 실행.
         '**/T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE.spec.ts',
