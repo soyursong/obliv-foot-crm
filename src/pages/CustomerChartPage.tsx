@@ -57,6 +57,8 @@ import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 고객정보 저장 가드
 import { registerPublishSaveGuard } from '@/lib/unsavedGuard';
+// T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 자동 새로고침(배포감지 full-page reload) 시 2번차트 입력 유실 방지.
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 // T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 2번차트 진료비 자동산정 패널
@@ -4248,6 +4250,22 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       label: '고객정보(2번차트)',
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 자동 새로고침(배포감지 full-page reload) 대비 새로고침 가드 등록.
+  //   기존 발급가드(위)·60초 자동저장(아래)과 별개로, UpdateBanner/DashboardRefreshCountdown 의 reload 직전 collectDirty
+  //   훑기 대상에 2번차트를 편입한다. 저장 경로(handleInfoPanelSave) 보유 → flushable(자동 저장 후 새로고침).
+  //   저장 실패 시 throw → UpdateBanner 가 blocking 취급(reload 보류, 데이터 유실 0). 신규 write-path/스키마 0.
+  useUnsavedGuard(
+    'customer-chart-2',
+    () => isDirty,
+    {
+      flush: async () => {
+        const ok = await handleInfoPanelSaveRef.current();
+        if (!ok) throw new Error('고객차트 자동 저장 실패');
+      },
+      label: '고객차트',
+    },
+  );
 
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 60초 자동저장 (현장 확정: 30→60초, 김주연 5/11 16:14)
   useEffect(() => {

@@ -36,6 +36,10 @@ import { RESV_TIME_GRID } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, formatPhoneInput, chartNoBadge, birthDateYMD, formatDateDots, todaySeoulISODate } from '@/lib/format';
 import { cn } from '@/lib/utils';
+// T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 자동 새로고침(배포감지 full-page reload) 시 예약 입력 유실 방지.
+//   기존 dirty-guard 인프라(useUnsavedGuard/unsavedGuard 레지스트리) 재사용 — 신규 스키마/패키지 0(db_change=false).
+//   진료차트(MedicalChartPanel)·체크인메모(CheckInDetailSheet)와 동일 패턴. 예약 입력은 부분저장 위험으로 blocking(보류+안내).
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { ReservationMemoTimeline } from '@/components/ReservationMemoTimeline';
 // T-20260522-foot-RESV-HISTORY-SYNC AC-2/3: 예약 변경 이력 공유 패널
 import { ReservationAuditLogPanel } from '@/components/ReservationAuditLogPanel';
@@ -312,6 +316,12 @@ export function ReservationDetailPopup({
   // ── 우상 상담사 상태
   const [selectedConsultantId, setSelectedConsultantId] = useState<string>('');
   const [consultantSaving, setConsultantSaving] = useState(false);
+  // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 고객메모/담당자는 로드값(baseline) 대비 변경 여부로 dirty 판정.
+  //   각 필드는 개별 [저장] 버튼 보유 → 저장 성공 시 baseline 갱신(false-positive 방지). 로드/닫힘 시 baseline 재설정.
+  const customerMemoBaseline = useRef('');
+  const consultantBaseline = useRef('');
+  // 예약상세(기존 예약) 편집 필드 baseline — 로드값 대비 변경 여부로 dirty 판정. saveRouteAndRegistrar 성공 시 갱신.
+  const detailBaseline = useRef({ briefNote: '', healer: false, route: '', registrar: '' });
 
   // ── T-20260611-foot-RESVPOPUP-2ZONE-SEARCH-CALENDAR AC-1: 고객 검색창(1번구역 최상단)
   const [searchValue, setSearchValue] = useState('');
@@ -323,6 +333,42 @@ export function ReservationDetailPopup({
   //   anchor 예약(reservation)의 reservation_time update(저장) 대상. 날짜 변경 시 stale 선택 초기화.
   const [selectedSlotTime, setSelectedSlotTime] = useState<string | null>(null);
   const [reschedulingTime, setReschedulingTime] = useState(false);
+
+  // ── T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD ──────────────────────────
+  //   자동 새로고침(배포감지 full-page reload: UpdateBanner 카운트다운/유휴무음 + DashboardRefreshCountdown)이
+  //   예약 입력 중에 발화하면 입력값이 전부 초기화되던 footgun 방어. 기존 dirty-guard 레지스트리(unsavedGuard)
+  //   재사용 — 진료차트/체크인메모와 동일 패턴. 예약은 부분저장이 위험(검증·복수필드)하므로 flush 미전달=blocking
+  //   (reload 보류 + "저장 후 새로고침" 안내, 데이터 유실 0). over-block은 안전, under-block은 유실 → 의심 시 dirty.
+  useUnsavedGuard(
+    'reservation-detail-popup',
+    () => {
+      if (newMode) {
+        // 신규 접수 폼: 자유입력·선택이 하나라도 있으면 작성 중(dirty).
+        return (
+          newCustName.trim() !== '' ||
+          newCustPhone.trim() !== '' ||
+          briefNote.trim() !== '' ||
+          newBookingMemo.trim() !== '' ||
+          inflowChannel.trim() !== '' ||
+          inflowReason.trim() !== '' ||
+          isHealerIntent
+        );
+      }
+      if (!reservation) return false;
+      // 예약상세(기존 예약) 편집: 로드 baseline 대비 변경 시 dirty.
+      const b = detailBaseline.current;
+      return (
+        detailBriefNote !== b.briefNote ||
+        detailHealerIntent !== b.healer ||
+        visitRoute !== b.route ||
+        registrarId !== b.registrar ||
+        selectedSlotTime !== null ||
+        customerMemo !== customerMemoBaseline.current ||
+        selectedConsultantId !== consultantBaseline.current
+      );
+    },
+    { label: '예약 입력' },
+  );
 
   // 현재 우상에 표시할 예약 (좌하 클릭 선택, 기본값 = 원본 예약)
   const selectedResv: Reservation | undefined =
@@ -357,6 +403,9 @@ export function ReservationDetailPopup({
         // customer_memo(신설 전 9건) 표시 연속성 보존(백필 불요). write는 customer_note로 일원화.
         setCustomerMemo(c.customer_note ?? c.customer_memo ?? c.memo ?? '');
         setSelectedConsultantId(c.assigned_staff_id ?? '');
+        // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: dirty 판정 baseline 갱신(로드된 저장값 기준).
+        customerMemoBaseline.current = c.customer_note ?? c.customer_memo ?? c.memo ?? '';
+        consultantBaseline.current = c.assigned_staff_id ?? '';
       });
     // 1b) 주민번호 마스킹 표시용 생년월일(서버파생) — T-20260614-foot-RESVPOPUP-RRN-NOBIND.
     //   원인진단(AC-4): 기존엔 비어있기 쉬운 customers.birth_date 컬럼에 직접 바인딩 → '칸은 있는데 비어있음'.
@@ -488,6 +537,10 @@ export function ReservationDetailPopup({
       setSelectedResvId(null);
       setCustomerMemo('');
       setSelectedConsultantId('');
+      // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 닫힘/new-mode 진입 시 baseline 클린 리셋(stale dirty 차단).
+      customerMemoBaseline.current = '';
+      consultantBaseline.current = '';
+      detailBaseline.current = { briefNote: '', healer: false, route: '', registrar: '' };
       setVisitRoute('');
       setRegistrarId('');
       setDetailBriefNote('');
@@ -521,6 +574,13 @@ export function ReservationDetailPopup({
     setDetailBriefNote(reservation.brief_note ?? '');
     // T-20260708-foot-RESVDETAIL-HEALER-CHIP-ADD AC2: 예약 변경 시 [힐러] 칩 상태(is_healer_intent) 재초기화(stale 차단).
     setDetailHealerIntent(reservation.is_healer_intent ?? false);
+    // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 예약상세 편집 필드 baseline 갱신(로드된 저장값 기준).
+    detailBaseline.current = {
+      briefNote: reservation.brief_note ?? '',
+      healer: reservation.is_healer_intent ?? false,
+      route: reservation.visit_route ?? '',
+      registrar: reservation.registrar_id ?? '',
+    };
 
     const customerId = reservation.customer_id;
     const clinicId = reservation.clinic_id;
@@ -1226,6 +1286,8 @@ export function ReservationDetailPopup({
       .eq('id', reservation.customer_id);
     setMemoSaving(false);
     if (error) { toast.error(`고객메모 저장 실패: ${error.message}`); return; }
+    // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 저장 성공 → baseline 동기화(저장 후 dirty 해제).
+    customerMemoBaseline.current = customerMemo;
     toast.success('고객메모 저장됨');
   };
 
@@ -1241,6 +1303,8 @@ export function ReservationDetailPopup({
       .eq('id', reservation.customer_id);
     setConsultantSaving(false);
     if (error) { toast.error(`담당자 저장 실패: ${error.message}`); return; }
+    // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 저장 성공 → baseline 동기화(저장 후 dirty 해제).
+    consultantBaseline.current = val === '__none__' ? '' : val;
     toast.success('담당자 저장됨');
   };
 
@@ -1287,6 +1351,14 @@ export function ReservationDetailPopup({
       if (custErr) { setRouteSaving(false); toast.error(`방문경로 연동 실패: ${custErr.message}`); return; }
     }
     setRouteSaving(false);
+    // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 저장 성공 → 편집 필드 baseline 동기화(저장 후 dirty 해제).
+    //   TM 역할은 registrar 미저장(위 registrarFields={}) → baseline registrar 는 로드값 유지(과탐 방지).
+    detailBaseline.current = {
+      briefNote: detailBriefNote,
+      healer: detailHealerIntent,
+      route: visitRoute,
+      registrar: isTmRole ? detailBaseline.current.registrar : registrarId,
+    };
     toast.success('예약 정보 저장됨');
     onChanged();
   };
