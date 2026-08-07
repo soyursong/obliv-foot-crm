@@ -9,7 +9,7 @@
  * - 태블릿 터치 UX (button-grid, h-10 이상)
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateDots } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
@@ -83,11 +83,25 @@ export function InsuranceGradeSelect({
   const [ageYears, setAgeYears] = useState<number | null>(null);
 
   // 초기 로딩 시 폼 동기화
+  //   T-20260806-...-REWORK: deps 에서 lookupInProgress(=captureOpen, 양방향 토글) 제거.
+  //   draftSource 초기값은 manual_input 고정 — 조회 프리셋은 아래 rising-edge effect 전담.
   useEffect(() => {
     setDraftGrade((grade ?? 'unverified') as InsuranceGrade);
-    setDraftSource((source ?? (lookupInProgress ? 'hira_lookup' : 'manual_input')) as InsuranceGradeSource);
+    setDraftSource((source ?? 'manual_input') as InsuranceGradeSource);
     setDraftMemo(memo ?? '');
-  }, [grade, source, memo, lookupInProgress]);
+  }, [grade, source, memo]);
+
+  // 딥링크 조회 **개시 순간(false→true)** 에만 출처 초안을 프리셋.
+  //   captureOpen 은 양방향 토글(패널 닫기·차트 전환 시 false)이라 deps 에 그대로 두면
+  //   닫는 순간 manual_input 으로 되돌아가 본 티켓의 목적이 무산된다(rising edge 한정).
+  //   등급·메모는 건드리지 않는다 — 편집 중 조회해도 입력이 보존돼야 한다.
+  const prevLookupRef = useRef(false);
+  useEffect(() => {
+    if (lookupInProgress && !prevLookupRef.current) {
+      setDraftSource('hira_lookup');
+    }
+    prevLookupRef.current = lookupInProgress;
+  }, [lookupInProgress]);
 
   // 나이 자동(§3) — 나이 SSOT = fn_customer_birthdates RPC(서버파생 'YYYY-MM-DD', 세기 정확).
   //   REDEFINITION_RISK 정렬: 클라 세기-휴리스틱 신설 없이 RPC 재사용. clinicId 없으면 나이 추천 생략.
