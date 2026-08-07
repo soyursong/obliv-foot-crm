@@ -237,3 +237,26 @@ jobs:
           name: perm-parity-traces
           path: test-results/
           retention-days: 7
+
+  # ── 6) CF Pages 자산-404 서버오답 가드 ──────────────────
+  # T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE DoD#4:
+  #   없는 /assets/* 가 SPA fallback(/* -> /index.html 200)에 삼켜져 HTML(200)+immutable
+  #   로 회신되면 전 라우트 동적 import 붕괴 → 전 메뉴 접속 불가(재발 2회). 이를 상시 감시.
+  #   wrangler pages dev(workerd/miniflare = 프로덕션 CF Pages 런타임)로 dist 를 서빙하고
+  #   DoD#1(없는 자산 404)·#2(실존 자산 200/JS MIME/immutable)·#3(SPA 라우트 200 HTML)를
+  #   curl 로 강제 검증. functions/assets/[[path]].js·_redirects·_headers 회귀 시 RED.
+  cfpages-asset-404:
+    name: "🧱 CF Pages Asset-404 Guard"
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: "없는-자산 404 / 실존-자산 200·immutable / SPA 200 HTML 검증"
+        run: bash scripts/check-cfpages-asset-404.sh
