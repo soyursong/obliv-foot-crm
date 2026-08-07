@@ -58,11 +58,25 @@ export function downloadRxHistoryExcel(rows: RxIssuancePatientRow[], filename: s
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
 
-/** 파일명(예: "처방이력_바르토벤외용액_20260807"). 약명 미선택 시 '전체'. */
-export function rxHistoryExportFilename(medication: string | null, date = new Date()): string {
+/**
+ * 파일명(예: "처방이력_바르토벤외용액_20260807"). 약명 미선택 시 '전체'.
+ * 복수 선택 시: 1개면 약명, 2개면 "A_B", 3개 이상이면 "A_외N종"(파일명 과다 방지).
+ *   T-20260807-foot-RXHIST-DRUG-MULTISELECT.
+ */
+export function rxHistoryExportFilename(
+  medication: string | string[] | null,
+  date = new Date(),
+): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
-  const med = (medication ?? '').trim() || '전체';
+  const meds = (Array.isArray(medication) ? medication : medication ? [medication] : [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let med: string;
+  if (meds.length === 0) med = '전체';
+  else if (meds.length === 1) med = meds[0];
+  else if (meds.length === 2) med = `${meds[0]}_${meds[1]}`;
+  else med = `${meds[0]}_외${meds.length - 1}종`;
   return `처방이력_${med}_${y}${m}${d}`;
 }

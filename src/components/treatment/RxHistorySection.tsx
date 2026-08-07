@@ -22,18 +22,12 @@ import { useClinic } from '@/hooks/useClinic';
 import { formatDateDots, chartNoBadge } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
+import { MultiSelect } from '@/components/ui/multi-select';
 import {
   RX_ISSUANCE_FORM_KEY,
   mapRxIssuancePatientRows,
   collectDistinctMedications,
-  filterRxRowsByMedication,
+  filterRxRowsByMedications,
   type RxIssuancePatientRow,
   type RawFormSubmissionWithCustomerRow,
 } from '@/lib/rxIssuanceHistory';
@@ -98,14 +92,20 @@ export default function RxHistorySection() {
   const clinic = useClinic();
   const { data: allRows = [], isLoading, isError } = useRxIssuanceHistory(clinic?.id);
 
-  const [selectedMed, setSelectedMed] = useState<string | null>(null);
+  // T-20260807-foot-RXHIST-DRUG-MULTISELECT: 단일→복수 선택. 선택된 약(합집합) 처방 이력을 통합 표시.
+  const [selectedMeds, setSelectedMeds] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const medications = useMemo(() => collectDistinctMedications(allRows), [allRows]);
-  const rows = useMemo(
-    () => filterRxRowsByMedication(allRows, selectedMed),
-    [allRows, selectedMed],
+  const drugOptions = useMemo(
+    () => medications.map((m) => ({ value: m, label: m })),
+    [medications],
   );
+  const rows = useMemo(
+    () => filterRxRowsByMedications(allRows, selectedMeds),
+    [allRows, selectedMeds],
+  );
+  const hasSelection = selectedMeds.length > 0;
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -114,9 +114,9 @@ export default function RxHistorySection() {
       return next;
     });
 
-  const canDownload = !!selectedMed && rows.length > 0;
+  const canDownload = hasSelection && rows.length > 0;
   const handleDownload = () => {
-    if (!selectedMed) {
+    if (!hasSelection) {
       toast('약을 먼저 선택하세요');
       return;
     }
@@ -124,7 +124,7 @@ export default function RxHistorySection() {
       toast('조회 결과가 없습니다');
       return;
     }
-    downloadRxHistoryExcel(rows, rxHistoryExportFilename(selectedMed));
+    downloadRxHistoryExcel(rows, rxHistoryExportFilename(selectedMeds));
   };
 
   return (
@@ -133,24 +133,18 @@ export default function RxHistorySection() {
       <div className="flex flex-wrap items-center gap-2">
         <Pill className="size-4 text-teal-600" />
         <span className="text-[13px] font-medium text-gray-700">처방약</span>
-        <Select
-          value={selectedMed ?? ''}
-          onValueChange={(v) => {
-            setSelectedMed(v || null);
-            setExpanded(new Set());
-          }}
-        >
-          <SelectTrigger className="w-64" data-testid="rx-history-drug-select">
-            <SelectValue placeholder="약을 선택하세요" />
-          </SelectTrigger>
-          <SelectContent>
-            {medications.map((m) => (
-              <SelectItem key={m} value={m}>
-                {m}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="w-72">
+          <MultiSelect
+            options={drugOptions}
+            value={selectedMeds}
+            onChange={(next) => {
+              setSelectedMeds(next);
+              setExpanded(new Set());
+            }}
+            placeholder="약을 선택하세요 (복수 선택 가능)"
+            data-testid="rx-history-drug-select"
+          />
+        </div>
 
         <div className="ml-auto">
           <Button
@@ -175,9 +169,9 @@ export default function RxHistorySection() {
         <div className="flex items-center justify-center py-16 text-red-500 text-[13px]">
           처방 이력을 불러오지 못했습니다.
         </div>
-      ) : !selectedMed ? (
+      ) : !hasSelection ? (
         <div className="flex items-center justify-center gap-2 py-16 text-gray-400 text-[13px]">
-          <Info className="size-4" /> 약을 선택하면 해당 약을 처방받은 환자 목록이 표시됩니다.
+          <Info className="size-4" /> 약을 선택하면 해당 약(들)을 처방받은 환자 목록이 표시됩니다.
         </div>
       ) : rows.length === 0 ? (
         <div

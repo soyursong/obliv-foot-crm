@@ -144,13 +144,29 @@ export function collectDistinctMedications(
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
-/** 특정 약품명을 처방(발행)받은 행만 필터. 정확 일치(약명 전체) 기준. */
+/** 특정 약품명을 처방(발행)받은 행만 필터. 정확 일치(약명 전체) 기준. (단일 선택 = 복수 선택의 1-원소 특수형) */
 export function filterRxRowsByMedication<T extends Pick<RxIssuanceRow, 'medications'>>(
   rows: T[] | null | undefined,
   medication: string | null,
 ): T[] {
-  if (!rows || rows.length === 0 || !medication) return [];
-  return rows.filter((r) => r.medications.includes(medication));
+  return filterRxRowsByMedications(rows, medication ? [medication] : []);
+}
+
+/**
+ * 복수 약품명(합집합/OR) 필터 — 선택된 약 중 **하나라도** 처방(발행)된 행을 통과.
+ *   T-20260807-foot-RXHIST-DRUG-MULTISELECT: 단일→복수 선택 확장.
+ *   행 grain = 발행 1건(form_submission.id, 고유) → 합집합해도 행 중복 없음(한 발행이 여러 선택약을
+ *   모두 포함해도 1행). 화면·엑셀 동일 규칙(동일 rows 소비) — AC2/AC5.
+ *   선택 0개(빈 배열) = 조회 대상 없음(미선택 기본 동작, 기존과 동일) — AC6.
+ */
+export function filterRxRowsByMedications<T extends Pick<RxIssuanceRow, 'medications'>>(
+  rows: T[] | null | undefined,
+  medications: readonly string[] | null | undefined,
+): T[] {
+  if (!rows || rows.length === 0 || !medications || medications.length === 0) return [];
+  const sel = new Set(medications.filter((m) => m && m.trim()));
+  if (sel.size === 0) return [];
+  return rows.filter((r) => r.medications.some((m) => sel.has(m)));
 }
 
 /** join 결과가 배열/객체 둘 다로 올 수 있어(임베디드 리소스) form_key 를 안전 추출. */
