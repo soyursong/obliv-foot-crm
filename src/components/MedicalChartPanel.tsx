@@ -4560,9 +4560,65 @@ export default function MedicalChartPanel({
                   {/* 슈퍼상용구 탭 (T-20260603-foot-RX-SUPER-PHRASE) — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
                   {rightTab === 'super' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-super-content">
-                      {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (상단) ──
-                          원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
-                          소스=form_submissions(read-only·additive). 처방/상용구 HOLD 무관. */}
+                      {/* ── T-20260807-foot-SUPERPHRASE-ACCESS-RESTORE-SEPARATE (AC-1 회귀 복원): 슈퍼상용구(발행서류/템플릿) '불러오기' 진입점 복원 ──
+                          3ZONE(08526db9, 7/31) Phase B '슈퍼상용구'→'발행서류' 개칭 + Phase A '발행 서류 (일자별)' 리스트를 탭 상단 배치 이후,
+                          applySuperPhrase 템플릿 '불러오기' 진입점이 일자별 리스트 아래로 묻혀 현장 인지상 '진입점 소실' 회귀 발생(문지은 대표원장 직접 신고).
+                          → 템플릿 '불러오기' 섹션을 발행서류 탭 상단(primary)으로 복원 + 명시 헤더('서류 템플릿 불러오기')로 진입점 가시화.
+                          · AC-1: 개칭 명칭 '발행서류' 유지(라벨 되돌리지 않음), applySuperPhrase 도달·실행 경로만 복원.
+                          · AC-2: 상용구(phrase 탭)와 슈퍼상용구(발행서류/템플릿)는 서로 다른 별도 경로 유지 — 한 탭 통합 금지(김주연 총괄 MOVE안 superseded).
+                          · AC-3: applySuperPhrase(3ZONE phaseB) 재사용, 새 데이터소스/쿼리 신설 없음, db_change=false.
+                          · AC-4: 발행 서류 일자별 리스트(Phase A)는 삭제하지 않고 하단 참조 위치로 이동(무회귀). testid 전량 보존. */}
+                      <div className="rounded-lg border bg-muted/10" data-testid="super-phrase-template-section">
+                        <div className="flex items-center gap-1.5 px-3 py-2 border-b bg-muted/20 text-xs font-semibold text-foreground">
+                          <FileText className="h-3.5 w-3.5 text-teal-600" />
+                          서류 템플릿 불러오기
+                        </div>
+                        <div className="p-2 space-y-2">
+                          {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
+                              (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
+                          {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
+                          {superLoadError ? (
+                            <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center" data-testid="super-phrase-load-error">
+                              발행서류 템플릿을 불러오지 못했습니다<br />
+                              <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
+                            </div>
+                          ) : superPhrases.length === 0 ? (
+                            <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center" data-testid="super-phrase-empty">
+                              등록된 발행서류 템플릿 없음
+                            </div>
+                          ) : (
+                            superPhrases.map(sp => (
+                              <button
+                                key={sp.id}
+                                type="button"
+                                onClick={() => applySuperPhrase(sp)}
+                                disabled={gateChecking}
+                                className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
+                                data-testid="super-phrase-option"
+                              >
+                                <div className="flex items-center gap-1.5 font-medium text-xs">
+                                  {sp.name}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
+                                  {sp.diagnosis && <div className="truncate"><span className="text-foreground">진단</span> {sp.diagnosis}</div>}
+                                  {sp.clinical_progress && <div className="truncate"><span className="text-foreground">경과</span> {sp.clinical_progress}</div>}
+                                  {sp.rx_items.length > 0 && (
+                                    <div className="truncate">
+                                      <span className="text-foreground">처방 {sp.rx_items.length}개</span>{' '}
+                                      {sp.rx_items.slice(0, 2).map(i => i.name).join(', ')}
+                                      {sp.rx_items.length > 2 ? ' 외' : ''}
+                                    </div>
+                                  )}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (참조·하단) ──
+                          원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업". 소스=form_submissions(read-only·additive).
+                          T-20260807 복원: 템플릿 '불러오기' 진입점을 상단으로 올리면서 일자별 리스트는 하단 참조 위치로 이동(삭제 아님·무회귀). */}
                       <div className="rounded-lg border bg-muted/10" data-testid="issued-docs-section">
                         <div className="flex items-center gap-1.5 px-3 py-2 border-b bg-muted/20 text-xs font-semibold text-foreground">
                           <FileText className="h-3.5 w-3.5 text-teal-600" />
@@ -4609,50 +4665,6 @@ export default function MedicalChartPanel({
                           )}
                         </div>
                       </div>
-
-                      {/* 발행서류 템플릿(구 슈퍼상용구) 목록 — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
-                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">서류 템플릿</div>
-
-                      {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
-                          (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
-
-                      {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
-                      {superLoadError ? (
-                        <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="super-phrase-load-error">
-                          발행서류 템플릿을 불러오지 못했습니다<br />
-                          <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
-                        </div>
-                      ) : superPhrases.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="super-phrase-empty">
-                          등록된 발행서류 템플릿 없음
-                        </div>
-                      ) : (
-                        superPhrases.map(sp => (
-                          <button
-                            key={sp.id}
-                            type="button"
-                            onClick={() => applySuperPhrase(sp)}
-                            disabled={gateChecking}
-                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
-                            data-testid="super-phrase-option"
-                          >
-                            <div className="flex items-center gap-1.5 font-medium text-xs">
-                              {sp.name}
-                            </div>
-                            <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
-                              {sp.diagnosis && <div className="truncate"><span className="text-foreground">진단</span> {sp.diagnosis}</div>}
-                              {sp.clinical_progress && <div className="truncate"><span className="text-foreground">경과</span> {sp.clinical_progress}</div>}
-                              {sp.rx_items.length > 0 && (
-                                <div className="truncate">
-                                  <span className="text-foreground">처방 {sp.rx_items.length}개</span>{' '}
-                                  {sp.rx_items.slice(0, 2).map(i => i.name).join(', ')}
-                                  {sp.rx_items.length > 2 ? ' 외' : ''}
-                                </div>
-                              )}
-                            </div>
-                          </button>
-                        ))
-                      )}
                     </div>
                   )}
 
