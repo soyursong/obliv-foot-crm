@@ -1,4 +1,11 @@
 -- T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE  (dev-foot)
+-- ⚠ VERSION RENUMBER 20260807120000 → 20260807170000 (record-only; T-20260807-foot-INFLOW-VERSION-COLLISION-RENUMBER)
+--   근거: 원 20260807120000 이 foot_cancel_sync_outbox_emit(T-20260807-dopamine-CRM-CANCEL-CALLBACK-FOOT-COVERAGE)와
+--         version 공유 → ON CONFLICT DO NOTHING 로 본 마이그가 별도 원장명 미기록(감사추적 divergence).
+--   조치: strictly-later 미사용 slot 170000 재부여(120000~160000 旣점유). non-comment DDL body 델타 0(rename+comment-only).
+--   ⛔ 이 파일의 오브젝트(check_ins.inflow_channel_self_reported / fn_complete_prescreen_checklist / checklists Step0)는
+--      이미 prod-LIVE(20260807120000 slot 로 apply 완료, commit 27e26ec1). replay/push/재-apply 절대 금지.
+--      forward-doc ledger INSERT(record-only)는 supervisor exec-lane 전속.
 -- 키오스크(태블릿 사전 체크리스트=환자 셀프리포트) 유입경로 커버리지 lane — candidate 캡처 ONLY.
 -- 부모 T-20260801-xcrm-INFLOW-CHANNEL-11CODE-INTAKE / 선행 T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE(deploy-ready).
 -- assignee: dev-foot | db_change: true | 전량 ADDITIVE (신규 nullable 1컬럼 + fn_complete_prescreen_checklist candidate write)

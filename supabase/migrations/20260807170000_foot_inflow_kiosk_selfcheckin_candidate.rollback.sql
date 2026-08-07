@@ -1,4 +1,6 @@
 -- ROLLBACK — T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE (되돌림)
+-- ⚠ VERSION RENUMBER 20260807120000 → 20260807170000 (record-only; T-20260807-foot-INFLOW-VERSION-COLLISION-RENUMBER)
+--   오브젝트 이미 prod-LIVE(slot 120000 apply 완료) → 본 renumber 는 파일명/원장 정합만. replay/re-apply 금지.
 -- 2026-08-07 12:00 KST
 -- ⚠ forward-only 원칙상 통상 롤백 불필요(신규 nullable 컬럼·candidate write 는 canonical/하류 무영향).
 --    긴급 원복 시에만 사용. 컬럼 DROP은 candidate 데이터 유실 — 값이 이미 쌓였으면 신중.

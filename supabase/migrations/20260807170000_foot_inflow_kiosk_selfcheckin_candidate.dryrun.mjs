@@ -1,6 +1,10 @@
 /**
  * DRY-RUN (No-Persistence): T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE
- *   20260807120000_foot_inflow_kiosk_selfcheckin_candidate.sql
+ *   ⚠ RENUMBERED 20260807120000 → 20260807170000 (version-collision-renumber
+ *      T-20260807-foot-INFLOW-VERSION-COLLISION-RENUMBER, record-only). 원 20260807120000 은
+ *      foot_cancel_sync_outbox_emit 와 version 공유 → strictly-later 미사용 slot 170000 재부여.
+ *      ⛔ 오브젝트 이미 prod-LIVE → replay/re-apply 금지(dry-run n/a).
+ *   20260807170000_foot_inflow_kiosk_selfcheckin_candidate.sql
  *   (candidate hint 컬럼 check_ins.inflow_channel_self_reported nullable ADDITIVE
  *    + fn_complete_prescreen_checklist CREATE OR REPLACE = 로직 승계 + candidate write 1줄)
  *
@@ -16,7 +20,7 @@
  * post-probe (dry-run 후 ABSENT 이어야 PASS):
  *   - check_ins.inflow_channel_self_reported
  *
- * 실행: (repo root) node supabase/migrations/20260807120000_foot_inflow_kiosk_selfcheckin_candidate.dryrun.mjs
+ * 실행: (repo root) node supabase/migrations/20260807170000_foot_inflow_kiosk_selfcheckin_candidate.dryrun.mjs
  * 필요: .env.local SUPABASE_ACCESS_TOKEN (Management API PAT).
  */
 import { fileURLToPath } from 'node:url';
@@ -24,7 +28,7 @@ import { dirname, join } from 'node:path';
 import { runDryrun, columnAbsent } from '../../scripts/dryrun_lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const UP = join(here, '20260807120000_foot_inflow_kiosk_selfcheckin_candidate.sql');
+const UP = join(here, '20260807170000_foot_inflow_kiosk_selfcheckin_candidate.sql');
 
 runDryrun({
   upPath: UP,
