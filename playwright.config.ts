@@ -649,6 +649,11 @@ export default defineConfig({
         //   EXPECT_DEV_DB_REF 자동세팅=PRODREF-HARDGUARD 활성) + fail-closed(prod 오배선 abort) 순수 검증.
         //   브라우저/DB/auth/server 불요·결정론. 실 격리 컷오버 관측 = supervisor(env-diff).
         '**/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts',
+        // T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: 상담실 회차권 결제 3버튼.
+        //   VG-4 판별자(isPlanACardPayment) + AC-3 짝맞춤 진리표(상호배타) + AC-1 atomic classify 분기(승인/FAIL/ATTENTION)
+        //   + AC-1/AC-2 packageId 착지 전파. 순수 함수/판별자 단언. auth/server/page 불요, 결정론. unit 전용.
+        //   화면 배치·실 단말 승인·paid_amount 정합 = field-soak(갤탭)/browser-verify.
+        '**/T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -676,6 +681,9 @@ export default defineConfig({
         // T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER: unit 전용(순수 격리 로직) →
         //   무-project 실행 시 desktop-chrome 매칭→setup 유입 차단. unit 에서만 실행.
         '**/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts',
+        // T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: unit 전용(판별자/짝맞춤/classify 순수 단언) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT.spec.ts',
         // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: unit 전용 정적 소스 가드+순수 함수 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',

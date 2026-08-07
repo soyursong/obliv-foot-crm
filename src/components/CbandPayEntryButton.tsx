@@ -117,6 +117,29 @@ interface Props {
    *   ≤0(또는 미전달) → 자동입력 스킵(빈칸 유지, 기존 수동입력 동작 그대로).
    */
   defaultAmount?: number;
+  /**
+   * ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT — 진입/다이얼로그 라벨 오버라이드.
+   *   미전달 시 기존 '카드 단말 결제(코밴)'(회귀 0). AC-1 은 '결제 및 티켓 생성'으로 사용.
+   */
+  label?: string;
+  /**
+   * ★AC-1 — 금액칸 읽기전용(패키지 총액 고정). true 면 defaultAmount(패키지 총액)를 편집 불가로 표시.
+   *   미전달/false = 기존 편집 가능(회귀 0).
+   */
+  lockAmount?: boolean;
+  /**
+   * ★AC-1(결제 및 티켓 생성) — 전송 직전(승인 전문 send 직전) 훅. 반환값 = 이 결제가 착지할 packageId.
+   *   여기서 티켓(패키지 행)을 **먼저 생성**하고 그 id 를 반환한다 → 승인 성공 시에만 그 패키지에 결제행+미수0 착지.
+   *   null 반환(검증 실패/생성 실패) = 전송 중단(과금 0). 미전달 = 정적 packageId prop 사용(기존 동작).
+   *   ★VG-2 atomic: 이 훅으로 생성된 패키지는 정의적 FAIL(과금 미발생) 시 onSettle 에서 삭제(rollback).
+   */
+  beforeApprove?: () => Promise<string | null>;
+  /**
+   * ★AC-1 — 결제 결과 확정 후(승인/실패/확인필요/예외) 호출. r=null 은 예외(불확실).
+   *   부모가 (a)승인=닫기+리로드 (b)정의적 FAIL(r.classification==='FAIL' && !needsCheck)=티켓 삭제
+   *   (c)확인필요/예외=티켓 보존(단말 조회 후 처리)로 분기한다. 미전달 = no-op(카드 탭·AC-2 회귀 0).
+   */
+  onSettle?: (result: PaymentFlowResult | null, packageId: string | null) => void | Promise<void>;
 }
 
 /**
@@ -278,7 +301,9 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency' | 'overlimit_confirm';
 
-export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved }: Props) {
+export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved, label, lockAmount = false, beforeApprove, onSettle }: Props) {
+  // ★T-20260807-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: 라벨 오버라이드(미전달=기존 문구, 회귀 0).
+  const entryLabel = label ?? '카드 단말 결제(코밴)';
   // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value(팝업 open/reset 시 금액칸 초기값).
   //   >0 일 때만 자동입력, ≤0/미전달 → 빈칸(수동입력) 유지. resolveCbandDefaultAmount = 쉼표없는 raw 정수문자열
   //   (AmountInput 이 표시 포맷 담당). 결제·payments write 로직 무접촉(초기값만).
@@ -404,13 +429,27 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
     setUi('sending');
     setResult(null);
     cancelProbe(); // ★U2: 결제 소켓 열기 전 탐침 소켓 확실히 종료(동시 1개). send 내부에서도 재호출됨.
+    // ★T-20260807-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1 결제 및 티켓 생성) — 전송 직전 티켓 생성 훅.
+    //   beforeApprove 가 있으면 여기서 패키지(티켓)를 먼저 만들고 그 id 로 착지한다. 반환 null = 전송 중단(과금 0).
+    //   미전달이면 정적 packageId prop 사용(카드 탭·AC-2 회귀 0). ★VG-2: 승인 성공에서만 결제행이 착지(recordCatPackagePayment).
+    let effectivePackageId: string | null = packageId ?? null;
+    if (beforeApprove) {
+      try {
+        effectivePackageId = await beforeApprove();
+      } catch (e) {
+        effectivePackageId = null;
+        console.error('결제 전 티켓 생성 훅 오류:', (e as Error)?.message);
+      }
+      if (!mounted.current) return;
+      if (!effectivePackageId) { setUi('idle'); return; } // 티켓 생성/검증 실패 → 전송 안 함(과금 0·부분상태 0).
+    }
     try {
       const r = await approve(
         {
           tid: activeCfg.tid, merno: activeCfg.merno, catPort: activeCfg.catPort,
           amount: amountNum, clinicId, customerId, checkInId: checkInId ?? null,
           // ★PKG-PAY-EXPAND(AC-1): 비-null → package_payments 착지(payments 아님). 카드 탭(미전달)=payments 회귀 0.
-          packageId: packageId ?? null,
+          packageId: effectivePackageId,
           // ★HALBU 가변 전송 — 실효 개월(5만원↓/일시불=0 → HALBU "00", 회귀 무영향). formatHalbu 가 "02"~"12" 조립.
           installmentMonths: effectiveInstallment,
         },
@@ -423,12 +462,16 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       setUi(r.needsCheck ? 'attention' : r.classification === 'APPROVED' ? 'approved' : 'failed');
       // ★AC-3: 승인 성립 시 상위 목록 갱신(패키지 잔금·결제이력 즉시 반영). 미전달(카드 탭)=no-op.
       if (!r.needsCheck && r.classification === 'APPROVED') onApproved?.();
+      // ★AC-1 rollback 훅 — 부모가 정의적 FAIL(과금 미발생) 시 티켓 삭제, 승인=닫기+리로드로 분기.
+      if (onSettle) await onSettle(r, effectivePackageId);
     } catch (e) {
       if (!mounted.current) return;
       // 예외(조립 실패 등)는 안전측(정지)로. 승인 성립 가능성 배제 못하면 확인필요.
       setResult(null);
       setUi('failed');
       console.error('코밴 결제 오류:', (e as Error)?.message);
+      // ★AC-1: 예외(불확실=과금 배제 못함) → r=null 전달. 부모는 삭제하지 않고 티켓 보존(단말 조회 후 처리).
+      if (onSettle) await onSettle(null, effectivePackageId);
     }
   }
 
@@ -549,7 +592,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
           ? (<><Loader2 className="h-3.5 w-3.5 animate-spin" /> 확인 중…</>)
           : (
             <>
-              <CreditCard className="h-3.5 w-3.5" /> 카드 단말 결제(코밴)
+              <CreditCard className="h-3.5 w-3.5" /> {entryLabel}
               {/* T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE AC-1: 첫 도입 시범 표시. 안정화 후 별도 티켓으로 제거. */}
               <span
                 className="ml-1 rounded-sm bg-amber-100 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-amber-700"
@@ -565,7 +608,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
         <DialogContent className="sm:max-w-md" data-testid="cband-pay-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5 text-emerald-600" /> 카드 단말 결제(코밴)
+              <CreditCard className="h-5 w-5 text-emerald-600" /> {entryLabel}
               {/* T-20260803-foot-CBAND-DIRECTPAY-BETA-BADGE AC-1: 시범 표시(버튼과 동일 맥락). */}
               <span
                 className="rounded-sm bg-amber-100 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-amber-700"
@@ -586,12 +629,17 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                 <AmountInput
                   value={amount}
                   onChange={setAmount}
-                  disabled={ui === 'sending'}
+                  disabled={ui === 'sending' || lockAmount}
                   className="h-14 text-2xl text-right"
                   data-testid="cband-amount-input"
                   inputMode="numeric"
                   placeholder="0"
                 />
+                {lockAmount && amountNum > 0 && (
+                  <p className="text-right text-[11px] text-muted-foreground" data-testid="cband-amount-locked-hint">
+                    패키지 총액으로 결제합니다
+                  </p>
+                )}
                 {amountNum > 0 && (
                   <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
                 )}

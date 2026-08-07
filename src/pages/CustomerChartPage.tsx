@@ -70,6 +70,9 @@ import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { shouldLinkCheckInPackage } from '@/lib/checkInPackageLink';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+// ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT — 상담실 회차권 판매 화면 코밴 CAT 결제(AC-1/AC-2).
+import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import { isCbandPayEnabled, type PaymentFlowResult } from '@/lib/cband/paymentFlow';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
 import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
@@ -4348,6 +4351,26 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
   };
 
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1/AC-2) — 코밴 결제/취소 후 패키지+결제/미수 재조회.
+  //   packages(remaining 포함) + package_payments 를 함께 갱신해 잔금(미수) 칩·결제이력이 즉시 반영되게 한다.
+  //   onCreated(구입 티켓 추가 다이얼로그) 및 AC-2([결제]) 승인 콜백 공용.
+  const reloadPackagesAndPayments = async () => {
+    const [pkgRes, payRes] = await Promise.all([
+      supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),
+      supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+    ]);
+    const pkgs = (pkgRes.data ?? []) as PackageWithRemaining[];
+    if (pkgs.length > 0) {
+      const pkgIds = pkgs.map((p) => p.id);
+      const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
+      const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
+      setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+    } else {
+      setPackages([]);
+    }
+    setPkgPayments((payRes.data ?? []) as PackagePayment[]);
+  };
+
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정 저장
   const saveEditSession = async () => {
     if (!editSessionDlg) return;
@@ -7654,6 +7677,21 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                     <span className="tabular-nums">잔금 {balanceChip(consultSt, consultDue)}</span>
                                   </div>
                                 )}
+                                {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-2) — 티켓별 [결제] BETA.
+                                    미수(잔금)>0 인 티켓에만 노출(미수0=숨김). 기능플래그 ON PC 한정. 결제 시 그 티켓의
+                                    미수가 차감(package_payments 착지 + paid_amount 재계산). 카드선삽입·5백만·할부·재시도차단 자동계승. */}
+                                {isCbandPayEnabled() && isStaffUnlockRole(profile?.role) && pkgDue > 0 && (
+                                  <div className="pt-1" data-testid={`ac2-pay-ticket-${p.id}`}>
+                                    <CbandPayEntryButton
+                                      packageId={p.id}
+                                      clinicId={customer?.clinic_id ?? ''}
+                                      customerId={customerId ?? null}
+                                      defaultAmount={pkgDue}
+                                      label="결제"
+                                      onApproved={reloadPackagesAndPayments}
+                                    />
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
@@ -9975,17 +10013,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
           onOpenChange={setOpenPackagePurchase}
           onCreated={async () => {
             setOpenPackagePurchase(false);
-            // T-20260522-foot-PERF-TUNING OPT-4: packages + package_sessions 병렬 조회 → remaining 클라이언트 집계 (N RPC 제거)
-            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });  // T-20260520-foot-PKG-SORT
-            const pkgs = (pkgRes.data ?? []) as Package[];
-            if (pkgs.length > 0) {
-              const pkgIds = pkgs.map((p) => p.id);
-              const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
-              const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
-              setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
-            } else {
-              setPackages([]);
-            }
+            // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: packages + package_payments 동시 갱신
+            //   (AC-1 [결제 및 티켓 생성] 성공 시 새 티켓의 미수0 이 즉시 반영되도록 pkgPayments 도 함께 리로드).
+            await reloadPackagesAndPayments();
           }}
         />
       )}
@@ -10564,14 +10594,11 @@ function PackagePurchaseFromTemplateDialog({
     if (!alreadyInGroup && inGroup.length > 0) applyTemplate(inGroup[0]);
   };
 
-  const submit = async () => {
-    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
-    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
-    // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
-    //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
-    setSubmitting(true);
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT — packages INSERT payload SSOT.
+  //   submit()([구입 티켓 생성]) 과 createPackageForPayment()([결제 및 티켓 생성] AC-1) 공용(중복 제거·정합 보장).
+  const buildPackageInsertPayload = () => {
     const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-    const { error } = await supabase.from('packages').insert({
+    return {
       clinic_id: clinicId,
       customer_id: customerId,
       package_name: packageName.trim(),
@@ -10606,10 +10633,32 @@ function PackagePurchaseFromTemplateDialog({
       paid_amount: 0,
       status: 'active',
       memo: memo.trim() || null,
-    });
+    };
+  };
+
+  const submit = async () => {
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
+    //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
+    setSubmitting(true);
+    const { error } = await supabase.from('packages').insert(buildPackageInsertPayload());
     setSubmitting(false);
     if (error) { toast.error(`생성 실패: ${error.message}`); return; }
     onCreated();
+  };
+
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] 전송 직전 훅.
+  //   티켓(패키지)을 먼저 INSERT 하고 id 를 반환한다 → 승인 성공 시에만 그 패키지에 package_payments 결제행 + paid_amount=총액(미수0)
+  //   착지(recordCatPackagePayment). 검증/생성 실패 = null(전송 중단·과금 0). 정의적 FAIL 시 onSettle 이 이 패키지를 삭제(rollback·VG-2).
+  //   ★기존 [구입 티켓 생성](submit) 무삭제·무변경 — 결제 없이 티켓만 만드는 케이스 그대로 유지(reporter §2-2).
+  const createPackageForPayment = async (): Promise<string | null> => {
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return null; }
+    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return null; }
+    const { data, error } = await supabase.from('packages').insert(buildPackageInsertPayload()).select('id');
+    // ★VG-4/W2 rows-affected assert: 0행+error=null(RLS/스코프)도 실패로 승격(추적 불가 상태로 과금 금지).
+    if (error || !data?.[0]?.id) { toast.error(`티켓 생성 실패: ${error?.message ?? '0행 반영(권한 확인)'}`); return null; }
+    return data[0].id as string;
   };
 
   // T-20260510-foot-PKG-ROUTE-UNIFY: 템플릿 추가 후 생성 (템플릿 저장 + 패키지 생성)
@@ -11174,6 +11223,36 @@ function PackagePurchaseFromTemplateDialog({
             {submitting ? '저장 중…' : '구입 티켓 생성'}
           </button>
         </div>
+
+        {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] BETA.
+            기존 3버튼([취소]/[템플릿추가후생성]/[구입 티켓 생성]) 무삭제·옆(아래)에 추가. 기능플래그 ON PC 에서만 노출.
+            흐름: 패키지 총액 자동 전송 → 카드 승인 → 승인 성공 시에만 티켓 생성 + 결제행 + 미수0(ATOMIC).
+            승인 실패(과금 미발생) → 생성한 티켓 삭제(rollback). 확인필요/예외(불확실) → 티켓 보존(단말 조회 후 처리).
+            -14 카드선삽입 안내·8324·5백만 경고·할부·응답유실 재시도차단 = CbandPayEntryButton CAT 스택 자동계승(reporter §7). */}
+        {isCbandPayEnabled() && totalSessions > 0 && (
+          <div className="mt-2 border-t border-dashed border-emerald-200 pt-2" data-testid="ac1-pay-and-create-ticket">
+            <CbandPayEntryButton
+              clinicId={clinicId}
+              customerId={customerId}
+              defaultAmount={grandTotal}
+              lockAmount
+              label="결제 및 티켓 생성"
+              beforeApprove={createPackageForPayment}
+              onSettle={async (r: PaymentFlowResult | null, pkgId: string | null) => {
+                // ★VG-2 atomic: 승인=닫기+리로드 / 정의적 FAIL(과금 미발생 확정)=티켓 삭제 / 확인필요·예외=티켓 보존(AC-2 로 후결제).
+                if (r && !r.needsCheck && r.classification === 'APPROVED') { onCreated(); return; }
+                if (r && !r.needsCheck && r.classification === 'FAIL' && pkgId) {
+                  const { error } = await supabase.from('packages').delete().eq('id', pkgId);
+                  if (error) console.error(`[AC-1 rollback] 미결제 티켓 삭제 실패(id=${pkgId}):`, error.message);
+                }
+                // 확인필요(needsCheck)/예외(r=null) → 삭제하지 않음(과금 가능성 배제 못함). 미수 티켓으로 남겨 단말 조회 후 처리.
+              }}
+            />
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              카드 승인 후 티켓이 함께 생성됩니다. 승인 실패 시 티켓은 만들어지지 않습니다.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
