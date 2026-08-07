@@ -74,6 +74,12 @@ import { useAuth } from '@/lib/auth';
 //   두 헬퍼는 완료 이동(handleDrop) 경로가 소유 → 여기 import 제거(unused). 로직 이관 아님, 부수효과 위치 원복.
 import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { isLaserService } from '@/lib/laserService';
+// T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 건강생활유지비 잔액 방문 간 이월(satellite).
+import {
+  loadHealthMaintenanceBalance,
+  persistHealthMaintenanceSnapshot,
+  isSnapshotStale,
+} from '@/lib/healthMaintenanceBalance';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
@@ -1039,6 +1045,16 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const [healthMaintenanceBalance, setHealthMaintenanceBalance] = useState<number>(0); // 스태프 직접입력 잔액
   const [healthFeeApplied, setHealthFeeApplied] = useState<boolean>(false);            // '공단 차감' 클릭 적용 여부
 
+  // ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 잔액 방문 간 이월(satellite) ──
+  //   PRIMARY = satellite 1:1 스냅샷{verified_balance, verified_at, verified_by}. 현재잔액 = DERIVED
+  //   (verified_balance − Σ(HM payments >= verified_at)) → decrement write 없음, Σ(payments)==payableTotal 불변.
+  //   진입 시 로더가 현재잔액을 파생해 healthMaintenanceBalance 를 prefill(이월). 스태프가 재확인·입력 후
+  //   [잔액 저장]으로 스냅샷 갱신. verified_at 월 경계 넘으면 stale(재확인 유도, DoD#3).
+  const [hmSnapshotBalance, setHmSnapshotBalance] = useState<number | null>(null); // 로드된 검증잔액(파생 현재값)
+  const [hmIsStale, setHmIsStale] = useState<boolean>(false);                       // 월전환 재확인 대상(verified_at 파생)
+  const [hmSaving, setHmSaving] = useState<boolean>(false);
+  const [hmSaved, setHmSaved] = useState<boolean>(false);                           // 이번 세션 저장 완료 표기
+
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
@@ -1192,8 +1208,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   → [수납] 버튼 재활성. (동일 방문 리페치는 [checkIn?.id] 미변으로 이 effect 미재실행 → 창 유지 상태 보존.)
     setSettled(false);
     // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: 새 방문 진입 시 공단 차감 상태 리셋(잔액 입력·적용 초기화).
+    //   T-20260807-BALANCE-NOTPERSISTED: 이월 상태도 초기화 — 실제 잔액은 아래 loader effect(grade=medical_aid_1)
+    //   가 satellite 스냅샷에서 현재잔액을 파생해 prefill 한다(이월). 여기선 0 으로 리셋만.
     setHealthMaintenanceBalance(0);
     setHealthFeeApplied(false);
+    setHmSnapshotBalance(null);
+    setHmIsStale(false);
+    setHmSaved(false);
     setPayMethod('card');
     // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
     setSplitMode(false);
@@ -1412,6 +1433,30 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         .then(({ data }) => setStaffId(data?.id ?? null));
     });
   }, [checkIn?.clinic_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 건강생활유지비 잔액 이월 로더 ──
+  //   grade=medical_aid_1 로 확정된 뒤 satellite 스냅샷을 읽어 현재잔액(DERIVED)을 prefill(이월).
+  //   스냅샷 없으면 잔액 0 유지(최초 입력). 월 경계 넘으면 stale 표기(재확인 유도). 파생 전용 — 원장 무접점.
+  useEffect(() => {
+    const customerId = checkIn?.customer_id;
+    if (!customerId || customerInsuranceGrade !== 'medical_aid_1') return;
+    let cancelled = false;
+    (async () => {
+      const state = await loadHealthMaintenanceBalance(customerId);
+      if (cancelled) return;
+      if (state.snapshot) {
+        setHealthMaintenanceBalance(state.current); // 파생 현재잔액 이월(0 초기화 아님)
+        setHmSnapshotBalance(state.current);
+        setHmIsStale(state.isStale);
+      } else {
+        setHmSnapshotBalance(null);
+        setHmIsStale(false);
+      }
+      setHmSaved(false);
+      setHealthFeeApplied(false);
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn?.customer_id, customerInsuranceGrade]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 판매 치료사 후보(clinic active therapist) 로드.
   //   role='therapist' — Reservations/Dashboard 등에서 쓰는 동일 필터 재사용(신규 어휘 발명 금지).
@@ -1969,6 +2014,34 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const healthFeeDeducted = healthFeeApplied && healthFeeEligible ? healthFeeDeductable : 0;
   const healthFeeRemainingBalance = Math.max(0, healthMaintenanceBalance - healthFeeDeducted); // 차감 후 갱신 잔액(표기)
   const netPayableAfterHealthFee = Math.max(0, payableTotalWithSurcharge - healthFeeDeducted);  // 공단 차감 반영 실수납액
+
+  // ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 잔액 저장(스냅샷 영속) ──
+  //   dirty = 입력 잔액이 로드된 스냅샷 파생값과 다르거나(재확인), 스냅샷이 아예 없거나(최초), stale(월전환).
+  //   → 이 경우에만 [잔액 저장] 활성(불필요한 write 억제). 저장 = verified snapshot upsert(decrement write 아님).
+  const hmDirty =
+    isMedicalAid1 &&
+    healthMaintenanceBalance > 0 &&
+    (hmSnapshotBalance === null || healthMaintenanceBalance !== hmSnapshotBalance || hmIsStale);
+  const handleSaveHmBalance = async () => {
+    if (!checkIn?.customer_id || !checkIn?.clinic_id || healthMaintenanceBalance <= 0) return;
+    setHmSaving(true);
+    const { error, verifiedAt } = await persistHealthMaintenanceSnapshot({
+      customerId: checkIn.customer_id,
+      clinicId: checkIn.clinic_id,
+      verifiedBalance: healthMaintenanceBalance,
+      verifiedBy: staffId,
+    });
+    setHmSaving(false);
+    if (error) {
+      toast.error('건강생활유지비 잔액 저장에 실패했습니다.');
+      return;
+    }
+    // 저장 성공 → 스냅샷 재기준선화(verified_at=now, 파생 0). stale 해제. 이월 baseline 갱신.
+    setHmSnapshotBalance(healthMaintenanceBalance);
+    setHmIsStale(isSnapshotStale(verifiedAt));
+    setHmSaved(true);
+    toast.success('건강생활유지비 잔액이 저장되어 다음 방문에 이월됩니다.');
+  };
 
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
@@ -3721,6 +3794,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                         <div className="text-xs font-semibold text-teal-800">
                           의료급여 1종 · 건강생활유지비 공단 차감
                         </div>
+                        {/* ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 이월/월전환 안내 ──
+                            stale(월 경계 넘음) 시 amber 재확인 유도(DoD#3, 무기한 이월 금지). 아니면 저장된
+                            잔액이 이월됐음을 teal 로 안내(DoD#1). 스냅샷 없으면(최초) 배너 없음. */}
+                        {hmIsStale ? (
+                          <div
+                            data-testid="hm-stale-banner"
+                            className="rounded border border-amber-400 bg-amber-50 px-2 py-1 text-[11px] leading-tight text-amber-800"
+                          >
+                            월이 바뀌었습니다. 공단 포털에서 잔액을 다시 확인해 입력·저장해 주세요.
+                          </div>
+                        ) : (
+                          hmSnapshotBalance !== null && (
+                            <div
+                              data-testid="hm-carryover-note"
+                              className="text-[11px] leading-tight text-teal-700"
+                            >
+                              저장된 잔액이 이월되었습니다.
+                            </div>
+                          )
+                        )}
                         {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC1): 좁은 산정 컬럼(sm:w-56~lg:w-64)
                             에서 [라벨·input·원] 가로 배치가 input을 짓눌러 긴 placeholder 가 잘리고 비율이 어긋났다.
                             → 라벨을 input 위로 스택 + input min-w-0 full-width + placeholder 축약으로 비율 정렬. */}
@@ -3743,6 +3836,31 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                             <span className="shrink-0 text-xs text-muted-foreground">원</span>
                           </div>
                         </div>
+                        {/* ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 잔액 저장(이월) ──
+                            입력 잔액을 satellite 스냅샷으로 영속 → 다음 방문 이월(DoD#1). dirty(최초/재확인/월전환)일 때만
+                            활성. 저장 완료 & 미변경이면 '저장됨' 표기. 차감 적용/수납완료 후엔 비활성(스냅샷 고정). */}
+                        {!healthFeeApplied && !settled && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-muted-foreground">
+                              {hmSaved && !hmDirty
+                                ? '저장됨 · 다음 방문 이월'
+                                : hmSnapshotBalance !== null
+                                  ? '잔액 변경 시 저장'
+                                  : '입력 후 저장하면 이월됩니다'}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              data-testid="hm-save-balance"
+                              className="h-8 shrink-0 border-teal-400 text-teal-700 hover:bg-teal-100 text-xs font-semibold"
+                              disabled={!hmDirty || hmSaving}
+                              onClick={handleSaveHmBalance}
+                            >
+                              {hmSaving ? '저장 중…' : '잔액 저장'}
+                            </Button>
+                          </div>
+                        )}
                         {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC2): 건강생활유지비 잔액 상시 표기 복구.
                             구현: 차감 후 잔액이 '적용 클릭 후' + muted 톤으로만 노출돼 현장에서 '안 보임' 회귀. 잔액 입력
                             즉시(적용 전) 현재 잔액을 teal 톤으로 노출해 스태프가 확인 가능하게 한다(적용 후 잔액은 아래 상세). */}
