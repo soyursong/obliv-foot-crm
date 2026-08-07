@@ -63,4 +63,11 @@ GRANT  EXECUTE ON FUNCTION public.fn_complete_prescreen_checklist(UUID, JSONB, T
 -- Step 1 원복: candidate 컬럼 제거 (candidate 값 유실 주의 — forward-only라 통상 유지 권장)
 ALTER TABLE public.check_ins DROP COLUMN IF EXISTS inflow_channel_self_reported;
 
+-- ⚠ Step 0(checklists.storage_path / started_at)은 롤백하지 않는다(의도적 비대칭).
+--   근거: 이 2컬럼은 본 티켓 feature 가 아니라 선언정본 20260506000030 이 declared 했으나 prod 로
+--   드리프트한 원장 정합 복원(Ledger Reconciliation). storage_path 는 LIVE 함수(Step 2 복원본 포함)와
+--   FE(p_storage_path)가 참조하는 살아있는 컬럼 → DROP 하면 함수 INSERT 가 다시 42703 로 깨진다.
+--   따라서 rollback 후에도 storage_path/started_at 는 존치(forward-doc 재수렴 불변).
+--   ALTER TABLE public.checklists DROP COLUMN storage_path;  -- ← 절대 실행 금지
+
 NOTIFY pgrst, 'reload schema';

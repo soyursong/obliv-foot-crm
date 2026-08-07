@@ -22,6 +22,41 @@
 --   · 멱등: ADD COLUMN IF NOT EXISTS / CREATE OR REPLACE FUNCTION.
 -- ⚠ top-level BEGIN/COMMIT 없음(무영속 dry-run 러너 harness 호환, migration_dryrun_no_persistence_standard.md v1.0).
 -- =====================================================
+-- ⚠ FIX (2026-08-07, FIX-REQUEST MSG-20260807-160622-wyme / supervisor NO-GO C12 REF-COLUMN GUARD):
+--   [근본원인 — prod 실측(Management API/information_schema, 파일 lineage 아님)]
+--     checklists 실컬럼집합 = {id,clinic_id,customer_id,check_in_id,checklist_data,completed_at,created_at}.
+--     → 선언 정본 20260506000030_checklists_table.sql 의 storage_path·started_at 2컬럼이 prod 에 미착지(드리프트).
+--     → 본 함수 Step1 INSERT 가 참조하는 checklists.storage_path 가 prod-ABSENT → 42703 로 Step1 abort →
+--        Step5 candidate write(이 티켓 feature) 도달불가 = 기능 by-construction 무력.
+--     → LIVE 함수(pg_get_functiondef md5=9294361a4590aa1597dbbf83f3afe927, 2026-08-07 Management API 재실측)도
+--        동일 storage_path INSERT 를 이미 참조(pg_get_functiondef 내 'storage_path' position=113·prosecdef=t·
+--        proconfig={search_path=""}·anon EXECUTE=t) = 키오스크 체크리스트 제출 전반이 현재도 latent 42703 로
+--        깨진 상태(check_function_bodies=off 라 CREATE 시 미검출).
+--     → C12 REF-COLUMN GUARD 재실행(mig_ref_column_guard.py, Management API introspection): verdict=PASS·
+--        storage_path=resolved_in_set(Step0 선행 ADD COLUMN)·나머지 12ref=mgmt:present·absent=[]·order_violation=[].
+--   [해소 — 옵션 A(ADDITIVE 원장 정합 복원), Migration Ledger Reconciliation SOP 준거]
+--     Step 0 신설: 선언 정본(20260506000030) 이 의도했으나 prod 로 드리프트한 checklists.storage_path·started_at 을
+--     ADD COLUMN IF NOT EXISTS 로 복원(nullable/defaulted, 0-row 테이블 → 무손상·무집계영향).
+--     · storage_path = FE(TabletChecklistPage.tsx:407 / HealthQMobilePage.tsx:515)가 p_storage_path(합본 PDF 경로)로
+--       실제 전달 중 → 살아있는 feature(옵션 B 폐기판단은 오답). 복원 후 함수 INSERT 정상화 →
+--       candidate write(Step5) 도달가능 + 키오스크 체크리스트 제출 전반의 latent 42703 동반 해소(별 P0 성격).
+--     · started_at = 동일 선언표에서 함께 드리프트(함수 미참조라 blocking 은 아니나 원장 정합 위해 동반 복원).
+--   [종이선언 db-repair 아님] 정본=prod 실재 기준. 20260506000030 은 CREATE TABLE 로 이 2컬럼을 declared →
+--     prod 로 미착지분을 ADDITIVE 로 정직 재수렴(forward-doc). DROP/타입변경/enum 0.
+-- =====================================================
+
+-- ════════════════════════════════════════════════════════════════════
+-- Step 0: [LEDGER RECONCILIATION] checklists 선언정본(20260506000030) 드리프트 복원 (ADDITIVE)
+--   prod 실측 상 storage_path·started_at 미착지 → 함수 Step1 INSERT(storage_path) 42703 원천.
+--   IF NOT EXISTS 멱등 · nullable/defaulted · 0-row 테이블 → 무손상.
+-- ════════════════════════════════════════════════════════════════════
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS storage_path TEXT;
+COMMENT ON COLUMN public.checklists.storage_path IS
+  'documents 버킷 합본 PDF(체크리스트+개인정보) 경로 (선택). 선언정본 20260506000030 declared intent 를 '
+  'prod 드리프트에서 ADDITIVE 복원(FIX-REQUEST MSG-20260807-160622-wyme, C12). FE p_storage_path 로 전달됨.';
+ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ DEFAULT now();
+COMMENT ON COLUMN public.checklists.started_at IS
+  '체크리스트 작성 시작시각 (선언정본 20260506000030 declared intent, ADDITIVE 복원). 함수 미참조(DEFAULT now()).';
 
 -- ════════════════════════════════════════════════════════════════════
 -- Step 1: candidate hint 컬럼 (nullable ADDITIVE) — 환자 셀프리포트 lower-trust 착지점
