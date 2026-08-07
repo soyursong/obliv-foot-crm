@@ -861,7 +861,16 @@ export default function Assignments() {
       if (ci.status === 'cancelled') continue;
       if (ci.consultant_id) {
         const s = staff.find((x) => x.id === ci.consultant_id);
-        if (s && s.role === 'consultant') {
+        // T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID 결정①(방법 C · 김주연 총괄 confirm 2026-08-07):
+        //   KPI '상담 배정 수'(직원별 누적) = [확정] 클릭된 배정만 count. [확정] 미클릭(consult_notify_status IS NULL)
+        //   auto_assign 배정은 집계 제외 → "확정 없이 자동 카운팅 금지". 박효식(F-5716)類 phantom(미상담·미확정 auto)
+        //   전건이 NULL → 이 게이트로 즉시 자동 제외(write 무접촉·파괴적 backfill 불요).
+        //   ★게이트 술어 = consult_notify_status IS NOT NULL(='sending'|'sent'|'failed') = "[확정] 클릭됨"(내구 신호).
+        //     'sent' 단독 금지 — CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN(ebbd230a) 후 Slack 발송 실패는 'failed'
+        //     (channel_gone) / 'sending'(transient 재시도)로 착지(NULL 롤백 아님)이며 그 배정도 [확정] 클릭된 정당
+        //     배정 → 미계수 시 under-count. IS NOT NULL 은 pre/post DECOUPLE 양쪽에서 정확(merge-order 무관 안전).
+        //   ⚠ 상담축 한정 — 치료(therapist_id)축은 [확정]/notify 개념 부재 → 아래 therapy 분기는 게이트 미적용(불변).
+        if (s && s.role === 'consultant' && ci.consult_notify_status != null) {
           // 상담축: COALESCE(수동 assignment_consult_type, recency deriveConsultAxis) → 3-state effective.
           bumpAssign(
             ensure(s),

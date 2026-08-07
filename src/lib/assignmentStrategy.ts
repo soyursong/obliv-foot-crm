@@ -438,6 +438,16 @@ export async function fetchPresentEnabledConsultants(clinicId: string): Promise<
  * 오늘(KST) staffId별 배정건수 = assignment_actions count(*)
  *   WHERE to_staff_id AND action_type IN (auto_assign, manual) AND created_at::date = today.
  * 물리 카운터 없음(조건①). role='consult' 로 상담 배정만 집계.
+ *
+ * T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID 결정②(no-show void · 김주연 총괄 confirm 2026-08-07):
+ *   [미상담 귀가](cancelled/soft-delete) 전환된 배정은 부하분산(다음 배정 대상 계산)에서 제외 → 그 실장이
+ *   '점유 중' 으로 오판돼 차기 배정에서 누락되지 않도록 = "no-show 미계수" default(Q3). append-only audit
+ *   (assignment_actions)는 보존하고, 앵커 check_in 이 cancelled 또는 deleted_at 이면 부하 count 에서만 제외
+ *   (check_ins!inner 조인 후 JS 필터 — 임베드 WHERE 의존 회피).
+ *   ⚠ 결정①(consult_notify_status 게이트)은 여기 미적용 = dev-foot 부하 공정성 판단(FOLLOWUP 보고):
+ *     아직 [확정] 전이지만 대기 중인 활성 배정을 부하축에서 빼면 그 실장에게 차기 배정이 쏠려(pile-up)
+ *     공정성이 깨진다. 따라서 부하축은 '취소/삭제(no-show void)'만 제외하고 미확정-활성 배정은 계속 계수.
+ *     (결정① 확정 게이트는 KPI 표시 count[Assignments.tsx staffStats]에만 적용 — 인센티브 KPI 축.)
  */
 export async function fetchTodayConsultAssignCounts(clinicId: string): Promise<Map<string, number>> {
   const m = new Map<string, number>();
@@ -447,13 +457,23 @@ export async function fetchTodayConsultAssignCounts(clinicId: string): Promise<M
     const dayEnd = `${today}T23:59:59.999+09:00`;
     const { data } = await supabase
       .from('assignment_actions')
-      .select('to_staff_id, action_type, role, created_at')
+      // 앵커 check_in 상태 조인(FK check_in_id → check_ins) — no-show void(취소/soft-delete) 부하축 제외용.
+      .select('to_staff_id, action_type, role, created_at, check_ins!inner(status, deleted_at)')
       .eq('clinic_id', clinicId)
       .eq('role', 'consult')
       .in('action_type', ['auto_assign', 'manual'])
       .gte('created_at', dayStart)
       .lte('created_at', dayEnd);
-    for (const r of (data ?? []) as { to_staff_id: string | null }[]) {
+    for (const r of (data ?? []) as {
+      to_staff_id: string | null;
+      check_ins:
+        | { status: string | null; deleted_at: string | null }
+        | { status: string | null; deleted_at: string | null }[]
+        | null;
+    }[]) {
+      const ci = Array.isArray(r.check_ins) ? r.check_ins[0] : r.check_ins;
+      // 결정②: 미상담 귀가(cancelled) / soft-hide(deleted_at) 배정은 부하 count 제외(no-show void).
+      if (!ci || ci.status === 'cancelled' || ci.deleted_at != null) continue;
       if (r.to_staff_id) m.set(r.to_staff_id, (m.get(r.to_staff_id) ?? 0) + 1);
     }
     return m;
