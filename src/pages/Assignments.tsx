@@ -36,7 +36,9 @@ import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/l
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
 //   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
-import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
+// T-20260807-foot-RANKING-STAFFATTR-CONSULTANT-TO-STAFF: 랭킹 탭 귀속축 = assigned_staff_id('2번차트 담당 실장').
+//   fetchConsultantPerf(consultant 축, 통계 매출탭 공유 RPC)는 무접촉 — 랭킹 소비경로는 assigned_staff 축 helper 로 교체.
+import { fetchConsultantPerfByAssignedStaff, type ConsultantRow } from '@/lib/stats';
 // T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC §5: '당월 배정 예상 비율' = 기존 배정비율 설정값 재사용(신규 저장 0).
 //   배정 비율 설정값 = assignment_daily_target_config(top/bottom) + interpolateDailyTargets 랭크별 목표(플레이북 [실행 1b]).
 //   비율 = 랭크별 목표 ÷ Σ목표(스케일 불변). 재발명 금지 — 자동배정 엔진과 동일 산식 SSOT 소비. DB 무변경(READ-only).
@@ -166,12 +168,12 @@ async function fetchRankingSourceWithMonthFallback(
   monthStart: string,
   to: string,
 ): Promise<ConsultantRow[]> {
-  const monthRows = await fetchConsultantPerf(clinicId, monthStart, to);
+  const monthRows = await fetchConsultantPerfByAssignedStaff(clinicId, monthStart, to);
   const needFallback = monthRows.length === 0 || monthStart === to;
   if (!needFallback) return monthRows; // 당월 모수 존재 & 월 첫날 아님 → 기존 동작 불변
   const prevMonthEnd = isoAddDays(monthStart, -1); // 전월 말일
   const prevMonthStart = monthStartOfIso(prevMonthEnd); // 전월 1일
-  const prevRows = await fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd);
+  const prevRows = await fetchConsultantPerfByAssignedStaff(clinicId, prevMonthStart, prevMonthEnd);
   // 전월도 공백(신규 오픈 등)이면 당월 결과 유지 — 폴백이 상황을 악화시키지 않음(빈 표시 유지, 회귀0).
   return prevRows.length > 0 ? prevRows : monthRows;
 }
@@ -1081,7 +1083,8 @@ export default function Assignments() {
   }, [clinic, mainTab, fetchNextWeekTargets]);
 
   // ── T-20260729-foot-ASSIGN-TARGETCOL: '일일 배정 목표' 산식 입력 3종 병렬 조회 ──────────────
-  //   ① 선택일 월누적 매출(랭킹 순서) = fetchConsultantPerf(선택일 1일~선택일) — 랭킹 탭과 동일 진입점(SECDEF admin-gated).
+  //   ① 선택일 월누적 매출(랭킹 순서) = fetchConsultantPerfByAssignedStaff(선택일 1일~선택일) — 랭킹 탭과 동일 소스.
+  //     T-20260807-foot-RANKING-STAFFATTR: 귀속축 = customers.assigned_staff_id('2번차트 담당 실장'). 배정비율 SSOT 정합.
   //   ② 하루 목표건수 config(top/bottom) = fetchDailyTargetConfig — 랭킹 비율 SSOT 입력.
   //   ③ 선택일 초진 예약 수 = reservations(visit_type='new' + status!=cancelled + reservation_date=선택일).
   //      술어 SSOT = fetchNextWeekTargets/monthInitResvCount 와 동일(취소 제외). day 경계 = [selectedDate, +1일).
@@ -1137,8 +1140,11 @@ export default function Assignments() {
   }, [clinic, canViewRanking, mainTab, fetchDailyTargetInputs]);
 
   // ── [랭킹] 탭 (T-20260726-...-ADMINLOCK + T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC) ──────
-  //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
-  //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 산출값을 date-range 재호출로 read-only 소비.
+  //  · 데이터 소스 = fetchConsultantPerfByAssignedStaff (T-20260807-foot-RANKING-STAFFATTR):
+  //    귀속축 = customers.assigned_staff_id('2번차트 담당 실장' = 고객 카드 담당자, 8/6 총괄 확정 canonical).
+  //    매출집계>담당실장별(SalesDoctorTab)과 동일 귀속축(assigned_staff_id) 사용 → 두 화면 귀속기준 일치.
+  //    net(환불 차감 후, 랭킹 유지) · 재직 상담실장 로스터 · 시뮬레이션 고객 제외 · date-range read-only 재호출.
+  //    (구 consultant 축 RPC foot_stats_consultant 는 통계 매출탭 전용으로 무접촉 — 축 혼재 회귀 방지.)
   //  · #1 선택일(rankingDate) 기준 6-read 병렬(모두 READ, DB 무변경):
   //     ① 월매출(1일~선택일) = 순위 기준  ② 전주매출(직전주 월~일)  ③ 이번주매출(이번주 월~선택일, 변동표용)
   //     ④ 당일 배정건수(check_ins.consultant_id — 배정 SSOT, deleted_at + cancelled 제외)  ⑤ 당월 초진예약 총건수
@@ -1163,10 +1169,10 @@ export default function Assignments() {
           // 월경계 폴백(MONTHBOUNDARY-WINDOW-FIX): 월 첫날/당월 공백이면 전월 전체로 랭킹 모수 채움.
           //   당월 순위·배정비율·예상건수 소스(perfRows) 정정. 전주/이번주/전월 변동표 소스는 불변.
           fetchRankingSourceWithMonthFallback(clinicId, monthStart, rankingDate),
-          fetchConsultantPerf(clinicId, prevWeekMon, prevWeekSun),
-          fetchConsultantPerf(clinicId, thisWeekMon, rankingDate),
-          // 월간 변동표 전월 순위 소스(전월 1일~말일). 동일 엔진·동일 R1 정합(재직/clinic/deleted_at) 계승.
-          fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd),
+          fetchConsultantPerfByAssignedStaff(clinicId, prevWeekMon, prevWeekSun),
+          fetchConsultantPerfByAssignedStaff(clinicId, thisWeekMon, rankingDate),
+          // 월간 변동표 전월 순위 소스(전월 1일~말일). 동일 assigned_staff_id 귀속축·동일 재직 상담실장 로스터 계승.
+          fetchConsultantPerfByAssignedStaff(clinicId, prevMonthStart, prevMonthEnd),
           supabase
             .from('check_ins')
             // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: reservation_id 동반 조회 → 체험단(is_trial) 배정 제외 join.
@@ -2621,6 +2627,8 @@ export default function Assignments() {
                 <CardTitle className="text-sm">실장 랭킹</CardTitle>
                 <p className="text-xs text-muted-foreground">
                   재직 상담 실장 기준 · 월매출(1일~선택일) 순 · 관리자 전용
+                  <br />
+                  ※ 매출 귀속 = 고객 카드 담당자(2번차트 담당 실장) 기준 · 매출집계 담당실장별과 동일 기준
                 </p>
               </div>
               {/* #1 DatePicker — 기존 CRM 컴포넌트(native date input) 재사용(신규 npm 0). 기본=오늘, max=오늘(미래 차단). */}
