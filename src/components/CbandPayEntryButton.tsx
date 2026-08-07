@@ -43,11 +43,12 @@ import {
 import { AmountInput, parseAmountRaw } from '@/components/ui/AmountInput';
 import { formatAmount } from '@/lib/format';
 // ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 최소금액(5만원, spec ①) + 한글표기 파생 SSOT.
-// ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2) — 건당 500만원 초과 사전차단 순수 술어 + 안내문구 SSOT.
 import {
   CBAND_INSTALLMENT_MIN_AMOUNT, formatInstallmentKo,
-  exceedsPerTxnLimit, perTxnLimitBlockMessage,
 } from '@/lib/cband/protocol';
+// ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN — 하드 사전차단 제거 → P2 자리 500만 초과 시 '경고 후 진행'.
+//   자리(TID)별 분류(P2 경고/P3·미등재 무경고)·경고 판정·확인창 verbatim 문구 SSOT.
+import { shouldWarnOverLimit, OVER_LIMIT_WARN_MESSAGE } from '@/lib/cband/seatLimitPolicy';
 import {
   isCbandPayEnabled, approve, precheckConcurrentPayment,
   type PaymentFlowResult, type ConcurrencyDecision,
@@ -275,7 +276,7 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 }
 
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
-type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency';
+type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency' | 'overlimit_confirm';
 
 export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved }: Props) {
   // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value(팝업 open/reset 시 금액칸 초기값).
@@ -383,30 +384,20 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   }
 
   const amountNum = parseInt(parseAmountRaw(amount) || '0', 10);
-  // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 = 섹타나인 자리 한도 → 전송 전 차단.
-  //   패키지 탭(대액 결제 집중)·카드 탭 공용 게이트. overLimit 이면 결제요청 비활성 + 인라인 안내(실장 사유 인지).
-  const overLimit = exceedsPerTxnLimit(amountNum);
-  const canPay = amountNum > 0 && ui !== 'sending' && !overLimit;
+  // ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN(AC-1): 하드 사전차단 제거 — 금액만으로 결제요청을 막지 않는다.
+  //   500만원 초과는 P2 자리에 한해 '경고 후 진행'(onApprove 확인창 게이트, AC-2)으로 처리한다.
+  //   P3(금액무관 통과)·미등재·한도이하는 경고 없이 기존 동선(회귀 0). 사유=500만 값 미확정(섹타나인 확인 중).
+  const canPay = amountNum > 0 && ui !== 'sending';
   // ★spec ① 5만원 미만 할부 잠금 — 금액 < 50,000 이면 할부 선택 비활성(일시불 강제). 카드사 규정.
   const installmentAllowed = amountNum >= CBAND_INSTALLMENT_MIN_AMOUNT;
   // 실효 할부개월 — 잠금 시(또는 일시불) 항상 0. 이 값이 approve() 로 전달·payments.installment 착지.
   const effectiveInstallment = installmentAllowed && installment > 1 ? installment : 0;
 
-  async function onApprove() {
-    if (!(amountNum > 0)) return;
-    // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 사전 차단 — 단말 전송 이전에 정지.
-    //   실장이 손님 앞에서 밴 거절(승인 실패)로 막히지 않게, CRM 이 전송 前 사유를 안내한다(전문 미전송).
-    if (overLimit) { setPayBlock(perTxnLimitBlockMessage()); return; }
-    // ★② 빈값 전송 차단(pre-daemon): TID 미입력이면 결제 전문 전송 이전에 정지 + 안내.
-    const rawCfg = getTerminalConfigRaw();
-    if (!rawCfg.tid) { setPayBlock('단말기 번호를 먼저 입력해 주세요.'); return; }
-    // TID 는 있으나 설정 미완(merno 등, ⑧에서 보정) → 전송 차단 + 설정 안내.
-    const activeCfg = getTerminalConfig();
-    if (!activeCfg) { setPayBlock('단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
-    setPayBlock(null);
+  // ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN — 실 단말 전송(doSend). 경고 게이트를 통과했거나
+  //   경고 대상이 아닐 때(P3/미등재/한도이하)에만 도달한다. 전송·이중결제방지 로직 무접촉(AC-6 회귀 0).
+  async function doSend(activeCfg: NonNullable<ReturnType<typeof getTerminalConfig>>) {
     // ★TID-REGISTRY-GATE (AC-1/AC-2): 커밋 직전 seat TID 를 registry allowlist 와 대조.
     //   미등록이면 구조화 로깅(누구/seat/TID/시각)만 남기고 결제는 진행한다(soft-warn·무차단).
-    //   ★hard-block 아님 — 현장/DA 협의 게이트(임의 결제 거부 금지). verdict 미검(unknown)은 무소음.
     if (tidVerdict?.status === 'unregistered') {
       logUnregisteredTid({ ...actor, tid: activeCfg.tid, overridden: tidOverridden, phase: 'commit' });
     }
@@ -428,6 +419,7 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       if (!mounted.current) return;
       setResult(r);
       // ★ 분류에 따른 정지/성공/실패. ATTENTION 은 절대 자동 재시도하지 않음.
+      //   ★AC-5: 단말이 8324(승인서버응답 거래거절) 반환 시 → classify FAIL 폴백 + ERRCODE_MESSAGES 한글 사유 표시(미출금·재시도 안전).
       setUi(r.needsCheck ? 'attention' : r.classification === 'APPROVED' ? 'approved' : 'failed');
       // ★AC-3: 승인 성립 시 상위 목록 갱신(패키지 잔금·결제이력 즉시 반영). 미전달(카드 탭)=no-op.
       if (!r.needsCheck && r.classification === 'APPROVED') onApproved?.();
@@ -438,6 +430,25 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
       setUi('failed');
       console.error('코밴 결제 오류:', (e as Error)?.message);
     }
+  }
+
+  async function onApprove() {
+    if (!(amountNum > 0)) return;
+    // ★② 빈값 전송 차단(pre-daemon): TID 미입력이면 결제 전문 전송 이전에 정지 + 안내.
+    const rawCfg = getTerminalConfigRaw();
+    if (!rawCfg.tid) { setPayBlock('단말기 번호를 먼저 입력해 주세요.'); return; }
+    // TID 는 있으나 설정 미완(merno 등, ⑧에서 보정) → 전송 차단 + 설정 안내.
+    const activeCfg = getTerminalConfig();
+    if (!activeCfg) { setPayBlock('단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
+    setPayBlock(null);
+    // ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN(AC-1/AC-2): 하드 사전차단 제거. 대신 P2 자리 + 500만원 초과일
+    //   때만 확인창(경고 후 진행)을 띄운다. P3(금액무관·870만 실측)·미등재·한도이하는 경고 없이 바로 전송(무회귀).
+    //   '진행' 선택 시 confirmOverLimitProceed 가 doSend 를 호출한다(단말이 실제 한도 authority — 초과 시 실거절로 수렴).
+    if (shouldWarnOverLimit(activeCfg.tid, amountNum)) {
+      setUi('overlimit_confirm');
+      return;
+    }
+    doSend(activeCfg);
   }
 
   function reset() {
@@ -499,6 +510,19 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
   // ★AC-6-2 완료건 재결제: 실장 confirm(그래도 진행) → 정상 결제 입력으로 전환.
   function overrideConcurrency() {
     setConcurrency(null);
+    setUi('idle');
+  }
+
+  // ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN(AC-2): 500만 경고 확인창에서 실장이 '진행' 선택 → 실 단말 전송.
+  //   단말이 실제 한도 authority — 진짜 한도가 500만↑면 성공, ↓면 단말이 거절(기존 실패/취소 경로로 clean 수렴).
+  function confirmOverLimitProceed() {
+    const activeCfg = getTerminalConfig();
+    if (!activeCfg) { setUi('idle'); setPayBlock('단말기 설정이 완료되지 않았습니다. 위 [변경]에서 확인하거나 관리자 설정을 완료해 주세요.'); return; }
+    doSend(activeCfg);
+  }
+
+  // ★AC-2 시나리오 5 / AC-6: '취소' 선택 → 전문 미전송, 입력 화면 복귀(잔여 상태 0).
+  function cancelOverLimit() {
     setUi('idle');
   }
 
@@ -569,15 +593,10 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                   placeholder="0"
                 />
                 {amountNum > 0 && (
-                  <p className={overLimit ? 'text-right text-sm font-semibold text-rose-600' : 'text-right text-sm text-emerald-700'}>{formatAmount(amountNum)}원</p>
+                  <p className="text-right text-sm text-emerald-700">{formatAmount(amountNum)}원</p>
                 )}
-                {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-2): 건당 500만원 초과 상시 인라인 안내(클릭 전 인지). */}
-                {overLimit && (
-                  <div className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700" data-testid="cband-over-limit-warn">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
-                    <span>{perTxnLimitBlockMessage()}</span>
-                  </div>
-                )}
+                {/* ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN(AC-1): 하드 사전차단·상시 인라인 차단안내 제거.
+                    500만원 초과 경고는 '결제 요청' 클릭 시 P2 자리에 한해 확인창(overlimit_confirm)으로만 노출한다. */}
               </div>
               {/* ★T-20260805-foot-PLANA-INSTALLMENT-HALBU-SUPPORT — 할부 개월 선택(일시불/2~12개월).
                   spec ①: 금액 < 5만원이면 할부 비활성(일시불 강제) + 안내문구. 태블릿 큰 버튼·teal-emerald·한국어. */}
@@ -681,6 +700,20 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
             </div>
           )}
 
+          {/* ★T-20260807-foot-COVAN-500MAN-PREBLOCK-TO-WARN(AC-2/AC-3) 500만 경고 확인창 — 하드차단 아님(경고 후 진행).
+              P2 자리 + 500만원 초과일 때만 노출. reporter(최필경 총괄) 확정 verbatim 문구. [진행]=전송 / [취소]=미전송·복귀. */}
+          {ui === 'overlimit_confirm' && (
+            <div className="space-y-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4" data-testid="cband-overlimit-confirm">
+              <div className="flex items-center gap-2 text-amber-800">
+                <AlertTriangle className="h-6 w-6" />
+                <span className="text-lg font-bold">확인이 필요합니다</span>
+              </div>
+              <p className="text-sm leading-relaxed text-amber-900" data-testid="cband-overlimit-confirm-msg">
+                {OVER_LIMIT_WARN_MESSAGE}
+              </p>
+            </div>
+          )}
+
           {/* ★ 확인 필요(ATTENTION) — 자동 재시도 없음, MSG_TRACE 안내 */}
           {ui === 'attention' && result && (
             <div className="space-y-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4" data-testid="cband-attention">
@@ -762,6 +795,26 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
                     확인, 그래도 결제
                   </Button>
                 )}
+              </>
+            )}
+            {/* ★T-20260807 500만 경고 확인창: [취소]=미전송 복귀 / [진행]=실 전송(단말이 실제 한도 authority). */}
+            {ui === 'overlimit_confirm' && (
+              <>
+                <Button
+                  variant="outline"
+                  className="h-12 flex-1"
+                  onClick={cancelOverLimit}
+                  data-testid="btn-cband-overlimit-cancel"
+                >
+                  취소
+                </Button>
+                <Button
+                  className="h-12 flex-1 bg-emerald-600 hover:bg-emerald-700"
+                  onClick={confirmOverLimitProceed}
+                  data-testid="btn-cband-overlimit-proceed"
+                >
+                  진행
+                </Button>
               </>
             )}
             {/* ★ attention 은 '다시 시도' 버튼을 주지 않는다(자동/수동 재시도 정지). 닫기만. */}
