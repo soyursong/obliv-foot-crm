@@ -3615,7 +3615,8 @@ export function PenChartTab({
         </div>
         )}
         {mode === 'draw' && (
-      <div className="flex flex-col h-full bg-white">
+      // T-20260807-foot-PENCHART-BOTTOM-PEN-ICON: relative 추가 → 하단 플로팅 펜 버튼(뷰포트 우하단 고정)의 기준 컨테이너.
+      <div className="relative flex flex-col h-full bg-white">
         {/* 툴바 */}
         <div className="flex-none border-b bg-white p-2 flex items-center gap-1.5 flex-wrap shadow-sm">
           {/* ── 기본 도구 (V3: switchTool + per-tool defaults) ── */}
@@ -4540,6 +4541,30 @@ minCoa ${perfDisplay.wMinCoa}  strokeMs ${perfDisplay.wStrokeMs}`}
         {/* T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: 하단 별도 서명란 제거
             현장 피드백: "하단 별도 서명란 불필요 제거" — 서명은 캔버스 위에 직접 기입하는 방식으로 통일 */}
         </div>{/* end 스크롤 콘텐츠 */}
+
+        {/* ── T-20260807-foot-PENCHART-BOTTOM-PEN-ICON: 하단 플로팅 펜 버튼 ──────────────
+            [현장 요청] 김주연 총괄 — 펜 아이콘이 상단 도구영역에만 있어, 필기 시작할 때마다 위로 스크롤해
+            펜을 클릭해야 함(캔버스 최대 ~6738px). 하단(첨부 F0BNMQRHP1B 빨간박스=뷰포트 우하단)에도 펜을
+            추가해 동선 단축.
+            [구현] 상단 펜 버튼과 '동일 핸들러(switchTool('pen'))·동일 active 상태(activeTool==='pen')' 재사용
+            — 새 토글 로직 신설 X. draw 컨테이너(relative) 기준 absolute 로 스크롤 뷰포트 우하단 고정 →
+            어느 스크롤 위치에서도 1탭 펜 전환. 태블릿 큰 버튼(56px) 터치타깃. */}
+        <button
+          type="button"
+          onClick={() => switchTool('pen')}
+          aria-label="펜 (하단 바로가기)"
+          aria-pressed={activeTool === 'pen'}
+          title="펜 — 그리기 모드로 전환 (상단 펜 버튼과 동일 동작)"
+          data-testid="penchart-bottom-pen"
+          className={cn(
+            'absolute bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-lg transition',
+            activeTool === 'pen'
+              ? 'bg-neutral-800 border-neutral-800 text-white'
+              : 'bg-white border-neutral-300 text-neutral-700 hover:bg-neutral-50',
+          )}
+        >
+          <Pencil className="h-6 w-6" />
+        </button>
       </div>
         )}
       </FullscreenFormWrapper>
