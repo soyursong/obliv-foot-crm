@@ -1,0 +1,110 @@
+{
+  "choi_month": [
+    {
+      "status": "cancelled",
+      "soft_deleted": false,
+      "n": 3,
+      "unconsulted_unconfirmed": 3
+    },
+    {
+      "status": "cancelled",
+      "soft_deleted": true,
+      "n": 1,
+      "unconsulted_unconfirmed": 1
+    },
+    {
+      "status": "done",
+      "soft_deleted": false,
+      "n": 6,
+      "unconsulted_unconfirmed": 4
+    }
+  ],
+  "all_month": [
+    {
+      "name": "김지윤",
+      "active_phantom": 6,
+      "any_phantom": 10,
+      "total_assigned": 29
+    },
+    {
+      "name": "진이서",
+      "active_phantom": 4,
+      "any_phantom": 8,
+      "total_assigned": 14
+    },
+    {
+      "name": "송지현",
+      "active_phantom": 8,
+      "any_phantom": 8,
+      "total_assigned": 36
+    },
+    {
+      "name": "최현희",
+      "active_phantom": 4,
+      "any_phantom": 8,
+      "total_assigned": 10
+    },
+    {
+      "name": "정연주",
+      "active_phantom": 5,
+      "any_phantom": 5,
+      "total_assigned": 33
+    },
+    {
+      "name": "강경민",
+      "active_phantom": 5,
+      "any_phantom": 5,
+      "total_assigned": 34
+    },
+    {
+      "name": "송민근",
+      "active_phantom": 1,
+      "any_phantom": 2,
+      "total_assigned": 4
+    },
+    {
+      "name": "김주연",
+      "active_phantom": 2,
+      "any_phantom": 2,
+      "total_assigned": 3
+    },
+    {
+      "name": "엄경은",
+      "active_phantom": 0,
+      "any_phantom": 0,
+      "total_assigned": 22
+    }
+  ],
+  "aa_choi": [
+    {
+      "action_type": "auto_assign",
+      "total": 37,
+      "ci_cancelled_or_deleted": 3,
+      "ci_unconsulted_unconfirmed": 10
+    },
+    {
+      "action_type": "manual",
+      "total": 8,
+      "ci_cancelled_or_deleted": 1,
+      "ci_unconsulted_unconfirmed": 5
+    }
+  ],
+  "choi_today": [
+    {
+      "customer_name": "이욱",
+      "status": "done",
+      "consultation_done": false,
+      "consult_notify_status": "sent",
+      "deleted_at": null,
+      "created_at": "2026-08-07 02:01:09.976086+00"
+    },
+    {
+      "customer_name": "박효식",
+      "status": "cancelled",
+      "consultation_done": false,
+      "consult_notify_status": null,
+      "deleted_at": "2026-08-07 05:14:50.219+00",
+      "created_at": "2026-08-07 02:20:05.484095+00"
+    }
+  ]
+}

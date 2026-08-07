@@ -1,0 +1,48 @@
+{
+  "checkins": [
+    {
+      "id": "21ac6c9c-2ca0-41aa-a557-e98f7a94ce49",
+      "status": "cancelled",
+      "visit_type": "new",
+      "visit_nature": "new",
+      "consultant_id": "9172beb7-1294-4153-b549-9eb45d337233",
+      "assigned_counselor_id": null,
+      "consultation_done": false,
+      "consult_notify_status": null,
+      "consult_notify_sent_at": null,
+      "consult_notify_by": null,
+      "assignment_consult_type": null,
+      "deleted_at": "2026-08-07 05:14:50.219+00",
+      "created_at": "2026-08-07 02:20:05.484095+00",
+      "status_flag": "dark_gray"
+    }
+  ],
+  "history": [
+    {
+      "id": "21ac6c9c-2ca0-41aa-a557-e98f7a94ce49",
+      "status": "cancelled",
+      "status_flag_history": [
+        {
+          "flag": "dark_gray",
+          "changed_at": "2026-08-07T02:26:47.815Z",
+          "changed_by": "77ef3500-f0c1-43de-9c3b-1072b7a2713c",
+          "changed_by_name": "김민경",
+          "changed_by_role": "coordinator"
+        }
+      ]
+    }
+  ],
+  "aa": [
+    {
+      "id": "13345cfa-a895-42f6-9404-384f83440e46",
+      "action_type": "auto_assign",
+      "role": "consult",
+      "axis": "TM",
+      "from_staff_id": null,
+      "to_staff_id": "9172beb7-1294-4153-b549-9eb45d337233",
+      "created_by": null,
+      "created_at": "2026-08-07 02:20:05.843505+00",
+      "reason": null
+    }
+  ]
+}
