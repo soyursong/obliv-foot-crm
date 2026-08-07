@@ -237,7 +237,18 @@ export default function RxHistorySection() {
           />
         </div>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          {/* T-20260807-foot-RXHIST-RESULT-COUNT-DISPLAY: 조회 결과 총 건수(대표+dedup 반영, 화면 렌더 행 수와 일치·AC-5).
+              rows = 기간(AC-1)→dedup(AC-2)→약품 합집합 필터(AC-4)까지 반영된 최종 파생 배열 →
+              약 선택 변경/복수선택 시 useMemo 재계산으로 실시간 갱신(AC-2·AC-3). read-side 파생, DB 무접촉. */}
+          {!isLoading && !isError && (
+            <span
+              className="text-[13px] font-medium text-gray-700"
+              data-testid="rx-history-result-count"
+            >
+              총 <span className="font-semibold text-teal-700">{rows.length}</span>건
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"
