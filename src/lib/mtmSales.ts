@@ -307,16 +307,23 @@ export async function fetchMonthlyComparison(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 02b 일별 매출 추이 — 실장(담당실장)별 breakdown
-//   T-20260805-foot-DAILYTREND-STAFF-BREAKDOWN-CLARIFY (AC-A).
-//   실장별 총매출 = SALESAGG-STAFF-4METRIC-REDEFINE(deployed) 정의를 **일자 grain**으로 재사용.
-//   ★신규 산식 창작 금지 — SalesDoctorTab(담당실장별) 로직/귀속 기준을 그대로 소비:
-//     · 총매출 = 패키지 결제 합산(payments tax_type='선수금' net)
-//               + 급여 본인부담금 합산(payments tax_type='급여' net)   [총괄 명시 산식 ④]
-//     · net = payment_type='refund' → 음수(환불 차감). accounting_date(판매/수납일) 축.
-//     · 담당실장 귀속 = customers.assigned_staff_id (SalesDoctorTab AC-2 동일 grain).
-//     · assigned_staff 없음 → '미지정' 버킷 명시(누락·오귀속 금지, 시나리오 2-2).
+//   T-20260807-foot-STAFFDAILY-REVENUE-2NDCHART-ATTR-MATCH (부모 T-20260805 DAILYTREND-CLARIFY).
+//   실장별 총매출 = 매출집계>담당실장별(SalesDoctorTab)의 '총매출' 정의를 **일자 grain**으로 그대로 소비.
+//   ★신규 산식 창작 금지 — 라이브 담당실장별 탭(SalesDoctorTab, T-20260806 gross-redefine)과 숫자 일치가 목표.
+//     그 탭의 총매출 = 누적(gross) − 환불금 = 단건net + 패키지net (환불 1회 차감, 수학적 등가) →
+//     일자 grain 에서는 동일하게 **단건 payments net + 패키지 package_payments net** 을 일자별로 집계한다.
+//     · 소스① 단건 payments = 전체(tax_type 무관, status≠'deleted'). net = refund→음수, 그 외→양수.
+//       ★부모 as-built 오류 정정: tax_type IN('선수금','급여') 로 좁혀 비급여/과세/면세/NULL 단건을
+//         누락하고 있었다(→ SalesDoctorTab 대비 과소집계·숫자 불일치의 RC). tax_type 필터 제거.
+//     · 소스② 패키지 package_payments **테이블**(status 컬럼 부재 → 필터 없음). net = refund→음수.
+//       ★부모 as-built 오류 정정: payments.tax_type='선수금' 를 패키지 proxy 로 쓰던 것을,
+//         SalesDoctorTab 과 동일하게 별도 package_payments 테이블 소스로 교체.
+//     · 귀속축(WHO) = customers.assigned_staff_id ('2번차트 담당 실장', 8/6 총괄 canon) — 부모와 동일(불변).
+//     · accounting_date(판매/수납일) 일자 축으로 day 버킷. assigned_staff 없음 → '미지정' 버킷(누락·오귀속 금지).
 //     · sim(테스트) 고객 결제는 방어필터로 제외(매출집계 탭과 동일 집합).
-//   read-only 집계. write/RPC/DDL 무접촉(db_change=false).
+//   read-only 집계. write/RPC/DDL/신규컬럼·테이블·enum 무접촉(db_change=false, §S2.4 데이터정책 게이트 비유발).
+//   ※ SalesDoctorTab(T-20260806) + 랭킹 fetchConsultantPerfByAssignedStaff(766bc8a5) 둘 다 이 2-소스 net
+//     귀속을 db_change=false / path a(no-DDL) 로 배포한 선례 — 본 정정은 그 canon 을 일자 grain 에 재적용.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 담당실장 미지정 매출 버킷 sentinel(SalesDoctorTab UNASSIGNED 와 동일 의미). */
@@ -345,7 +352,6 @@ export interface StaffDailyBreakdown {
 interface StaffBreakdownPayRow {
   amount: number;
   payment_type: string | null;
-  tax_type: string | null;
   accounting_date: string | null;
   customer_id: string | null;
 }
@@ -357,22 +363,40 @@ export async function fetchStaffDailyBreakdown(
   const cur = monthBounds(refISO);
   const simIds = await getSimulationCustomerIds(clinicId);
 
-  // payments — 패키지(선수금) + 급여(본인부담금)만, accounting_date 축, deleted 제외.
-  const { data: pays, error: payErr } = await supabase
-    .from('payments')
-    .select('amount, payment_type, tax_type, accounting_date, customer_id')
-    .eq('clinic_id', clinicId)
-    .not('status', 'eq', 'deleted')
-    .in('tax_type', ['선수금', '급여'])
-    .gte('accounting_date', cur.from)
-    .lte('accounting_date', cur.to);
+  // 소스① 단건 payments — 전체(tax_type 무관), accounting_date 축, deleted 제외.
+  // 소스② 패키지 package_payments 테이블 — accounting_date 축, status 컬럼 부재 → 필터 없음.
+  //   (SalesDoctorTab 총매출 = 단건net + 패키지net 과 동일 2-소스 net 집계 → 숫자 일치.)
+  const [{ data: pays, error: payErr }, { data: pkgs, error: pkgErr }] =
+    await Promise.all([
+      supabase
+        .from('payments')
+        .select('amount, payment_type, accounting_date, customer_id')
+        .eq('clinic_id', clinicId)
+        .not('status', 'eq', 'deleted')
+        .gte('accounting_date', cur.from)
+        .lte('accounting_date', cur.to),
+      supabase
+        .from('package_payments')
+        .select('amount, payment_type, accounting_date, customer_id')
+        .eq('clinic_id', clinicId)
+        .gte('accounting_date', cur.from)
+        .lte('accounting_date', cur.to),
+    ]);
   if (payErr) throw payErr;
-  const rows = excludeSimulationPaymentRows(
+  if (pkgErr) throw pkgErr;
+
+  // sim(테스트) 고객 결제 제외(매출집계 탭과 동일 방어필터). 워크인(customer_id NULL) 보존.
+  const singleRows = excludeSimulationPaymentRows(
     (pays ?? []) as StaffBreakdownPayRow[],
     simIds,
   );
+  const pkgRows = excludeSimulationPaymentRows(
+    (pkgs ?? []) as StaffBreakdownPayRow[],
+    simIds,
+  );
+  const rows = [...singleRows, ...pkgRows];
 
-  // customer_id → assigned_staff_id (SalesDoctorTab 동일 3-step join).
+  // customer_id → assigned_staff_id (SalesDoctorTab 동일 3-step join, 단건 ∪ 패키지 고객).
   const custIds = [
     ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
   ];

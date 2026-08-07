@@ -35,9 +35,12 @@ test.describe('정적 소스 불변식 (T-20260805-foot-DAILYTREND-STAFF-BREAKDO
     expect(lib).not.toMatch(/\.(insert|update|delete|upsert)\(/);
   });
 
-  test('AC-A(산식 재사용): 실장별 총매출 = 패키지(선수금) + 급여 본인부담금, 신규 산식 창작 금지', () => {
-    // 선수금(패키지) + 급여(본인부담금) 두 축만 집계 소스로 조회.
-    expect(lib).toMatch(/\.in\('tax_type',\s*\['선수금',\s*'급여'\]\)/);
+  test('AC-A(산식 재사용): 실장별 총매출 = 단건 payments net + 패키지 package_payments net, 신규 산식 창작 금지', () => {
+    // ★T-20260807 STAFFDAILY-REVENUE-2NDCHART-ATTR-MATCH 로 소스 정정:
+    //   SalesDoctorTab(담당실장별)과 동일하게 단건 payments(전체 tax_type) + 패키지 package_payments 테이블.
+    //   구 tax_type IN('선수금','급여') 협소 필터 제거(비급여/과세/면세/NULL 단건 누락 RC 해소).
+    expect(lib).toMatch(/from\('package_payments'\)/);
+    expect(lib).not.toMatch(/\.in\('tax_type',\s*\['선수금',\s*'급여'\]\)/);
     // net = refund → 음수(환불 차감), accounting_date(판매/수납일) 축.
     expect(lib).toMatch(/payment_type === 'refund'/);
     expect(lib).toMatch(/accounting_date/);
