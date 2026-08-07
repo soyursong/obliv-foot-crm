@@ -83,6 +83,7 @@ import type { CheckIn, Service } from '@/lib/types';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ①: 코밴 CAT 직결결제 버튼을 수납 미니창 맨 아래(수납 옆)로 이관.
 import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import { shouldShowCbandEntry } from '@/lib/cband/entryVisibility';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
 // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: 셀프체크인(키오스크) 신규 유입 null-grade 데스크 캡처.
@@ -149,7 +150,8 @@ import {
   hasOutstandingDue,
   type CustomerOutstanding,
   // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백(PATH-4 수렴).
-  loadEffectiveInsuranceGrade,
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 등급 + 나이 파생 infant 세부율(만0세 5%) 동반 로드.
+  loadEffectiveInsuranceGradeEx,
   // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base = ROUND(hira_score × 환산지수) 미러용 점당단가.
   loadClinicHiraUnitValue,
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: bill_detail 급여구분/본인·공단 split SSOT
@@ -1040,6 +1042,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 나이 파생 infant 세부율(만0세 0.05 / 만1~5세 0.21).
+  //   grade==='infant' 정률경로 라이브 배선용. computeFootBilling/surcharge opts.ageInfantRate 로 전달.
+  const [customerInfantCopayRate, setCustomerInfantCopayRate] = useState<number | null>(null);
 
   // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: 고객 ALT(보험 반려 대상) 활성 여부.
   //   서류패널(DocumentReprintPopup line 80)과 동일 패턴 — customers.alt_status 를 컴포넌트가 직접 취득.
@@ -1212,6 +1217,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     setRxItemDosages({});
     // T-20260526-foot-COPAY-MINI-BUG: 리셋
     setCustomerInsuranceGrade(null);
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율 리셋(고객 전환 시 stale 5% 차단).
+    setCustomerInfantCopayRate(null);
     // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT 상태 리셋(고객 전환 시 stale 차단 방지)
     setCustAltStatus(false);
     // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 환산지수 리셋
@@ -1226,9 +1233,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   이 방문 service_charges 저장 등급(customer_grade_at_charge)으로 폴백 → 급여구분 붕괴 방지.
     //   무파괴: live grade 있으면 그대로, 무보험 방문은 covered charge 없어 null 유지.
     if (checkIn.customer_id) {
-      loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
-        .then((grade) => {
+      loadEffectiveInsuranceGradeEx(checkIn.customer_id, checkIn.id)
+        .then(({ grade, infantCopayRate }) => {
           setCustomerInsuranceGrade(grade);
+          setCustomerInfantCopayRate(infantCopayRate);
         });
     }
 
@@ -1848,6 +1856,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   //   (hiraUnitValue 주입 → coveredTotal/공단부담이 명세 calc_copayment 와 정합, 1원 divergence 제거).
   const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, {
     hiraUnitValue: clinicHiraUnitValue,
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 만0세 5% 라이브(grade='infant' 정률 보정). 그 외 무영향.
+    ageInfantRate: customerInfantCopayRate,
   });
   const grandTotal = footBilling.grandTotal;                 // 총 진료비(급여 전액 + 비급여) — 서류 총진료비/합계 표시용
   const totalByTax: Record<TaxClass, number> = footBilling.totalByTax;
@@ -1866,6 +1876,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     unknownGradeCopay: 'general_default',
     // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(명세 정합).
     hiraUnitValue: clinicHiraUnitValue,
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 수납 grain 도 만0세 5% 라이브(환자 실수납액 정합).
+    ageInfantRate: customerInfantCopayRate,
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
@@ -1906,6 +1918,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const settleSurchargeBase = computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, {
     unknownGradeCopay: 'general_default',
     hiraUnitValue: clinicHiraUnitValue,
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 가산 진찰료 본인분도 5% 정합(payBilling grain 동일).
+    ageInfantRate: customerInfantCopayRate,
   });
   const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
   // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE [현장 P0, RC, reporter 김주연 총괄] ──────────────
@@ -2114,6 +2128,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       unknownGradeCopay: 'general_default',
       // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(선수금차감 청구 base 정합).
       hiraUnitValue: clinicHiraUnitValue,
+      // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 선수금차감 청구액도 만0세 5% 라이브 정합.
+      ageInfantRate: customerInfantCopayRate,
     });
     // T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 차감후 청구액에도 동일 진찰료 30% 가산 반영.
     //   ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──
@@ -2122,6 +2138,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     const deductSurchargeBase = computeConsultationSurchargeBase(deductItems, customerInsuranceGrade, {
       unknownGradeCopay: 'general_default',
       hiraUnitValue: clinicHiraUnitValue,
+      // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 차감후 가산 진찰료 본인분도 5% 정합.
+      ageInfantRate: customerInfantCopayRate,
     });
     const deductSurcharge = computeSurcharge(
       deductSurchargeBase.covered,
@@ -2988,7 +3006,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
       //   서류 aggregate 와 동일 grain({hiraUnitValue}, covered_full 기본) — footBillingItems 비면 null(레거시 폴백).
       const surchargeConsultBase = footBillingItems.length
-        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue })
+        // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 서류 가산 base 진찰료 본인분도 만0세 5% 정합.
+        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue, ageInfantRate: customerInfantCopayRate })
         : null;
 
       // ── T-20260806-foot-DOCREPRINT-PMWSAVE-PRESURCHARGE-PARALLEL: print-binding 값 단일 SSOT 빌더 ──
@@ -3221,8 +3240,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                 // 원본 등급 재조회(경고 배너 재판정) + 빌링용 effective 등급 재로드(급여 split 즉시 반영).
                 refreshRawInsuranceGrade();
                 if (checkIn.customer_id) {
-                  loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
-                    .then((grade) => setCustomerInsuranceGrade(grade));
+                  loadEffectiveInsuranceGradeEx(checkIn.customer_id, checkIn.id)
+                    .then(({ grade, infantCopayRate }) => {
+                      setCustomerInsuranceGrade(grade);
+                      setCustomerInfantCopayRate(infantCopayRate);
+                    });
                 }
               }}
             />
@@ -4073,9 +4095,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                   )}
 
                   {/* ★① 코밴 CAT 직결결제(플랜A) — 결제 미니창 맨 아래 [수납] 옆(현장 동선: 카드 수납 직전).
-                      · 결제수단=카드(단일)일 때만 active. · 분할결제 체크 시 disabled(사유 1줄 노출).
-                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전). */}
-                  {saved && (payMethod === 'card' || splitMode) && (
+                      · 결제수단=카드/패키지 또는 분할결제일 때 노출. · 분할결제 체크 시 disabled(사유 1줄 노출).
+                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전).
+                      ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(reopened 2026-08-07 field-soak NEGATIVE): '패키지'(membership) 탭에도 노출.
+                        reporter(최필경 총괄) 화면=결제 미니창의 카드/패키지 결제수단 탭 — 카드 탭엔 있고 패키지 탭엔 없었음.
+                        기존 카드탭과 동일 컴포넌트/동일 착지경로(checkInId→payments) 재사용(신규 착지·DB변경 0).
+                        AC-2(건당 500만원 사전차단) 공용 전송게이트라 자동 계승. */}
+                  {saved && shouldShowCbandEntry(payMethod, splitMode) && (
                     <CbandPayEntryButton
                       checkInId={checkIn.id}
                       clinicId={checkIn.clinic_id}

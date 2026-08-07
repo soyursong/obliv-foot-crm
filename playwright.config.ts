@@ -187,6 +187,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE: 없는 /assets/* 서버오답(HTML 200+immutable) 재발 수정.
+        //   자체 wrangler pages dev(프로덕션 CF Pages 런타임)로 dist 서빙 → request 컨텍스트로 DoD#1~3 검증.
+        //   auth/DB 불요·결정론. Vite webServer(8091) 미의존(자체 CF 런타임 사용). 상시 감시=ci-push §6 curl 스크립트.
+        '**/T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE.spec.ts',
         // T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 결제완료 버튼 오클릭 안전장치 — '정말 결제완료 처리하시겠습니까?'
         //   확인 팝업. 결제완료 트리거 2경로([수납]btn-settle→handleSettle / '결제 완료'btn-payment-submit→handleSubmit)
         //   앞단 confirm 게이트 소스레벨 락(①확인→정상완료 ②취소→무처리 ③바깥/ESC→무처리) + CBAND 무충돌 + AC-3/4 회귀가드.
@@ -663,6 +667,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE: unit 전용(자체 wrangler CF 런타임) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(auth)/Vite webServer 유입 차단. unit 에서만 실행.
+        '**/T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE.spec.ts',
         // T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG: unit 전용(담당자 resolution 미러 + 정적 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG.spec.ts',

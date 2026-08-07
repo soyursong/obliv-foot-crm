@@ -157,9 +157,33 @@ function isCrossDomainFootWrite(domain, clinicSlug, footClinicSlugs) {
   const targetIsFootClinic = clinicSlug ? footClinicSlugs.has(clinicSlug) : true;
   return targetIsFootClinic;
 }
-// daily_full 백필 범위 override (KST 날짜). 미설정 시 "어제 00:00 KST" 기본.
+// daily_full 백필 범위 override (KST 날짜). 미설정 시 "T-LOOKBACK 00:00 KST" 기본.
 const REDPAY_DAILY_FROM = cfg("REDPAY_DAILY_FROM"); // 예: 2026-07-09
 const REDPAY_DAILY_TO = cfg("REDPAY_DAILY_TO");     // 예: 2026-07-11 (미설정 시 now)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0a-1. daily_full resweep lookback — 정산 lag 커버 forward-seal
+//        (T-20260807-foot-REDPAY-RESWEEP-LOOKBACK-UNDERINGEST-SEAL AC-2, planner GO MSG-20260807-092244-sxzy)
+// ────────────────────────────────────────────────────────────────────────────
+//   [RC = genuine under-ingestion, AC-1 확증]  구 daily_full 기본 lookback = "어제 00:00 KST"(=1일).
+//     RedPay 정산은 승인시각과 무관하게 지연 확정(late-settled)될 수 있어, 승인일 T 거래가 T+n 에야
+//     피드에 late-settled 로 나타나면 하루짜리 resweep 창이 그 행을 다시 볼 기회조차 없이 지나쳐
+//     → orphan(미적재) 잔존(08-05 delta 관측). 즉 창 폭이 정산 lag 보다 좁아 생긴 진성 매출-미기록.
+//   [처방(forward-seal)]  기본 resweep 창을 정산 lag ≥ T-3 을 커버하도록 확대(고정 wider backstop).
+//     REDPAY_DAILY_LOOKBACK_DAYS(기본 3) 만큼 과거로 되감아 매 daily_full 이 T-N..now 를 재수집.
+//     주기적 더 넓은 backstop(예: 주 1회 T-14)이 필요하면 별도 launchd 인스턴스에서 이 env 만 상향.
+//   [멱등 안전(planner 조건 · risk GO_WARN (c))]  확대 창 재fetch 는 기존 행 중복 적재를 유발하지 않는다.
+//     redpay_raw_transactions upsert 는 on_conflict=external_trxid,external_status,amount +
+//     Prefer resolution=merge-duplicates (L1156~). 이 조합의 멱등키 = (external_trxid,external_status,amount)
+//     (범용 (source_system,event_id) 의 본 테이블 구현). 이미 적재된 행은 재fetch 시 MERGE(no net-new).
+//     → 확대는 orphan recovery 만 늘리고 중복은 0 (self-test §resweep-lookback 로 증적).
+//   forward-only: 본 확대는 향후 daily_full 부터 late-settled 를 자동 흡수(seal). 과거 orphan 소급 recovery
+//     backfill 은 별 트랙(AC-3, DA sign-off → supervisor dry-run 선결) — 본 코드 변경은 write-path additive.
+const REDPAY_DAILY_LOOKBACK_DAYS = (() => {
+  const raw = parseInt(cfg("REDPAY_DAILY_LOOKBACK_DAYS", "3"), 10);
+  // fail-safe: 파싱불가/음수/0 → 기본 3(정산 lag 최소 커버). 상한 없음(주기적 wide backstop 허용).
+  return Number.isFinite(raw) && raw >= 1 ? raw : 3;
+})();
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0b. 미등록 TID 즉시 알람 (T-20260727-foot-REDPAY-WATCHDOG-LATENCY-CLOSE — Option(b))
@@ -533,6 +557,19 @@ function formatRedpayDate(d) {
 }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// ── daily_full resweep 시작시각(from) 산정 — 순수함수(self-test 대상) ──────────────
+//   (T-20260807-...-RESWEEP-LOOKBACK-UNDERINGEST-SEAL AC-2)
+//   now 로부터 lookbackDays 만큼 되감은 "그 날 00:00 KST" 를 UTC 로 반환.
+//   lookbackDays=1 → 구 동작(어제 00:00 KST) 과 동일(회귀 가드). lookbackDays=3 → T-3 00:00 KST.
+//   멱등 upsert(on_conflict) 라 창 확대 재fetch 는 중복 무유발 — 폭만 넓히면 late-settled orphan 흡수.
+function computeDailyFullFromDate(now, lookbackDays) {
+  const days = Number.isFinite(lookbackDays) && lookbackDays >= 1 ? Math.floor(lookbackDays) : 3;
+  const d = new Date(now);
+  d.setDate(d.getDate() - days);
+  d.setHours(0, 0, 0, 0);            // 로컬 자정 (서버 TZ 무관하게 아래서 KST 로 보정)
+  return new Date(d.getTime() - 9 * 60 * 60 * 1000); // KST(UTC+9) 00:00 → UTC
+}
+
 async function fetchWithRetry(url, options, maxTries = 3, delayMs = 2000) {
   let lastError = null;
   for (let attempt = 1; attempt <= maxTries; attempt++) {
@@ -622,6 +659,13 @@ function toRawTrxRow(clinicId, t) {
     cancelled_at: parseKstDatetime(t.cancelled_at ?? ""),
     raw_payload: t,
   };
+}
+// ── redpay_raw_transactions 멱등키 (self-test 대상 순수함수) ──────────────────────
+//   = DB on_conflict=external_trxid,external_status,amount (L1156~ upsert) 의 클라이언트 미러.
+//   확대 resweep 창(AC-2)이 이미 적재된 행을 재fetch 해도 이 키가 동일 → MERGE(no net-new).
+//   "멱등 확증"(planner risk GO_WARN (c)) 의 증적 단위 — 동일 (trxid,status,amount) = 동일 행.
+function rawTrxDedupKey(r) {
+  return `${r.external_trxid}|${r.external_status}|${r.amount}`;
 }
 // 도메인 스코프 필터 (merchant_id 1차 권위 피벗, T-...-REDPAY-MACSTUDIO-POLLER / DA GO).
 //   1차 = merchant_id allowlist(도메인 경계 — foot/body/… 대역. 타도메인은 구조적 자동배제).
@@ -1161,7 +1205,7 @@ async function upsertRawTransactions(clinicId, transactions) {
   // trxid dedup — 동일 페이지 (trxid,status,amount) 중복 시 on_conflict "동일행 2회" 오류 차단.
   const seen = new Set();
   const rows = mapped.filter((r) => {
-    const key = `${r.external_trxid}|${r.external_status}|${r.amount}`;
+    const key = rawTrxDedupKey(r); // = on_conflict 멱등키(external_trxid,external_status,amount)
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -1366,11 +1410,11 @@ async function main() {
     fromDt = !isNaN(f.getTime()) ? f : new Date(now.getTime() - 24 * 60 * 60 * 1000);
     log(`daily_full 백필 범위 override: from=${fromDt.toISOString()} to=${toDt.toISOString()}`);
   } else {
-    // daily_full 기본: 어제 00:00 KST 부터
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
-    y.setHours(0, 0, 0, 0);
-    fromDt = new Date(y.getTime() - 9 * 60 * 60 * 1000); // KST→UTC
+    // daily_full 기본: T-LOOKBACK 00:00 KST 부터 (정산 lag 커버 forward-seal, AC-2).
+    //   구 동작=T-1(어제). REDPAY_DAILY_LOOKBACK_DAYS(기본 3)로 확대 → late-settled orphan 흡수.
+    //   멱등 upsert(on_conflict)라 창 확대 재fetch 는 중복 무유발(중복=0, orphan recovery 만 증가).
+    fromDt = computeDailyFullFromDate(now, REDPAY_DAILY_LOOKBACK_DAYS);
+    log(`daily_full 기본 resweep 창: from=${fromDt.toISOString()} (lookback=${REDPAY_DAILY_LOOKBACK_DAYS}일, 정산 lag 커버) to=${toDt.toISOString()}`);
   }
 
   // ── clinic_id 조회 — 안정키 slug 우선(business_no 는 세무 cert 정정으로 mutable) ──────────
@@ -1723,6 +1767,57 @@ function runSelfTest() {
     assert(line.includes("설치검증 추정 3건"), `installverify: N건 요약줄 문안 정확 (실제=${line})`);
     assert(buildInstallVerifyDigestLine(0) === "", `installverify: 0건 → 빈 문자열(요약줄 생략)`);
     assert(buildInstallVerifyDigestLine(-1) === "", `installverify: 음수 → 빈 문자열(방어)`);
+  }
+
+  // ── AC-2: daily_full resweep lookback 확대 + 멱등 확증 self-test ──────────────────
+  //   (T-20260807-...-RESWEEP-LOOKBACK-UNDERINGEST-SEAL AC-2, planner GO MSG-20260807-092244-sxzy)
+  {
+    const now = new Date("2026-08-07T05:00:00Z");
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    // (a) ★회귀 가드 — lookback=1 은 구 동작(어제 00:00 KST)과 byte-for-byte 동일(TZ 무관: 동일 primitive).
+    const from1 = computeDailyFullFromDate(now, 1);
+    const legacy = (() => { const y = new Date(now); y.setDate(y.getDate() - 1); y.setHours(0, 0, 0, 0); return new Date(y.getTime() - 9 * 60 * 60 * 1000); })();
+    assert(from1.toISOString() === legacy.toISOString(),
+      `resweep: lookback=1 = 구 T-1 동작 동일(회귀 0) (실제=${from1.toISOString()})`);
+
+    // (b) 창 폭 — 기본 3일이 구 1일보다 정확히 2일 더 과거에서 시작(TZ 무관 delta 검증, KST=DST없음).
+    //     ⇒ 정산 lag ≥T-3 커버: late-settled(T-2/T-3) orphan 을 재수집 범위에 포함.
+    const from3 = computeDailyFullFromDate(now, 3);
+    assert(from1.getTime() - from3.getTime() === 2 * DAY_MS,
+      `resweep: lookback=3 시작 = 1일 창보다 정확히 2일 과거(정산 lag ≥T-3 커버) (delta=${(from1.getTime() - from3.getTime()) / DAY_MS}일)`);
+
+    // (c) 확대 창(3일) 이 구 창(1일) 보다 넓어야 함(under-ingestion seal 의 본질).
+    assert(from3.getTime() < from1.getTime(),
+      `resweep: 3일 창 시작 < 1일 창 시작 → late-settled orphan 재수집 범위 포함`);
+
+    // (c-2) 정각 00:00 KST 착지 — from 은 KST 자정(UTC 로는 15:00Z, 초/밀리초 0).
+    assert(from3.getUTCSeconds() === 0 && from3.getUTCMilliseconds() === 0,
+      `resweep: from 은 정각 자정 착지(초/ms=0)`);
+
+    // (d) fail-safe — 파싱불가/0/음수 → 기본 3(정산 lag 최소 커버).
+    assert(computeDailyFullFromDate(now, 0).toISOString() === from3.toISOString(), `resweep: lookback=0 → fail-safe 3일`);
+    assert(computeDailyFullFromDate(now, NaN).toISOString() === from3.toISOString(), `resweep: lookback=NaN → fail-safe 3일`);
+    assert(computeDailyFullFromDate(now, -5).toISOString() === from3.toISOString(), `resweep: lookback 음수 → fail-safe 3일`);
+
+    // (e) ★멱등 확증(planner risk GO_WARN (c)) — 확대 창 재fetch 가 기존 행 중복 적재 무유발.
+    //     멱등키 = rawTrxDedupKey(=on_conflict external_trxid,external_status,amount). 동일 거래 재수집 → 동일 키.
+    const day1 = { external_trxid: "TX-LATE-1", external_status: "S", amount: 55000 }; // T-3 승인, T-1 late-settled
+    const day2refetch = { external_trxid: "TX-LATE-1", external_status: "S", amount: 55000 }; // 확대 창이 다시 fetch
+    assert(rawTrxDedupKey(day1) === rawTrxDedupKey(day2refetch),
+      `resweep 멱등: 동일 (trxid,status,amount) 재fetch → 동일 멱등키(= on_conflict MERGE, net-new=0)`);
+
+    // (f) 취소행(음수 amount)·상태전이는 별 키 = 독립 행(over-merge 방지 — 멱등키 정확성).
+    const cancel = { external_trxid: "TX-LATE-1", external_status: "N", amount: -55000 };
+    assert(rawTrxDedupKey(cancel) !== rawTrxDedupKey(day1),
+      `resweep 멱등: 취소(status/amount 상이) = 별 행(멱등키가 상태전이 보존 → 정산 정합)`);
+
+    // (g) 페이지-내 재fetch dedup 시뮬 — 확대 창에서 같은 거래가 여러 번 나와도 1행으로 collapse.
+    const page = [day1, day2refetch, cancel, { external_trxid: "TX-LATE-1", external_status: "S", amount: 55000 }];
+    const seen = new Set();
+    const collapsed = page.filter((r) => { const k = rawTrxDedupKey(r); if (seen.has(k)) return false; seen.add(k); return true; });
+    assert(collapsed.length === 2,
+      `resweep 멱등: 4행(승인×3 재fetch + 취소×1) → 2 distinct 행(승인1·취소1)으로 collapse (실제=${collapsed.length})`);
   }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);

@@ -235,6 +235,31 @@ export const COVERED_GRADES = new Set<InsuranceGrade>([
   'medical_aid_1', 'medical_aid_2', 'infant', 'elderly_flat',
 ]);
 
+/**
+ * T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING — 등급 + 나이파생 infant 세부율 → 유효 정률(본인부담률).
+ *
+ * getBaseCopayRate 는 grade-only 라 infant 를 21%(만6세미만 공통)로 수렴시킨다. 그러나 만 1세 미만
+ * 외래는 법정 5%(국민건강보험법 시행령 별표2)이며, 그 세부율(만0세 0.05 / 만1~5세 0.21)은 나이 파생
+ * SSOT(customerAge.deriveAgeCopayGrade.rate)만 안다. 이 헬퍼가 **라이브 배선의 유일 지점** —
+ * grade==='infant' 이고 나이 파생 세부율(ageInfantRate)이 주어지면 그 값을 정률로 쓰고, 그 외
+ * 등급/미상은 getBaseCopayRate 로 폴백한다(회귀 0).
+ *
+ * ⚠ SSOT 단일소비(DA §제약1): 병렬 재계산 경로 신설 아님 — copayFromBase 일반(정률) 경로의 rate 결정만
+ *   보정한다. 정액/면제(의급·차상위)·노인 4구간 등급은 ageInfantRate 무관(그 분기가 정본, rate 정보성).
+ * ⚠ db_change=false: 서버 RPC calc_copayment(미러)는 stored grade 기반이라 미접촉 — 나이 파생은 FE 전용
+ *   (부모 T-20260720-foot-COPAY-AGE-DERIVED-AUTO 계약 계승). infant 는 정률경로라 rate 보정만으로 5% 라이브.
+ * ⚠ ageInfantRate 미전달(undefined/null) = 기존 grade-only 동작 그대로(전 호출부 backward-compat).
+ */
+export function effectiveCopayRate(
+  grade: InsuranceGrade | null,
+  ageInfantRate?: number | null,
+): number | null {
+  if (!grade || !COVERED_GRADES.has(grade)) return null;
+  // 나이 파생 infant 세부율(만0세 0.05 / 만1~5세 0.21) 라이브 배선 — grade==='infant' 에만 적용.
+  if (grade === 'infant' && ageInfantRate != null) return ageInfantRate;
+  return getBaseCopayRate(grade);
+}
+
 /** getTaxClass / isCodeItem 가 참조하는 service 의 구조적 최소 형태 (Service 와 호환). */
 export interface BillingService {
   id: string;
@@ -312,7 +337,9 @@ export function computeFootBilling(
   //   opts.hiraUnitValue 전달 시 급여(getTaxClass='급여')×hira_score 존재 항목의 base 를 서버
   //   calc_copayment 와 동일하게 ROUND(hira_score × hira_unit_value) 로 산출(services.price 사용 중단).
   //   미전달(undefined/null) 시 = 기존 price base 그대로(전 호출부 회귀 0 · backward-compat).
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: ageInfantRate = 나이 파생 infant 세부율(만0세 0.05 /
+  //   만1~5세 0.21). grade==='infant' 정률경로에만 라이브 적용(effectiveCopayRate). 미전달=grade-only 그대로.
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
   // ── 급여 base 권위 소스 (1원 canon) = ROUND(hira_score × hira_unit_value) ──────────────
@@ -354,9 +381,9 @@ export function computeFootBilling(
   }
 
   const coveredTotal = totalByTax['급여'];
-  const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
-    ? getBaseCopayRate(insuranceGrade)
-    : null;
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 나이 파생 infant 세부율(만0세 5% / 만1~5세 21%) 라이브
+  //   배선. effectiveCopayRate 단일 헬퍼 — infant 외 등급은 getBaseCopayRate 그대로(회귀 0, backward-compat).
+  const copayRate = effectiveCopayRate(insuranceGrade, opts?.ageInfantRate);
   // ★ 등급→copay = copayFromBase 단일 SSOT 헬퍼(copayCalc.ts, RPC calc_copayment v1.6 미러) 소비.
   //   병렬 재계산 경로 신설 금지(DA §제약1: SSOT 단일소비). 정액(의급 1·2종·차상위2)/면제(차상위1)/
   //   정률(general·infant)/노인 4구간 분기가 이 경로(수납·서류 grain)에도 동일 적용된다.
@@ -511,13 +538,30 @@ export async function loadClinicHiraUnitValue(
  *   동일 저장 등급으로 수렴한다(AC-3). 급여 charge 가 없는 무보험 방문은 유효 covered 등급이 없어
  *   null 반환 → 비급여로 정상 표기(무파괴).
  */
-export async function loadEffectiveInsuranceGrade(
+/**
+ * T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING — 유효 등급 + 나이 파생 infant 세부율 동반 반환.
+ *
+ * loadEffectiveInsuranceGrade 와 동일 판정(live → service_charges 저장등급 폴백 → 나이 파생)을 하되,
+ * 나이 파생 infant 의 세부율(만0세 0.05 / 만1~5세 0.21)을 함께 반환한다. 호출부는 이 rate 를
+ * computeFootBilling/fillBillItemCopayment 의 ageInfantRate 로 배선해 만0세 5% 를 **라이브**로 적용한다.
+ *
+ * ⚠ infantCopayRate 는 grade==='infant' **AND 나이 파생**일 때만 non-null. 저장 charge 등급 폴백으로 얻은
+ *   'infant'(과거 21% 로 확정 적재된 값)은 null → getBaseCopayRate('infant')=21% 유지(forward-only, 기존
+ *   적재값과 정합). 명시 등급/비-infant/미상 = null(회귀 0).
+ */
+export interface EffectiveInsuranceGrade {
+  grade: InsuranceGrade | null;
+  /** 나이 파생 infant 세부 본인부담률(만0세 0.05 / 만1~5세 0.21). 그 외 = null. */
+  infantCopayRate: number | null;
+}
+
+export async function loadEffectiveInsuranceGradeEx(
   customerId: string | null | undefined,
   checkInId: string,
-): Promise<InsuranceGrade | null> {
+): Promise<EffectiveInsuranceGrade> {
   const live = await loadCustomerInsuranceGrade(customerId);
   // 명시 등급(unverified 제외) → 기존 경로 그대로(회귀 0). 스태프/조회 확정값은 나이 파생이 덮지 않는다.
-  if (live && live !== 'unverified') return live;
+  if (live && live !== 'unverified') return { grade: live, infantCopayRate: null };
 
   // 폴백: 이 방문에 저장된 급여 계산 당시 등급(service_charges.customer_grade_at_charge).
   //   is_insurance_covered 급여 행에서만 채택('manual'/비급여 행 제외) — 유효 covered 등급만.
@@ -530,7 +574,8 @@ export async function loadEffectiveInsuranceGrade(
     is_insurance_covered: boolean | null;
   }>) {
     const g = r.customer_grade_at_charge as InsuranceGrade | null;
-    if (r.is_insurance_covered && g && COVERED_GRADES.has(g)) return g;
+    // 저장 charge 등급은 과거 확정 적재값(infant=21%) → infantCopayRate 미부여(forward-only 정합).
+    if (r.is_insurance_covered && g && COVERED_GRADES.has(g)) return { grade: g, infantCopayRate: null };
   }
 
   // ── T-20260720-foot-COPAY-AGE-DERIVED-AUTO (나이 파생, ADDITIVE) ──────────────────
@@ -539,13 +584,23 @@ export async function loadEffectiveInsuranceGrade(
   //   생년 소스 = 서버 RPC fn_customer_birthdates(세기코드 정확판정, rrn 평문 미노출) — 클라 세기
   //   휴리스틱 금지(§3). 나이 미상(생년 파싱 불가) → null 반환 → 기존 폴백 위임(등급 날조 금지, AC-8).
   //   ⚠ 명시 등급 미접촉(위에서 early-return) + non-throwing(판정 실패가 빌링을 막지 않음, 회귀 0).
-  //   ⚠ infant 세부율(1세미만 5% vs 6세미만 21%)은 grade='infant'(→21%)로 수렴한다 — grade-only 계약
-  //     (calcCopayment RPC 미러 불변). 1세미만 5% 정밀적용은 SSOT deriveAgeCopayGrade.rate 로 판정되며
-  //     (단위테스트 AC-4 검증), 라이브 배선(rate override)은 별도 트랙(풋=영유아 극희소).
+  //   ★ T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율(만0세 5% vs 만1~5세 21%)을 함께 반환 →
+  //     라이브 rate 배선. 종전엔 grade='infant'(→21%)로 수렴하던 것(SSOT 는 5% 를 알되 미배선)을 완성한다.
   const ageGrade = await deriveAgeGradeForCheckIn(customerId, checkInId);
-  if (ageGrade) return ageGrade;
+  if (ageGrade) return { grade: ageGrade.grade, infantCopayRate: ageGrade.infantRate };
 
-  return live ?? null; // unverified 였다면 그대로 보존(무회귀), 아니면 null(기존 폴백 경로 유지)
+  return { grade: live ?? null, infantCopayRate: null }; // unverified 보존(무회귀) 또는 null(기존 폴백 경로 유지)
+}
+
+/**
+ * 유효 등급만 반환하는 얇은 래퍼(backward-compat). infant 세부율 라이브 배선이 필요한 호출부는
+ * loadEffectiveInsuranceGradeEx 를 쓴다(rate 를 computeFootBilling 등에 배선).
+ */
+export async function loadEffectiveInsuranceGrade(
+  customerId: string | null | undefined,
+  checkInId: string,
+): Promise<InsuranceGrade | null> {
+  return (await loadEffectiveInsuranceGradeEx(customerId, checkInId)).grade;
 }
 
 /**
@@ -558,7 +613,7 @@ export async function loadEffectiveInsuranceGrade(
 async function deriveAgeGradeForCheckIn(
   customerId: string | null | undefined,
   checkInId: string,
-): Promise<InsuranceGrade | null> {
+): Promise<{ grade: InsuranceGrade; infantRate: number | null } | null> {
   if (!customerId) return null;
   try {
     const { data: ci } = await supabase
@@ -578,7 +633,11 @@ async function deriveAgeGradeForCheckIn(
     const birth = rows.find((r) => r.customer_id === customerId)?.birth_date_display ?? null;
     if (!birth) return null;
 
-    return deriveAgeCopayGrade(birth, todaySeoulISODate())?.grade ?? null;
+    const ag = deriveAgeCopayGrade(birth, todaySeoulISODate());
+    if (!ag) return null;
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율(만0세 0.05 / 만1~5세 0.21) 동반 반환 →
+    //   라이브 rate 배선(computeFootBilling opts.ageInfantRate). elderly_flat 은 4구간이라 null(copayFromBase 처리).
+    return { grade: ag.grade, infantRate: ag.grade === 'infant' ? ag.rate : null };
   } catch (e) {
     console.warn('[footBilling] 나이 파생 등급 판정 실패 — 기존 폴백 위임:', e);
     return null;
@@ -751,7 +810,9 @@ export function isFlatPublishedExamFee(
 export function computeConsultationSurchargeBase(
   items: FootBillingItem[],
   insuranceGrade: InsuranceGrade | null,
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: ageInfantRate 도 computeFootBilling 로 pass-through
+  //   (진찰료 가산 base 의 infant 본인부담이 aggregate 5% 와 정합하도록). 미전달=grade-only 그대로.
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null },
 ): { covered: number; copay: number } {
   const consultItems = items.filter((i) => isConsultationFeeItem(i.service, insuranceGrade));
   if (consultItems.length === 0) return { covered: 0, copay: 0 };
@@ -866,6 +927,9 @@ export function fillBillItemCopayment(
     copayment_amount?: number;
   }>,
   insuranceGrade: InsuranceGrade | null,
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 나이 파생 infant 세부율(만0세 0.05 / 만1~5세 0.21).
+  //   grade==='infant' 정률경로에만 라이브 적용(effectiveCopayRate). 미전달=grade-only 그대로(backward-compat).
+  ageInfantRate?: number | null,
 ): void {
   const covered = billItems
     .map((it, i) => ({ i, total: it.amount * (it.count ?? 1) * (it.days ?? 1) }))
@@ -876,9 +940,9 @@ export function fillBillItemCopayment(
   const anyExisting = covered.some((x) => billItems[x.i].copayment_amount != null);
   if (anyExisting) return;
 
-  const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
-    ? getBaseCopayRate(insuranceGrade)
-    : null;
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율(만0세 5% / 만1~5세 21%) 라이브 배선 —
+  //   effectiveCopayRate 단일 헬퍼(computeFootBilling 과 동일 SSOT). infant 외 등급은 getBaseCopayRate 그대로.
+  const copayRate = effectiveCopayRate(insuranceGrade, ageInfantRate);
 
   const coveredSum = covered.reduce((s, x) => s + x.total, 0);
   // ★ 등급→copay = copayFromBase 단일 SSOT 헬퍼(copayCalc.ts, RPC calc_copayment v1.6 미러) 소비.

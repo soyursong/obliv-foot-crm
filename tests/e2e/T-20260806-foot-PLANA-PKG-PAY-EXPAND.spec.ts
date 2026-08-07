@@ -14,6 +14,7 @@ import {
   type AttemptStore,
 } from '../../src/lib/cband/paymentFlow';
 import type { SendResult } from '../../src/lib/cband/catClient';
+import { shouldShowCbandEntry } from '../../src/lib/cband/entryVisibility';
 
 /**
  * T-20260806-foot-PLANA-PKG-PAY-EXPAND — 플랜A ④ 패키지 결제 확장 (2순위)
@@ -189,5 +190,29 @@ test.describe('T-20260806 PKG-PAY-EXPAND — AC-1/3/4 착지 discriminator(packa
     // 패키지 결제는 카드 탭과 동일 CbandPayEntryButton 전송 게이트를 계승 — 한도 술어 공유 확인.
     expect(exceedsPerTxnLimit(5_000_000)).toBe(false);
     expect(exceedsPerTxnLimit(5_000_001)).toBe(true);
+  });
+});
+
+/**
+ * AC-1 (reopened 2026-08-07, field-soak NEGATIVE) — 결제 미니창 코밴 진입버튼 노출 게이트.
+ * reporter(최필경 총괄) 실화면 = 결제 미니창의 결제수단 탭(카드/현금/이체/패키지). 카드 탭엔
+ * [카드 단말 결제(코밴)] 있었고 '패키지'(membership) 탭엔 없었음 = deploy-vs-reality 갭.
+ * 근본원인 = PaymentMiniWindow 노출 게이트가 카드/분할만 허용(payMethod==='card'||splitMode) →
+ * 패키지 탭 미노출. shouldShowCbandEntry(SSOT 술어)로 패키지 탭 포함 + 회귀 락.
+ */
+test.describe('T-20260806-foot-PLANA-PKG-PAY-EXPAND AC-1 코밴 진입버튼 노출 게이트', () => {
+  test('★패키지(membership) 탭 → 노출(reopened 결함 회귀 락)', () => {
+    expect(shouldShowCbandEntry('membership', false)).toBe(true);
+  });
+  test('카드 탭 → 노출(기존 동선 유지·무회귀)', () => {
+    expect(shouldShowCbandEntry('card', false)).toBe(true);
+  });
+  test('분할결제(splitMode) → 노출(결제수단 무관·기존 유지)', () => {
+    expect(shouldShowCbandEntry('cash', true)).toBe(true);
+    expect(shouldShowCbandEntry('transfer', true)).toBe(true);
+  });
+  test('현금/이체 단일 탭 → 미노출(카드 단말 결제 무의미)', () => {
+    expect(shouldShowCbandEntry('cash', false)).toBe(false);
+    expect(shouldShowCbandEntry('transfer', false)).toBe(false);
   });
 });
