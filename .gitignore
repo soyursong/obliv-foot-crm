@@ -108,3 +108,6 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 /tickets/
 /docs/signals.md
 /memory/
+
+# git worktrees (isolation dirs — never track)
+_wt-*
