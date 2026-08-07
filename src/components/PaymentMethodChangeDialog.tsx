@@ -11,8 +11,8 @@
  *   2. RedPay-앵커 행(external_trxid IS NOT NULL ∧ reconciled_at IS NOT NULL) = 카드 물리승인 앵커 →
  *      method 사후변경 불가. 버튼 disable(호출측) + 본 다이얼로그 제출 시 2차 백스톱 차단.
  *      환불 후 재결제 경로는 F4717 소유(본 버튼 소관 아님).
- *   3. audit ADDITIVE — payment_audit_logs 에 action='method_change' 로 누가·언제·이전값→새값 기록.
- *      (신규 테이블/컬럼 없음 — 기존 감사 인프라 재사용. db_change=false.)
+ *   3. audit ADDITIVE — payment_audit_logs 에 action='edit'(reason='결제수단 변경')로 누가·언제·이전값→새값 기록.
+ *      (action CHECK = create/edit/cancel/delete 만 허용 → 'edit' 재사용. 신규 테이블/컬럼 없음, db_change=false.)
  *   4. 현금영수증 coherence — cash_receipt_* 필드는 손대지 않음(물리 발행 사실 보존). 발행건이면 안내만 표기.
  *   5. 일마감 결제수단별 집계는 payments.method 파생 → in-place UPDATE 로 자동 재반영(별도 write 0).
  *

@@ -5,7 +5,7 @@
  * DA 게이트(§33/euaq) 결속 AC 검증:
  *   AC-1  payments.method UPDATE → rows-affected=1 불변식(silent write-failure guard).
  *   AC-2  RedPay-앵커 행(external_trxid IS NOT NULL ∧ reconciled_at IS NOT NULL) = method 변경 잠금.
- *   AC-3  audit ADDITIVE — payment_audit_logs action='method_change'(누가·언제·이전값→새값).
+ *   AC-3  audit ADDITIVE — payment_audit_logs action='edit'(reason='결제수단 변경', 누가·언제·이전값→새값).
  *   AC-4  현금영수증 coherence — method 변경이 cash_receipt_* 필드를 건드리지 않음.
  *   AC-5  일마감 결제수단별 집계는 payments.method 파생 → in-place UPDATE 로 자동 재반영(별도 write 0).
  *   요구 B(분할) = moot — 배포된 split write-path(RECEIPT-MANUAL-PAY-SPLIT-METHOD) coverage-confirm only.
