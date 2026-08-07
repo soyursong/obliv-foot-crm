@@ -83,6 +83,13 @@ import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean, useCh
 import { LaserTimerPanel } from '@/components/chart/LaserTimerPanel';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
+// T-20260730-foot-SUSU-PAYMETHOD-CHANGE: 결제수단 변경(수기 수납, RedPay-앵커 잠금) 전용 다이얼로그
+import {
+  PaymentMethodChangeDialog,
+  isRedpayAnchor,
+  type PaymentRowForMethodChange,
+  type PaymentMethodChangeDonePayload,
+} from '@/components/PaymentMethodChangeDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
 // T-20260724-foot-NHIS-MANUAL-CAPTURE: API 자동조회 pivot → 포털 딥링크 + 인라인 캡처
 import { useNhisLookup } from '@/hooks/useNhisLookup';
@@ -183,6 +190,11 @@ interface Payment {
   // T-20260515-foot-RECEIPT-TAX-SPLIT AC-6: 현금영수증 필드 (DB 마이그레이션 전 null)
   cash_receipt_issued?: boolean | null;
   cash_receipt_type?: 'income_deduction' | 'expense_proof' | null;
+  // T-20260730-foot-SUSU-PAYMETHOD-CHANGE: RedPay-앵커 판정용(카드 물리승인+대사확정 = method 변경 잠금).
+  //   select('*') 로 이미 fetch 됨 — 타입만 노출. clinic_id/check_in_id 는 감사 레코드 컨텍스트.
+  clinic_id?: string | null;
+  external_trxid?: string | null;
+  reconciled_at?: string | null;
 }
 
 interface PackagePayment {
@@ -3119,6 +3131,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const [showAutoSaved, setShowAutoSaved] = useState(false);
   // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 확장 행 상태
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
+  // T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 다이얼로그 대상 행
+  const [methodChangeTarget, setMethodChangeTarget] = useState<PaymentRowForMethodChange | null>(null);
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 + 수동 입력
   const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
   const [messageForm, setMessageForm] = useState<{
@@ -6955,6 +6969,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           <th className="text-left px-2 py-1.5 font-medium border-b">구분</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">현금영수증</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">메모</th>
+                          {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 액션 */}
+                          <th className="text-right px-2 py-1.5 font-medium border-b">변경</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -6989,10 +7005,54 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                 )}
                               </td>
                               <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
+                              {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 버튼.
+                                  · 결제(payment) 행에만 노출(환불행 제외). RedPay-앵커 행은 disable + 툴팁(DA A안 LOCK).
+                                  · 행 확장(expand) 클릭과 분리 위해 stopPropagation. */}
+                              <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                {p.payment_type === 'payment' ? (() => {
+                                  const anchored = isRedpayAnchor(p);
+                                  return (
+                                    <button
+                                      type="button"
+                                      data-testid={`btn-method-change-${p.id}`}
+                                      data-redpay-anchor={anchored ? 'true' : undefined}
+                                      disabled={anchored}
+                                      title={anchored
+                                        ? '카드 자동승인 건은 변경 불가 — 환불 후 재결제로 처리하세요'
+                                        : '결제수단 변경'}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (anchored) return;
+                                        setMethodChangeTarget({
+                                          id: p.id,
+                                          method: p.method,
+                                          installment: p.installment,
+                                          clinic_id: p.clinic_id ?? null,
+                                          check_in_id: p.check_in_id ?? null,
+                                          status: p.status ?? 'active',
+                                          external_trxid: p.external_trxid ?? null,
+                                          reconciled_at: p.reconciled_at ?? null,
+                                          cash_receipt_issued: p.cash_receipt_issued ?? null,
+                                        });
+                                      }}
+                                      className={cn(
+                                        'rounded px-1.5 py-0.5 text-[11px] transition',
+                                        anchored
+                                          ? 'text-gray-300 cursor-not-allowed'
+                                          : 'text-teal-600 hover:bg-teal-50',
+                                      )}
+                                    >
+                                      수단변경
+                                    </button>
+                                  );
+                                })() : (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
+                              </td>
                             </tr>
                             {expandedPaymentId === p.id && (
                               <tr>
-                                <td colSpan={6} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
+                                <td colSpan={7} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
                                   <div className="text-[11px] font-semibold text-muted-foreground mb-1">수납 이력</div>
                                   <PaymentAuditLogsPanel paymentId={p.id} autoLoad />
                                 </td>
@@ -10272,6 +10332,24 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
           )}
         </DialogContent>
       </Dialog>
+
+      {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 다이얼로그.
+          onDone = 낙관적 업데이트(즉시 반영) + 서버 재조회(정합 확인, 일마감 집계는 payments.method 파생 자동 재반영). */}
+      <PaymentMethodChangeDialog
+        payment={methodChangeTarget}
+        onClose={() => setMethodChangeTarget(null)}
+        onDone={(updated: PaymentMethodChangeDonePayload) => {
+          setMethodChangeTarget(null);
+          setPayments((prev) =>
+            prev.map((p) =>
+              p.id === updated.id
+                ? { ...p, method: updated.method, installment: updated.installment ?? 0 }
+                : p,
+            ),
+          );
+          void refreshPayments();
+        }}
+      />
 
       {/* T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본1 — 개인정보 + 체크리스트 */}
       {showChecklistForm && (
