@@ -48,6 +48,10 @@ function rxRow(
   customer: { id: string; name: string; chart_number: string },
   issue_date: string,
   printed_at?: string,
+  // T-20260807-foot-RXHIST-BARTOVEN-QTY2-DEDUP-DISPLAY: 교부번호(issue_no) 명시 override.
+  //   실처방 dedup 은 교부번호 단위 — 재출력=동일 교부번호, 별개 발행=서로 다른 교부번호.
+  //   미지정 시 id 로 고유(= 별개 발행 기본). null 지정 시 초안(issue_no 없음) 모델링.
+  issue_no?: string | null,
 ): RawFormSubmissionWithCustomerRow {
   return {
     id,
@@ -57,7 +61,7 @@ function rxRow(
     field_data: {
       form_key: RX_ISSUANCE_FORM_KEY,
       issue_date,
-      issue_no: `${issue_date}-${id}`,
+      issue_no: issue_no === undefined ? `${issue_date}-${id}` : issue_no,
       prescriber_name: '문지은',
       diag_code_1: 'B35.1',
       diag_name_1: '조갑백선',
@@ -94,22 +98,34 @@ test.describe('AC-1 월별 필터', () => {
   });
 });
 
-// ─── AC-2: 실처방 dedup ───
+// ─── AC-2: 실처방 dedup (교부번호 단위, T-20260807-foot-RXHIST-BARTOVEN-QTY2-DEDUP-DISPLAY 회귀 수정) ───
 test.describe('AC-2 실처방 기준 중복 자동제거', () => {
-  test('동일 환자·동일 교부일·동일 약품집합 재출력 → 1건', () => {
+  test('동일 교부번호 재출력(같은 문서 재출력) → 1건, dup_count=2', () => {
+    const RX_NO = '2026-08-07-000001';
     const rows = mapRxIssuancePatientRows([
-      rxRow('p1', HTML_A, P1, '2026-08-07', '2026-08-07T09:00:00+09:00'),
-      rxRow('p2', HTML_A, P1, '2026-08-07', '2026-08-07T09:05:00+09:00'), // 재출력(중복)
+      rxRow('p1', HTML_A, P1, '2026-08-07', '2026-08-07T09:00:00+09:00', RX_NO),
+      rxRow('p2', HTML_A, P1, '2026-08-07', '2026-08-07T09:05:00+09:00', RX_NO), // 동일 교부번호 재출력
     ]);
     const deduped = dedupeRxIssuanceRows(rows);
     expect(deduped).toHaveLength(1);
     expect(deduped[0].dup_count).toBe(2);
   });
 
-  test('약품 나열 순서만 다른 동일 처방도 1건(순서무관 키)', () => {
+  // ★ 회귀 재현: 같은 날 같은 약을 서로 다른 교부번호로 2건 발행(바르토벤 F-4741 실사례) → 2건 유지.
+  test('같은 날 같은 약이라도 교부번호가 다르면 별개 발행 → 2건(과수렴 금지)', () => {
     const rows = mapRxIssuancePatientRows([
-      rxRow('x1', HTML_AB, P1, '2026-08-05'),
-      rxRow('x2', HTML_BA, P1, '2026-08-05'), // 같은 약 A+B, 순서만 뒤집힘
+      rxRow('b1', HTML_A, P1, '2026-08-05', '2026-08-05T10:40:00+09:00', '2026-08-05-000013'),
+      rxRow('b2', HTML_A, P1, '2026-08-05', '2026-08-05T10:47:00+09:00', '2026-08-05-000015'),
+    ]);
+    const deduped = dedupeRxIssuanceRows(rows);
+    expect(deduped).toHaveLength(2);
+    deduped.forEach((r) => expect(r.dup_count).toBe(1));
+  });
+
+  test('교부번호 미부여(초안) 순서무관 약품집합 폴백 dedup → 1건', () => {
+    const rows = mapRxIssuancePatientRows([
+      rxRow('x1', HTML_AB, P1, '2026-08-05', undefined, null), // 초안(교부번호 없음)
+      rxRow('x2', HTML_BA, P1, '2026-08-05', undefined, null), // 같은 약 A+B, 순서만 뒤집힘
     ]);
     expect(dedupeRxIssuanceRows(rows)).toHaveLength(1);
   });
@@ -152,14 +168,14 @@ test.describe('AC-4 처방약 대표+기타 분리', () => {
 test.describe('파이프라인: 기간→dedup→약품필터', () => {
   test('기간 필터 후 dedup, 이어서 약품 필터 적용', () => {
     const rows = mapRxIssuancePatientRows([
-      rxRow('m1', HTML_A, P1, '2026-08-07'),
-      rxRow('m2', HTML_A, P1, '2026-08-07'), // 중복
+      rxRow('m1', HTML_A, P1, '2026-08-07', undefined, '2026-08-07-000009'),
+      rxRow('m2', HTML_A, P1, '2026-08-07', undefined, '2026-08-07-000009'), // 동일 교부번호 재출력(중복)
       rxRow('m3', HTML_AB, P2, '2026-08-08'),
       rxRow('m4', HTML_A, P1, '2026-07-20'), // 저번달(범위 밖)
     ]);
     const byDate = filterRxRowsByDateRange(rows, '2026-08-01', '2026-08-31');
     const deduped = dedupeRxIssuanceRows(byDate);
-    // m1==m2 병합 → 2건(류승현 A, 남정철 A+B)
+    // m1==m2(동일 교부번호) 병합 → 2건(류승현 A, 남정철 A+B)
     expect(deduped).toHaveLength(2);
     // 약품 A 필터 → 둘 다 A 포함 → 2건
     expect(filterRxRowsByMedications(deduped, [MED_A])).toHaveLength(2);

@@ -232,13 +232,14 @@ export function filterRxRowsByDateRange<T extends Pick<RxIssuanceRow, 'issued_at
 }
 
 /**
- * AC-2 실처방 기준 중복 자동제거 — 동일 환자 · 동일 교부일(날짜) · 동일 약품집합 = 실처방 1건으로 집계.
+ * AC-2 실처방 기준 중복 자동제거 — "발행문서(처방전) 1건" 단위로 집계.
  *
- * 키 = (customer_id||chart_number||patient_name, issued 날짜, 정렬된 약품집합).
- *   - 처방전 재출력(같은 발행이 여러 form_submission)을 1건으로 병합(출력 횟수 카운트 아님).
- *   - 서로 다른 약품집합/날짜/환자는 별개 키 → 과다 병합 0(AC-2 회귀 무결).
+ * ★ T-20260807-foot-RXHIST-BARTOVEN-QTY2-DEDUP-DISPLAY (P1 회귀 수정): 실처방 식별자 = 교부번호(issue_no).
+ *   - 교부번호가 다르면 별개 발행 → 병합 금지(과수렴 차단). 같은 날 같은 약이라도 별개 교부번호면 각 1건.
+ *   - 교부번호가 같은 여러 form_submission = 동일 문서 재출력 → 1건 병합(출력 횟수 카운트 아님, AC-2 본래 의도).
+ *   - 초안 등 교부번호 미부여(issue_no=NULL)만 폴백으로 (교부일+약품집합) 키(확정 발행과 섞지 않음).
  * 순서 = 입력 순서(printed_at desc)의 첫 등장 행을 대표로 유지(안정).
- * 반환 행에 dup_count(병합된 발행 건수) 부여 — 표시/디버깅용(선택).
+ * 반환 행에 dup_count(병합된 발행 건수 = 재출력 횟수) 부여 — dup_count>1 은 UI 에 '재출력 N회'로 표기.
  */
 export function dedupeRxIssuanceRows(
   rows: RxIssuancePatientRow[] | null | undefined,
@@ -247,8 +248,15 @@ export function dedupeRxIssuanceRows(
   const byKey = new Map<string, RxIssuancePatientRow & { dup_count: number }>();
   for (const r of rows) {
     const patientKey = r.customer_id ?? r.chart_number ?? r.patient_name ?? '?';
-    const dateKey = rxIssuedDateKey(r.issued_at) ?? '?';
-    const key = `${patientKey}${dateKey}${medSetKey(r.medications)}`;
+    // ★ T-20260807-foot-RXHIST-BARTOVEN-QTY2-DEDUP-DISPLAY (P1 회귀 수정):
+    //   실처방(발행문서) 고유 식별자 = 교부번호(issue_no). 교부번호가 다르면 별개 발행 → 병합 금지
+    //   (RC: 같은 날 같은 약을 서로 다른 교부번호로 2건 발행[김병완 F-4741]이 medSetKey 병합으로 1건 과수렴).
+    //   교부번호 동일 = 동일 문서 재출력 → 1건. 초안(issue_no=NULL)만 (교부일+약품집합) 폴백(확정발행과 미혼합).
+    const issueNo = str(r.issue_no);
+    const docKey = issueNo
+      ? `no:${issueNo}`
+      : `set:${rxIssuedDateKey(r.issued_at) ?? '?'}:${medSetKey(r.medications)}`;
+    const key = `${patientKey}|${docKey}`;
     const existing = byKey.get(key);
     if (existing) {
       existing.dup_count += 1;

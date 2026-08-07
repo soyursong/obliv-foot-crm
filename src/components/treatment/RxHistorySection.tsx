@@ -311,7 +311,19 @@ export default function RxHistorySection() {
                       data-testid="rx-history-row"
                     >
                       <td className="px-3 py-2">
-                        {r.issued_at ? formatDateDots(r.issued_at) : '—'}
+                        <span>{r.issued_at ? formatDateDots(r.issued_at) : '—'}</span>
+                        {/* T-20260807-foot-RXHIST-BARTOVEN-QTY2-DEDUP-DISPLAY: 동일 교부번호 재출력 병합 건수 표기.
+                            dedup 은 이제 교부번호(issue_no) 단위 → 서로 다른 발행은 각 행으로 표시(과수렴 해소).
+                            dup_count>1 = 동일 문서 재출력 N회 → 사실 소실 방지 위해 배지로 노출. */}
+                        {r.dup_count > 1 && (
+                          <span
+                            className="ml-1.5 inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"
+                            data-testid="rx-history-reprint-badge"
+                            title="동일 교부번호 처방전 재출력 횟수"
+                          >
+                            재출력 {r.dup_count}회
+                          </span>
+                        )}
                       </td>
                       {/* AC-3: 성함·차트번호 클릭 → 2번차트(공통 훅 재사용, stopPropagation 으로 행 펼침 충돌 방지). */}
                       <td className="px-3 py-2">
