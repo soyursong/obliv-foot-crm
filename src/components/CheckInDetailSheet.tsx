@@ -57,6 +57,8 @@ import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/Cban
 import { netPaidFromPayments } from '@/lib/footBilling';
 import type { CheckIn, Package as PackageType, PackageRemaining, Service, VisitType } from '@/lib/types';
 import { visitRouteOptionsFor } from '@/lib/types';
+// T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE: 환자 셀프리포트 유입경로 → 11코드 advisory 크로스워크(비권위·참고, 자동 write 0).
+import { inflowSelfReportCrosswalk } from '@/lib/inflowSelfReportCrosswalk';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
 import { useChart } from '@/lib/chartContext';
 // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 1번차트 건보공단 실시간 자격조회 row 제거 (NhisLookupPanel import 삭제)
@@ -555,6 +557,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const [, setStaffList] = useState<Array<{ id: string; name: string; role: string }>>([]);
   /** T-20260510-foot-C1-VISIT-ROUTE-MEMO: 방문경로 */
   const [visitRoute, setVisitRoute] = useState<string>('');
+  /** T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE: 환자 셀프리포트 유입경로 candidate(check_ins.inflow_channel_self_reported).
+   *  advisory hint 표시 전용 — canonical(inflow_channel) 미확정 시 참고용 노출. 자동 write 없음. */
+  const [selfReportedInflow, setSelfReportedInflow] = useState<string | null>(null);
   /** T-20260512-foot-C1-VISIT-ROUTE-MEMO-V3: 기타메모(memo) */
   const [etcMemo, setEtcMemo] = useState('');
   const [savingEtcMemo, setSavingEtcMemo] = useState(false);
@@ -597,6 +602,8 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setChartNumber(null);
     setResolvedCustomerId(null);
     setLatestCheckIn(null);
+    // T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE: 고객/체크인 전환 시 셀프리포트 hint 잔상 방지.
+    setSelfReportedInflow(null);
     // T-20260629-foot-CHART1-FORMAT-UNIFY AC-1: 고객 전환 시 이전 생년월일 잔상 방지
     setBirthDateDisplay(null);
     // T-20260603-foot-CHART-UNSAVED-GUARD AC-2: 고객/체크인 전환 시 dirty·확인창 리셋
@@ -844,6 +851,20 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setCustomerMemo(custData?.customer_note ?? custData?.customer_memo ?? '');
     setVisitRoute(custData?.visit_route ?? '');
     setEtcMemo(custData?.memo ?? '');
+    // T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE: 셀프리포트 유입경로 candidate(advisory hint 소스).
+    //   checkIn prop 에 신규 컬럼이 없을 수 있어 방어적 재조회. 컬럼 미배포 시 error→null(hint 미노출, throw 0).
+    if (checkIn.inflow_channel_self_reported != null) {
+      setSelfReportedInflow(checkIn.inflow_channel_self_reported);
+    } else {
+      const { data: srRow } = await supabase
+        .from('check_ins')
+        .select('inflow_channel_self_reported')
+        .eq('id', checkIn.id)
+        .maybeSingle();
+      setSelfReportedInflow(
+        (srRow as { inflow_channel_self_reported?: string | null } | null)?.inflow_channel_self_reported ?? null,
+      );
+    }
     // T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE: 건보공단 자격조회 제거 — setHiraConsent 삭제
     // T-20260506-foot-CHART-LINK-SYNC: customer_id null 케이스 — phone으로 찾은 고객 ID 2순위 저장
     if (!checkIn.customer_id && custData?.id) {
@@ -1978,6 +1999,31 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                         <option key={opt} value={opt}>{opt}</option>
                       ))}
                     </select>
+                  </div>
+                )}
+                {/* T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE: 환자 셀프리포트 유입경로 = 참고용 advisory hint(비권위).
+                    canonical 유입경로(inflow_channel) 미확정(pending)일 때만 노출. 스태프가 참고해 데스크 접수에서 직접 확정.
+                    ⚠ 자동 매핑/치환·자동 write 없음(§36 방화벽) — 표시만. crosswalk=확신 1:1 만 참고 제안. */}
+                {selfReportedInflow && !checkIn.inflow_channel && (
+                  <div
+                    data-testid="inflow-self-report-hint"
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs space-y-0.5"
+                  >
+                    <div className="flex items-center gap-1 font-semibold text-amber-700">
+                      <AlertTriangle className="h-3 w-3" /> 환자 자가 선택 유입경로 (참고용)
+                    </div>
+                    <div className="text-amber-900">
+                      키오스크 입력: <span className="font-medium">{selfReportedInflow}</span>
+                      {(() => {
+                        const hint = inflowSelfReportCrosswalk(selfReportedInflow);
+                        return hint ? (
+                          <> · 추천 접수코드(참고): <span className="font-medium">{hint.label}</span></>
+                        ) : null;
+                      })()}
+                    </div>
+                    <div className="text-[11px] text-amber-600">
+                      ※ 참고용입니다. 공식 유입경로는 데스크 접수에서 직접 확인 후 선택해 주세요.
+                    </div>
                   </div>
                 )}
                 {/* T-20260629-foot-CHART1-PAYMENT-INSURANCE-REMOVE AC-2: 건보공단 실시간 자격조회 row 제거 (대시보드 1번차트) */}
