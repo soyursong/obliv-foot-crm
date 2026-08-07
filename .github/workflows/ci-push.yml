@@ -252,9 +252,14 @@ jobs:
     needs: [build]
     steps:
       - uses: actions/checkout@v4
+      # ⚠ 이 잡 한정 Node 22 — scripts/check-cfpages-asset-404.sh 가 띄우는
+      #   wrangler@4.119.0(+miniflare)는 Node >=22.0.0 요구. Node 20 이면
+      #   "Wrangler requires at least Node.js v22.0.0" 로 wrangler 조기종료 → 영구 RED.
+      #   다른 6개 잡의 node-version:20 은 wrangler 미사용이라 그대로 둔다(무회귀).
+      #   (T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE FIX: DoD#4 상시감시 복구)
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build
