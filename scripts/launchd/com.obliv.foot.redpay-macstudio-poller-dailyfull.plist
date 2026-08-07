@@ -29,7 +29,8 @@
          bash scripts/redpay_poller_checkout_sync.sh --create   # 없을 때만
     1. 시크릿 = 증분과 동일 파일 공유(신규 시크릿 없음): ~/.env.redpay-foot
        (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / REDPAY_API_KEY / REDPAY_BUSINESS_NO=457-23-00938 …)
-       POLL_MODE 만 이 plist 의 EnvironmentVariables 로 override(=daily_full). REDPAY_DOMAIN 미설정=foot(기본).
+       POLL_MODE(=daily_full) + REDPAY_DAILY_LOOKBACK_DAYS(=3, 정산 lag 커버 forward-seal, AC-2) 를 이 plist
+       EnvironmentVariables 로 override. REDPAY_DOMAIN 미설정=foot(기본).
     2. 등록 (LaunchAgents symlink 도 전용 checkout 의 plist 로 → plist 자체도 main-고정):
          mkdir -p ~/logs
          ln -sf ~/GitHub/obliv-foot-crm-redpay-poller/scripts/launchd/com.obliv.foot.redpay-macstudio-poller-dailyfull.plist \
@@ -62,10 +63,16 @@
     <key>WorkingDirectory</key>
     <string>/Users/domas/GitHub/obliv-foot-crm-redpay-poller</string>
 
-    <!-- ★ POLL_MODE=daily_full: 그날치(기본 창=어제 00:00 KST~now, ~38h 롤링) 전수 재스윕. 멱등 upsert 로 무중복. -->
+    <!-- ★ POLL_MODE=daily_full: T-LOOKBACK 00:00 KST~now 전수 재스윕. 멱등 upsert(on_conflict) 로 무중복.
+         T-20260807-foot-REDPAY-RESWEEP-LOOKBACK-UNDERINGEST-SEAL AC-2(forward-seal): 구 창(어제 00:00 KST,
+         ~38h)은 정산 lag(late-settled)이 그 창보다 길면 orphan(미적재)이 잔존 = genuine under-ingestion(08-05 delta).
+         → REDPAY_DAILY_LOOKBACK_DAYS=3(정산 lag ≥T-3 커버)로 확대. 확대 창 재fetch 는 멱등키
+         (external_trxid,external_status,amount) upsert 로 중복 0, late-settled orphan 만 흡수(net-new=recovery only).
+         더 넓은 주기적 backstop 필요 시 이 값만 상향(별 launchd 인스턴스). 미설정 시 코드 기본값도 3. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>REDPAY_POLL_MODE</key><string>daily_full</string>
+        <key>REDPAY_DAILY_LOOKBACK_DAYS</key><string>3</string>
     </dict>
 
     <!--
