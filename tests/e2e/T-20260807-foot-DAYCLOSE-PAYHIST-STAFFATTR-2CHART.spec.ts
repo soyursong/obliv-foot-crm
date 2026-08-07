@@ -1,6 +1,9 @@
 /**
- * T-20260807-foot-STAFFDAILY-REVENUE-2NDCHART-ATTR-MATCH (P2)
+ * T-20260807-foot-DAYCLOSE-PAYHIST-STAFFATTR-2CHART (P2)
+ *   (dedup canonical of T-20260807-foot-STAFFDAILY-REVENUE-2NDCHART-ATTR-MATCH — 동일 요청 fold)
  *   통계 > 실장별 일별 매출(02b, lib/mtmSales.ts fetchStaffDailyBreakdown) 매출 귀속 정합.
+ *   원문: "통계 > 실장별 일별 매출 > 일마감 결제내역에서 2번차트 담당자 기준 총매출 안맞음".
+ *   '일마감 결제내역' = 총매출 소스(단건 payments + 패키지 package_payments), 별도 탭 아님.
  *   부모 T-20260805-DAILYTREND-STAFF-BREAKDOWN-CLARIFY(as-built d9190d6b) 의 데이터 불일치 픽스.
  *
  * ── RC(데이터 안맞음) ──────────────────────────────────────────────────────────
@@ -27,7 +30,7 @@ import * as path from 'path';
 const REPO_ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
-test.describe('정적 소스 불변식 (T-20260807-foot-STAFFDAILY-REVENUE-2NDCHART-ATTR-MATCH)', () => {
+test.describe('정적 소스 불변식 (T-20260807-foot-DAYCLOSE-PAYHIST-STAFFATTR-2CHART)', () => {
   const lib = read('src/lib/mtmSales.ts');
   const doctorTab = read('src/components/sales/SalesDoctorTab.tsx');
 
