@@ -129,9 +129,11 @@ test.describe('시나리오 1: PHI 안전 + 엑셀 헤더', () => {
   });
 
   test('AC-4 — 투영 키셋 = 화이트리스트 + 성함·차트번호(PHI 필드명 부재)', () => {
+    // T-20260807-foot-RXHISTORY-TAB-4IMPROVE AC-3: customer_id(2번차트 오픈용 내부 UUID) 추가.
+    //   customer_id = 내부 식별자(PHI 아님) — RRN/전화/차트 평문 아님. 화이트리스트 확장.
     const r = mapRxIssuancePatientRows(SAMPLE)[0];
     expect(Object.keys(r).sort()).toEqual(
-      ['chart_number', 'diagnosis', 'id', 'issue_no', 'issued_at', 'medications', 'patient_name', 'prescriber_name'].sort(),
+      ['chart_number', 'customer_id', 'diagnosis', 'id', 'issue_no', 'issued_at', 'medications', 'patient_name', 'prescriber_name'].sort(),
     );
     for (const phi of ['patient_rrn', 'patient_phone', 'field_data']) {
       expect(r).not.toHaveProperty(phi);

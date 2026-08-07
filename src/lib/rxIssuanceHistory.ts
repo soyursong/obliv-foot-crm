@@ -60,6 +60,8 @@ export interface RawFormSubmissionRow {
 
 /** customers 임베드 포함 form_submissions 원시 행. customers = FK(customer_id) 임베디드 리소스(객체/배열). */
 export interface RawFormSubmissionWithCustomerRow extends RawFormSubmissionRow {
+  /** form_submissions.customer_id (customers PK FK) — 2번차트 오픈 대상 식별자(T-20260807-RXHISTORY-TAB-4IMPROVE AC-3). */
+  customer_id?: string | null;
   customers?:
     | { name?: string | null; chart_number?: string | null }
     | { name?: string | null; chart_number?: string | null }[]
@@ -68,6 +70,8 @@ export interface RawFormSubmissionWithCustomerRow extends RawFormSubmissionRow {
 
 /** 발행 이력 1건 + 환자 표시필드(성함·차트번호 화이트리스트). RRN·풀 전화 미포함. */
 export interface RxIssuancePatientRow extends RxIssuanceRow {
+  /** form_submissions.customer_id (customers PK) — 성함/차트번호 클릭→2번차트 오픈 식별자(AC-3). PHI 아님(내부 UUID). */
+  customer_id: string | null;
   /** customers.name — 성함(스태프 대상 노출 허용) */
   patient_name: string | null;
   /** customers.chart_number — 차트번호(스태프 대상 노출 허용) */
@@ -119,6 +123,7 @@ export function mapRxIssuancePatientRows(
     const cust = extractCustomer(r.customers);
     out.push({
       ...base,
+      customer_id: str(r.customer_id),
       patient_name: str(cust?.name),
       chart_number: str(cust?.chart_number),
     });
@@ -167,6 +172,112 @@ export function filterRxRowsByMedications<T extends Pick<RxIssuanceRow, 'medicat
   const sel = new Set(medications.filter((m) => m && m.trim()));
   if (sel.size === 0) return [];
   return rows.filter((r) => r.medications.some((m) => sel.has(m)));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260807-foot-RXHISTORY-TAB-4IMPROVE — 처방이력 탭 4대 개선 (AC-1 월별필터 / AC-2 실처방 dedup / AC-4 대표+기타)
+//
+// ★ AC-2 DB 조사 결론(canonical 기준 컬럼 특정): "실제 약 처방 나간 건"의 별도 canonical 컬럼/테이블은
+//   존재하지 않는다. 처방 도메인 SSOT = form_submissions(form_key='rx_standard') = 처방전 '발행/출력' 이력
+//   단일 원장(DA-20260806-foot-RX-PERSIST-SSOT Option B). prescriptions/prescription_items = dead skeleton
+//   (되살리기 금지). 따라서 "출력 이력" vs "실제 처방"의 구분은 **신규 컬럼/canonical write/스키마 변경 없이**
+//   순수 read-side 집계(dedup)로 충족한다: 동일 환자 · 동일 교부일(날짜) · 동일 약품집합 = 실처방 1건.
+//   ⇒ db_change=false 유지, data-architect CONSULT 불요.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** issued_at(타임스탬프/ISO) → 'YYYY-MM-DD' 날짜 파트(dedup·필터 키). 파싱 실패 시 null. */
+export function rxIssuedDateKey(issued_at: string | null | undefined): string | null {
+  const s = str(issued_at);
+  if (!s) return null;
+  // ISO/타임스탬프 앞 10글자(YYYY-MM-DD) 우선 — 로컬 TZ 변환 없이 문자열 파트로 안정 추출.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // 'YYYY.MM.DD' 등 대체 포맷 방어.
+  const dotted = /^(\d{4})[.\/](\d{1,2})[.\/](\d{1,2})/.exec(s);
+  if (dotted) {
+    return `${dotted[1]}-${dotted[2].padStart(2, '0')}-${dotted[3].padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/** 약품집합을 순서 무관 정규화 키로(재출력 시 약품 나열 순서 달라도 동일건 판정). */
+function medSetKey(medications: readonly string[]): string {
+  return medications
+    .map((m) => m.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'ko'))
+    .join('');
+}
+
+/**
+ * AC-1 월별/기간 필터 — 교부일(issued_at 의 날짜 파트)이 [from, to] 구간(포함)에 드는 행만 통과.
+ * from/to = 'YYYY-MM-DD'. issued_at 날짜 파싱 불가 행은 제외(기간 특정 불가).
+ */
+export function filterRxRowsByDateRange<T extends Pick<RxIssuanceRow, 'issued_at'>>(
+  rows: T[] | null | undefined,
+  from: string | null | undefined,
+  to: string | null | undefined,
+): T[] {
+  if (!rows || rows.length === 0) return [];
+  const lo = str(from);
+  const hi = str(to);
+  if (!lo && !hi) return rows.slice();
+  return rows.filter((r) => {
+    const d = rxIssuedDateKey(r.issued_at);
+    if (!d) return false;
+    if (lo && d < lo) return false;
+    if (hi && d > hi) return false;
+    return true;
+  });
+}
+
+/**
+ * AC-2 실처방 기준 중복 자동제거 — 동일 환자 · 동일 교부일(날짜) · 동일 약품집합 = 실처방 1건으로 집계.
+ *
+ * 키 = (customer_id||chart_number||patient_name, issued 날짜, 정렬된 약품집합).
+ *   - 처방전 재출력(같은 발행이 여러 form_submission)을 1건으로 병합(출력 횟수 카운트 아님).
+ *   - 서로 다른 약품집합/날짜/환자는 별개 키 → 과다 병합 0(AC-2 회귀 무결).
+ * 순서 = 입력 순서(printed_at desc)의 첫 등장 행을 대표로 유지(안정).
+ * 반환 행에 dup_count(병합된 발행 건수) 부여 — 표시/디버깅용(선택).
+ */
+export function dedupeRxIssuanceRows(
+  rows: RxIssuancePatientRow[] | null | undefined,
+): (RxIssuancePatientRow & { dup_count: number })[] {
+  if (!rows || rows.length === 0) return [];
+  const byKey = new Map<string, RxIssuancePatientRow & { dup_count: number }>();
+  for (const r of rows) {
+    const patientKey = r.customer_id ?? r.chart_number ?? r.patient_name ?? '?';
+    const dateKey = rxIssuedDateKey(r.issued_at) ?? '?';
+    const key = `${patientKey}${dateKey}${medSetKey(r.medications)}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.dup_count += 1;
+    } else {
+      byKey.set(key, { ...r, dup_count: 1 });
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+/**
+ * AC-4 대표+기타 분리 — 선택된 약품(대표) vs 같은 처방에 함께 나간 그 외 약품(기타).
+ *   representative = 행의 약품 중 선택집합에 든 것(선택 순 유지 위해 selected 순서 우선).
+ *   others        = 행의 약품 중 선택집합에 들지 않은 나머지(원 순서 유지).
+ * 선택 0개면 representative=[] , others=행 전체 약품(대표 컬럼 미사용 기본 표시).
+ */
+export function splitRepresentativeMedications(
+  medications: readonly string[],
+  selected: readonly string[] | null | undefined,
+): { representative: string[]; others: string[] } {
+  const sel = new Set((selected ?? []).map((m) => m.trim()).filter(Boolean));
+  if (sel.size === 0) return { representative: [], others: [...medications] };
+  const representative: string[] = [];
+  const others: string[] = [];
+  for (const m of medications) {
+    if (sel.has(m.trim())) representative.push(m);
+    else others.push(m);
+  }
+  return { representative, others };
 }
 
 /** join 결과가 배열/객체 둘 다로 올 수 있어(임베디드 리소스) form_key 를 안전 추출. */
