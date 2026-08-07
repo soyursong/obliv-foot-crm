@@ -325,7 +325,9 @@ Deno.serve(async (req) => {
   const memo              = reservation['memo']            as string | undefined;
   // T-20260630-dopamine-FOOTRESV-TM-EDIT-CANCEL (FIX/reopen): 취소요청 discriminator.
   //   도파민 foot-reservation-push 는 cancel 일 때만 reservation.status='cancelled' 동봉(그 외/누락=active).
-  //   기존 external_id 에 대해 이 값이 'cancelled' 면 EF 가 duplicate 단락 대신 RPC 취소 fast-path 로 라우팅.
+  //   기존 external_id 에 대해 이 값이 'cancelled' 면 EF 가 duplicate 단락 대신 취소 fast-path 로 라우팅.
+  //   T-20260723-RESV-CANCEL-EF-REWIRE: 취소 fast-path = 신규 RPC cancel_reservation_from_source
+  //   (AC-4 하류 RESTRICT/AC-5 rowcheck). reschedule/edit 만 구 upsert_reservation_from_source 유지.
   const statusIn          = reservation['status']          as string | undefined;
   const campaignId        = reservation['campaign_id']     as string | undefined;
   const adsetId           = reservation['adset_id']        as string | undefined;
@@ -521,42 +523,78 @@ Deno.serve(async (req) => {
         return json({ ok: true, reservation_id: existing.id, applied: false, reason: 'duplicate' });
       }
 
-      // ── (a) 취소 / (b) 리스케줄 → RPC upsert_reservation_from_source 로 라우팅 ─────────────────
+      // ── (a) 취소 → 신규 RPC cancel_reservation_from_source 로 재배선 ─────────────────────────
+      //   T-20260723-foot-RESV-CANCEL-EF-REWIRE-TO-RPC: 취소 실경로를 parent RPC 신설분
+      //   cancel_reservation_from_source 로 태워 AC-4 하류상태 RESTRICT + AC-5 rows-affected 가드를
+      //   라이브화한다(순소실0 방어). 구 upsert_reservation_from_source(p_status='cancelled') 는 하류
+      //   RESTRICT 가 없어 check_in 된 예약도 무분별 cancelled 처리 잠재리스크 → 재배선으로 해소.
+      //   신규 RPC 는 date/time 을 사용하지 않음(멱등키=source_system+external_id 만) → 구 H3 malformed
+      //   scheduled_at 경계 캐스팅 리스크가 취소경로에서 소멸(known-good 폴백 불요).
+      //   body sibling EF(reservation-ingest-from-dopamine) 동형 재배선 — lane divergence 0.
+      if (isCancelRequest) {
+        //   p_reason: 도파민이 운반한 memo(취소사유). 빈값=null → RPC 가 reservations.memo 보존.
+        const { data: cancelRes, error: cancelErr } = await admin.rpc('cancel_reservation_from_source', {
+          p_source_system: sourceSystem ?? 'dopamine',
+          p_external_id:   externalId,
+          p_reason:        (memo ?? '').trim() !== '' ? memo : null,
+        });
+
+        if (cancelErr) {
+          const code = (cancelErr as { code?: string }).code;
+          // AC-3 fail-close(비-dopamine source / external_id 누락) = 22023 → 4xx(도파민 no-retry).
+          if (code === '22023') {
+            console.warn(`[reservation-ingest] CANCEL fail-close external_id=${externalId}: ${cancelErr.message}`);
+            return json({ ok: false, error: 'CANCEL_FAILCLOSE', detail: cancelErr.message }, 400);
+          }
+          // AC-5 silent write-failure guard(0-row·non-cancelled) = 25000 → 500(retry 유도).
+          console.error(`[reservation-ingest] CANCEL rpc failed external_id=${externalId}: ${cancelErr.message}`);
+          return json({ ok: false, error: 'INTERNAL', detail: `rpc cancel failed: ${cancelErr.message}` }, 500);
+        }
+
+        const cres = (cancelRes ?? {}) as {
+          applied?: boolean; action?: string; reservation_id?: string | null;
+          warning?: string; downstream?: unknown;
+        };
+
+        // ── AC-4 하류상태 존재 → 취소 거부(순소실0). 도파민에서 삭제됐어도 CRM 취소 미실행. ──
+        //   409 회신 → 도파민 no-retry + crm_sync_status='failed'(정합경고 surface). 현장 매니저는
+        //   '방문기록 있는 예약은 도파민 삭제해도 CRM 에서 취소 안 됨'을 인지(AC-6 사전 안내 대상).
+        if (cres.action === 'refused_downstream') {
+          console.warn(`[reservation-ingest] CANCEL refused (downstream present) external_id=${externalId} rid=${cres.reservation_id ?? '-'}: ${cres.warning ?? ''} downstream=${JSON.stringify(cres.downstream ?? {})}`);
+          return json({
+            ok: false,
+            error: 'CANCEL_REFUSED_DOWNSTREAM',
+            detail: cres.warning ?? '하류상태(내원/결제/명세/진료) 존재 — 취소 거부(순소실0). 현장 수기 확인 필요.',
+            downstream: cres.downstream ?? null,
+            reservation_id: cres.reservation_id ?? existing.id,
+          }, 409);
+        }
+
+        // applied=cancelled / noop_absent / noop_already_cancelled → 성공(멱등 no-op 포함).
+        const ridCancelled = (cres.reservation_id as string | null) ?? (existing.id as string);
+        // 예약메모 SoT=rmh 동기화(취소사유 timeline 반영). RPC 는 reservations.memo(deprecated·FE 미read)만 기록.
+        await syncReservationMemoToTimeline(admin, ridCancelled, clinicId, memo, sourceSystem ?? 'dopamine');
+        console.log(`[reservation-ingest] CANCEL applied external_id=${externalId} → ${ridCancelled} action=${cres.action ?? '-'} applied=${cres.applied ?? false}`);
+        return json({ ok: true, reservation_id: ridCancelled, applied: cres.applied ?? false, reason: 'cancelled', action: cres.action });
+      }
+
+      // ── (b) 리스케줄(시간/날짜 변경) → RPC upsert_reservation_from_source(UPDATE 분기)로 라우팅 ──
       //   RPC(20260630193000 최종 body)가 guard#5 lifecycle(checked_in/done/no_show reject) ·
-      //   guard#3 self-mint scope(source_system 매치) · guard#2 멱등 · UPDATE/cancel 분기를 소유(SSOT).
-      //   EF 는 duplicate 앞단에서 튕기지 않고 이 SSOT 로 위임 → 무음 no-op 재발 차단.
+      //   guard#3 self-mint scope(source_system 매치) · guard#2 멱등 · UPDATE 분기를 소유(SSOT).
+      //   (취소는 위 (a) 신규 RPC 로 분기 완료 → 여기부터 reschedule/edit 전용. isCancelRequest=false 확정.)
       //   phone: normalize_phone(+82…) = no-op(이미 E.164) → 기존 customers 행과 동일키 유지(fork 방지).
-      //
-      // ── T-20260630-dopamine-FOOTRESV-TM-EDIT-CANCEL (FIX/field-soak reopen, RCA H3) ───────────────
-      //   근본원인(prod 로그 규명, 17:53:46-48 KST): 도파민 CANCEL push 가 reservation.scheduled_at
-      //   ='T+09:00'(빈 date/time 로 조립된 ISO 잔해)을 운반 → 본 EF 가 scheduledAt.substring(0,10)
-      //   ='T+09:00' 을 p_reservation_date(DATE) 로 그대로 전달 → PostgREST 가 함수 body 실행 前
-      //   인자 타입 캐스팅 단계에서 'invalid input syntax for type date: "T+09:00"' 로 실패
-      //   → RPC 미실행 → EF 500 INTERNAL(→ 도파민 "저장 실패" 토스트). CANCEL fast-path 는 date/time 을
-      //   전혀 사용하지 않음에도 경계 캐스팅에서 hard-fail. (EDIT/리스케줄은 실 date 운반 → 정상, 회귀 금지.)
-      //   ★ 방어 픽스(CANCEL 한정): 취소는 payload date 가 무의미 → 이미 조회한 existing 행의 known-good
-      //     reservation_date/time 을 RPC 로 넘겨 경계 캐스팅을 항상 통과시킨다. self-mint scope·guard#5 는
-      //     RPC 가 source_system+external_id 로만 판정하므로 결과 불변. EDIT 경로(scheduledDate/Time)는 무변경.
-      //     (emit-side 진짜 결함=도파민 cancel push 가 malformed scheduled_at 발신 → dev-dopamine 별도 조치 +
-      //      DOPAMINE_CALLBACK_SECRET 게이트 CANCEL 실 write E2E 재검증 = dev-dopamine 몫.)
-      //   EDIT/reschedule 경로: safeDate/safeTime(malformed 이면 existing known-good 폴백) 사용 →
-      //   경계 캐스팅 항상 통과(T-20260719 RC 픽스). CANCEL 경로는 旣존 방어(H3) 무변경.
-      const rpcDate = isCancelRequest
-        ? ((existing.reservation_date as string | null) ?? scheduledDate)
-        : safeDate;
-      const rpcTime = isCancelRequest
-        ? (((existing.reservation_time as string | null) ?? scheduledTime).substring(0, 8))
-        : safeTime;
+      //   T-20260719 RC 픽스: safeDate/safeTime(malformed 이면 existing known-good 폴백) 사용 →
+      //   PostgREST 경계 캐스팅 항상 통과. (구 rpcDate/rpcTime 의 cancel 분기 ternary 는 재배선으로 소멸.)
       const rpcArgs = {
         p_source_system:      sourceSystem ?? 'dopamine',
         p_external_id:        externalId,
         p_clinic_slug:        lookupSlug,
         p_customer_phone:     (!isCompanion && phoneE164) ? phoneE164 : null,
         p_customer_name:      name,
-        p_reservation_date:   rpcDate,
-        p_reservation_time:   rpcTime,
+        p_reservation_date:   safeDate,
+        p_reservation_time:   safeTime,
         p_memo:               (memo ?? '').trim() !== '' ? memo : null,
-        p_status:             isCancelRequest ? 'cancelled' : 'confirmed',
+        p_status:             'confirmed',
         p_visit_type:         visitTypeMapped,
         p_created_via:        createdVia,
         p_service_id:         serviceId,
@@ -567,28 +605,28 @@ Deno.serve(async (req) => {
         p_customer_real_phone: customerRealPhone ?? null,
         p_is_companion:       isCompanion,
         // T-20260708-FOOTRESV-NAILPROB-SUBFILTER-PUSH: 간략메모 배선(edit/reschedule 재push 반영).
-        //   RPC ON CONFLICT = COALESCE 보존 — 빈값이면 기존 brief_note 유지(no-op). (취소 fast-path는 brief_note 미터치.)
+        //   RPC ON CONFLICT = COALESCE 보존 — 빈값이면 기존 brief_note 유지(no-op).
         p_brief_note:         (briefNote ?? '').trim() !== '' ? briefNote : null,
       };
       const { data: rpcRid, error: rpcErr } = await admin.rpc('upsert_reservation_from_source', rpcArgs);
 
       if (rpcErr) {
-        // guard#5: lifecycle-invalid(checked_in/done/no_show) stale edit/cancel → reject(무음 clobber 금지).
+        // guard#5: lifecycle-invalid(checked_in/done/no_show) stale edit → reject(무음 clobber 금지).
         //   RPC RAISE P0001(HINT=LIFECYCLE_INVALID) → 4xx 로 회신(도파민 no-retry, crm_sync_status='failed' reject UX).
         if ((rpcErr as { code?: string }).code === 'P0001') {
-          console.warn(`[reservation-ingest] lifecycle-invalid ${isCancelRequest ? 'cancel' : 'edit'} rejected external_id=${externalId}: ${rpcErr.message}`);
+          console.warn(`[reservation-ingest] lifecycle-invalid edit rejected external_id=${externalId}: ${rpcErr.message}`);
           return json({ ok: false, error: 'LIFECYCLE_INVALID', detail: rpcErr.message }, 409);
         }
-        console.error(`[reservation-ingest] RPC ${isCancelRequest ? 'cancel' : 'edit'} failed external_id=${externalId}: ${rpcErr.message}`);
+        console.error(`[reservation-ingest] RPC edit failed external_id=${externalId}: ${rpcErr.message}`);
         return json({ ok: false, error: 'INTERNAL', detail: `rpc upsert failed: ${rpcErr.message}` }, 500);
       }
 
-      // rpcRid: 취소=self-mint 행 id(이미 cancelled=멱등 id), 리스케줄=UPDATE 행 id. 방어적 fallback=existing.id.
+      // rpcRid: 리스케줄=UPDATE 행 id. 방어적 fallback=existing.id.
       const ridResolved = (rpcRid as string | null) ?? (existing.id as string);
       // 예약메모 SoT=rmh 동기화: RPC 는 reservations.memo(deprecated·FE 미read)에만 기록 → FE 가 read 하는 rmh 는 별도 sync.
       await syncReservationMemoToTimeline(admin, ridResolved, clinicId, memo, sourceSystem ?? 'dopamine');
-      console.log(`[reservation-ingest] ${isCancelRequest ? 'CANCEL' : 'EDIT'} applied external_id=${externalId} → ${ridResolved} date=${scheduledDate} time=${scheduledTime} status=${isCancelRequest ? 'cancelled' : 'confirmed'}`);
-      return json({ ok: true, reservation_id: ridResolved, applied: true, reason: isCancelRequest ? 'cancelled' : 'rescheduled' });
+      console.log(`[reservation-ingest] EDIT applied external_id=${externalId} → ${ridResolved} date=${scheduledDate} time=${scheduledTime} status=confirmed`);
+      return json({ ok: true, reservation_id: ridResolved, applied: true, reason: 'rescheduled' });
     }
 
     // ── AC-4: Customer upsert (clinic_id + phone_e164 기준) ─────────────────
