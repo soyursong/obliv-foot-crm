@@ -46,6 +46,113 @@ export interface RawFormSubmissionRow {
   form_templates?: { form_key?: string | null } | { form_key?: string | null }[] | null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260807-foot-TREATTBL-RX-HISTORY-BYDRUG-LOOKUP — 약별 처방 이력 조회(치료테이블 '처방 이력' 탭)
+//   위 mapRxIssuanceRows(환자별 차트 축, CustomerChartPage)와 동일 canonical SSOT(form_submissions
+//   rx_standard·발행 이력 축)를 소비하되, '약별로 조회'하기 위해 (a) 환자 표시필드(성함·차트번호)를
+//   화이트리스트로 추가 투영하고, (b) 발행 약품명을 distinct 집계해 드롭다운 소스로 제공한다.
+//
+//   PHI 안전(VG2 계승): patient_rrn(주민번호)·풀 전화는 여전히 투영 금지. 성함·차트번호만 추가 —
+//     본 화면은 스태프 대상 치료테이블(role-gated)이므로 성함·차트번호 노출 허용(고객목록 export 동일 기준,
+//     티켓 risk_reason WARN(a)). field_data 원본을 state 로 노출하지 않는다(화이트리스트 grain 유지).
+//   3축 grain 분리 계승: 발행 이력 축(form_submissions)만 소비. medical_charts.prescription_items 조인 0.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** customers 임베드 포함 form_submissions 원시 행. customers = FK(customer_id) 임베디드 리소스(객체/배열). */
+export interface RawFormSubmissionWithCustomerRow extends RawFormSubmissionRow {
+  customers?:
+    | { name?: string | null; chart_number?: string | null }
+    | { name?: string | null; chart_number?: string | null }[]
+    | null;
+}
+
+/** 발행 이력 1건 + 환자 표시필드(성함·차트번호 화이트리스트). RRN·풀 전화 미포함. */
+export interface RxIssuancePatientRow extends RxIssuanceRow {
+  /** customers.name — 성함(스태프 대상 노출 허용) */
+  patient_name: string | null;
+  /** customers.chart_number — 차트번호(스태프 대상 노출 허용) */
+  chart_number: string | null;
+}
+
+/** 임베디드 customers(객체/배열) 안전 추출. */
+function extractCustomer(
+  c: RawFormSubmissionWithCustomerRow['customers'],
+): { name?: string | null; chart_number?: string | null } | null {
+  if (!c) return null;
+  return Array.isArray(c) ? (c[0] ?? null) : c;
+}
+
+/** 단일 form_submissions 행 → RxIssuanceRow 투영(화이트리스트 grain). 내부 재사용. */
+function projectRxRow(r: RawFormSubmissionRow): RxIssuanceRow | null {
+  const fd = (r.field_data ?? {}) as Record<string, unknown>;
+  const id = str(r.id);
+  if (!id) return null;
+  return {
+    id,
+    issued_at: str(fd.issue_date) ?? r.printed_at ?? r.created_at ?? null,
+    prescriber_name: str(fd.prescriber_name),
+    diagnosis: composeDiagnosis(fd),
+    issue_no: str(fd.issue_no),
+    medications: parseRxMedicationNames(fd.rx_items_html),
+  };
+}
+
+/**
+ * form_submissions(+customers 임베드) → RxIssuancePatientRow[] (발행 이력 축·성함·차트번호 화이트리스트 투영).
+ *
+ * VG1: form_key='rx_standard' 만 통과(preFiltered=false 면 방어 필터). VG2: RRN·풀 전화 미투영(성함·차트만 추가).
+ */
+export function mapRxIssuancePatientRows(
+  rows: RawFormSubmissionWithCustomerRow[] | null | undefined,
+  preFiltered = true,
+): RxIssuancePatientRow[] {
+  if (!rows || rows.length === 0) return [];
+  const out: RxIssuancePatientRow[] = [];
+  for (const r of rows) {
+    const fd = (r.field_data ?? {}) as Record<string, unknown>;
+    if (!preFiltered) {
+      const key = extractFormKey(r.form_templates) ?? str(fd.form_key);
+      if (key !== RX_ISSUANCE_FORM_KEY) continue;
+    }
+    const base = projectRxRow(r);
+    if (!base) continue;
+    const cust = extractCustomer(r.customers);
+    out.push({
+      ...base,
+      patient_name: str(cust?.name),
+      chart_number: str(cust?.chart_number),
+    });
+  }
+  return out;
+}
+
+/**
+ * 발행 이력 행들에서 처방된 의약품명을 distinct 집계(드롭다운 소스). 정렬 = ko 로케일 오름차순.
+ * medications 는 parseRxMedicationNames 산출(표시 전용·best-effort).
+ */
+export function collectDistinctMedications(
+  rows: Pick<RxIssuanceRow, 'medications'>[] | null | undefined,
+): string[] {
+  if (!rows || rows.length === 0) return [];
+  const set = new Set<string>();
+  for (const r of rows) {
+    for (const m of r.medications) {
+      const name = m.trim();
+      if (name) set.add(name);
+    }
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
+}
+
+/** 특정 약품명을 처방(발행)받은 행만 필터. 정확 일치(약명 전체) 기준. */
+export function filterRxRowsByMedication<T extends Pick<RxIssuanceRow, 'medications'>>(
+  rows: T[] | null | undefined,
+  medication: string | null,
+): T[] {
+  if (!rows || rows.length === 0 || !medication) return [];
+  return rows.filter((r) => r.medications.includes(medication));
+}
+
 /** join 결과가 배열/객체 둘 다로 올 수 있어(임베디드 리소스) form_key 를 안전 추출. */
 function extractFormKey(ft: RawFormSubmissionRow['form_templates']): string | null {
   if (!ft) return null;
