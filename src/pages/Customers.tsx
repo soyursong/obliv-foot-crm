@@ -65,6 +65,38 @@ const LEAD_SOURCE_OPTIONS: LeadSource[] = ['TM', '인바운드', '워크인', '�
 
 const PAGE_SIZE = 30;
 
+// T-20260808-foot-CUSTLIST-SORT-ORDER-SELECT: 고객목록 정렬 순서(최신순/오래된순) 선택.
+//   ★기준 필드 = 고객 등록일(customers.created_at). '최근 방문일'은 loadCustomerStats로
+//     페이지별 클라이언트 파생되는 값이라 서버 페이지네이션(.range) + ORDER BY 불가
+//     (페이지 경계에서 순서 붕괴) → 등록일이 유일하게 안정적인 서버-정렬 기준.
+//   ★기본값 = 'oldest'(등록순 ASC) — 기존 T-20260708-foot-CUSTMGMT-LIST-SORT-REGDATE-ASC
+//     동작 보존(맨 위=가장 오래된 등록 고객). 무회귀 default.
+type CustSortOrder = 'newest' | 'oldest';
+const CUST_SORT_STORAGE_KEY = 'foot-custlist-sort-order';
+const CUST_SORT_DEFAULT: CustSortOrder = 'oldest';
+
+function readCustSortOrder(): CustSortOrder {
+  if (typeof window === 'undefined') return CUST_SORT_DEFAULT;
+  try {
+    const saved = window.localStorage.getItem(CUST_SORT_STORAGE_KEY);
+    return saved === 'newest' || saved === 'oldest' ? saved : CUST_SORT_DEFAULT;
+  } catch {
+    return CUST_SORT_DEFAULT;
+  }
+}
+
+/**
+ * 고객목록/내보내기 정렬 적용 (등록일 기준). runSearch·export 공유 → drift 차단.
+ * newest = created_at DESC(최신 등록 먼저), oldest = created_at ASC(오래된 등록 먼저).
+ * 동률 시 id 를 같은 방향으로 tie-break → 서버 페이지네이션 안정 순서 보장.
+ */
+function applyCustomerSort<
+  Q extends { order: (col: string, opts: { ascending: boolean }) => Q },
+>(req: Q, sortOrder: CustSortOrder): Q {
+  const ascending = sortOrder === 'oldest';
+  return req.order('created_at', { ascending }).order('id', { ascending });
+}
+
 /** 페이지네이션 버튼 번호 목록 생성 (숫자 | '…') */
 function getPageNumbers(current: number, total: number): (number | '…')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -202,6 +234,9 @@ export default function Customers() {
   // '' = 전체(필터해제), '__unassigned__' = 미지정(assigned_staff_id IS NULL), 그 외 = staff.id 일치.
   // 검색어와 AND 조합. 옵션소스 = staff role consultant/coordinator/director (assigned_staff_id 旣구현 자산 재사용).
   const [staffFilter, setStaffFilter] = useState('');
+  // T-20260808-foot-CUSTLIST-SORT-ORDER-SELECT: 정렬 순서(등록일 기준 최신순/오래된순).
+  //   초기값 = localStorage 마지막 선택(없으면 default 'oldest') → 새로고침/재진입 시 보존.
+  const [sortOrder, setSortOrder] = useState<CustSortOrder>(readCustSortOrder);
   const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([]);
   // T-20260614-foot-CUSTOMER-STAFF-AUTOLINK (기능1): 고객 목록 '담당자' 컬럼 표시용 staff_id → 이름 맵.
   //   재진=차트(차트2)에 지정된 assigned_staff_id 이름 자동연동 / 첫방문(NULL)=공란(AC2) / 결손=빈값 안전표시(AC4).
@@ -316,12 +351,11 @@ export default function Customers() {
         // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션(테스트 더미) 기본 숨김.
         // IS NOT TRUE → false/NULL(실고객) 보존, true만 제외 (AC-3 null-safe).
         .not('is_simulation', 'is', true)
-        // T-20260708-foot-CUSTMGMT-LIST-SORT-REGDATE-ASC: 기본 정렬 = 등록순(created_at ASC).
-        //   맨 위=가장 오래된 등록 고객. 서버 페이지네이션(.range)이므로 쿼리 레벨 ORDER BY 필수
-        //   (클라 정렬만으론 페이지 경계에서 순서 깨짐). 동률 시 id ASC 안정 tie-break.
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true })
         .range(from, to);
+      // T-20260708-foot-CUSTMGMT-LIST-SORT-REGDATE-ASC → T-20260808-foot-CUSTLIST-SORT-ORDER-SELECT:
+      //   등록순 정렬(created_at)을 사용자 선택(최신순/오래된순)으로 전환. 서버 페이지네이션(.range)이므로
+      //   쿼리 레벨 ORDER BY 필수(클라 정렬만으론 페이지 경계에서 순서 깨짐). export와 헬퍼 공유(drift 차단).
+      req = applyCustomerSort(req, sortOrder);
       // T-20260613-foot-CUSTLIST-STAFF-FILTER + SEARCH-PHONE-DOB: 담당자·검색어 필터 (export와 공유 헬퍼).
       req = applyCustomerSearchFilters(req, staffFilter, trimmed);
       const { data, error, count } = await req;
@@ -346,8 +380,17 @@ export default function Customers() {
         setBirthMap(new Map());
       }
     },
-    [clinic, staffFilter],
+    [clinic, staffFilter, sortOrder],
   );
+
+  // T-20260808-foot-CUSTLIST-SORT-ORDER-SELECT: 선택 상태 persist(localStorage) → 재진입 보존.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CUST_SORT_STORAGE_KEY, sortOrder);
+    } catch {
+      /* localStorage 접근 불가(사파리 프라이빗 등) 시 무시 — 정렬 자체는 정상 동작 */
+    }
+  }, [sortOrder]);
 
   useEffect(() => {
     if (!clinic) return;
@@ -562,10 +605,9 @@ export default function Customers() {
         .select('*')
         .eq('clinic_id', clinic.id)
         .not('is_simulation', 'is', true)
-        // T-20260708-foot-CUSTMGMT-LIST-SORT-REGDATE-ASC: 내보내기(CSV)도 목록과 동일 등록순(created_at ASC) — drift 차단.
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true })
         .range(0, EXPORT_MAX - 1);
+      // T-20260808-foot-CUSTLIST-SORT-ORDER-SELECT: 내보내기(CSV)도 목록과 동일 정렬 순서 적용 — drift 차단.
+      req = applyCustomerSort(req, sortOrder);
       req = applyCustomerSearchFilters(req, staffFilter, query);
       const { data, error } = await req;
       if (error) {
@@ -589,7 +631,7 @@ export default function Customers() {
     } finally {
       setExporting(false);
     }
-  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, query, toCsvRow, logExportAudit]);
+  }, [canExportCustomers, exporting, clinic, selectedIds, results, statsMap, birthMap, staffFilter, sortOrder, query, toCsvRow, logExportAudit]);
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -617,6 +659,18 @@ export default function Customers() {
             {staffOptions.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
+          </select>
+          {/* T-20260808-foot-CUSTLIST-SORT-ORDER-SELECT: 정렬 순서(등록일 기준). 라벨에 기준(등록일) 명시. */}
+          <select
+            data-testid="cust-sort-order"
+            aria-label="정렬 순서 (등록일 기준)"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as CustSortOrder)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-500"
+            title="고객 등록일 기준 정렬 순서"
+          >
+            <option value="newest">등록일: 최신순</option>
+            <option value="oldest">등록일: 오래된순</option>
           </select>
         </div>
         <div className="flex items-center gap-3">
