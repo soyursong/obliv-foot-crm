@@ -12,11 +12,21 @@
  *   node scripts/apply_20260807120000_foot_cancel_sync_outbox_emit.mjs           # PRE-PROBE(read-only)만
  *   node scripts/apply_20260807120000_foot_cancel_sync_outbox_emit.mjs --apply   # PRE-PROBE → apply → POST-PROBE
  */
-import { query, applyMigration } from './lib/foot_migration_ledger.mjs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { query, applyMigration, MIG_DIR } from './lib/foot_migration_ledger.mjs';
+import { assertApplyGateForRunner, FOOT_PROD_REF } from './apply_gate_lib.mjs';
 
 const APPLY = process.argv.includes('--apply');
 const VERSION = '20260807120000';
 const FILE = '20260807120000_foot_cancel_sync_outbox_emit.sql';
+
+// ── T-20260801 DBGATE-GUARD: prod apply chokepoint content-binding 상수 ──
+const TICKET_ID = 'T-20260807-dopamine-CRM-CANCEL-CALLBACK-FOOT-COVERAGE';
+const REF = FOOT_PROD_REF;
+const __gate_dir = dirname(fileURLToPath(import.meta.url));
+const EVIDENCE_LOG = join(__gate_dir, '../db-gate/_apply_evidence/runner_apply.log.jsonl');
+const SQL_FILE = join(MIG_DIR, FILE); // applyMigration 이 읽는 파일 = content-binding 대상
 
 async function probe(label) {
   console.log(`\n══════════ ${label} ══════════`);
@@ -71,6 +81,14 @@ async function probe(label) {
   if (!APPLY) {
     console.log('\n(DRY) --apply 미지정 → PRE-PROBE 만 수행. 적용하려면 --apply.');
     process.exit(0);
+  }
+
+  // ── T-20260801 DBGATE-GUARD: APPLY 게이트 chokepoint (실 COMMIT 직전, fail-closed) ──
+  try {
+    assertApplyGateForRunner({ ticketId: TICKET_ID, targetRef: REF, applyRequested: APPLY, migrationSqlFile: SQL_FILE, evidenceLog: EVIDENCE_LOG });
+  } catch (e) {
+    console.error(`❌ APPLY-GATE 거부 [${e.code}]: ${e.message}\n   → GO-token 부재/무효. COMMIT 미도달(abort).`);
+    process.exit(1);
   }
 
   console.log('\n══════════ APPLY ══════════');
