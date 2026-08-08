@@ -144,7 +144,21 @@ test.describe('T-20260808 FOREIGNER-NONCOVERED-CONSENT-FORM — 외국인 비급
       expect(isHtmlTemplate(k)).toBe(true);
       expect(getHtmlTemplate(k)).toBeTruthy();
     }
-    // 신규 키가 기존 목록 순서 맨 뒤에 추가(중간 삽입으로 인한 재정렬 없음)
-    expect(DOCLIST_ORDER_10[DOCLIST_ORDER_10.length - 1]).toBe(FORM_KEY);
+    // 신규 키가 기존 서류 뒤에 append 되었고(중간 삽입으로 인한 재정렬 없음),
+    // 본 티켓 직전까지의 기존 12종 상대 순서가 그대로 보존되어야 함.
+    // ── 비취약 단언: 후행 티켓이 동의서 등을 더 append 해도 깨지지 않도록,
+    //    "맨 마지막" 위치 고정 대신 (a)기존 폼 뒤 append + (b)기존 상대순서 불변 을 검증한다.
+    const PRE_EXISTING_ORDER = [
+      'bill_receipt_new', 'bill_detail', 'rx_standard', 'koh_result', 'diag_opinion',
+      'diagnosis', 'treat_confirm_code', 'treat_confirm_nocode', 'referral_letter',
+      'visit_confirm', 'medical_record_request', 'first_visit_mgmt_record',
+    ];
+    // (a) 신규 키는 기존 폼 전부보다 뒤에 위치(append) — 중간 삽입 아님
+    const foreignerIdx = DOCLIST_ORDER_10.indexOf(FORM_KEY);
+    const priorLastIdx = DOCLIST_ORDER_10.indexOf('first_visit_mgmt_record');
+    expect(foreignerIdx).toBeGreaterThan(priorLastIdx);
+    // (b) 기존 12종의 상대 순서 불변(재정렬 0)
+    const relativeExisting = DOCLIST_ORDER_10.filter((k) => PRE_EXISTING_ORDER.includes(k));
+    expect(relativeExisting).toEqual(PRE_EXISTING_ORDER);
   });
 });
