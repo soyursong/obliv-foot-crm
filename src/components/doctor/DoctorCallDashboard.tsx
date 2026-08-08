@@ -43,6 +43,10 @@ import { useOpinionRequestQueue } from '@/lib/opinionRequest';
 // T-20260620-foot-DOCDASH-DOCREQ-TABLEVIEW: 컬럼-앵커 펼침 팝오버 공유 추출(서류작성 큐와 표현 공유, 중복 재구현 금지).
 import { ColumnExpandPopover } from '@/components/doctor/ColumnExpandPopover';
 import { cn } from '@/lib/utils';
+// T-20260808-foot-DOCDASH-NAMECHART-2CHART-CTXMENU AC-1: 차트번호 클릭 → 2번차트 공통훅 재사용
+//   (GLOBAL deployed useChartNoPopup = useChart().openChart 단일 게이트웨이. 새 window.open/openChart 복제 금지.
+//    §11 의료게이트 비대상: 직원용 1·2번 차트 = 미니홈피 — 훅 주석 참조).
+import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 import { toast } from '@/lib/toast';
 import { todaySeoulISODate, chartNoDisplay, birthYearAgeDisplay, seoulHHMM } from '@/lib/format';
 import { getAssignedSlotName } from '@/lib/checkin-slot';
@@ -929,6 +933,8 @@ function CallFeedRow({
 }) {
   const inactive = checkIn.status_flag === 'pink';
   const slotName = getAssignedSlotName(checkIn);
+  // T-20260808-foot-DOCDASH-NAMECHART-2CHART-CTXMENU AC-1: 차트번호 클릭 → 2번차트 팝업(공통훅).
+  const openChartNo = useChartNoPopup();
   // T-20260612-foot-WAITELAPSED-POLISH AC-3: 콜(진료호출 purple) 시각 기준 "+N분" 분단위 컴팩트 표기('콜 후' 제거).
   // T-20260616-foot-DOCDASH-ELAPSED-CLINICAL-3FIX AC-1: 계산 로직(elapsedMinutes/formatElapsedPlus)은 그대로 재사용,
   //   표시 위치만 별도 '시간' 칼럼 → 상태 셀 ✋ 옆 인라인. elapsedMin 으로 30분↑ 빨간색 분기.
@@ -1073,7 +1079,16 @@ function CallFeedRow({
           {/* T-20260616-foot-DOCDASH-FONT-UNIFY AC-2 (문지은 대표원장, #foot): 차트번호 '폰트 이상' 해소 →
               font-mono(고정폭 monospace 글꼴이 다른 셀과 튀어 보임) 제거. tabular-nums로 표준 sans 글꼴 통일하되
               자릿폭 정렬은 유지(같은 테이블 경과시간 셀과 동일 컨벤션). 값·포맷(chartNoDisplay) 불변. */}
-          <span className="tabular-nums text-[13px] text-gray-500" data-testid="doctor-call-chartno">
+          {/* T-20260808-foot-DOCDASH-NAMECHART-2CHART-CTXMENU AC-1: 차트번호 클릭 → 고객 2번차트(공통훅).
+              customer_id 없으면 no-op(비활성) — CHARTNO_LINK_CLASS 미부착. 훅이 stopPropagation 처리(AC-3 전파 충돌 방지). */}
+          <span
+            className={cn(
+              'tabular-nums text-[13px] text-gray-500',
+              checkIn.customer_id && CHARTNO_LINK_CLASS,
+            )}
+            data-testid="doctor-call-chartno"
+            onClick={checkIn.customer_id ? (e) => openChartNo(checkIn.customer_id, e) : undefined}
+          >
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
@@ -1288,6 +1303,8 @@ function CompletedRow({
   onClinicalSaved?: (savedText?: string) => void;
 }) {
   const slotName = getAssignedSlotName(checkIn);
+  // T-20260808-foot-DOCDASH-NAMECHART-2CHART-CTXMENU AC-1: 차트번호 클릭 → 2번차트 팝업(공통훅).
+  const openChartNo = useChartNoPopup();
   // T-20260612-foot-DOCDASH-WAITFILTER-UX7 AC-7 (POLISH AC-4 supersede): 진료 완료 섹션은 경과시간 칼럼 자체 제거(7칼럼).
   //   완료환자는 대기시간 불요(문지은 대표원장). 호출 섹션은 경과시간 유지.
   const [showRx, setShowRx] = useState(false);
@@ -1408,7 +1425,16 @@ function CompletedRow({
         {/* 5. 차트번호 — T-20260612-foot-CHARTNO-COL-SPLIT-P1: 독립 칼럼. 미발번은 '(미발번)'(빈칸 금지). */}
         <td className="px-1.5 py-1 text-center">
           {/* T-20260616-foot-DOCDASH-FONT-UNIFY AC-2: 진료완료 행도 활성 행과 동일 — font-mono 제거 → tabular-nums 표준 sans 통일. */}
-          <span className="tabular-nums text-[13px] text-gray-500" data-testid="doctor-completed-chartno">
+          {/* T-20260808-foot-DOCDASH-NAMECHART-2CHART-CTXMENU AC-1: 차트번호 클릭 → 고객 2번차트(공통훅).
+              customer_id 없으면 no-op(비활성). 훅이 stopPropagation 처리(AC-3 전파 충돌 방지). */}
+          <span
+            className={cn(
+              'tabular-nums text-[13px] text-gray-500',
+              checkIn.customer_id && CHARTNO_LINK_CLASS,
+            )}
+            data-testid="doctor-completed-chartno"
+            onClick={checkIn.customer_id ? (e) => openChartNo(checkIn.customer_id, e) : undefined}
+          >
             {chartNoDisplay(readChartNo(checkIn))}
           </span>
         </td>
