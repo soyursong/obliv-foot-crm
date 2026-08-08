@@ -333,6 +333,9 @@ export default function Closing() {
   const [tab, setTab] = useState<'summary' | 'payments'>(tabFromHash);
   // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위탭 (CRM 수납 / 레드페이). 기본=CRM 수납.
   // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: '영수증 수납' 3번째 하위탭 신설(레드페이 우측).
+  // T-20260808-foot-REFRESH-ROUTE-PERSIST FOLLOWUP: 결제 하위탭(paySubTab) URL 반영은 이 페이지의 주탭이
+  //   URL hash(#payments) 기반이라 query(?paytab=) 병행 시 react-router navigate/setSearchParams 가 서로의
+  //   hash·search 를 상호 소거하는 충돌이 있어 별도 티켓(주탭 mechanism 통일)으로 분리. 현 상태 유지.
   const [paySubTab, setPaySubTab] = useState<'crm' | 'redpay' | 'receipt'>('crm');
 
   // hash 변경 시(브라우저 앞/뒤 네비게이션) 탭 동기화

@@ -95,5 +95,28 @@ test.describe('T-20260808 — 새로고침 라우트/서브탭 유지', () => {
       // 딥링크 진입값이 새로고침 후에도 유지(기존 리셋 버그 회귀 방지).
       expect(new URL(page.url()).searchParams.get('tab')).toBe('rooms');
     });
+
+    // AC-5(확장): 배정관리 상위 서브탭(mainTab) — 클릭 → ?tab= 반영 + 새로고침 복원.
+    //   기존 useState('consult')는 URL 미반영이라 F5 시 항상 [상담]으로 튕겼음(이번 fix 대상).
+    test('AC-5: 배정관리 [치료] 탭 전환 → ?tab=therapy 반영 + 새로고침 복원', async ({ page }) => {
+      await page.goto('/admin/assignments');
+      await page.waitForTimeout(1500);
+      if (new URL(page.url()).pathname !== '/admin/assignments') {
+        test.skip(true, '배정관리 접근 권한 없음(role gate) — 스킵');
+      }
+      const therapyTab = page.getByTestId('assignments-tab-therapy');
+      if (await therapyTab.count() === 0) test.skip(true, '배정 탭 UI 미발견 — 스킵');
+      await therapyTab.click();
+
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('tab'), { timeout: 5000 })
+        .toBe('therapy');
+
+      await page.reload();
+      await page.waitForTimeout(1500);
+      expect(new URL(page.url()).pathname).toBe('/admin/assignments');
+      // 튕김 없음 = 새로고침 후에도 [치료] 탭(?tab=therapy) 복원(대시보드/상담탭으로 리셋 안 됨).
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('therapy');
+    });
   });
 });

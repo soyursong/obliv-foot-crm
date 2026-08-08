@@ -34,6 +34,8 @@ import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/lib/format';
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
+// T-20260808-foot-REFRESH-ROUTE-PERSIST: 상위 서브탭(mainTab)을 URL(?tab=)에 반영 → 새로고침/딥링크 후 복원.
+import { useTabParam } from '@/hooks/useTabParam';
 // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
 //   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
 // T-20260807-foot-RANKING-STAFFATTR-CONSULTANT-TO-STAFF: 랭킹 탭 귀속축 = assigned_staff_id('2번차트 담당 실장').
@@ -462,7 +464,25 @@ export default function Assignments() {
   //  (preferred_therapist_id=예약단계 선호값), visits 테이블 부재 → TREATING-DOCTOR-SELECT-SYNC 선례와 정합. DB무변경.
   // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 상위 탭에 [랭킹] 추가('ranking').
   // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: [배정 설정] 탭 추가('assignment-settings', [랭킹] 우측).
-  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list' | 'ranking' | 'assignment-settings'>('consult');
+  // T-20260808-foot-REFRESH-ROUTE-PERSIST: mainTab 을 URL(?tab=)에 반영 → 새로고침/딥링크 후 서브탭 복원(useTabParam SSOT).
+  //   기존 useState('consult') 는 URL 미반영이라 F5 시 항상 [상담] 탭으로 리셋됐다('튕김'의 실체).
+  const [mainTabRaw, setMainTab] = useTabParam<'consult' | 'therapy' | 'list' | 'ranking' | 'assignment-settings'>({
+    valid: ['consult', 'therapy', 'list', 'ranking', 'assignment-settings'],
+    fallback: 'consult',
+  });
+  // 권한 게이트(딥링크 방어): 비admin 이 ?tab=ranking|assignment-settings 로 직접 진입 시 콘텐츠는 하단 && canViewRanking 로 이미 미노출.
+  //   여기서 표시탭 자체를 기본탭으로 강등해 '탭은 활성인데 화면은 빈' 상태를 방지(권한 우회 아님 — 노출만 차단).
+  const mainTab = ((mainTabRaw === 'ranking' || mainTabRaw === 'assignment-settings') && !canViewRanking)
+    ? 'consult'
+    : mainTabRaw;
+
+  // T-20260808-foot-REFRESH-ROUTE-PERSIST: mainTab 이 URL(?tab=)에서 복원될 때(딥링크·새로고침)
+  //   운영 카드 role 필터(activeTab)를 동기화한다. onValueChange 는 클릭시에만 setActiveTab 하므로
+  //   딥링크/F5 로 ?tab=therapy 착지 시 activeTab 이 기본값('consult')에 머물러 치료 탭인데 상담 role 로
+  //   필터되는 불일치가 생긴다 → mainTab(consult/therapy) 기준으로 되맞춘다.
+  useEffect(() => {
+    if (mainTab === 'consult' || mainTab === 'therapy') setActiveTab(mainTab);
+  }, [mainTab]);
   const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
   const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
 
