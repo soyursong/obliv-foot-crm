@@ -36,6 +36,7 @@ import {
   Layers,
   Printer,
   Plus,
+  Minus,
   Square,
   CheckSquare,
   Trash2,
@@ -627,6 +628,8 @@ function buildCodeEnrichedValues(
     const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
     values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({
       name: i.service.name,
+      // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량 전파 → qty>1 시 '약품명 ×N' 표기(처방전·처방이력).
+      qty: i.qty,
       // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
       code: i.service.service_code,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
@@ -1807,6 +1810,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       next.delete(serviceId);
       return next;
     });
+  };
+
+  // ── T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량 스테퍼 ────────────
+  //   기본값 1(선택 시 handleSelectService 가 qty:1 으로 시작) · 하한 1(0/미입력 방지) · 상한 없음.
+  //   수가항목 계산 로직 무접촉 — 처방약(price 0) 은 pricingItems 에서 제외되므로 결제금액 영향 없음.
+  const handleSetItemQty = (serviceId: string, nextQty: number) => {
+    const clamped = Math.max(1, Math.floor(nextQty || 1));
+    setSelectedItems((prev) =>
+      prev.map((i) => (i.service.id === serviceId ? { ...i, qty: clamped } : i)),
+    );
+    setSaved(false);
   };
 
   // ── 선수금 보라색 토글 ───────────────────────────────────────────────────
@@ -3548,9 +3562,42 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                           {service.service_code && (
                             <p className="text-[10px] text-blue-600 mt-0.5">
                               {service.service_code}
-                              {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
                             </p>
                           )}
+                        </div>
+                        {/* T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량 스테퍼 [− N +].
+                            기본값 1 · 하한 1(0/미입력 방지) · 태블릿 큰 터치버튼. name↔🗑 사이 배치. */}
+                        <div
+                          className="shrink-0 flex items-center gap-1"
+                          data-testid={`pmw-rx-qty-stepper-${service.id}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleSetItemQty(service.id, qty - 1)}
+                            disabled={qty <= 1}
+                            className="shrink-0 h-6 w-6 flex items-center justify-center rounded border border-teal-300 bg-white text-teal-700 hover:bg-teal-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title="수량 감소"
+                            aria-label="수량 감소"
+                            data-testid={`pmw-rx-qty-dec-${service.id}`}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span
+                            className="min-w-[1.5rem] text-center text-xs font-semibold text-teal-800 tabular-nums"
+                            data-testid={`pmw-rx-qty-val-${service.id}`}
+                          >
+                            {qty}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleSetItemQty(service.id, qty + 1)}
+                            className="shrink-0 h-6 w-6 flex items-center justify-center rounded border border-teal-300 bg-white text-teal-700 hover:bg-teal-50 transition-colors"
+                            title="수량 증가"
+                            aria-label="수량 증가"
+                            data-testid={`pmw-rx-qty-inc-${service.id}`}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                         <button
                           onClick={() => handleRemoveItem(service.id)}

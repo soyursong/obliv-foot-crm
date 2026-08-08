@@ -3060,6 +3060,9 @@ export function buildRxItemsHtml(
     //   있으면 약품명 앞에 '코드 | ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
     //   T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 구분자 대괄호 '[코드]' → 파이프 '코드 |'.
     code?: string | null;
+    // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량. qty>1 일 때만 약품명 뒤 ' ×N' 표기.
+    //   미전달(undefined)/1 이면 접미 없음 → 기존 호출부(DocumentPrintPanel 등) 하위호환 유지(AC4).
+    qty?: number;
     unit_dose?: string;
     daily_freq?: string;
     total_days?: string;
@@ -3072,9 +3075,13 @@ export function buildRxItemsHtml(
     // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 약품명 앞 코드 prefix 구분자 '코드 | 약품명'(파이프).
     //   (구 T-20260718-foot-RXPRINT-DRUGCODE-PREFIX 의 '[코드] 약품명' 대괄호에서 파이프로 변경.)
     //   코드 미등록/미매핑(NULL/공백) 시 파이프 없이 약품명만 출력(AC3 graceful fallback).
-    name: (item.code ?? '').trim()
-      ? `${(item.code ?? '').trim()} | ${item.name}`
-      : item.name,
+    name: (() => {
+      const base = (item.code ?? '').trim()
+        ? `${(item.code ?? '').trim()} | ${item.name}`
+        : item.name;
+      // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: qty>1 시 '바르토벤 ×2' 형태 접미. 처방전 인쇄·처방이력 공통.
+      return typeof item.qty === 'number' && item.qty > 1 ? `${base} ×${item.qty}` : base;
+    })(),
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
     // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 처방 입력의 총투약일수를 출력물에 표기.
