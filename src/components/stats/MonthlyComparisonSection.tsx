@@ -20,9 +20,21 @@ interface Props {
   data: MonthlyComparison | null;
   staffBreakdown: StaffDailyBreakdown | null;
   loading: boolean;
+  /**
+   * T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB (AC-3, GO_WARN 경계):
+   *   실장별 개인 매출 성과 표(카드 #2) 노출 여부. 기본 true(통계 화면 = 관리자 전용, 기존 동작 불변).
+   *   일마감 탭(전직원 open)에서는 false — reporter 명시 요청 데이터('일자별 매출 비교 당월 vs 전월', 카드 #1)만
+   *   노출하고, 실장 개인성과(원래 /admin/sales=admin/manager/director 전용)는 staff 에게 새로 노출하지 않는다.
+   */
+  showStaffBreakdown?: boolean;
 }
 
-export default function MonthlyComparisonSection({ data, staffBreakdown, loading }: Props) {
+export default function MonthlyComparisonSection({
+  data,
+  staffBreakdown,
+  loading,
+  showStaffBreakdown = true,
+}: Props) {
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-muted-foreground">2. 전월 대비 매출 추이</h2>
@@ -164,6 +176,8 @@ export default function MonthlyComparisonSection({ data, staffBreakdown, loading
       </Card>
 
       {/* AC-A: 실장별 일별 매출 추이 표 (추가 — 기존 비교표 대체 아님). */}
+      {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: showStaffBreakdown=false 시 카드 #2 숨김(일마감 탭 = 전직원 노출 경계). */}
+      {showStaffBreakdown && (
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
@@ -271,6 +285,7 @@ export default function MonthlyComparisonSection({ data, staffBreakdown, loading
           )}
         </CardContent>
       </Card>
+      )}
     </section>
   );
 }

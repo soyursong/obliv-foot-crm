@@ -55,6 +55,10 @@ import { RedpayReconcileTab } from '@/components/closing/RedpayReconcileTab';
 import { ReceiptSettlementTab } from '@/components/closing/ReceiptSettlementTab';
 // T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 셀 클릭 → 수납 상세 팝업(view-layer only)
 import { PaymentSusuDetailModal } from '@/components/closing/PaymentSusuDetailModal';
+// T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 화면의 '일자별 매출 비교(당월 vs 전월)' 데이터/컴포넌트를
+//   일마감 신규 탭으로 재사용(신규 산식 창작 금지·기존 SSOT 그대로 소비). staffBreakdown(실장 개인성과)은 미노출.
+import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSection';
+import { fetchMonthlyComparison, type MonthlyComparison } from '@/lib/mtmSales';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -328,9 +332,12 @@ export default function Closing() {
   // T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태를 URL hash로 persist
   // 브라우저 새로고침(F5) 시 현재 탭(summary/payments) 유지
   // hash: #payments → "payments" 탭, 그 외 → "summary" 탭 (기본값)
-  const tabFromHash = (): 'summary' | 'payments' =>
-    location.hash === '#payments' ? 'payments' : 'summary';
-  const [tab, setTab] = useState<'summary' | 'payments'>(tabFromHash);
+  // T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: '매출 비교'(compare) 탭 추가 → hash '#compare'.
+  const tabFromHash = (): 'summary' | 'payments' | 'compare' =>
+    location.hash === '#payments' ? 'payments'
+    : location.hash === '#compare' ? 'compare'
+    : 'summary';
+  const [tab, setTab] = useState<'summary' | 'payments' | 'compare'>(tabFromHash);
   // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위탭 (CRM 수납 / 레드페이). 기본=CRM 수납.
   // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: '영수증 수납' 3번째 하위탭 신설(레드페이 우측).
   // T-20260808-foot-REFRESH-ROUTE-PERSIST FOLLOWUP: 결제 하위탭(paySubTab) URL 반영은 이 페이지의 주탭이
@@ -346,10 +353,10 @@ export default function Closing() {
 
   // 탭 전환 핸들러: URL hash 업데이트 + 상태 반영
   const handleTabChange = (v: string) => {
-    const next = v as 'summary' | 'payments';
+    const next = v as 'summary' | 'payments' | 'compare';
     setTab(next);
     navigate(
-      { hash: next === 'payments' ? '#payments' : '' },
+      { hash: next === 'payments' ? '#payments' : next === 'compare' ? '#compare' : '' },
       { replace: true },
     );
   };
@@ -789,6 +796,18 @@ export default function Closing() {
       if (error) return [];
       return (data ?? []) as unknown as ClosingEditLogRow[];
     },
+  });
+
+  // ── T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: '매출 비교' 탭 데이터 ──
+  //   통계>MTM매출 02섹션 '일자별 매출 비교(당월 vs 전월)'와 동일 소스(fetchMonthlyComparison/mtmSales.ts)를
+  //   그대로 재사용(신규 산식·별도 쿼리 창작 없음 = AC-2, 통계 화면과 값 동일 SSOT). refISO=선택일(date)이 속한 달 기준.
+  //   ★스코프: 카드 #1(일자별 당월vs전월)만 노출 — 실장 개인성과(카드 #2)는 fetch/렌더 안 함(staff 노출 경계, AC-3).
+  //   월 단위 캐시(같은 달 내 날짜 변경 시 재조회 안 함). 통계 화면(admin 전용)과 달리 일마감은 전직원 open.
+  const compareMonth = date.slice(0, 7); // yyyy-MM
+  const { data: monthlyCompare = null, isLoading: compareLoading } = useQuery<MonthlyComparison | null>({
+    queryKey: ['closing-monthly-compare', clinic?.id, compareMonth],
+    enabled: !!clinic && tab === 'compare',
+    queryFn: () => fetchMonthlyComparison(clinic!.id, `${compareMonth}-01`),
   });
 
   // ── 기존 마감 데이터로 폼 초기화 ────────────────────────────
@@ -1685,6 +1704,10 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           </TabsTrigger>
           <TabsTrigger value="payments" className="flex-1 sm:flex-none">
             결제내역 <Badge variant="secondary" className="ml-1.5">{enrichedRows.length}</Badge>
+          </TabsTrigger>
+          {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 '일자별 매출 비교(당월 vs 전월)' 재노출 탭(전직원 열람). */}
+          <TabsTrigger value="compare" className="flex-1 sm:flex-none">
+            매출 비교
           </TabsTrigger>
         </TabsList>
 
@@ -2670,6 +2693,22 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               {clinic && <ReceiptSettlementTab date={date} clinicId={clinic.id} />}
             </TabsContent>
           </Tabs>
+        </TabsContent>
+
+        {/* ════════════════════════ 탭 3: 매출 비교 ════════════════════════ */}
+        {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계>MTM매출 02섹션 '일자별 매출 비교(당월 vs 전월)'
+            데이터/컴포넌트를 그대로 재사용(신규 산식 없음·통계 화면과 값 동일). 전직원 열람 가능.
+            staffBreakdown=null + showStaffBreakdown={false} → 실장 개인성과(카드 #2)는 노출하지 않음(AC-3 경계). */}
+        <TabsContent value="compare" className="space-y-4">
+          <div className="rounded-md border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-800">
+            <b>{compareMonth}</b> 기준 일자별 매출 비교(당월 vs 전월)예요. 통계 화면의 같은 표와 동일한 값입니다.
+          </div>
+          <MonthlyComparisonSection
+            data={monthlyCompare}
+            staffBreakdown={null}
+            loading={compareLoading}
+            showStaffBreakdown={false}
+          />
         </TabsContent>
       </Tabs>
 
