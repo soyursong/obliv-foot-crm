@@ -70,4 +70,25 @@
 - [x] 총괄 relay용 요약 제출(하단)
 
 ## 총괄 relay용 요약 (현장 톤 변환은 responder)
-현은호(F-4717) 님의 7/28 재진은 담당치료사 김규리로 정상 등록돼 있습니다. 김규리 backfill 3건(다른 고객 3명)에 현은호는 포함 대상이 아니며, 현은호 님은 화장품(CTB) 구매 내역 자체가 없습니다. 화장품 판매이력 팝업은 현재 최신 버전이 반영돼 정상 동작 상태이고, 김규리 화장품 판매 17건은 조회 가능합니다. "조회 안 됨"이 계속되면 화면 새로고침(새 탭) 후 판매일이 포함된 기간으로 다시 확인 요청드립니다.
+현은호(F-4717) 님의 7/28 재진은 담당치료사 김규리로 정상 등록돼 있습니다. 김규리 backfill 3건(다른 고객 3명)에 현은호는 포함 대상이 아니며, 현은호 님은 화장품(CTB) 구매 내역 자체가 없습니다. 화장품 판매이력 팝업은 현재 최신 버전이 반영돼 정상 동작 상태이고, 김규리 화장품 판매 18건(₩391,000)은 조회 가능합니다. "조회 안 됨"이 계속되면 화면 새로고침(새 탭) 후 판매일이 포함된 기간으로 다시 확인 요청드립니다.
+
+---
+
+## ★ LIVE RE-RUN ADDENDUM (2026-08-08, dev-foot 재검증)
+
+MQ 재요청(MSG-20260808-213304) 수신 후 PROD READ-ONLY 라이브 재실행. **이전 diag 스크립트가 실재하지 않는 컬럼(`staff.is_active`, `check_in_services.category_label`)을 참조해 B 섹션 카운트가 조용히 null 반환(미검증)이던 점을 발견 → 실 팝업 쿼리 경로로 재검증.**
+
+### A (귀속) — 라이브 재확인, 결론 불변
+- 현은호 = `customers` name ilike '현은호' **1행** (F-4717, id 6412fbf7…) — 동명이인 0.
+- check_ins 4건 재확인: 07-20 new(서은정/done) · 07-28 new(임별/**cancelled**) · **07-28 returning(김규리 therapist_id=3a0c6774/done) ✓** · 08-05 returning(윤시하/done).
+- `staff` 조회 정정: 김규리 = **3a0c6774(role=therapist)** + d26717cb(role=admin) 2행. 07-28 재진 귀속 = therapist 3a0c6774 = **김규리 정상**(NULL·오귀속 아님).
+- reservations 0건 → 귀속 권위 = check_ins.therapist_id (불변).
+- SALESLIST backfill(F-4550/5016/4906)에 현은호(F-4717) **미포함** 재확인.
+
+### B (팝업) — 실 팝업 쿼리 경로로 재검증
+- 팝업 소스 = `services.category='풋화장품' OR category_label='풋화장품'`(19종) → `check_in_services.service_id` join, `voided_at IS NULL AND price>0`, 버킷=`seller_staff_id ?? check_ins.therapist_id`.
+- 라이브 번들 `version.json` commit = **a224c81d** = origin/main HEAD (built 12:57 UTC) — stale 아님. 팝업 fix 95cd243c(8/1)·fec971f4(8/7) 모두 조상.
+- SalesStaffTab.tsx:478 `m.set(bucket, arr)` 커밋 존재 — 렌더버그 아님.
+- **김규리 버킷 풋화장품 = 18건 / ₩391,000**, 판매일 06-27·07-22·07-23·07-25·07-28·08-01·08-04·08-07·08-08 **여러 날 분산** 실재 (이전 evidence '17건'은 미검증 근사치였고, 실 경로 재검증 결과 18건).
+- 현은호 화장품 라인 = **0건** (valid service_id join으로 재확인, 26개 라인 중 유료 9·화장품 0).
+- **근본원인 (c) 조건 한정 확정**: (a)stale·(b)렌더버그 배제. 팝업 미표시는 (i) **조회기간이 판매일 미포함**(김규리 판매가 여러 날 분산 — 단일일/좁은 구간 조회 시 대부분 누락) 또는 (ii) 브라우저 탭 캐시. → 하드리프레시 + 판매일 포함 기간 재확인.

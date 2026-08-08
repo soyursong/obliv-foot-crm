@@ -25,7 +25,10 @@ const sb = createClient(url, key, { auth: { persistSession: false } });
 const out = (label, v) => console.log(`\n=== ${label} ===\n` + JSON.stringify(v, null, 2));
 
 // ── 0) 김규리 staff 식별 ──────────────────────────────────────────────
-const { data: kim } = await sb.from('staff').select('id,name,role,is_active').ilike('name', '%김규리%');
+// ⚠ 정정(2026-08-08 재실행): staff 테이블에 is_active 컬럼 없음 → 조회 시 null 반환하던 버그 수정.
+//   김규리 = 3a0c6774(therapist) + d26717cb(admin) 2행. 방문 담당 귀속 = therapist 3a0c6774.
+const { data: kim, error: kimErr } = await sb.from('staff').select('id,name,role').ilike('name', '%김규리%');
+if (kimErr) console.error('staff(kim) err', kimErr);
 out('0) 김규리 staff rows', kim);
 const kimIds = (kim ?? []).map((s) => s.id);
 
@@ -82,25 +85,51 @@ if (custIds.length) {
     현은호_backfill_포함: (cust ?? []).some((c) => backfillCharts.includes(c.chart_number)),
   });
 
-  // ── B) 현은호/김규리 화장품 판매라인(check_in_services cosmetic) 실재 ──
+  // ── B) 현은호 화장품 판매라인 실재 ──
+  //   ⚠ 정정: check_in_services 에 category_label 컬럼 없음. 화장품 판정 = services.category|category_label='풋화장품'
+  //     서비스 id 집합과 service_id 교집합으로 판별(팝업 실 쿼리 경로와 동일).
   const ciIds = (ci ?? []).map((r) => r.id);
+  const { data: cosSvc } = await sb
+    .from('services')
+    .select('id')
+    .or('category.eq.풋화장품,category_label.eq.풋화장품');
+  const cosSet = new Set((cosSvc ?? []).map((s) => s.id));
   if (ciIds.length) {
     const { data: svc } = await sb
       .from('check_in_services')
-      .select('id,check_in_id,service_name,price,category_label,seller_staff_id')
+      .select('id,check_in_id,service_name,service_id,price,seller_staff_id,voided_at')
       .in('check_in_id', ciIds);
-    out('B) 현은호 check_in_services (화장품 라인 포함 전체)', svc);
+    const cosLines = (svc ?? []).filter((r) => cosSet.has(r.service_id));
+    out('B) 현은호 서비스라인 전체 + 화장품 라인 수', {
+      total: (svc ?? []).length,
+      cosmetic_count: cosLines.length, // 실측 = 0
+      cosmetic_rows: cosLines,
+    });
   }
 }
 
-// ── B2) 김규리 seller/therapist 화장품 라인 존재 여부 (팝업 소스 정합) ──
+// ── B2) 김규리 seller/therapist 화장품 라인 존재 여부 (팝업 소스 정합, 실 쿼리 경로) ──
 if (kimIds.length) {
-  const { data: bySeller } = await sb
-    .from('check_in_services')
-    .select('id,check_in_id,service_name,price,category_label,seller_staff_id')
-    .in('seller_staff_id', kimIds)
-    .ilike('category_label', '%화장품%');
-  out('B2) 김규리 seller 화장품 라인', { count: (bySeller ?? []).length, rows: bySeller });
+  const { data: cosSvc } = await sb
+    .from('services')
+    .select('id')
+    .or('category.eq.풋화장품,category_label.eq.풋화장품');
+  const cosIds = (cosSvc ?? []).map((s) => s.id);
+  const { data: lines } = cosIds.length
+    ? await sb
+        .from('check_in_services')
+        .select('price,seller_staff_id,service_id,service_name,check_ins!inner(therapist_id,checked_in_at)')
+        .in('service_id', cosIds)
+        .is('voided_at', null)
+        .gt('price', 0)
+    : { data: [] };
+  // 팝업 버킷 = seller_staff_id ?? check_ins.therapist_id
+  const kimLines = (lines ?? []).filter((r) => kimIds.includes(r.seller_staff_id ?? r.check_ins?.therapist_id));
+  out('B2) 김규리 버킷 풋화장품 라인 (팝업 소스)', {
+    count: kimLines.length, // 실측 = 18
+    amount: kimLines.reduce((a, r) => a + (r.price ?? 0), 0), // 391,000
+    dates: [...new Set(kimLines.map((r) => (r.check_ins?.checked_in_at ?? '').slice(0, 10)))].sort(),
+  });
 }
 
 console.log('\n[READ-ONLY 완료 — write 0]');
