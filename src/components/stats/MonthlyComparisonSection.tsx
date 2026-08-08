@@ -6,7 +6,8 @@
  * 모노톤 컴팩트(CRM 기존 톤앤매너).
  *
  * T-20260805-foot-DAILYTREND-STAFF-BREAKDOWN-CLARIFY:
- *   (AC-B) 가독성 — 각 컬럼 헤더에 단위(원)·의미 명시 + "이 표 읽는 법" 범례 추가.
+ *   (AC-B) 가독성 — 각 컬럼 헤더에 단위(원)·의미 명시.
+ *     (안내 범례·실장 노트 박스는 STATS-EXTRA-DESC-BOX-REMOVE 로 제거됨. 표·산식 무접촉.)
  *   (AC-A) 실장별 표 추가 — 일별 매출 추이를 담당실장 단위로도 표시(기존 표 대체 아님·추가).
  *     실장별 총매출 = SALESAGG-STAFF-4METRIC-REDEFINE 정의(패키지 결제 + 급여 본인부담금)
  *     를 일자 grain으로 소비(mtmSales.fetchStaffDailyBreakdown). 미지정 매출은 '미지정' 버킷.
