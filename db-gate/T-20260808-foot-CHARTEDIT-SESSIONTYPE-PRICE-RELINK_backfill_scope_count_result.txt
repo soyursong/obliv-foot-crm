@@ -1,0 +1,41 @@
+
+═══════════════════════════════════════════════════════════════════════
+ T-20260808-foot-CHARTEDIT-SESSIONTYPE-PRICE-RELINK — backfill scope count
+ (READ-ONLY · SELECT only · blanket UPDATE 미착수)
+ DB: https://rxlomoozakkjesdqjtvd.supabase.co  | packages=539  package_sessions=553
+═══════════════════════════════════════════════════════════════════════
+
+■ 정의: 오염 후보 = package_sessions.unit_price(스냅샷) ≠ sessionTypeUnitPrice(현 session_type)
+        (write-side 판정 매핑과 1:1 동일. 무상/비가격 유형[preconditioning 등] 제외)
+  ⚠ mismatch ⊇ 실오염 — 정당한 수기조정(AC3 무접촉) 스냅샷도 mismatch 로 포착됨(=후보, 확정 아님).
+     per-row 판정·freeze셋은 DA Data-Correction Backfill SOP 게이트에서.
+
+(a) 전체 오염 후보 count            : 41 행
+    ├ session status 별            : {"used":37,"deleted":4}
+    └ session_type 별              : {"trial":33,"reborn":2,"podologue":2,"unheated_laser":4}
+
+(b) 매출집계 유입 한정 count
+    ├ 활성 패키지(status=active)     : 40 행
+    ├ 시술확정 session(status=used)  : 37 행
+    └ 활성패키지 ∩ used(=매출 실유입) : 37 행   ★가장 좁은 매출영향 셋
+
+(c) 대략 금액 규모 Σ|기존 − 올바른|
+    ├ 전체                         : 2,538,000 원
+    ├ 활성 패키지 한정              : 2,479,000 원
+    └ 활성패키지 ∩ used            : 1,829,000 원
+
+■ disposition 분해(오염 성격 구분 — DA per-row 판정 입력)
+    ├ zero-snapshot (stored=0, correct>0) : 40 행 (활성∩used 37)
+    │   → session 단가 0 스냅샷 vs 패키지 유형단가>0. "옛 유형단가 잔존" 아님(0 기록).
+    │      무상/체험(AC2 단건매출 별경로)·생성시점0 가능성 → 실오염 여부 per-row 판정 필요.
+    └ nonzero-diff (stored>0, ≠correct)   : 1 행 (활성∩used 0)
+        → 수기조정(AC3 무접촉) 또는 옛 유형단가 잔존 혼재.
+
+■ 강한 지문(stored == 같은 패키지의 다른 유형 단가 = "옛 유형 단가 잔존")
+    ├ 전체                         : 1 행
+    └ 활성패키지 ∩ used            : 0 행
+    → 티켓이 기술한 saveEditSession session_type-swap 오염의 최협의 근사.
+      (수기조정 노이즈 배제 · SOP 지문교집합 1차 후보)
+
+■ 참고: package 조인 실패(orphan session): 0 행 (판정 제외)
+═══════════════════════════════════════════════════════════════════════
