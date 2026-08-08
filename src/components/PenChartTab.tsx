@@ -57,6 +57,17 @@
  *   [AC-3c/3d] 배경 양식 서식(bgCanvas)은 destination-out/합성 대상 제외 — read-only 불변. source-atop 은 draw 레이어에만.
  *   ※ 코드 곳곳의 'destination-out' 문구는 폐기된 구현을 설명하는 히스토리 주석이며, 실 합성은 전부 source-atop 이다.
  *
+ * T-20260808-foot-PENCHART-WHITEOUT-DISTINCT-FROM-ERASER — 화이트 도구 **v4 재정의(현행)**:
+ *   [증상] v3(source-atop 흰 덧칠)은 흰 양식 위에서 지우개(destination-out/clearRect)와 시각적으로 동일하고,
+ *          상용구(DOM 오버레이)는 라이브에서 전혀 삭제하지 못함 → 현장(김주연 총괄) "화이트=지우개, 구분 없음".
+ *   [v4 확정 — 레이어 스코프 분리] 지우개=드로잉만 삭제 / 화이트=상용구+드로잉 삭제 / 양식(bgCanvas)=불침범.
+ *     - 화이트 stroke = destination-out(draw 레이어 투명화=삭제) — 삭제 자리에 양식(별도 하위 레이어)이 비침(AC-4).
+ *     - 상용구(DOM 오버레이)는 부분 픽셀 삭제 불가 → onPointerUp 에서 획이 지나간 hit 아이템만 draw 로 rasterize 후
+ *       같은 화이트 경로를 destination-out 재적용 = '드래그한 영역만' 국소 삭제(AC-2/AC-3). 잔여 텍스트는 raster 로 보존.
+ *     - 상용구 '블록 통삭제'는 여전히 금지(AC-3) — 통삭제는 [핸들 delete 버튼](select 도구)만 담당(별개 경로).
+ *   [AC-5] 지우개는 회귀0 — 여전히 드로잉(clearRect)+text placedItem hit-test 삭제만. 상용구(boilerplate)는 화이트 전담.
+ *   ※ 실 합성(라이브 move/down·onPointerUp·handleDrawSave·buildFlattenedCanvas)은 전부 destination-out(삭제)이다.
+ *
  * 모드 구조:
  *   list   — 저장된 차트 목록 + 새 차트 버튼
  *   select — 양식 선택 패널 (pen_chart / health_questionnaire_* / refund_consent)
@@ -1492,15 +1503,15 @@ export function PenChartTab({
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
     } else if (tool === 'white') {
-      // T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈3 (AC-3a/3c/3d): 화이트 = '흰 덧칠' 복원.
-      //   [회귀 RC] 6FIX #4가 화이트를 destination-out(지움)으로 바꿔 draw 레이어 픽셀을 투명화했다 →
-      //     ① 지우개와 시각적으로 동일(현장 "화이트=지우개")  ② 저장 재적용도 destination-out이라 상용구
-      //     위를 칠하면 '흰 덮기'가 아니라 구멍(양식 비침)이 남음.
-      //   [수정] source-atop 불투명 흰색으로 전환 — 흰색이 '기존 draw 레이어 내용(필기/래스터 상용구)이
-      //     있는 픽셀 위에만' 얹힌다. draw 레이어가 투명한 곳(양식만 깔린 영역)엔 아무것도 안 그려져
-      //     양식 서식(bgCanvas=별도 레이어)은 전혀 건드리지 않는다(AC-FORM-SAFE/AC-LAYER-SEPARATE).
-      //     지우개(destination-out=투명화)와 명확히 구분 → 화이트=흰 덮기, 지우개=지움.
-      ctx.globalCompositeOperation = 'source-atop';
+      // T-20260808-foot-PENCHART-WHITEOUT-DISTINCT-FROM-ERASER: 화이트 = '국소 삭제(상용구+드로잉)'로 재정의.
+      //   [증상] 직전 화이트(source-atop 흰 덧칠)는 흰 양식 위에서 지우개(clearRect)와 시각적으로 동일하고,
+      //     상용구(DOM 오버레이)는 라이브에서 아예 건드리지 못했다 → 현장(김주연 총괄) "화이트=지우개, 구분 없음".
+      //   [재정의 — 레이어 스코프 분리] 지우개=드로잉만 삭제 / 화이트=상용구+드로잉 삭제 / 양식(bgCanvas)=불침범.
+      //     라이브 stroke 는 destination-out 으로 draw 레이어 픽셀을 '투명화(삭제)' → 양식(별도 하위 레이어)이
+      //     그대로 비쳐 AC-4(양식 불침범) 보장. draw 위 필기는 이 순간 삭제된다.
+      //     상용구(DOM 오버레이)는 onPointerUp 에서 hit 아이템만 draw 로 rasterize 후 같은 화이트 경로를
+      //     destination-out 재적용 → '드래그한 영역만' 국소 삭제(AC-2/AC-3), 블록 통삭제 아님.
+      ctx.globalCompositeOperation = 'destination-out';
       ctx.strokeStyle = '#ffffff';
       ctx.globalAlpha = 1;
       ctx.lineWidth   = penSize * 8;
@@ -2597,11 +2608,11 @@ export function PenChartTab({
       eraseBgIfEdit(pos.x, pos.y, sz);
       eraserStrokePathRef.current = [{ x: pos.x, y: pos.y }];
     } else if (activeTool === 'white') {
-      // T-20260708-foot-PENCHART-REGRESSION-3FIX 이슈3: 화이트 시작점(dot) — source-atop 흰 덮기.
-      //   native move(L1369)와 동일 — 흰색은 기존 draw 내용 위에만 얹히고 양식(bgCanvas)은 불변.
-      //   (save/restore로 GCO 격리)
+      // T-20260808-foot-PENCHART-WHITEOUT-DISTINCT-FROM-ERASER: 화이트 시작점(dot) — destination-out 삭제.
+      //   native move 와 동일 — draw 레이어를 투명화(삭제)해 양식(bgCanvas)이 비침(AC-4). 상용구는 onPointerUp rasterize+삭제.
+      //   (save/restore로 GCO 격리) — 굵기는 native move stroke(penSize*8)의 절반 반경(penSize*4)과 일치.
       ctx.save();
-      ctx.globalCompositeOperation = 'source-atop';
+      ctx.globalCompositeOperation = 'destination-out';
       ctx.fillStyle = '#ffffff';
       ctx.globalAlpha = 1;
       const sz = penSize * 4;
@@ -2677,16 +2688,58 @@ export function PenChartTab({
       );
     };
 
-    // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE: white 도구 획 종료 — '삭제' 제거, '누적'으로 전환.
-    //   [구 동작=RC] 종전엔 여기서 화이트 획이 지나간 boilerplate placedItem 을 filter 로 통삭제했다
-    //   (T-20260622 AC-3). 현장 보고: 화이트로 상용구 위를 칠하면 상용구가 canvas 에서 사라지는 데이터 소실.
-    //   [수정] AC-1/AC-3 — 삭제/선택 진입 없이 화이트 획 경로만 세션 누적. 저장 시(handleDrawSave) 상용구
-    //   rasterize '후' destination-out 재적용으로 화이트아웃(덮기)만 반영, 오브젝트 데이터는 보존.
+    // T-20260808-foot-PENCHART-WHITEOUT-DISTINCT-FROM-ERASER: 화이트 획 종료 — 상용구 국소 삭제(rasterize+destination-out).
+    //   [증상] 직전 구현(WHITETOOL-PHRASE-DELETE→REGRESSION-3FIX)은 화이트를 source-atop '흰 덮기'로 두어
+    //     ① 흰 양식 위에서 지우개와 시각 동일  ② 상용구(DOM 오버레이)는 라이브에서 전혀 삭제 못함 → "화이트=지우개".
+    //   [재정의 AC-2/AC-3] 화이트는 드래그한 '영역만' 상용구+드로잉을 삭제한다(블록 통삭제 금지). DOM 상용구는 부분
+    //     픽셀 삭제가 불가하므로, 획이 지나간 hit 아이템만 draw 캔버스로 rasterize 한 뒤(→ raster 로 대체) 같은 화이트
+    //     경로를 destination-out 재적용해 스와이프 영역만 투명화한다. 획 미통과 잔여 텍스트는 raster 로 남는다(AC-3).
+    //   [AC-4] destination-out 은 draw 레이어에만 작용 → 양식(bgCanvas=별도 하위 레이어)은 불침범, 삭제 자리에 그대로 비침.
+    //   [AC-5] 지우개(eraser)는 아래 hit-test 에서 'text' placedItem 만, 화이트는 boilerplate+text 모두 대상 — 스코프 분리.
     if (activeTool === 'white' && whiteStrokePathRef.current.length > 0) {
-      whiteStrokesAllRef.current.push({
-        path: whiteStrokePathRef.current,
-        lineWidth: penSize * 8, // native move 시각 stroke 굵기(L1207)와 동일 → 저장 재적용 폭 일치
-      });
+      const wpath = whiteStrokePathRef.current;
+      const wLineWidth = penSize * 8; // native move 시각 stroke 굵기와 동일 → 저장 재적용 폭 일치
+      whiteStrokesAllRef.current.push({ path: wpath, lineWidth: wLineWidth });
+
+      // 화이트 획이 지나간 상용구/텍스트만 draw 캔버스로 rasterize 후 국소 삭제(드래그 영역만).
+      const whit = placedItems.filter((item) => pathHitsItem(wpath, item, wLineWidth / 2));
+      if (whit.length > 0) {
+        const dctx = drawCtxRef.current ?? canvasRef.current?.getContext('2d') ?? null;
+        if (dctx) {
+          dctx.save();
+          // (1) hit 아이템을 draw 레이어에 rasterize (handleDrawSave L3087~ 와 동일 좌표계/폰트)
+          dctx.globalCompositeOperation = 'source-over';
+          dctx.globalAlpha = 1;
+          dctx.textBaseline = 'top';
+          for (const item of whit) {
+            const lines = item.text.split('\n');
+            const lineH = item.fontSize + 6;
+            dctx.font = `${item.fontSize}px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif`;
+            dctx.fillStyle = item.color;
+            lines.forEach((line, i) => dctx.fillText(line, item.x, item.y + i * lineH));
+          }
+          // (2) 화이트 경로를 destination-out 재적용 → 스와이프 영역만 삭제(상용구+드로잉). 양식(bgCanvas) 불변.
+          dctx.globalCompositeOperation = 'destination-out';
+          dctx.strokeStyle = '#ffffff';
+          dctx.fillStyle = '#ffffff';
+          dctx.lineCap = 'round';
+          dctx.lineJoin = 'round';
+          dctx.lineWidth = wLineWidth;
+          dctx.beginPath();
+          dctx.arc(wpath[0].x, wpath[0].y, wLineWidth / 2, 0, Math.PI * 2);
+          dctx.fill();
+          if (wpath.length > 1) {
+            dctx.beginPath();
+            dctx.moveTo(wpath[0].x, wpath[0].y);
+            for (let i = 1; i < wpath.length; i++) dctx.lineTo(wpath[i].x, wpath[i].y);
+            dctx.stroke();
+          }
+          dctx.restore();
+        }
+        // (3) rasterize 한 아이템은 DOM 오버레이 목록에서 제거 — raster(부분삭제본)로 대체(이중 렌더 방지).
+        const whitIds = new Set(whit.map((it) => it.id));
+        setPlacedItems((prev) => prev.filter((it) => !whitIds.has(it.id)));
+      }
       whiteStrokePathRef.current = [];
     }
 
@@ -2881,10 +2934,11 @@ export function PenChartTab({
       dCtx.restore();
     }
 
-    // 3) 화이트 획(source-atop) — handleDrawSave(L2756~)와 동일. draw 레이어 위 흰 덮기.
+    // 3) 화이트 획(destination-out=삭제) — T-20260808 WHITEOUT-DISTINCT-FROM-ERASER: handleDrawSave 와 동일.
+    //    출력/다운로드도 저장본과 동일하게 스와이프 영역을 삭제(양식 비침)한다. draw 복사본에만 작용 → 양식(bgCanvas) 불변.
     if (whiteStrokesAllRef.current.length > 0) {
       dCtx.save();
-      dCtx.globalCompositeOperation = 'source-atop';
+      dCtx.globalCompositeOperation = 'destination-out';
       dCtx.strokeStyle = '#ffffff';
       dCtx.fillStyle = '#ffffff';
       dCtx.globalAlpha = 1;
@@ -3100,20 +3154,16 @@ export function PenChartTab({
         }
       }
 
-      // T-20260706-foot-PENCHART-WHITETOOL-PHRASE-DELETE (AC-2) → T-20260708-REGRESSION-3FIX 이슈3 재정의:
-      //   상용구/텍스트 rasterize '후' 누적 화이트 획을 draw 캔버스에 재적용한다(라이브에선 boilerplate 가
-      //   DOM 오버레이라 화이트가 덮지 못하지만, 저장 합성본에선 위 fillText 로 draw 캔버스에 래스터화되므로).
-      //   [회귀 수정] 종전 destination-out(투명화)은 상용구 위에 '구멍'을 뚫어 저장본에서 양식이 비쳐
-      //     '흰 덮기'가 아니었다(현장 "덮이지 않음"). → source-atop 불투명 흰색으로 전환:
-      //     흰색이 draw 레이어의 '기존 내용(래스터 상용구/텍스트/필기)이 있는 픽셀 위에만' 얹혀 실제로
-      //     하얗게 덮인다(재진입 시에도 유지). draw 레이어가 투명한 곳엔 안 그려지고, 배경 양식(bgCanvas)은
-      //     별도 레이어라 여기서 전혀 손대지 않는다 → AC-FORM-SAFE/AC-LAYER-SEPARATE(양식 read-only) 보장.
-      //   ※ placedItems 데이터는 삭제하지 않음 — 화이트가 지나가지 않은 부분의 상용구는 그대로 남는다(AC-1).
+      // T-20260808-foot-PENCHART-WHITEOUT-DISTINCT-FROM-ERASER: 저장 합성 시 누적 화이트 획 재적용 — destination-out(삭제).
+      //   라이브 onPointerUp 에서 hit 상용구는 이미 draw 캔버스에 rasterize+삭제되어 baked 되어 있으나(placedItems 에서
+      //   제거됨), 재적용을 destination-out 으로 유지해 (a) 라이브 bake 실패 안전망 (b) 저장본에서도 스와이프 영역이
+      //   확실히 삭제(양식 비침)되도록 보장한다. destination-out 은 draw 레이어에만 작용 → bgCanvas(양식) 불침범(AC-4).
+      //   destination-out 은 멱등 — 이미 삭제된 영역을 재삭제해도 결과 동일. 화이트 미통과 상용구는 위 rasterize 로 보존(AC-3).
       if (whiteStrokesAllRef.current.length > 0) {
         const wCtx = canvas.getContext('2d');
         if (wCtx) {
           wCtx.save();
-          wCtx.globalCompositeOperation = 'source-atop';
+          wCtx.globalCompositeOperation = 'destination-out';
           wCtx.strokeStyle = '#ffffff';
           wCtx.fillStyle   = '#ffffff';
           wCtx.globalAlpha = 1;
@@ -3645,7 +3695,7 @@ export function PenChartTab({
             <Eraser className="h-3.5 w-3.5" /> 지우개
           </button>
 
-          {/* 화이트 — 초기 굵기 3. T-20260708-REGRESSION-3FIX: 흰 덧칠(source-atop) — 필기/상용구 위에만 하얗게 덮고 양식 서식(bgCanvas)은 불변. 지우개(투명화)와 구분. */}
+          {/* 화이트 — 초기 굵기 3. T-20260808-WHITEOUT-DISTINCT-FROM-ERASER: 드래그 영역의 상용구+드로잉 국소 삭제(destination-out). 양식 서식(bgCanvas)은 불침범. 지우개(드로잉만 삭제)와 스코프 구분. */}
           <button
             onClick={() => switchTool(isWhite ? 'pen' : 'white')}
             className={cn(
