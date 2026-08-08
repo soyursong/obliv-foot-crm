@@ -2709,9 +2709,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             데이터/컴포넌트를 그대로 재사용(신규 산식 없음·통계 화면과 값 동일). 전직원 열람 가능.
             staffBreakdown=null + showStaffBreakdown={false} → 실장 개인성과(카드 #2)는 노출하지 않음(AC-3 경계). */}
         <TabsContent value="compare" className="space-y-4">
-          <div className="rounded-md border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-800">
-            <b>{compareMonth}</b> 기준 일자별 매출 비교(당월 vs 전월)예요. 통계 화면의 같은 표와 동일한 값입니다.
-          </div>
+          {/* T-20260809-foot-STATS-EXTRA-DESC-BOX-REMOVE: 요청 안 한 teal 안내 박스 제거(표·값 무접촉). */}
           <MonthlyComparisonSection
             data={monthlyCompare}
             staffBreakdown={null}
