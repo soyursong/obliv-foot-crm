@@ -773,7 +773,12 @@ Deno.serve(async (req) => {
       // scheduled_at 컬럼 없음 — 미삽입 (결함 4 수정)
       status:           'confirmed',
       // slot_type 컬럼 없음 → visit_type 으로 매핑 (결함 5 수정)
-      ...(slotType ? { visit_type: slotType === 'new_consult' ? 'new' : 'returning' } : {}),
+      // T-20260808-foot-VISITTYPE-DEFAULT-SETNEW-REMEDIATE (b): bare-branch 하드닝.
+      //   기존 spread-omit(slotType falsy → visit_type 미삽입)은 DB DEFAULT('returning') 착지 =
+      //   AC2 LIVE bare INSERT 1경로 = latent hazard. RPC 경로(p_visit_type: visitTypeMapped, :598)
+      //   및 선산출 주석(:750 "visitTypeMapped … 그대로 사용")과 정합하도록 명시 착지로 교정.
+      //   visitTypeMapped(:462 = slotType ? … : 'new') → DEFAULT unreachable + fail-safe floor 'new'.
+      visit_type:       visitTypeMapped,
       // B-9: 해석된 service_id 만 착지(null이면 미삽입 → 컬럼 DEFAULT NULL 유지, 회귀 0)
       ...(serviceId ? { service_id: serviceId } : {}),
       // T-20260702-dopamine-FOOTRESV-MEMO-REPROBE: memo → reservations.memo 매핑 제거(timeline-only).
