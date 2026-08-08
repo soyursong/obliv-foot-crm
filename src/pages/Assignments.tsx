@@ -433,6 +433,11 @@ export default function Assignments() {
   //   초기값 = 오늘(KST). 오늘 선택 시 [당월누적] = 기존 '직원별 당월 누적' 수치와 동일(회귀0).
   const [selectedDate, setSelectedDate] = useState<string>(() => todaySeoulISODate());
 
+  // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 선택일이 미래(오늘 이후)인지 판정.
+  //   미래 선택 시 [일일 배정 목표]는 실적이 아니라 '예약 기준 미리보기'(reservations 파생)로 semantic 구분.
+  //   당일/과거(< 또는 =오늘)는 기존 실적 경로 불변(회귀0). read-only 표시 파생.
+  const isFutureDate = useMemo(() => selectedDate > todaySeoulISODate(), [selectedDate]);
+
   // T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO: [일일 배정 목표] = 차주(다음 주 월~일) 요일별 초진 예약 건수 자동 표시.
   //   집계 SSOT = monthInitResvCount 와 동일 술어(reservations visit_type='new' + status!=cancelled + reservation_date DATE범위).
   //   read-only 파생 표시(write 0). null=로딩 중(미조회), 조회 후 0건 일자는 0으로 표시(AC-5).
@@ -514,8 +519,16 @@ export default function Assignments() {
       // T-20260720-foot-ASSIGN-LABEL-DATE-SELECT: 누적 조회 하한 = 선택일이 속한 월의 1일.
       //   선택일이 과거 달이면 그 달 1일부터, 상한은 없음(now)까지 로드 → 선택 월분 + 오늘분(금일 배분 이력)
       //   을 모두 포함. 일/당월 분기는 아래 staffStats 에서 선택일 경계로 client-side 필터.
-      //   선택일이 미래가 되지 않도록 날짜 picker max=오늘 로 제한(회귀0 보장: 오늘 선택 시 기존 범위와 동일).
-      const monthStart = `${selectedDate.slice(0, 7)}-01T00:00:00+09:00`;
+      // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래 날짜 선택 허용에 따른 로드 하한 가드.
+      //   당월누적(staffStats)은 항상 '기준일(오늘) 당월'만 집계하는데, 로드 하한을 선택월 1일로만 두면
+      //   미래 '월'을 선택할 때 하한이 오늘 이후로 밀려 당월 check_ins 가 0건 로드 → 당월누적 회귀.
+      //   → 하한 = min(선택월 1일, 오늘 당월 1일)로 두어 당월누적을 항상 커버(미래 경로만 additive).
+      //   ▸ 당일/과거 선택: 선택월 1일 ≤ 오늘 당월 1일 → 기존 값과 동일(회귀0).
+      //   ▸ 미래 '월' 선택: 오늘 당월 1일로 하한 유지 → 당월누적 실적 보존. 미래일 자체 check_ins 는 원래 0건.
+      const selMonthStart = `${selectedDate.slice(0, 7)}-01`;
+      const todayMonthStart = `${todayIso.slice(0, 7)}-01`;
+      const effMonthStart = selMonthStart < todayMonthStart ? selMonthStart : todayMonthStart;
+      const monthStart = `${effMonthStart}T00:00:00+09:00`;
 
       // 1) staff (active)
       // ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
@@ -976,8 +989,17 @@ export default function Assignments() {
     if (!canViewRanking) return null;
     if (targetCfg == null || selDayInitResvCount == null) return null; // config 미설정/미조회 → '—'
     const N = selDayInitResvCount;
-    // 출근 실장만 분배 대상 (당일 휴무자 제외 = CARDLABEL 정합). targetPerfRows = 재직 상담실장 랭킹 소스.
-    const workingRows = targetPerfRows.filter((r) => workingIds.has(r.consultant_id));
+    // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래 '빈 날'(예약 0건)은 미리보기 대상 아님 →
+    //   null 반환 → 목표 셀 '—' + 배너로 '예약없음' 설명(0/— 오인 방지). 당일/과거 N=0 은 기존 '0' 표시 불변(회귀0).
+    if (isFutureDate && N === 0) return null;
+    // 분배 대상:
+    //   · 당일/과거: 출근 실장만(당일 휴무자 제외 = CARDLABEL 정합, 기존 동작 불변).
+    //   · 미래(예약 기준 미리보기): 미래 근무 로스터 미상(workingIds=오늘 출근명단) → 출근필터 미적용,
+    //     전체 랭킹 상담실장에 예약건 비례 분배(미래 경로만 additive). Σ목표=N 불변.
+    // targetPerfRows = 재직 상담실장 랭킹 소스.
+    const workingRows = isFutureDate
+      ? targetPerfRows
+      : targetPerfRows.filter((r) => workingIds.has(r.consultant_id));
     if (workingRows.length === 0) return new Map();
     // 랭킹순(매출 desc, 이름 ko) — rankAssignmentRatios 와 동일 comparator. 최하위 랭킹 = 배열 끝(나머지 흡수 대상).
     const rankedIds = [...workingRows]
@@ -1005,18 +1027,20 @@ export default function Assignments() {
     const lastId = rankedIds[rankedIds.length - 1];
     out.set(lastId, (out.get(lastId) ?? 0) + (N - running));
     return out;
-  }, [canViewRanking, targetCfg, selDayInitResvCount, targetPerfRows, workingIds]);
+  }, [canViewRanking, targetCfg, selDayInitResvCount, targetPerfRows, workingIds, isFutureDate]);
 
   const dailyTargetOf = useCallback(
     (st: StaffStat): number | null => {
       // 접근통제 + 랭킹 개념 게이트: admin 전용 + 상담(consultant) 탭 + 산식 입력 로딩 완료.
       if (!canViewRanking) return null;
       if (st.staff.role !== 'consultant') return null; // 치료사는 랭킹 배정 비율 대상 아님
-      if (dailyTargetMap == null) return null; // config 미설정/미조회 → '—'
-      if (!workingIds.has(st.staff.id)) return null; // 당일 휴무 → '—' (CARDLABEL 정합; 분배 대상 아님)
+      if (dailyTargetMap == null) return null; // config 미설정/미조회/미래 빈 날 → '—'
+      // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래(예약 기준 미리보기)는 근무 로스터 미상 →
+      //   출근 게이트 미적용(전체 랭킹 실장 미리보기). 당일/과거는 기존 휴무 게이트 불변(회귀0).
+      if (!isFutureDate && !workingIds.has(st.staff.id)) return null; // 당일 휴무 → '—' (CARDLABEL 정합)
       return dailyTargetMap.get(st.staff.id) ?? 0; // 출근·랭킹 미포함 = 0
     },
-    [canViewRanking, dailyTargetMap, workingIds],
+    [canViewRanking, dailyTargetMap, workingIds, isFutureDate],
   );
 
   // ── T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO ────────────────────────────────
@@ -2314,7 +2338,9 @@ export default function Assignments() {
         <CardHeader className="py-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-sm">직원별 누적</CardTitle>
-            {/* 날짜 선택 UI — 기존 CRM 컴포넌트(native date input) 재사용. max=오늘(미래 선택 차단·회귀0 보장). */}
+            {/* 날짜 선택 UI — 기존 CRM 컴포넌트(native date input) 재사용.
+                T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래 날짜 상한(max=오늘) 해제 →
+                미래일 선택 시 [일일 배정 목표]를 '예약 기준 미리보기'로 조회(read-only). */}
             <div className="flex items-center gap-2 text-xs">
               <label htmlFor="assign-accum-date" className="font-medium text-muted-foreground">
                 기준일
@@ -2324,14 +2350,37 @@ export default function Assignments() {
                 data-testid="assignments-accum-date"
                 type="date"
                 value={selectedDate}
-                max={todaySeoulISODate()}
                 onChange={(e) => {
                   if (e.target.value) setSelectedDate(e.target.value);
                 }}
                 className="rounded border bg-background px-2 py-1"
               />
+              {isFutureDate && (
+                <Badge
+                  variant="secondary"
+                  data-testid="assignments-future-preview-badge"
+                  className="border-teal-300 bg-teal-100 text-teal-700"
+                >
+                  예약 기준 미리보기
+                </Badge>
+              )}
             </div>
           </div>
+          {/* 미래 날짜 안내 배너 — 실적이 아닌 '예약 기준 미리보기'임을 명시(0/— 오인 방지). */}
+          {isFutureDate && (
+            <div
+              data-testid="assignments-future-preview-note"
+              className="mt-2 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800"
+            >
+              {selDayInitResvCount == null ? (
+                <>미래 날짜 <span className="font-medium tabular-nums">{selectedDate}</span> — 예약 기준 미리보기를 불러오는 중입니다…</>
+              ) : selDayInitResvCount === 0 ? (
+                <>미래 날짜 <span className="font-medium tabular-nums">{selectedDate}</span>에 등록된 초진 예약이 없어 미리보기할 배정 목표가 없습니다. (예약이 등록되면 자동 표시)</>
+              ) : (
+                <>예약 기준 미리보기 · <span className="font-medium tabular-nums">{selectedDate}</span> 초진 예약 <span className="font-medium tabular-nums">{selDayInitResvCount}</span>건 기준 예상 배정 목표입니다. (실적 아님 · [일누적] 배정·토스·당김 수치는 아직 실적이 없어 0)</>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {/* T-20260629-foot-ASSIGNMONTHLY-SCROLL-REMOVE: 스크롤/높이 제한 제거 → 직원 수만큼 전체 펼침.
@@ -2367,8 +2416,15 @@ export default function Assignments() {
                     /* T-20260730-foot-ASSIGN-DAILYTGT-NPROP-CALC-FIX: 금일 초진 N(분배 총량) 노출 —
                        비가시 data-* 어피던스(레이아웃/색상 무변경). 출근 실장 목표 합계 = N 정합 검증용. */
                     data-daily-target-n={selDayInitResvCount ?? ''}
+                    /* T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래일은 실적 아님 → 미리보기 표기. */
+                    data-future-preview={isFutureDate ? 'true' : 'false'}
                   >
                     일일 배정 목표
+                    {isFutureDate && (
+                      <span className="ml-1 block text-[10px] font-normal text-teal-600">
+                        (예약 기준 미리보기)
+                      </span>
+                    )}
                   </th>
                   <th className="px-2 py-1.5 text-right font-medium">배정(초진)</th>
                   <th className="px-2 py-1.5 text-right font-medium">배정(재진)</th>
