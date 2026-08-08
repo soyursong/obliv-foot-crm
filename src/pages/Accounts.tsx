@@ -31,6 +31,13 @@ const ROLES: UserRole[] = ['admin', 'manager', 'part_lead', 'consultant', 'coord
 // 임상직(staff 테이블 매핑 대상)
 const CLINICAL_ROLES: UserRole[] = ['consultant', 'coordinator', 'therapist', 'technician'];
 
+// T-20260808-foot-ACCOUNT-ROLE-GROUP-VIEW: 활성 계정 역할별 그룹핑 표시 순서(김주연 총괄 지정, 옵션C).
+//   관리자>매니저>원장>상담실장>코디네이터>치료사>파트장>스태프>장비명(technician)>TM.
+//   canonical role enum 변경 아님 — display-only 파생 정렬. 정의 10종 외/미분류 역할은 "기타" 섹션 말미.
+const ROLE_DISPLAY_ORDER: UserRole[] = [
+  'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff', 'technician', 'tm',
+];
+
 // 임시 비번 자동 생성 (영문대소+숫자+특수, 10자)
 function generateTempPassword(): string {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -369,6 +376,27 @@ export default function Accounts() {
   const pending = users.filter((u) => !u.approved && u.active);
   const active = users.filter((u) => u.approved && u.active);
   const inactive = users.filter((u) => u.approved && !u.active);
+
+  // T-20260808-foot-ACCOUNT-ROLE-GROUP-VIEW: 활성 계정을 역할별 섹션으로 그룹핑(옵션C).
+  //   ROLE_DISPLAY_ORDER 순서 유지 + 재직자 0명 역할은 섹션 생략(빈 헤더 미노출) + 정의 외 역할은 "기타" 말미(누락0).
+  //   비파괴: 원본 목록/승인·권한·저장 로직 불변, 표시 그룹핑만.
+  const activeGroups = (() => {
+    const byRole = new Map<string, UserProfile[]>();
+    for (const u of active) {
+      const key = (ROLE_DISPLAY_ORDER as string[]).includes(u.role) ? u.role : '__other__';
+      const arr = byRole.get(key);
+      if (arr) arr.push(u);
+      else byRole.set(key, [u]);
+    }
+    const groups: { key: string; label: string; users: UserProfile[] }[] = [];
+    for (const r of ROLE_DISPLAY_ORDER) {
+      const list = byRole.get(r);
+      if (list?.length) groups.push({ key: r, label: ROLE_LABEL[r], users: list });
+    }
+    const other = byRole.get('__other__');
+    if (other?.length) groups.push({ key: '__other__', label: '기타', users: other });
+    return groups;
+  })();
   // 화면에 보이는 계정 합계 (거절된 ghost 행은 제외)
   const visibleCount = pending.length + active.length + inactive.length;
 
@@ -436,46 +464,57 @@ export default function Accounts() {
           ) : active.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">계정 없음</div>
           ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 font-medium">이름</th>
-                    <th className="pb-2 font-medium">이메일</th>
-                    <th className="pb-2 font-medium">역할</th>
-                    <th className="pb-2 font-medium text-right">관리</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {active.map((u) => (
-                    <tr key={u.id} className="border-b last:border-0">
-                      <td className="py-2 font-medium">{u.name ?? '—'}</td>
-                      <td className="py-2 text-muted-foreground">{u.email}</td>
-                      <td className="py-2">
-                        <Badge variant="secondary">{ROLE_LABEL[u.role]}</Badge>
-                      </td>
-                      <td className="py-2 text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(u)}>
-                            수정
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="비밀번호 초기화"
-                            onClick={() => openReset(u)}
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => toggleActive(u)}>
-                            <UserX className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            // 역할별 섹션 그룹핑 — 아코디언 없이 구분선으로 나열, 스크롤로 전체 조회.
+            <div className="flex flex-col gap-5">
+              {activeGroups.map((group) => (
+                <section key={group.key}>
+                  <div className="mb-2 flex items-center gap-2 border-b-2 border-teal-100 pb-1.5">
+                    <h2 className="text-sm font-bold text-teal-800">{group.label}</h2>
+                    <span className="text-xs text-muted-foreground">{group.users.length}명</span>
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs text-muted-foreground">
+                          <th className="pb-2 font-medium">이름</th>
+                          <th className="pb-2 font-medium">이메일</th>
+                          <th className="pb-2 font-medium">역할</th>
+                          <th className="pb-2 font-medium text-right">관리</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.users.map((u) => (
+                          <tr key={u.id} className="border-b last:border-0">
+                            <td className="py-2 font-medium">{u.name ?? '—'}</td>
+                            <td className="py-2 text-muted-foreground">{u.email}</td>
+                            <td className="py-2">
+                              <Badge variant="secondary">{ROLE_LABEL[u.role]}</Badge>
+                            </td>
+                            <td className="py-2 text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button size="sm" variant="ghost" onClick={() => openEdit(u)}>
+                                  수정
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  title="비밀번호 초기화"
+                                  onClick={() => openReset(u)}
+                                >
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => toggleActive(u)}>
+                                  <UserX className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </CardContent>
