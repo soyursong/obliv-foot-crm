@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTabParam } from '@/hooks/useTabParam';
 import { addDays, format, subDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import {
@@ -133,7 +134,11 @@ export default function DailyHistory() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<FilterTab>('all');
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): 상태 필터 탭을 URL(?tab=)에 반영 → 새로고침 복원.
+  const [filter, setFilter] = useTabParam<FilterTab>({
+    valid: ['all', 'in_progress', 'done', 'cancelled', 'noshow'],
+    fallback: 'all',
+  });
   const [visitFilter, setVisitFilter] = useState<VisitFilter>('all');
   const [sort, setSort] = useState<SortMode>('queue');
   const [showNoshow, setShowNoshow] = useState(false);

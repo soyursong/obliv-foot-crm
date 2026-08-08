@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Layers, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { useTabParam } from '@/hooks/useTabParam';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -441,7 +442,11 @@ function TemplateManageSheet({
   const [loading, setLoading] = useState(false);
   const [editTarget, setEditTarget] = useState<PackageTemplate | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [subTab, setSubTab] = useState<PkgManageTab>('standard');
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): 패키지관리 서브탭을 URL(?tab=)에 반영 → 새로고침 복원.
+  const [subTab, setSubTab] = useTabParam<PkgManageTab>({
+    valid: ['standard', 'official', 'custom'],
+    fallback: 'standard',
+  });
 
   const load = useCallback(async () => {
     if (!clinicId) return;

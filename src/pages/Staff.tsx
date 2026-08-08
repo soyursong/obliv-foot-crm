@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useTabParam } from '@/hooks/useTabParam';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -70,19 +70,16 @@ interface RoomAssignmentRow {
 // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더'(duty=원장 근무표) 탭은 최상위 [직원 근무 캘린더](/admin/handover)로 승격·흡수됨 → 여기서 제거(중복 노출 방지). 나머지 탭은 유지.
 // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: 'assignment'('배정 설정') 탭을 /admin/assignments 로 이동 →
 //   여기 화이트리스트에서 제거(직원·공간에는 더 이상 없음). 잔여 deep-link `?tab=assignment` 는 무효 → staff fallback.
-const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
+const VALID_STAFF_TABS = ['staff', 'rooms', 'clinic-info', 'registrars', 'settings'] as const;
 
 export default function StaffPage() {
   const { profile } = useAuth();
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
-  // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → duty).
-  const [searchParams] = useSearchParams();
-  const requestedTab = searchParams.get('tab');
-  // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 기본 탭 duty→staff (근무캘린더 탭 승격·흡수 제거). ?tab=duty 진입은 무효 → staff fallback.
-  const [tab, setTab] = useState(
-    requestedTab && VALID_INITIAL_TABS.has(requestedTab) ? requestedTab : 'staff',
-  );
+  // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → staff).
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): useTabParam 으로 전환 — 기존엔 진입 시 ?tab= 을 '읽기'만 하고
+  //   탭 전환 시 되쓰지 않아 새로고침 시 사용자 전환분이 유실됐다. 이제 탭 전환도 URL(?tab=)에 반영 → 새로고침 복원.
+  const [tab, setTab] = useTabParam({ valid: VALID_STAFF_TABS, fallback: 'staff' });
 
   const { data: clinic, refetch: refetchClinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -98,7 +95,7 @@ export default function StaffPage() {
     //   전체에 균일 스케일을 오적용 → 총괄 실제 의도(배정 설정 탭만 축소)와 불일치. 화면 전체 zoom 클래스를 제거해
     //   원배율 복구하고, 축소는 AssignmentSettingsTab 컨테이너로 재타깃(.assign-settings-compact)한다.
     <div className="h-full overflow-auto space-y-3 p-3" data-testid="staff-space-root">
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as (typeof VALID_STAFF_TABS)[number])}>
         <TabsList>
           {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더' 탭 제거 — 최상위 [직원 근무 캘린더]로 승격·흡수 */}
           <TabsTrigger value="staff">

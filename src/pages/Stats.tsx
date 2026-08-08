@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useClinic } from '@/hooks/useClinic';
+import { useTabParam } from '@/hooks/useTabParam';
 import { useAuth } from '@/lib/auth';
 import {
   fetchCategoryRevenue,
@@ -79,7 +80,12 @@ export default function Stats() {
     [isTmOnly],
   );
 
-  const [tab, setTab] = useState<StatsTab>('revenue');
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): 서브탭을 URL(?tab=)에 반영 → 새로고침 복원.
+  //   role 기반 가시성 가드(아래 useEffect: 숨김 탭 진입 시 첫 탭 복구)는 그대로 유지된다.
+  const [tab, setTab] = useTabParam<StatsTab>({
+    valid: TABS.map((t) => t.key),
+    fallback: 'revenue',
+  });
   const [preset, setPreset] = useState<StatsRangePreset>('month');
   // T-20260708-foot-TMSTATS-PERIOD-DEFAULT-TODAY:
   //   TM집계 탭만 기간 기본값을 '오늘'로. 타 탭(매출/치료사)의 공유 preset('month')은 불변.
