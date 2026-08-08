@@ -1716,7 +1716,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           </TabsTrigger>
           {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 '일자별 매출 비교(당월 vs 전월)' 재노출 탭(전직원 열람). */}
           <TabsTrigger value="compare" className="flex-1 sm:flex-none">
-            매출 비교
+            총 매출
           </TabsTrigger>
         </TabsList>
 
