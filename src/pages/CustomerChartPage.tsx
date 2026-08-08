@@ -674,6 +674,36 @@ function computeRemainingFromSessionRows(
   });
 }
 
+// T-20260808-foot-CHARTEDIT-SESSIONTYPE-PRICE-RELINK:
+//   session_type → packages 단가 컬럼 스냅샷 매핑.
+//   fn_fill_session_unit_price() 트리거(20260605120000, BEFORE INSERT)·SalesStaffTab.currentUnitPrice()
+//   와 반드시 동일한 SSOT 매핑 — package_sessions.unit_price(차감기준 매출 스냅샷)의 근거값이므로
+//   매핑이 어긋나면 차감 매출·치료사별 집계가 드리프트한다.
+//   대응 단가 컬럼이 없는 타입(preconditioning 등)은 0(무상 사전처치 = 차감수가 0).
+type PkgUnitPrices = {
+  heated_unit_price?: number | null;
+  unheated_unit_price?: number | null;
+  iv_unit_price?: number | null;
+  podologe_unit_price?: number | null;
+  trial_unit_price?: number | null;
+  reborn_unit_price?: number | null;
+};
+function sessionTypeUnitPrice(pkg: PkgUnitPrices | null | undefined, sessionType: string): number {
+  if (!pkg) return 0;
+  switch (sessionType) {
+    case 'heated_laser':   return pkg.heated_unit_price ?? 0;
+    case 'unheated_laser': return pkg.unheated_unit_price ?? 0;
+    case 'iv':             return pkg.iv_unit_price ?? 0;
+    case 'podologue':
+    case 'podologe':       return pkg.podologe_unit_price ?? 0;
+    // AC2: 체험권은 trial_unit_price(단건 매출) 스냅샷 — 선수금차감(laser) 대상 아님
+    //      (TRIAL-REVENUE-ZERO A안 · PaymentMiniWindow.isTrialService 정합).
+    case 'trial':          return pkg.trial_unit_price ?? 0;
+    case 'reborn':         return pkg.reborn_unit_price ?? 0;
+    default:               return 0; // preconditioning 등 무상
+  }
+}
+
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 고객 스토리지 이미지 업로드 컴포넌트 (역할별)
 // - 상담실장 영역: 동의서(consent), 결제영수증(receipt)
 // - 치료사 영역: 비포에프터(before-after)
@@ -4404,17 +4434,52 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   };
 
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정 저장
+  // T-20260808-foot-CHARTEDIT-SESSIONTYPE-PRICE-RELINK:
+  //   [버그] 시술유형(session_type) 변경 시 차감 스냅샷 단가 package_sessions.unit_price 를 새 유형의
+  //     package.{type}_unit_price 로 재계산하지 않음. fn_fill_session_unit_price() 트리거는 BEFORE INSERT
+  //     에만 발화(UPDATE 무발화) → 유형만 바뀌고 unit_price(차감기준 매출 SSOT: SalesStaffTab
+  //     DEDUCT_AMOUNT_BASIS='snapshot' · mtmSales.ts · stats RPC)가 옛 단가로 잔존 →
+  //     차감 매출·치료사별 매출집계 왜곡(이정인 가열→체험권 정정 시 발현). 이 write-path 에서 교정.
+  //   AC1: 유형 변경 시 새 유형 단가(sessionTypeUnitPrice = 트리거/currentUnitPrice 동일 매핑)로 함께 UPDATE.
+  //   AC2: 새 유형=체험권(trial) → trial_unit_price(단건 매출) 스냅샷. 선수금차감(laser) 대상 아님
+  //        (TRIAL-REVENUE-ZERO A안 · PaymentMiniWindow 정합, 회귀 0).
+  //   AC3: 유형 미변경(날짜/담당자만) 저장은 unit_price 무접촉 — 기존 수기조정 스냅샷 파괴 금지.
+  //   AC4: forward-fix — 이 저장 시점 이후 정정만 반영. 과거 오정정 행 소급 backfill 없음.
+  //   ※ read-side 집계(SalesStaffTab)는 무접촉(field-soak 중) — 본 수정은 write-side(package_sessions)만.
   const saveEditSession = async () => {
     if (!editSessionDlg) return;
     if (!editSessionForm.therapistId) { toast.error('치료사를 선택해주세요.'); return; }
     setSavingEditSession(true);
+
+    const typeChanged = editSessionForm.sessionType !== editSessionDlg.session_type;
+    const patch: {
+      session_type: string;
+      session_date: string;
+      performed_by: string;
+      unit_price?: number;
+    } = {
+      session_type: editSessionForm.sessionType,
+      session_date: editSessionForm.sessionDate,
+      performed_by: editSessionForm.therapistId,
+    };
+    // AC1/AC2/AC3: 유형이 실제로 바뀐 경우에만 차감 스냅샷 단가를 새 유형 단가로 재계산.
+    if (typeChanged) {
+      let pkg: PkgUnitPrices | null | undefined = packages.find((p) => p.id === editSessionDlg.package_id);
+      // 상태에 대상 패키지 단가가 없을 때만 DB 폴백(0 단가 오기입 방지).
+      if (!pkg) {
+        const { data } = await supabase
+          .from('packages')
+          .select('heated_unit_price, unheated_unit_price, iv_unit_price, podologe_unit_price, trial_unit_price, reborn_unit_price')
+          .eq('id', editSessionDlg.package_id)
+          .maybeSingle();
+        pkg = (data ?? null) as PkgUnitPrices | null;
+      }
+      patch.unit_price = sessionTypeUnitPrice(pkg, editSessionForm.sessionType);
+    }
+
     const { error } = await supabase
       .from('package_sessions')
-      .update({
-        session_type: editSessionForm.sessionType,
-        session_date: editSessionForm.sessionDate,
-        performed_by: editSessionForm.therapistId,
-      })
+      .update(patch)
       .eq('id', editSessionDlg.id);
     setSavingEditSession(false);
     if (error) { toast.error(`수정 실패: ${error.message}`); return; }
