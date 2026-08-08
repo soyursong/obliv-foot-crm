@@ -785,30 +785,6 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     active: true,
     sort_order: 120,
   },
-  // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 (종이 백업용).
-  //   셀프접수(foot-checkin) 오류로 라이브 동의 미수집 시 종이 백업 발행용. HTML 템플릿(privacy_consent_form).
-  //   문안 = 셀프접수 라이브 동의문(privacyConsentLabel/privacyConsentNote) authoritative source verbatim(dev 창작 아님).
-  //   자동채움: 성명(patient_name)·발행일(issue_date=오늘). 서명=수기(빈칸, 인쇄 후 손서명 → field_map 미포함).
-  //   운영 노출은 form_templates ADDITIVE seed row(멱등 마이그); FALLBACK 은 빈 DB/프리뷰 목록 정합용.
-  //   동의서 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 귀속. 순수 ADDITIVE — 기존 서류 무접점.
-  {
-    id: 'fallback-privacy-consent-form',
-    clinic_id: FOOT_CLINIC_ID,
-    category: 'foot-service',
-    form_key: 'privacy_consent_form',
-    name_ko: '개인정보 수집·이용 동의서',
-    template_path: '',
-    template_format: 'html',
-    field_map: [
-      { key: 'patient_name', label: '성명', type: 'text', x: 0, y: 0 },
-      { key: 'issue_date',   label: '발행일', type: 'date', x: 0, y: 0 },
-    ],
-    requires_signature: false,
-    // 동의서 = 데스크/코디·매니저 등 접수/상담 접점 직군 발행. (의료 게이트 서류 아님)
-    required_role: 'admin|manager|coordinator|therapist',
-    active: true,
-    sort_order: 130,
-  },
 ];
 
 // ─── 원내 도장 ───
@@ -969,13 +945,6 @@ export const FORM_META: Record<
     icon: '🌐',
     color: 'bg-rose-50 border-rose-200',
     description: '외국인 전액 비급여 진료 안내 동의서 (국·영문 병기, 5조항) — 날짜·성명 자동, 서명 수기',
-    print_preset: 'optional',
-  },
-  // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 (셀프접수 오류 종이 백업용)
-  privacy_consent_form: {
-    icon: '🔒',
-    color: 'bg-sky-50 border-sky-200',
-    description: '개인정보 수집·이용 동의서 (셀프접수 오류 시 종이 백업) — 날짜·성명 자동, 서명 수기',
     print_preset: 'optional',
   },
 };
@@ -1213,9 +1182,6 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서(신규). 제증명/관리기록이 아닌
   //   동의서 → '동의서' 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 별도 귀속. 진열은 맨 아래.
   'foreigner_noncovered_consent', // 13. 외국인 비급여 진료 동의서
-  // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서(신규). 셀프접수 오류 종이 백업 →
-  //   '동의서' 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 귀속. 진열은 맨 아래.
-  'privacy_consent_form', // 14. 개인정보 수집·이용 동의서
 ];
 
 /**
@@ -1310,7 +1276,6 @@ export const DOC_CATEGORY_MGMTRECORD_KEYS: ReadonlyArray<string> = [
  */
 export const DOC_CATEGORY_CONSENT_KEYS: ReadonlyArray<string> = [
   'foreigner_noncovered_consent', // 외국인 비급여 진료 동의서
-  'privacy_consent_form',         // 개인정보 수집·이용 동의서 (T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM)
 ];
 
 export const DOC_GROUP_LABEL_JEUNGMYEONG = '제증명';

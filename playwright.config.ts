@@ -192,11 +192,6 @@ export default defineConfig({
         //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. auth/DB/server 불요·결정론.
         //   실 UI+인쇄 관측 = supervisor field-soak(seed row 적용 후).
         '**/T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM.spec.ts',
-        // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 신규 양식(셀프접수 오류 종이 백업).
-        //   HTML 템플릿(getHtmlTemplate/bindHtmlTemplate) 렌더 + 서류목록 배선(FORM_META/DOCLIST_ORDER_10/
-        //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. 문안 verbatim(authoritative source) 검증.
-        //   auth/DB/server 불요·결정론. 실 UI+인쇄 관측 = supervisor field-soak(seed row 적용 후).
-        '**/T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM.spec.ts',
         // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단(is_trial) 마커 기준 상담 배정 수 제외 + 2번 차트 [체험단].
         //   Stream A(VG3 LEFT JOIN 등가·walk-in 생존·forward-only) + Stream B(bucketOf) 순수 결정함수 + 마이그 §36 방화벽
         //   정적 소스 가드. auth/DB/webServer 불요·결정론. 실 UI+데이터경로 = 컬럼 prod 적용 후 supervisor field-soak.
