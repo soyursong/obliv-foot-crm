@@ -116,23 +116,6 @@ export default function MonthlyComparisonSection({
     <section className="flex flex-col gap-4">
       <h2 className="text-sm font-semibold text-muted-foreground">2. 전월 대비 매출 추이</h2>
 
-      {/* AC-B(가독성): 이 표가 무슨 값인지 즉시 판별 가능하도록 읽는 법(범례) 명시. */}
-      <div
-        data-testid="mtm-compare-legend"
-        className="rounded-md border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-800"
-      >
-        <b>이 표 읽는 법</b> — 하루하루의 <b>총 매출(순매출)</b>을 이번 달과 지난달로 나란히 비교한 표예요.
-        <span className="mx-1">·</span>
-        <b>당월 매출</b> = 이번 달({data?.curLabel ?? '이번 달'}) 해당 일자 매출
-        <span className="mx-1">·</span>
-        <b>전월 매출</b> = 지난달({data?.prevLabel ?? '지난달'}) 같은 일자 매출
-        <span className="mx-1">·</span>
-        <b>증감</b> = 당월 − 전월 (<span className="text-emerald-700">초록=증가</span> /{' '}
-        <span className="text-rose-700">빨강=감소</span>)
-        <span className="mx-1">·</span>
-        <b>‘-’</b> = 데이터 없음(아직 지나지 않은 날짜 또는 지난달 기록 없음). 금액 단위는 <b>원</b>.
-      </div>
-
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
@@ -218,16 +201,6 @@ export default function MonthlyComparisonSection({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* 무슨 값인지 명확화(가독성) + 산식 출처 명시. */}
-          <div
-            data-testid="mtm-staff-daily-note"
-            className="mb-3 rounded-md border border-teal-200 bg-teal-50 p-3 text-xs leading-relaxed text-teal-800"
-          >
-            각 <b>담당실장</b>이 맡은 고객의 <b>일자별 매출</b>이에요. 실장 매출 = <b>패키지 결제</b>
-            {' '}+ <b>급여 본인부담금</b> (담당실장별 매출 정의와 동일). 담당실장이 지정되지 않은 매출은
-            {' '}<b>‘미지정’</b> 칸에 모읍니다. 금액 단위는 <b>원</b>, <b>‘-’</b>는 아직 지나지 않은 날짜예요.
-          </div>
-
           {loading ? (
             <div className="py-12 text-center text-sm text-muted-foreground">로딩 중…</div>
           ) : !staffBreakdown || staffBreakdown.staff.length === 0 ? (

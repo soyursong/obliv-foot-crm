@@ -63,12 +63,20 @@ test.describe('정적 소스 불변식 (T-20260805-foot-DAILYTREND-STAFF-BREAKDO
     expect(compare).toMatch(/mtm-staff-grand-total/);
   });
 
-  test('AC-B(가독성): 컬럼 헤더 단위(원)·의미 + 읽는 법 범례', () => {
+  test('AC-B(가독성): 컬럼 헤더 단위(원)·의미 유지', () => {
+    // 표 컬럼 헤더 단위/의미는 표의 일부 → 유지.
     expect(compare).toMatch(/당월 매출\(원\)/);
     expect(compare).toMatch(/전월 매출\(원\)/);
     expect(compare).toMatch(/증감\(당월−전월/);
-    expect(compare).toMatch(/이 표 읽는 법/);
-    expect(compare).toMatch(/mtm-compare-legend/);
+  });
+
+  // ★T-20260809-foot-SALESCOMPARE-BLURB-REMOVE: 요청 안 한 부연 설명(안내 박스) 제거.
+  //   "이 표 읽는 법" 범례(mtm-compare-legend) + 실장별 안내 노트(mtm-staff-daily-note) 삭제.
+  //   표·숫자·컬럼·2단 레이아웃·산식은 불변(위 헤더 단위 assert로 무회귀 가드).
+  test('BLURB-REMOVE: 요청 안 한 서술형 안내 박스(범례·노트) 소스에서 제거됨', () => {
+    expect(compare).not.toMatch(/이 표 읽는 법/);
+    expect(compare).not.toMatch(/mtm-compare-legend/);
+    expect(compare).not.toMatch(/mtm-staff-daily-note/);
   });
 
   test('AC-C(회귀 0): 기존 02 비교표 마커/합계 불변 + 실장별은 추가(대체 아님)', () => {
@@ -92,7 +100,7 @@ test.describe('일별 매출 추이 실장별 표 + 가독성 브라우저 동�
     if (!ok) test.skip(true, 'Dashboard not loaded');
   });
 
-  test('시나리오1: 매출 통계 탭 진입 → 02 섹션 실장별 표 + 가독성 범례 렌더', async ({ page }) => {
+  test('시나리오1: 매출 통계 탭 진입 → 02 섹션 실장별 표 렌더 + 안내 박스 제거(BLURB-REMOVE)', async ({ page }) => {
     await page.goto('/admin/stats');
     await expect(page.getByText('통계 대시보드')).toBeVisible({ timeout: 10_000 });
 
@@ -102,16 +110,18 @@ test.describe('일별 매출 추이 실장별 표 + 가독성 브라우저 동�
     // 02 일별 매출 추이 섹션 존재.
     await expect(page.getByText('2. 전월 대비 매출 추이')).toBeVisible({ timeout: 10_000 });
 
-    // (AC-B) 가독성 — "이 표 읽는 법" 범례 + 단위(원) 헤더.
-    await expect(page.getByTestId('mtm-compare-legend')).toBeVisible();
+    // 표 컬럼 헤더 단위(원)는 유지(표의 일부).
     await expect(page.getByText('당월 매출(원)').first()).toBeVisible();
 
-    // (AC-A) 실장별 일별 매출 표.
+    // ★T-20260809-foot-SALESCOMPARE-BLURB-REMOVE: 요청 안 한 안내 박스 제거 확인.
+    await expect(page.getByTestId('mtm-compare-legend')).toHaveCount(0);
+    await expect(page.getByTestId('mtm-staff-daily-note')).toHaveCount(0);
+
+    // (AC-A) 실장별 일별 매출 표는 그대로 유지(표는 무접촉).
     await expect(page.getByText('실장별 일별 매출')).toBeVisible();
-    await expect(page.getByTestId('mtm-staff-daily-note')).toBeVisible();
 
     await expect(page.getByText(/통계를 불러오지 못했습니다/)).toHaveCount(0);
-    console.log('[DAILYTREND-STAFF] 실장별 표 + 가독성 범례 렌더 OK');
+    console.log('[DAILYTREND-STAFF] 실장별 표 유지 + 안내 박스 제거 렌더 OK');
   });
 
   test('시나리오2: 엣지(빈 기간) → 실장별 표 데이터 없음/빈값 정상, 오류 0', async ({ page }) => {
