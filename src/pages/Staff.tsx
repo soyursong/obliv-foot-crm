@@ -36,7 +36,7 @@ import {
 
 import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
 // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 CRUD 권한 게이트 + 권한상승 가드(원장 배정 차단) SSOT.
-import { canManageStaff, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
+import { canManageStaff, canManageRooms, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
 // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1: 신규 실장 표시명 '실장' suffix.
 import { withSiljangSuffix } from '@/lib/siljangSlack';
 
@@ -583,8 +583,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   //   - #5 db_change=FALSE(신규 컬럼 0 + rooms_admin_all RLS=is_admin_or_manager 기존) → 무DDL·ADDITIVE-data-only.
   //   AC5 권한: write=admin/manager/director(=is_admin_or_manager RLS 와 UI 이중방어). scope=생성+구성수정(삭제 제외).
   const { profile } = useAuth();
-  const canRoomManage =
-    profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
+  const canRoomManage = canManageRooms(profile?.role);
 
   type RoomTypeVal = Room['room_type'];
   const ROOM_TYPE_SELECT: RoomTypeVal[] = ['treatment', 'laser', 'consultation', 'examination', 'heated_laser'];

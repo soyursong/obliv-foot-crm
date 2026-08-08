@@ -88,6 +88,17 @@ export function canManageStaff(role: UserRole | null | undefined): boolean {
   return STAFF_CRUD_ROLES.includes(role);
 }
 
+// T-20260808-foot-SPACEASSIGN-SLOT-CREATE-EDIT-DASHSYNC — 공간(슬롯/room) 생성·구성수정 write 게이트 SSOT.
+//   AC5 확정: write=admin/manager/director(=rooms_admin_all is_admin_or_manager RLS 와 UI 이중방어).
+//   Staff.tsx RoomTab '슬롯 구성 관리' 카드의 인라인 role=== 판정을 SSOT predicate 로 흡수(STEP6 ratchet).
+export const ROOM_MANAGE_ROLES: UserRole[] = ['admin', 'manager', 'director'];
+
+/** 공간(슬롯/room) 생성·구성수정 권한 보유 여부. null/undefined 안전 기본값 false. */
+export function canManageRooms(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return ROOM_MANAGE_ROLES.includes(role);
+}
+
 /**
  * 근무자 추가/수정 시 actor 가 배정 가능한 staff.role 옵션(권한상승 가드).
  *   - admin/manager/director: 전 staff 역할(원장 포함) — 무회귀.
