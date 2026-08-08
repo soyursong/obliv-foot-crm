@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+// T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY: 주탭/서브탭 모두 URL query(?tab=/?paytab=) 단일 축으로 통일(재사용).
+import { useTabParam } from '@/hooks/useTabParam';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
@@ -329,37 +331,44 @@ export default function Closing() {
   // T-20260525-foot-ROLE-PERM-CUSTOM AC-4 → 6MENU ②: 환불 처리도 동일 6역할 set(기존 admin/manager/consultant/coordinator/therapist 포함, +director).
   const canRefund = isAdminOrManager;
 
-  // T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태를 URL hash로 persist
-  // 브라우저 새로고침(F5) 시 현재 탭(summary/payments) 유지
-  // hash: #payments → "payments" 탭, 그 외 → "summary" 탭 (기본값)
-  // T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: '매출 비교'(compare) 탭 추가 → hash '#compare'.
-  const tabFromHash = (): 'summary' | 'payments' | 'compare' =>
-    location.hash === '#payments' ? 'payments'
-    : location.hash === '#compare' ? 'compare'
-    : 'summary';
-  const [tab, setTab] = useState<'summary' | 'payments' | 'compare'>(tabFromHash);
-  // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위탭 (CRM 수납 / 레드페이). 기본=CRM 수납.
-  // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: '영수증 수납' 3번째 하위탭 신설(레드페이 우측).
-  // T-20260808-foot-REFRESH-ROUTE-PERSIST FOLLOWUP: 결제 하위탭(paySubTab) URL 반영은 이 페이지의 주탭이
-  //   URL hash(#payments) 기반이라 query(?paytab=) 병행 시 react-router navigate/setSearchParams 가 서로의
-  //   hash·search 를 상호 소거하는 충돌이 있어 별도 티켓(주탭 mechanism 통일)으로 분리. 현 상태 유지.
-  const [paySubTab, setPaySubTab] = useState<'crm' | 'redpay' | 'receipt'>('crm');
+  // T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY (부모 T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST AC-2 자식):
+  //   [RC] 주탭(summary/payments/compare)은 구 URL hash(#payments/#compare) 기반, 서브탭(paySubTab)은 useState 만
+  //     관리 → 서브탭이 새로고침(F5)에 첫 탭으로 리셋. hash 와 query(?paytab=) 를 병행하면 react-router
+  //     navigate/setSearchParams 가 서로의 hash·search 를 상호 소거(stomp)해 서브탭 유지가 구조적으로 불가.
+  //   [Fix] 주탭 라우팅 mechanism 을 hash → query(?tab=) 로 통일(useTabParam 재사용, 부모 티켓의 서브탭 훅과 동일 축).
+  //     이로써 서브탭도 같은 query 축(?paytab=)에 실어 stomp 를 제거하고 새로고침/딥링크에 함께 유지된다.
+  //     기존 #payments/#compare 딥링크·북마크는 아래 레거시 호환 리다이렉트(1회 이관)로 회귀 방지.
+  const [tab, setTab] = useTabParam<'summary' | 'payments' | 'compare'>({
+    key: 'tab',
+    valid: ['summary', 'payments', 'compare'],
+    fallback: 'summary',
+  });
+  // T-20260708-foot-REDPAY-CLOSING-TAB / T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD:
+  //   결제 탭 하위탭(CRM 수납 / 레드페이 / 영수증 수납). 기본=CRM 수납.
+  //   T-20260809-HASHUNIFY: 주탭 query 통일로 stomp 해소 → paySubTab 도 URL query(?paytab=) 에 반영해
+  //   새로고침/딥링크 유지. 유효값 화이트리스트로 딥링크 오염 방어.
+  const [paySubTab, setPaySubTab] = useTabParam<'crm' | 'redpay' | 'receipt'>({
+    key: 'paytab',
+    valid: ['crm', 'redpay', 'receipt'],
+    fallback: 'crm',
+  });
 
-  // hash 변경 시(브라우저 앞/뒤 네비게이션) 탭 동기화
+  // ── 레거시 hash 딥링크 호환 리다이렉트 (#payments/#compare → ?tab=) ──
+  //   기존 북마크/딥링크(#payments, #compare)로 진입 시 1회 query 로 이관하고 hash 를 제거한다.
+  //   단일 navigate(pathname+search+hash 동시 지정)로 처리해 hash↔search stomp 를 원천 차단.
+  //   이미 ?tab= 가 있으면 query 우선(hash 무시) — 신규 링크와 충돌 없음. 마운트 1회만.
   useEffect(() => {
-    setTab(tabFromHash());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.hash]);
-
-  // 탭 전환 핸들러: URL hash 업데이트 + 상태 반영
-  const handleTabChange = (v: string) => {
-    const next = v as 'summary' | 'payments' | 'compare';
-    setTab(next);
+    const h = location.hash;
+    if (h !== '#payments' && h !== '#compare') return;
+    const legacy = h === '#payments' ? 'payments' : 'compare';
+    const params = new URLSearchParams(location.search);
+    if (!params.get('tab')) params.set('tab', legacy);
     navigate(
-      { hash: next === 'payments' ? '#payments' : next === 'compare' ? '#compare' : '' },
+      { pathname: location.pathname, search: params.toString(), hash: '' },
       { replace: true },
     );
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
   const [actualCash, setActualCash] = useState(0);
@@ -1697,7 +1706,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={handleTabChange}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as 'summary' | 'payments' | 'compare')}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="summary" className="flex-1 sm:flex-none">
             총 합계
