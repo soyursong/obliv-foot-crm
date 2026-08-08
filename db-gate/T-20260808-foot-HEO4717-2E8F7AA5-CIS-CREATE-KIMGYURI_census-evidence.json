@@ -1,0 +1,284 @@
+{
+  "1_payment_2e8f7aa5": [
+    {
+      "id": "2e8f7aa5-3e83-4d4a-8900-ab1f0048694a",
+      "amount": 15000,
+      "method": "card",
+      "payment_type": "payment",
+      "status": "active",
+      "is_simulation": false,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "accounting_date": "2026-08-06",
+      "created_kst": "2026-07-28 12:00:00",
+      "check_in_id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+      "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+      "package_id": null,
+      "service_charge_id": null,
+      "customer_name": "현은호",
+      "chart_number": "F-4717"
+    }
+  ],
+  "2_checkin_c33dfc76": [
+    {
+      "id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+      "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+      "therapist_id": "3a0c6774-2bd9-4018-bb38-ef6fab75d04b",
+      "checked_in_kst": "2026-07-28 10:19:27.359343",
+      "status": "done",
+      "customer_name": "현은호",
+      "chart_number": "F-4717",
+      "therapist_name": "김규리"
+    }
+  ],
+  "3_kimgyuri_staff": [
+    {
+      "id": "3a0c6774-2bd9-4018-bb38-ef6fab75d04b",
+      "name": "김규리",
+      "role": "therapist",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    },
+    {
+      "id": "d26717cb-2088-4cde-84d0-8fcd98367bbf",
+      "name": "김규리",
+      "role": "admin",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+    }
+  ],
+  "4_ctb_service": [
+    {
+      "id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+      "name": "Care Toe Band (CTB)",
+      "price": 15000,
+      "category": "기타",
+      "category_label": "풋화장품"
+    }
+  ],
+  "5_cis_on_c33dfc76": [
+    {
+      "id": "9d8646cc-0b0f-482d-9c60-9e58259d4429",
+      "service_id": "1a82c70a-07fe-4321-be44-8a206e3d1aa0",
+      "service_name": "재진-물리치료,주사 등 시술받은 경우",
+      "price": 4690,
+      "seller_staff_id": null,
+      "voided_at": null,
+      "category": "기본",
+      "category_label": "기본",
+      "seller_name": null
+    },
+    {
+      "id": "846d30eb-f4a3-4c2e-b47a-30c1f5ae356b",
+      "service_id": "ee5f26d0-4ea4-4be5-98cf-c0fd4531c114",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "price": 240000,
+      "seller_staff_id": null,
+      "voided_at": null,
+      "category": "풋케어",
+      "category_label": "풋케어",
+      "seller_name": null
+    },
+    {
+      "id": "a3153149-38a4-4ce5-97a9-0e639b968ea0",
+      "service_id": "2fd9c05d-82dd-482d-9771-cd479da425b2",
+      "service_name": "손발톱백선",
+      "price": 0,
+      "seller_staff_id": null,
+      "voided_at": null,
+      "category": "상병",
+      "category_label": "상병",
+      "seller_name": null
+    },
+    {
+      "id": "90ec9771-7c08-4b7d-8720-3845994dd247",
+      "service_id": "853ede8a-cb21-4506-9e32-26756e224473",
+      "service_name": "발백선",
+      "price": 0,
+      "seller_staff_id": null,
+      "voided_at": null,
+      "category": "상병",
+      "category_label": "상병",
+      "seller_name": null
+    },
+    {
+      "id": "d9e11852-198d-48ab-93a2-5ea46a1517b3",
+      "service_id": "c812b085-2ce6-4aa7-af93-8e372f81a7ca",
+      "service_name": "(비급여) 바르토벤외용액 4mL(에피나코나졸)",
+      "price": 0,
+      "seller_staff_id": null,
+      "voided_at": null,
+      "category": "처방약",
+      "category_label": "처방약",
+      "seller_name": null
+    },
+    {
+      "id": "51149a84-de78-48e7-b43a-961251430c26",
+      "service_id": "f8cac105-dcb1-4dc6-813c-f842d69482c1",
+      "service_name": "터미졸크림(테르비나핀염산염)15g",
+      "price": 0,
+      "seller_staff_id": null,
+      "voided_at": null,
+      "category": "기타",
+      "category_label": "처방약",
+      "seller_name": null
+    }
+  ],
+  "6_cis_columns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "column_name": "check_in_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "service_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "service_name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "price",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "original_price",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "is_package_session",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "package_session_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "koh_nail_sites",
+      "data_type": "jsonb",
+      "is_nullable": "NO",
+      "column_default": "'[]'::jsonb"
+    },
+    {
+      "column_name": "koh_requested",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "column_name": "blood_test_requested",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "column_name": "seller_staff_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "voided_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "voided_reason",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "voided_by",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    }
+  ],
+  "7_v_daily_revenue_def": [
+    {
+      "def": " WITH single AS (\n         SELECT (payments.created_at AT TIME ZONE 'Asia/Seoul'::text)::date AS dt,\n            payments.clinic_id,\n            sum(\n                CASE\n                    WHEN payments.payment_type = 'refund'::text THEN - payments.amount\n                    ELSE payments.amount\n                END) AS amt\n           FROM payments\n          WHERE payments.clinic_id IS NOT NULL AND payments.status = 'active'::text\n          GROUP BY ((payments.created_at AT TIME ZONE 'Asia/Seoul'::text)::date), payments.clinic_id\n        ), pkg AS (\n         SELECT (package_payments.created_at AT TIME ZONE 'Asia/Seoul'::text)::date AS dt,\n            package_payments.clinic_id,\n            sum(\n                CASE\n                    WHEN package_payments.payment_type = 'refund'::text THEN - package_payments.amount\n                    ELSE package_payments.amount\n                END) AS amt\n           FROM package_payments\n          WHERE package_payments.clinic_id IS NOT NULL\n          GROUP BY ((package_payments.created_at AT TIME ZONE 'Asia/Seoul'::text)::date), package_payments.clinic_id\n        )\n SELECT COALESCE(s.dt, p.dt) AS dt,\n    COALESCE(s.clinic_id, p.clinic_id) AS clinic_id,\n    COALESCE(s.amt, 0::bigint) AS single_revenue,\n    COALESCE(p.amt, 0::bigint) AS package_revenue,\n    COALESCE(s.amt, 0::bigint) + COALESCE(p.amt, 0::bigint) AS net_revenue\n   FROM single s\n     FULL JOIN pkg p ON p.dt = s.dt AND p.clinic_id = s.clinic_id;"
+    }
+  ],
+  "8_views_referencing_cis": [],
+  "9_views_referencing_payments": [
+    {
+      "view_name": "v_daily_avg_spend"
+    },
+    {
+      "view_name": "v_daily_revenue"
+    },
+    {
+      "view_name": "v_monthly_consultant_perf"
+    },
+    {
+      "view_name": "v_monthly_therapist_perf"
+    },
+    {
+      "view_name": "v_receipt_settlement_daily"
+    },
+    {
+      "view_name": "v_redpay_reconciliation_body"
+    },
+    {
+      "view_name": "v_redpay_reconciliation_daily"
+    }
+  ],
+  "10_2e8f7aa5_in_daily_revenue": [
+    {
+      "id": "2e8f7aa5-3e83-4d4a-8900-ab1f0048694a",
+      "status": "active",
+      "counted_predicate": true,
+      "revenue_dt": "2026-07-28",
+      "amount": 15000
+    }
+  ],
+  "11_service_charges_c33dfc76": [
+    {
+      "id": "45f7fd4d-537c-4a16-894b-55133dadaa4d",
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "check_in_id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+      "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+      "service_id": "1a82c70a-07fe-4321-be44-8a206e3d1aa0",
+      "is_insurance_covered": true,
+      "hira_score": "49.09",
+      "hira_unit_value": "95.60",
+      "base_amount": 4693,
+      "insurance_covered_amount": 3293,
+      "copayment_amount": 1400,
+      "exempt_amount": 0,
+      "customer_grade_at_charge": "general",
+      "copayment_rate_at_charge": "0.300",
+      "calculated_at": "2026-07-28 10:37:57.984975+00",
+      "calculation_engine_version": "consult_writepath_v1",
+      "hira_unit_value_year": 2026,
+      "is_simulation": false
+    }
+  ]
+}
