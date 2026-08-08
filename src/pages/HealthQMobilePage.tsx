@@ -12,7 +12,7 @@
  * AC-3: 토큰 URL → 로그인 없이 접근 → 제출 시 DB 저장 (차트 데이터 격리)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
@@ -381,6 +381,11 @@ export default function HealthQMobilePage() {
   //   Pattern B — edge fn(health-q-photo-sign) 서명 URL 업로드. foot_side 는 제출 RPC 로 laterality 연결.
   const [footPhotos, setFootPhotos] =
     useState<Record<FootSide, SlotPhoto | null>>({ R: null, L: null });
+  // T-20260808-foot-HEALTHQ-INSURANCE-REQUIRED: 실손(실비)보험 항목 필수화.
+  //   미응답 제출 시도 시 inline validation 메시지 노출 + 해당 항목으로 스크롤(제출 차단).
+  //   forward-only FE validation — DB 스키마·NOT NULL 신설 없음(기존 nullable 저장 경로 불변).
+  const [insuranceErr, setInsuranceErr] = useState(false);
+  const insuranceRef = useRef<HTMLDivElement>(null);
 
   // ── 토큰 검증 ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -438,6 +443,20 @@ export default function HealthQMobilePage() {
   // ── 제출 ──────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (!token || !info) return;
+
+    // T-20260808-foot-HEALTHQ-INSURANCE-REQUIRED: 실손(실비)보험 필수 검증.
+    //   실비보험 문항은 표준 flow(showStandard)에서만 노출되므로, 노출 조건과 동일하게 계산해
+    //   미노출(영문 발각질케어 flow 등)에서는 강제하지 않는다. 노출+미응답이면 제출 차단.
+    const en          = info.lang === 'en';
+    const isCallusReq = en && data.visit_purpose === '발각질케어';
+    const insuranceShown = (!en || !!data.visit_purpose) && !isCallusReq;
+    if (insuranceShown && !data.has_private_insurance) {
+      setInsuranceErr(true);
+      insuranceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setInsuranceErr(false);
+
     setStep('submitting');
 
     try {
@@ -1045,9 +1064,13 @@ export default function HealthQMobilePage() {
             </div>
           </div>
 
-          {/* Q3 실비보험 */}
-          <div className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
-            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>{tt('실비보험을 보유하고 계신가요?', 'Do you have private health insurance?')}</p>
+          {/* Q3 실비보험 — T-20260808-foot-HEALTHQ-INSURANCE-REQUIRED: 필수 항목 */}
+          <div ref={insuranceRef} className="space-y-2 pt-1 border-t" style={{ borderColor: C.border }}>
+            <p className="text-sm font-medium pt-2" style={{ color: C.dark }}>
+              {tt('실비보험을 보유하고 계신가요?', 'Do you have private health insurance?')}
+              <span className="ml-1" style={{ color: '#dc2626' }}>*</span>
+              <span className="ml-1 text-xs" style={{ color: '#dc2626' }}>{tt('(필수)', '(required)')}</span>
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {INSURANCE_OPTIONS.map((opt) => (
                 <BigBtn key={opt} full
@@ -1055,6 +1078,7 @@ export default function HealthQMobilePage() {
                   onClick={() => {
                     set('has_private_insurance', d.has_private_insurance === opt ? '' : opt);
                     if (opt !== '예') set('insurance_company', '');
+                    setInsuranceErr(false);
                   }}
                   color="teal"
                 >
@@ -1062,6 +1086,11 @@ export default function HealthQMobilePage() {
                 </BigBtn>
               ))}
             </div>
+            {insuranceErr && (
+              <p className="text-sm font-medium" style={{ color: '#dc2626' }}>
+                {tt('실손보험 항목은 필수입니다. 응답을 선택해주세요.', 'Private insurance is required. Please select an answer.')}
+              </p>
+            )}
             {d.has_private_insurance === '예' && (
               <input type="text" value={d.insurance_company}
                 onChange={(e) => set('insurance_company', e.target.value)}
