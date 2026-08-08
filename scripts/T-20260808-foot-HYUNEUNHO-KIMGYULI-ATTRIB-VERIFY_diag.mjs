@@ -144,15 +144,32 @@ const PAY_A = '2e8f7aa5-3e83-4d4a-8900-ab1f0048694a';
 const { data: payA, error: payAe } = await sb.from('payments').select('*').eq('id', PAY_A);
 out(`R1) payment ${PAY_A} (CTB 15,000, T-20260806 INSERT분) — err=${payAe?.message ?? 'none'}`, payA);
 
-// R2) 현은호 payments 전량 (7/28 CTB 결제 실재 + seller 귀속)
+// ⚠ 스키마 실측(2026-08-08 FIX-REQUEST pce0 재실행, R1 select('*') 근거):
+//   payments 테이블에는 seller_staff_id / pg_provider / paid_at 컬럼이 **존재하지 않음**.
+//   → 이 컬럼들을 select 목록에 넣으면 PostgREST 가 42703(column does not exist) 에러 반환,
+//     data=null 로 fall-through → false-negative([]). 1차 R2/R3b 가 정확히 이 버그였다.
+//   ⇒ payments 는 select('*') + error 명시 로깅으로만 조회한다. 귀속축 = check_in_id → check_ins.therapist_id.
+const PAY_COLS = 'id, customer_id, amount, method, payment_type, status, package_id, accounting_date, created_at, check_in_id, memo';
+
+// R2) 현은호 payments 전량 (7/28 CTB 결제 실재 + 귀속축 확인)
 if (typeof custIds !== 'undefined' && custIds.length) {
-  const { data: pays } = await sb.from('payments')
-    .select('id, customer_id, amount, method, pg_provider, status, package_id, seller_staff_id, paid_at, created_at, check_in_id')
+  const { data: pays, error: paysErr } = await sb.from('payments')
+    .select(PAY_COLS)
     .in('customer_id', custIds).order('created_at', { ascending: false });
+  if (paysErr) console.error('R2 payments err:', paysErr.message);
+  // 귀속축 = payments 에 seller 없음 → check_in_id 로 check_ins.therapist_id 조회
+  const ciMap = {};
+  const r2CiIds = [...new Set((pays ?? []).map((p) => p.check_in_id).filter(Boolean))];
+  if (r2CiIds.length) {
+    const { data: r2Ci } = await sb.from('check_ins').select('id,therapist_id').in('id', r2CiIds);
+    for (const c of r2Ci ?? []) ciMap[c.id] = c.therapist_id;
+  }
   const sName = Object.fromEntries((kim ?? []).map((s) => [s.id, s.name]));
-  out('R2) 현은호 payments 전량', (pays ?? []).map((p) => ({
-    ...p, seller_name: p.seller_staff_id ? (sName[p.seller_staff_id] ?? '(비김규리/미매핑)') : null,
-    is_kimgyuri_seller: kimIds.includes(p.seller_staff_id),
+  out(`R2) 현은호 payments 전량 (err=${paysErr?.message ?? 'none'})`, (pays ?? []).map((p) => ({
+    ...p,
+    attrib_therapist_id: ciMap[p.check_in_id] ?? null, // ← payments 실 귀속축(seller 컬럼 부재)
+    attrib_therapist_name: ciMap[p.check_in_id] ? (sName[ciMap[p.check_in_id]] ?? '(비김규리)') : null,
+    attrib_is_kimgyuri: kimIds.includes(ciMap[p.check_in_id]),
     has_cis_line: !!p.check_in_id,
   })));
 }
@@ -161,12 +178,31 @@ if (typeof custIds !== 'undefined' && custIds.length) {
 const { data: kbw } = await sb.from('customers')
   .select('id,name,chart_number,phone').ilike('name', '%김병완%');
 out('R3a) 김병완 customers', kbw);
-const { data: payC } = await sb.from('payments')
-  .select('id, customer_id, amount, method, pg_provider, status, package_id, seller_staff_id, paid_at, created_at, check_in_id')
-  .ilike('id', 'b7ab6496%');
-out('R3b) payment b7ab6496% (8/1 화장품 73,000)', (payC ?? []).map((p) => ({
-  ...p, is_kimgyuri_seller: kimIds.includes(p.seller_staff_id), has_cis_line: !!p.check_in_id,
-})));
+// ⚠ id 는 uuid 타입 → ilike 'prefix%' 는 42883(operator ~~ uuid) 에러. eq(full-uuid) 로 조회.
+const PAY_C = 'b7ab6496-9efc-429c-9d5c-60a248eabc15';
+const { data: payC, error: payCe } = await sb.from('payments').select('*').eq('id', PAY_C);
+out(`R3b) payment ${PAY_C} (8/1 화장품 73,000) — err=${payCe?.message ?? 'none'}`, payC);
+// 김병완 8월 payments 전량 (73,000 결제건이 실재하는지·귀속축)
+if ((kbw ?? []).length) {
+  const kbwIds0 = kbw.map((c) => c.id);
+  const { data: kbwPays, error: kbwPe } = await sb.from('payments')
+    .select(PAY_COLS)
+    .in('customer_id', kbwIds0)
+    .gte('accounting_date', '2026-08-01')
+    .order('created_at', { ascending: false });
+  if (kbwPe) console.error('R3b2 payments err:', kbwPe.message);
+  const kbwCiIds = [...new Set((kbwPays ?? []).map((p) => p.check_in_id).filter(Boolean))];
+  const kbwCiMap = {};
+  if (kbwCiIds.length) {
+    const { data: kc } = await sb.from('check_ins').select('id,therapist_id').in('id', kbwCiIds);
+    for (const c of kc ?? []) kbwCiMap[c.id] = c.therapist_id;
+  }
+  out(`R3b2) 김병완 8월 payments 전량 (err=${kbwPe?.message ?? 'none'})`, (kbwPays ?? []).map((p) => ({
+    ...p,
+    attrib_therapist_id: kbwCiMap[p.check_in_id] ?? null,
+    attrib_is_kimgyuri: kimIds.includes(kbwCiMap[p.check_in_id]),
+  })));
+}
 if ((kbw ?? []).length) {
   const kbwIds = kbw.map((c) => c.id);
   const { data: kbwCis } = await sb.from('check_in_services')
