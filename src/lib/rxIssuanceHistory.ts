@@ -240,12 +240,16 @@ export function filterRxRowsByDateRange<T extends Pick<RxIssuanceRow, 'issued_at
  *   - 초안 등 교부번호 미부여(issue_no=NULL)만 폴백으로 (교부일+약품집합) 키(확정 발행과 섞지 않음).
  * 순서 = 입력 순서(printed_at desc)의 첫 등장 행을 대표로 유지(안정).
  * 반환 행에 dup_count(병합된 발행 건수 = 재출력 횟수) 부여 — dup_count>1 은 UI 에 '재출력 N회'로 표기.
+ *
+ * ★ T-20260808-foot-RXHIST-HIDE-SOFTDELETE: member_ids(이 대표 행으로 병합된 모든 form_submissions.id).
+ *   숨김(soft-delete) 시 대표 1건만 지우면 동일 교부번호 재출력 sibling 이 refetch 후 새 대표로 되살아남 →
+ *   AC-2(영속 숨김) 위반. 따라서 숨김은 member_ids 전량을 soft-delete 해야 한다.
  */
 export function dedupeRxIssuanceRows(
   rows: RxIssuancePatientRow[] | null | undefined,
-): (RxIssuancePatientRow & { dup_count: number })[] {
+): (RxIssuancePatientRow & { dup_count: number; member_ids: string[] })[] {
   if (!rows || rows.length === 0) return [];
-  const byKey = new Map<string, RxIssuancePatientRow & { dup_count: number }>();
+  const byKey = new Map<string, RxIssuancePatientRow & { dup_count: number; member_ids: string[] }>();
   for (const r of rows) {
     const patientKey = r.customer_id ?? r.chart_number ?? r.patient_name ?? '?';
     // ★ T-20260807-foot-RXHIST-BARTOVEN-QTY2-DEDUP-DISPLAY (P1 회귀 수정):
@@ -260,8 +264,9 @@ export function dedupeRxIssuanceRows(
     const existing = byKey.get(key);
     if (existing) {
       existing.dup_count += 1;
+      existing.member_ids.push(r.id);
     } else {
-      byKey.set(key, { ...r, dup_count: 1 });
+      byKey.set(key, { ...r, dup_count: 1, member_ids: [r.id] });
     }
   }
   return Array.from(byKey.values());

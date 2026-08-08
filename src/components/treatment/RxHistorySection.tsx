@@ -5,29 +5,59 @@
 //       AC-2 실처방 기준 중복 자동제거 — 동일 환자·동일 교부일·동일 약품집합 = 1건(read-side dedup).
 //       AC-3 성함/차트번호 클릭 → 2번차트 오픈 — 기배포 useChartNoPopup() 공통 훅 재사용.
 //       AC-4 처방약 필터 대표+기타 — 선택 약 → 대표 컬럼, 함께 나간 그 외 약 → 기타 컬럼.
+//   ▶ T-20260808-foot-RXHIST-HIDE-SOFTDELETE (P2, feature) — 개별 처방 건 숨김(soft-delete):
+//       AC-1 각 행 '숨기기' 버튼 → 목록에서 제거(물리 DELETE 아님). AC-2 기본조회 is_deleted=false 만(영속).
+//       AC-3 모든 스태프 숨김 가능(총괄 확정 Q2=A, role 게이트 없음). AC-4 감사(deleted_by/at)= DB 트리거 자동.
+//       AC-5 확인 다이얼로그(오클릭 방지). 총괄 확정 스펙: 삭제방식=B.숨김(soft) / 권한=누구나.
 //
 // ★ canonical SSOT = form_submissions(form_key='rx_standard') = 처방전 발행/출력 이력 단일 원장.
 //   DA-20260806-foot-RX-PERSIST-SSOT(Option B) / T-20260806-foot-RX-PERSIST-FORWARDFIX(deployed) 계승.
 //   prescriptions·prescription_items(dead skeleton) 조회경로 신설·되살리기 금지(dual-source drift 안티패턴).
 //   AC-2 "실제 약 처방 기준"은 신규 컬럼/canonical write 없이 read-side dedup 으로 충족(db_change=false).
 //
+// ★ 숨김(soft-delete) db_change=false — AC-0 census 결과 기존 인프라 전량 재사용:
+//   form_submissions.deleted_at(단일 authority) / deleted_by / delete_reason / is_deleted(GENERATED) +
+//   trg_form_submissions_body_audit(모든 UPDATE 를 form_submissions_audit_log 에 §22 감사 자동적재,
+//   deleted_at NULL→NOT NULL 전이는 operation=DELETE·changed_by=auth.uid()) 는 이미 배포됨
+//   (20260802150000_foot_form_submissions_softdelete_audit.sql, T-20260728-FORMSUB-DURABILITY-IMPROVE).
+//   ⇒ 신규 컬럼/마이그/DA CONSULT 불요. 숨김 = UPDATE deleted_at=now(). 물리 DELETE 는 DB 트리거가 전면차단.
+//   rx_standard=status 'printed'(published 아님) → immutable guard 무저촉 + update RLS(clinic 활성 스태프) 통과.
+//
 // PHI 안전(VG2): field_data 의 patient_rrn(주민번호)·풀 전화는 UI·엑셀 어디에도 노출 금지.
 //   성함·차트번호·customer_id(내부 UUID)만 화이트리스트(스태프 대상 role-gated 치료테이블).
 //
-// read-only: SELECT·투영·집계·export 만. write 0 / DDL 0 / DML 0. mutate 경로 없음.
+// write 범위: 숨김(soft-delete) UPDATE 1종만(deleted_at/by). hard-DELETE 0 / DDL 0 / 원장(payments·service_charges) 무접촉.
 
 import { Fragment, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Loader2, Pill, ChevronRight, ChevronDown, Download, Info, CalendarDays } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import {
+  Loader2,
+  Pill,
+  ChevronRight,
+  ChevronDown,
+  Download,
+  Info,
+  CalendarDays,
+  EyeOff,
+} from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
+import { useAuth } from '@/lib/auth';
 import { formatDateDots, chartNoBadge } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
 import {
   RX_ISSUANCE_FORM_KEY,
@@ -108,11 +138,53 @@ function RxDetail({ row }: { row: RxIssuancePatientRow }) {
   );
 }
 
+/** dedup 파이프라인 산출 행(대표 + 병합 sibling id). 숨김은 member_ids 전량 대상. */
+type RxHistoryRow = RxIssuancePatientRow & { dup_count: number; member_ids: string[] };
+
 export default function RxHistorySection() {
   const clinic = useClinic();
+  const { profile } = useAuth();
+  const queryClient = useQueryClient();
   const { data: allRows = [], isLoading, isError } = useRxIssuanceHistory(clinic?.id);
   // AC-3: 성함/차트번호 클릭 → 2번차트 팝업(공통 훅, openChart 게이트웨이 재사용).
   const openChartNo = useChartNoPopup();
+
+  // T-20260808-foot-RXHIST-HIDE-SOFTDELETE — 숨김 확인 대상(오클릭 방지, AC-5). null=다이얼로그 닫힘.
+  const [hideTarget, setHideTarget] = useState<RxHistoryRow | null>(null);
+
+  // 숨김(soft-delete) mutation — deleted_at/by 마킹. 물리 DELETE 아님(DB 트리거가 hard-DELETE 전면차단).
+  //   대상 = member_ids 전량(동일 교부번호 재출력 sibling 포함) → refetch 후 되살아남 방지(AC-2 영속).
+  //   감사(누가·언제)는 trg_form_submissions_body_audit 가 form_submissions_audit_log 에 자동 적재(§22).
+  const hideMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      if (ids.length === 0) return 0;
+      // cross-CRM Write Rows-Affected 표준: .select() 로 실제 반영 행 검증(RLS 거부 시 0-row+error=null 사일런트 유실 차단).
+      const { data, error } = await supabase
+        .from('form_submissions')
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: profile?.id ?? null,
+        })
+        .in('id', ids)
+        .eq('is_deleted', false) // 이미 숨겨진 행 재마킹 방지(멱등)
+        .select('id');
+      if (error) throw error;
+      const affected = data?.length ?? 0;
+      if (affected === 0) {
+        // 반영 0 = RLS 거부/이미 숨김/권한 부족 등 → 사일런트 성공 오인 차단.
+        throw new Error('숨김 처리가 반영되지 않았습니다(권한 또는 상태 확인).');
+      }
+      return affected;
+    },
+    onSuccess: () => {
+      toast('처방이력을 숨겼습니다.');
+      queryClient.invalidateQueries({ queryKey: ['rx_issuance_history_bydrug'] });
+      setHideTarget(null);
+    },
+    onError: (e: unknown) => {
+      toast(e instanceof Error ? e.message : '숨김 처리에 실패했습니다.');
+    },
+  });
 
   // AC-1 월별 필터 — 기본 = 이번달.
   const [preset, setPreset] = useState<MonthPreset>('thisMonth');
@@ -293,6 +365,8 @@ export default function RxHistorySection() {
                 ) : (
                   <th className="px-3 py-2 text-left font-medium">처방이력</th>
                 )}
+                {/* T-20260808-foot-RXHIST-HIDE-SOFTDELETE: 개별 건 숨기기(soft-delete) 액션 열 */}
+                <th className="px-3 py-2 text-right font-medium w-20">관리</th>
               </tr>
             </thead>
             <tbody>
@@ -383,10 +457,28 @@ export default function RxHistorySection() {
                           </span>
                         </td>
                       )}
+                      {/* T-20260808-foot-RXHIST-HIDE-SOFTDELETE: 숨기기(soft-delete) 버튼.
+                          stopPropagation 으로 행 펼침(toggle) 충돌 방지. 클릭 → 확인 다이얼로그(AC-5). */}
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-gray-500 hover:text-red-600"
+                          data-testid="rx-history-hide-btn"
+                          title="이 처방이력을 목록에서 숨깁니다(기록은 보존)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setHideTarget(r);
+                          }}
+                        >
+                          <EyeOff className="size-4 mr-1" />
+                          숨기기
+                        </Button>
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr className="border-t">
-                        <td colSpan={hasSelection ? 4 : 3} className="p-0">
+                        <td colSpan={hasSelection ? 5 : 4} className="p-0">
                           <RxDetail row={r} />
                         </td>
                       </tr>
@@ -398,6 +490,49 @@ export default function RxHistorySection() {
           </table>
         </div>
       )}
+
+      {/* T-20260808-foot-RXHIST-HIDE-SOFTDELETE: 숨김 확인 다이얼로그(AC-5 오클릭 방지).
+          '숨기기' 확정 시 member_ids 전량 soft-delete(재출력 sibling 포함) → 목록 영속 제거. '취소' 시 무변경. */}
+      <Dialog open={!!hideTarget} onOpenChange={(o) => !o && setHideTarget(null)}>
+        <DialogContent className="max-w-sm" data-testid="rx-history-hide-dialog">
+          <DialogHeader>
+            <DialogTitle>처방이력 숨기기</DialogTitle>
+            <DialogDescription>
+              {hideTarget?.patient_name ?? '이'} 님의 처방이력{' '}
+              {hideTarget?.issued_at ? `(${formatDateDots(hideTarget.issued_at)})` : ''} 을(를)
+              목록에서 숨기시겠습니까?
+              <br />
+              기록은 삭제되지 않고 보존되며, 목록에서만 보이지 않게 됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHideTarget(null)}
+              disabled={hideMutation.isPending}
+              data-testid="rx-history-hide-cancel"
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => hideTarget && hideMutation.mutate(hideTarget.member_ids)}
+              disabled={hideMutation.isPending}
+              data-testid="rx-history-hide-confirm"
+            >
+              {hideMutation.isPending ? (
+                <>
+                  <Loader2 className="size-4 mr-1.5 animate-spin" /> 숨기는 중…
+                </>
+              ) : (
+                '숨기기'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
