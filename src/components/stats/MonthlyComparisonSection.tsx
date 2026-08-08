@@ -14,7 +14,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { MonthlyComparison, StaffDailyBreakdown } from '@/lib/mtmSales';
+import type {
+  MonthlyComparison,
+  StaffDailyBreakdown,
+  DailyComparePoint,
+} from '@/lib/mtmSales';
 
 interface Props {
   data: MonthlyComparison | null;
@@ -27,6 +31,79 @@ interface Props {
    *   노출하고, 실장 개인성과(원래 /admin/sales=admin/manager/director 전용)는 staff 에게 새로 노출하지 않는다.
    */
   showStaffBreakdown?: boolean;
+}
+
+/**
+ * T-20260808-foot-SALESCOMPARE-2COL-15DAY-LAYOUT:
+ *   일자별 비교표를 좌우 2단(좌 1~15일 / 우 16~말일)으로 재배치하기 위한 반쪽 렌더러.
+ *   헤더 + 본문 행만 렌더한다 — 합계(당월 전체)는 2단과 무관하게 표 하단에서 1회만 표시(값 불변, AC-3).
+ *   표시 레이아웃 전용: 매출 산식/집계/값 무접촉(mtmSales SSOT 발산 금지, db_change=false).
+ */
+function DailyCompareHalf({ points }: { points: DailyComparePoint[] }) {
+  return (
+    <div className="overflow-auto rounded-lg border bg-background text-xs">
+      <table className="w-full border-collapse">
+        <thead className="sticky top-0 z-10 bg-muted/70">
+          <tr>
+            {['일자', '당월 매출(원)', '전월 매출(원)', '증감(당월−전월, 원)'].map((h) => (
+              <th
+                key={h}
+                className="whitespace-nowrap border-b px-3 py-2 text-right font-medium text-muted-foreground first:text-left"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((p) => {
+            // 증감 = 당월 − 전월. 어느 한쪽이라도 null이면 '-'.
+            const diff =
+              p.current !== null && p.previous !== null ? p.current - p.previous : null;
+            return (
+              <tr
+                key={p.day}
+                data-testid={`mtm-compare-row-${p.day}`}
+                className="border-b transition hover:bg-muted/30"
+              >
+                <td className="px-3 py-1.5 font-medium">{p.day}일</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {p.current === null ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    `${formatAmount(p.current)}원`
+                  )}
+                </td>
+                <td
+                  data-testid={`mtm-compare-prev-${p.day}`}
+                  className="px-3 py-1.5 text-right tabular-nums"
+                >
+                  {p.previous === null ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    `${formatAmount(p.previous)}원`
+                  )}
+                </td>
+                <td
+                  className={cn(
+                    'px-3 py-1.5 text-right tabular-nums',
+                    diff !== null && diff > 0 && 'text-emerald-700',
+                    diff !== null && diff < 0 && 'text-rose-700',
+                  )}
+                >
+                  {diff === null ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    `${diff > 0 ? '+' : ''}${formatAmount(diff)}원`
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default function MonthlyComparisonSection({
@@ -74,102 +151,53 @@ export default function MonthlyComparisonSection({
           ) : !data || data.points.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">데이터 없음</div>
           ) : (
-            <div
-              data-testid="mtm-monthly-compare"
-              className="overflow-auto rounded-lg border bg-background text-xs"
-            >
-              <table className="w-full border-collapse">
-                <thead className="sticky top-0 z-10 bg-muted/70">
-                  <tr>
-                    {['일자', '당월 매출(원)', '전월 매출(원)', '증감(당월−전월, 원)'].map((h) => (
-                      <th
-                        key={h}
-                        className="whitespace-nowrap border-b px-3 py-2 text-right font-medium text-muted-foreground first:text-left"
+            <div data-testid="mtm-monthly-compare" className="flex flex-col gap-3">
+              {/*
+                좌우 2단 재배치(T-20260808-SALESCOMPARE-2COL-15DAY):
+                  좌 = 1~15일 / 우 = 16~말일. 우측 끝날짜는 data.points(=말일까지) 기준으로 동적이라
+                  30/31·2월 28/29에도 하드코딩 없이 빈칸·깨짐 없음(AC-2). 값·합계·증감은 불변(AC-3).
+                반응형(AC-5): 기본 1열 세로 스택(좌 1~15 → 우 16~말일 순서 유지), md 이상에서 좌우 2열.
+              */}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <DailyCompareHalf points={data.points.filter((p) => p.day <= 15)} />
+                <DailyCompareHalf points={data.points.filter((p) => p.day >= 16)} />
+              </div>
+
+              {/* 합계(당월 전체 = 좌+우 합) — 2단 분할과 무관하게 1회만 표시, 값 불변(AC-3). */}
+              <div className="overflow-auto rounded-lg border bg-background text-xs">
+                <table className="w-full border-collapse">
+                  <tbody>
+                    <tr className="bg-muted/40 font-semibold">
+                      <td className="px-3 py-2">합계</td>
+                      <td
+                        data-testid="mtm-compare-total-cur"
+                        className="px-3 py-2 text-right tabular-nums"
                       >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.points.map((p) => {
-                    // 증감 = 당월 − 전월. 어느 한쪽이라도 null이면 '-'.
-                    const diff =
-                      p.current !== null && p.previous !== null
-                        ? p.current - p.previous
-                        : null;
-                    return (
-                      <tr
-                        key={p.day}
-                        data-testid={`mtm-compare-row-${p.day}`}
-                        className="border-b transition hover:bg-muted/30"
+                        {formatAmount(data.curMonthTotal)}원
+                      </td>
+                      <td
+                        data-testid="mtm-compare-total-prev"
+                        className="px-3 py-2 text-right tabular-nums"
                       >
-                        <td className="px-3 py-1.5 font-medium">{p.day}일</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">
-                          {p.current === null ? (
-                            <span className="text-muted-foreground">-</span>
-                          ) : (
-                            `${formatAmount(p.current)}원`
-                          )}
-                        </td>
-                        <td
-                          data-testid={`mtm-compare-prev-${p.day}`}
-                          className="px-3 py-1.5 text-right tabular-nums"
-                        >
-                          {p.previous === null ? (
-                            <span className="text-muted-foreground">-</span>
-                          ) : (
-                            `${formatAmount(p.previous)}원`
-                          )}
-                        </td>
-                        <td
-                          className={cn(
-                            'px-3 py-1.5 text-right tabular-nums',
-                            diff !== null && diff > 0 && 'text-emerald-700',
-                            diff !== null && diff < 0 && 'text-rose-700',
-                          )}
-                        >
-                          {diff === null ? (
-                            <span className="text-muted-foreground">-</span>
-                          ) : (
-                            `${diff > 0 ? '+' : ''}${formatAmount(diff)}원`
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/40 font-semibold">
-                    <td className="px-3 py-2">합계</td>
-                    <td
-                      data-testid="mtm-compare-total-cur"
-                      className="px-3 py-2 text-right tabular-nums"
-                    >
-                      {formatAmount(data.curMonthTotal)}원
-                    </td>
-                    <td
-                      data-testid="mtm-compare-total-prev"
-                      className="px-3 py-2 text-right tabular-nums"
-                    >
-                      {data.prevHasData ? (
-                        `${formatAmount(data.prevMonthTotal)}원`
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {data.prevHasData ? (
-                        `${data.curMonthTotal - data.prevMonthTotal > 0 ? '+' : ''}${formatAmount(
-                          data.curMonthTotal - data.prevMonthTotal,
-                        )}원`
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                        {data.prevHasData ? (
+                          `${formatAmount(data.prevMonthTotal)}원`
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {data.prevHasData ? (
+                          `${data.curMonthTotal - data.prevMonthTotal > 0 ? '+' : ''}${formatAmount(
+                            data.curMonthTotal - data.prevMonthTotal,
+                          )}원`
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>
