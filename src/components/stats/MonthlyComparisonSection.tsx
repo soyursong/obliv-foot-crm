@@ -237,11 +237,11 @@ export default function MonthlyComparisonSection({
                       data-testid={`mtm-staff-row-${row.day}`}
                       className="border-b transition hover:bg-muted/30"
                     >
-                      <td className="px-3 py-1.5 font-medium">{row.day}일</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 font-medium">{row.day}일</td>
                       {staffBreakdown.staff.map((s) => (
                         <td
                           key={s.id}
-                          className="px-3 py-1.5 text-right tabular-nums"
+                          className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums"
                         >
                           {row.isFuture ? (
                             <span className="text-muted-foreground">-</span>
@@ -250,7 +250,7 @@ export default function MonthlyComparisonSection({
                           )}
                         </td>
                       ))}
-                      <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium">
                         {row.isFuture ? (
                           <span className="text-muted-foreground">-</span>
                         ) : (
@@ -262,19 +262,19 @@ export default function MonthlyComparisonSection({
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted/40 font-semibold">
-                    <td className="px-3 py-2">합계</td>
+                    <td className="whitespace-nowrap px-3 py-2">합계</td>
                     {staffBreakdown.staff.map((s) => (
                       <td
                         key={s.id}
                         data-testid={`mtm-staff-total-${s.id}`}
-                        className="px-3 py-2 text-right tabular-nums"
+                        className="whitespace-nowrap px-3 py-2 text-right tabular-nums"
                       >
                         {formatAmount(s.total)}원
                       </td>
                     ))}
                     <td
                       data-testid="mtm-staff-grand-total"
-                      className="px-3 py-2 text-right tabular-nums text-teal-700"
+                      className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-teal-700"
                     >
                       {formatAmount(staffBreakdown.grandTotal)}원
                     </td>
