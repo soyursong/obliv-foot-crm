@@ -72,3 +72,19 @@ GO-token 前 prod payments 잠금원장 INSERT 선집행 금지(apply_before_go 
 1. 삽입 SELECT 재확인 (apply 스크립트 내장): new_lines=1 / new_pays=1 hard assert.
 2. SalesStaffTab(담당치료사별 화장품 매출집계) 임별 칸에 F-4872 42,000 반영 브라우저 육안 확인.
 3. e2e_spec_exempt_reason: db_only (UI 코드 변경 0).
+
+---
+
+## ✅ PROD APPLY 완료 (2026-08-09T07:53:23+0900 · dev-foot · supervisor DB-GATE GO-token = FIX-REQUEST MSG-20260809-074855-oxwl)
+
+- **GO-token**: supervisor FIX-REQUEST(auto-promote db_change gate) = F-4872 leg DB-GATE GO-token. `GATE_TOKEN=supervisor-DB-GATE-GO:MSG-20260809-074855-oxwl`.
+- **PRE probe (독립 read-only, prod)**: target_line=0·target_pay=0·bizkey_line=0·bizkey_pay=0·anchor_ci=1·customer_ok=1·service_ok=1·seller_ok=1·ledger_present=0. → 이중계상 위험 0, entity resolve 전건 OK, ledger fresh.
+- **APPLY**: `BEGIN; <mig>; ledger mark 20260809080000; COMMIT;` 단일 트랜잭션 ✓. rows-affected=2 (line 1 + payment 1).
+- **POST probe (독립 read-only, prod, 전필드 shape assert PASS)**:
+  - line `87beac3a` = 풋샴푸 (200ml)·42000·seller 7c24cd3b(임별)·svc 89095450·ci f6ca21d1
+  - payment `7b8b9f74` = 42000·card·payment·2026-07-18·active·is_simulation false·**service_charge_id NULL**·ci f6ca21d1
+  - ledger 20260809080000 marked
+- **멱등 재실행**: BEGIN;up.sql;COMMIT 재적용 = 0 new row(여전히 1+1). 멱등 HARD 확증.
+- **reconcile 검산**: 임별 seller 화장품 라인 2건/84,000 (본 42,000 순증). COSMETIC-CORRECTION Tier1 정합.
+- **rollback**: `20260809080000_..._backfill.rollback.sql` (고정 PK DELETE 2행). 필요 시 실행.
+- **잔여**: SalesStaffTab 브라우저 육안 확인 = db_only exempt(POST probe shape로 대체 확증). saga close = planner/conductor 소관.
