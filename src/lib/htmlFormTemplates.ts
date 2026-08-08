@@ -2655,6 +2655,78 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 개인정보 수집·이용 동의서 (종이 백업용) ───
+// T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM
+//   셀프접수(foot-checkin) 오류로 라이브 동의 미수집 시 종이 백업용 동의서.
+//   기존 동의서(외국인 비급여)와 동일 방식(HTML 템플릿 + form_templates seed) — 순수 ADDITIVE.
+//   ★문안은 dev 창작 아님: 셀프접수 라이브 동의문(foot-checkin SelfCheckIn.tsx privacyConsentLabel/
+//     privacyConsentNote)을 authoritative source 로 verbatim 서식화.
+//     - 라벨: '개인정보 수집·이용에 동의합니다 (필수)'
+//     - 수집항목: 성함, 주민등록번호, 연락처, 주소 등 기본 정보
+//     - 수집목적: 진료를 위한 정보 수집
+//     - 보유기간: 관련 법령에 따른 보관 기간 동안 보유
+//   자동바인딩: 날짜={{issue_date}}(오늘), 성명={{patient_name}}(대상 환자). 서명=수기(빈칸, 인쇄 후 손서명).
+const PRIVACY_CONSENT_FORM_HTML = `
+${COMMON_STYLE}
+<style>
+  .pcf-note { border: 1px solid #000; margin-top: 6px; }
+  .pcf-note td { padding: 7px 10px; font-size: 10pt; vertical-align: top; }
+  .pcf-note .pcf-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; white-space: nowrap; }
+  .pcf-consent-line { border: 1px solid #000; border-top: none; padding: 8px 10px; font-size: 10.5pt; font-weight: bold; }
+  .pcf-sign-tbl { margin-top: 16px; table-layout: fixed; }
+  .pcf-sign-tbl td { height: 30px; }
+  .pcf-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
+  .pcf-sig-cell { width: 28%; }
+</style>
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">개인정보 수집·이용 동의서</div>
+    <div style="flex:1;"></div>
+  </div>
+  <div class="subtitle" style="font-size:10pt; margin-bottom:10px;">Consent to Collection &amp; Use of Personal Information</div>
+
+  <table class="pcf-note">
+    <tbody>
+      <tr>
+        <td class="pcf-label">수집항목</td>
+        <td>성함, 주민등록번호, 연락처, 주소 등 기본 정보</td>
+      </tr>
+      <tr>
+        <td class="pcf-label">수집목적</td>
+        <td>진료를 위한 정보 수집</td>
+      </tr>
+      <tr>
+        <td class="pcf-label">보유기간</td>
+        <td>관련 법령에 따른 보관 기간 동안 보유</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="pcf-consent-line">□ 개인정보 수집·이용에 동의합니다 (필수)</div>
+
+  <div class="confirm-text" style="margin-top:12px; font-size:10.5pt;">
+    본인은 위 개인정보의 수집·이용 목적 및 항목·보유기간을 충분히 이해하였으며, 이에 동의합니다.
+  </div>
+
+  <table class="pcf-sign-tbl">
+    <tbody>
+      <tr>
+        <td class="pcf-sign-label">날짜</td>
+        <td>{{issue_date}}</td>
+        <td class="pcf-sign-label">성명</td>
+        <td>{{patient_name}}</td>
+      </tr>
+      <tr>
+        <td class="pcf-sign-label">서명</td>
+        <td class="pcf-sig-cell"></td>
+        <td class="pcf-sign-label">기관</td>
+        <td>{{clinic_name}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -2685,6 +2757,8 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   first_visit_mgmt_record: FIRST_VISIT_MGMT_RECORD_HTML,
   // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 (국·영문 병기, 5조항)
   foreigner_noncovered_consent: FOREIGNER_NONCOVERED_CONSENT_HTML,
+  // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 (셀프접수 오류 종이 백업용)
+  privacy_consent_form: PRIVACY_CONSENT_FORM_HTML,
 };
 
 /**
