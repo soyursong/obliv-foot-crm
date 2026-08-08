@@ -132,4 +132,51 @@ if (kimIds.length) {
   });
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 재진단(FIX-REQUEST j9rb): payment-side — SalesStaffTab 이 못 보는 축
+//   SalesStaffTab 화장품 집계 = check_in_services(cis) 라인, 버킷=COALESCE(seller_staff_id,therapist_id)
+//   → payment-only 레코드(cis 라인 無)는 구조적으로 미표시. "cis 0건 ≠ 판매 없음".
+// ══════════════════════════════════════════════════════════════════
+console.log('\n\n########## RE-DIAG: payment-side 축 ##########');
+
+// R1) al93 특정 payment 2e8f7aa5 — 현재 귀속값 전량
+const PAY_A = '2e8f7aa5-3e83-4d4a-8900-ab1f0048694a';
+const { data: payA, error: payAe } = await sb.from('payments').select('*').eq('id', PAY_A);
+out(`R1) payment ${PAY_A} (CTB 15,000, T-20260806 INSERT분) — err=${payAe?.message ?? 'none'}`, payA);
+
+// R2) 현은호 payments 전량 (7/28 CTB 결제 실재 + seller 귀속)
+if (typeof custIds !== 'undefined' && custIds.length) {
+  const { data: pays } = await sb.from('payments')
+    .select('id, customer_id, amount, method, pg_provider, status, package_id, seller_staff_id, paid_at, created_at, check_in_id')
+    .in('customer_id', custIds).order('created_at', { ascending: false });
+  const sName = Object.fromEntries((kim ?? []).map((s) => [s.id, s.name]));
+  out('R2) 현은호 payments 전량', (pays ?? []).map((p) => ({
+    ...p, seller_name: p.seller_staff_id ? (sName[p.seller_staff_id] ?? '(비김규리/미매핑)') : null,
+    is_kimgyuri_seller: kimIds.includes(p.seller_staff_id),
+    has_cis_line: !!p.check_in_id,
+  })));
+}
+
+// R3) Item C — 김병완 payment b7ab6496 (별도티켓, 참고 READ-ONLY)
+const { data: kbw } = await sb.from('customers')
+  .select('id,name,chart_number,phone').ilike('name', '%김병완%');
+out('R3a) 김병완 customers', kbw);
+const { data: payC } = await sb.from('payments')
+  .select('id, customer_id, amount, method, pg_provider, status, package_id, seller_staff_id, paid_at, created_at, check_in_id')
+  .ilike('id', 'b7ab6496%');
+out('R3b) payment b7ab6496% (8/1 화장품 73,000)', (payC ?? []).map((p) => ({
+  ...p, is_kimgyuri_seller: kimIds.includes(p.seller_staff_id), has_cis_line: !!p.check_in_id,
+})));
+if ((kbw ?? []).length) {
+  const kbwIds = kbw.map((c) => c.id);
+  const { data: kbwCis } = await sb.from('check_in_services')
+    .select('id, check_in_id, service_id, service_name, price, seller_staff_id, voided_at, created_at, check_ins!inner(customer_id, checked_in_at, therapist_id)')
+    .in('check_ins.customer_id', kbwIds)
+    .gte('check_ins.checked_in_at', '2026-08-01T00:00:00+09:00');
+  out('R3c) 김병완 8월 check_in_services 라인 (cis 판매라인 실재?)', {
+    count: kbwCis?.length,
+    rows: (kbwCis ?? []).map((r) => ({ ...r, is_kimgyuri_seller: kimIds.includes(r.seller_staff_id) })),
+  });
+}
+
 console.log('\n[READ-ONLY 완료 — write 0]');
