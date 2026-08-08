@@ -2566,6 +2566,95 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 외국인 비급여 진료 동의서 (국·영문 병기) ───
+// T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM
+//   한국 건강보험 미적용 외국인 환자 대상 전액 비급여 진료 안내 동의서.
+//   기존 비급여 동의서(서류 발행 화면)와 동일 방식(HTML 템플릿 + form_templates seed) — 순수 ADDITIVE.
+//   자동바인딩: 날짜={{issue_date}}(오늘), 성명={{patient_name}}(대상 환자). 서명=수기(빈칸, 인쇄 후 손서명).
+//   현장 확정 5개 조항(bilingual 제목 verbatim + 국문 본문 verbatim + 외국인 대상 영문 병기).
+const FOREIGNER_NONCOVERED_CONSENT_HTML = `
+${COMMON_STYLE}
+<style>
+  .fnc-clause { border: 1px solid #000; margin-top: 4px; padding: 6px 9px; }
+  .fnc-clause-head { font-size: 10pt; font-weight: bold; margin-bottom: 3px; }
+  .fnc-ko { font-size: 9.5pt; line-height: 1.5; }
+  .fnc-en { font-size: 8.5pt; line-height: 1.45; color: #333; margin-top: 2px; }
+  .fnc-ko li, .fnc-en li { margin-left: 16px; }
+  .fnc-sign-tbl { margin-top: 14px; table-layout: fixed; }
+  .fnc-sign-tbl td { height: 30px; }
+  .fnc-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
+  .fnc-sig-cell { width: 28%; }
+</style>
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">외국인 비급여 진료 동의서</div>
+    <div style="flex:1;"></div>
+  </div>
+  <div class="subtitle" style="font-size:10pt; margin-bottom:6px;">Agreement on Non-Covered Medical Treatment &amp; Fees</div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">1. 비급여 진료 안내 / Non-Covered Medical Care</div>
+    <div class="fnc-ko">한국 건강보험이 적용되지 않는 외국인 환자는 전액 비급여 진료가 적용됨을 안내드립니다.</div>
+    <div class="fnc-en">As a foreign patient not covered by Korean National Health Insurance, all medical treatment is provided on a fully non-covered (out-of-pocket) basis.</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">2. 진료 및 서비스 비용 / Medical &amp; Service Fees</div>
+    <div class="fnc-ko">본치료비 및 장치·재료비 외에 의사 진찰료 및 관리사 서비스 비용이 별도로 부과됨에 동의합니다.</div>
+    <div class="fnc-en">I agree that, in addition to the treatment fee and device/material costs, a separate physician consultation fee and practitioner service fee will be charged.</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">3. 포도로게(교정기) 관련 안내 / Podology (Orthotic Device) Terms</div>
+    <ul class="fnc-ko">
+      <li>장치 장착 후 출국 시, 사후 관리(재조정·추가 시술)가 제한될 수 있습니다.</li>
+      <li>귀국 후 추가 처치가 필요한 경우 그 비용은 환자 본인이 부담합니다.</li>
+      <li>교정 결과는 개인의 발 상태에 따라 차이가 있을 수 있습니다.</li>
+    </ul>
+    <ul class="fnc-en">
+      <li>If you leave Korea after the device is fitted, follow-up care (readjustment / additional procedures) may be limited.</li>
+      <li>Any additional treatment required after returning to your home country shall be borne by the patient.</li>
+      <li>Correction results may vary depending on each individual's foot condition.</li>
+    </ul>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">4. 원내 정책 및 책임 범위 / Clinic Policy &amp; Scope of Responsibility</div>
+    <div class="fnc-ko">본원은 의료 서비스만을 제공하며, 비의료적 개인 요청(택시 호출, 출입국 관련 서명 등)에는 응할 의무가 없습니다.</div>
+    <div class="fnc-en">The clinic provides medical services only and is under no obligation to fulfill non-medical personal requests (e.g., calling a taxi, signing immigration-related documents).</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">5. 수납 및 환불 정책 / Payment &amp; Refund Policy</div>
+    <div class="fnc-ko">상담 및 시술 후 발생한 진료비의 납부에 동의하며, 이미 완료된 서비스에 대해서는 환불이 불가함을 확인합니다.</div>
+    <div class="fnc-en">I agree to pay the fees incurred after consultation and treatment, and I acknowledge that services already rendered are non-refundable.</div>
+  </div>
+
+  <div class="confirm-text" style="margin-top:8px; font-size:10pt;">
+    본인은 위 내용을 충분히 이해하였으며 이에 동의합니다.<br>
+    <span style="font-weight:normal; font-size:8.5pt;">I have fully read and understood the above and hereby agree to its terms.</span>
+  </div>
+
+  <table class="fnc-sign-tbl">
+    <tbody>
+      <tr>
+        <td class="fnc-sign-label">날짜 / Date</td>
+        <td>{{issue_date}}</td>
+        <td class="fnc-sign-label">성명 / Name</td>
+        <td>{{patient_name}}</td>
+      </tr>
+      <tr>
+        <td class="fnc-sign-label">서명 / Signature</td>
+        <td class="fnc-sig-cell"></td>
+        <td class="fnc-sign-label">기관 / Clinic</td>
+        <td>{{clinic_name}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -2594,6 +2683,8 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   ins_claim_form: INS_CLAIM_FORM_HTML,
   // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 (9섹션 + 서명영역)
   first_visit_mgmt_record: FIRST_VISIT_MGMT_RECORD_HTML,
+  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 (국·영문 병기, 5조항)
+  foreigner_noncovered_consent: FOREIGNER_NONCOVERED_CONSENT_HTML,
 };
 
 /**

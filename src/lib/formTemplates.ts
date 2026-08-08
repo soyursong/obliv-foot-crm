@@ -762,6 +762,29 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     active: true,
     sort_order: 110,
   },
+  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 (국·영문 병기).
+  //   한국 건강보험 미적용 외국인 환자 대상 전액 비급여 진료 안내 동의서. HTML 템플릿(foreigner_noncovered_consent).
+  //   자동채움: 성명(patient_name)·발행일(issue_date=오늘). 서명=수기(빈칸, 인쇄 후 손서명 → field_map 미포함).
+  //   운영 노출은 form_templates ADDITIVE seed row(멱등 마이그); FALLBACK 은 빈 DB/프리뷰 목록 정합용.
+  //   동의서 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 귀속. 순수 ADDITIVE — 기존 서류 무접점.
+  {
+    id: 'fallback-foreigner-noncovered-consent',
+    clinic_id: FOOT_CLINIC_ID,
+    category: 'foot-service',
+    form_key: 'foreigner_noncovered_consent',
+    name_ko: '외국인 비급여 진료 동의서',
+    template_path: '',
+    template_format: 'html',
+    field_map: [
+      { key: 'patient_name', label: '성명', type: 'text', x: 0, y: 0 },
+      { key: 'issue_date',   label: '발행일', type: 'date', x: 0, y: 0 },
+    ],
+    requires_signature: false,
+    // 동의서 = 데스크/코디·매니저 등 접수/상담 접점 직군 발행. (의료 게이트 서류 아님)
+    required_role: 'admin|manager|coordinator|therapist',
+    active: true,
+    sort_order: 120,
+  },
 ];
 
 // ─── 원내 도장 ───
@@ -915,6 +938,13 @@ export const FORM_META: Record<
     icon: '🦶',
     color: 'bg-lime-50 border-lime-200',
     description: '초진 시 고객 상태·관리 계획 기록 (방문목적·상태확인·초기관리·관리계획)',
+    print_preset: 'optional',
+  },
+  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 (국·영문 병기)
+  foreigner_noncovered_consent: {
+    icon: '🌐',
+    color: 'bg-rose-50 border-rose-200',
+    description: '외국인 전액 비급여 진료 안내 동의서 (국·영문 병기, 5조항) — 날짜·성명 자동, 서명 수기',
     print_preset: 'optional',
   },
 };
@@ -1149,6 +1179,9 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지(신규). 제증명이 아닌 내부 관리기록 →
   //   '관리기록' 그룹(DOC_CATEGORY_MGMTRECORD_KEYS)으로 별도 귀속. 진열은 기존 11종 뒤(맨 아래).
   'first_visit_mgmt_record', // 12. 초진 관리기록지
+  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서(신규). 제증명/관리기록이 아닌
+  //   동의서 → '동의서' 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 별도 귀속. 진열은 맨 아래.
+  'foreigner_noncovered_consent', // 13. 외국인 비급여 진료 동의서
 ];
 
 /**
@@ -1236,8 +1269,18 @@ export const DOC_CATEGORY_MGMTRECORD_KEYS: ReadonlyArray<string> = [
   'first_visit_mgmt_record', // 초진 관리기록지
 ];
 
+/**
+ * T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM — '동의서' 카테고리 그룹 SSOT.
+ * 서류 발행 화면의 동의서 섹션(현장 요청). 제증명·법정서류·관리기록이 아닌 환자 동의서 계열을 별도 그룹으로 노출한다.
+ * 향후 동의서 계열 서류 유입 시 여기에 추가.
+ */
+export const DOC_CATEGORY_CONSENT_KEYS: ReadonlyArray<string> = [
+  'foreigner_noncovered_consent', // 외국인 비급여 진료 동의서
+];
+
 export const DOC_GROUP_LABEL_JEUNGMYEONG = '제증명';
 export const DOC_GROUP_LABEL_MGMTRECORD = '관리기록';
+export const DOC_GROUP_LABEL_CONSENT = '동의서';
 export const DOC_GROUP_LABEL_ETC = '기타 서류';
 
 export interface DocListGroup<T> {
@@ -1262,14 +1305,20 @@ export function groupDocList<T extends { form_key: string }>(
   const mgmt = ordered.filter((t) =>
     DOC_CATEGORY_MGMTRECORD_KEYS.includes(t.form_key),
   );
+  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: '동의서' 그룹.
+  const consent = ordered.filter((t) =>
+    DOC_CATEGORY_CONSENT_KEYS.includes(t.form_key),
+  );
   const etc = ordered.filter(
     (t) =>
       !DOC_CATEGORY_JEUNGMYEONG_KEYS.includes(t.form_key) &&
-      !DOC_CATEGORY_MGMTRECORD_KEYS.includes(t.form_key),
+      !DOC_CATEGORY_MGMTRECORD_KEYS.includes(t.form_key) &&
+      !DOC_CATEGORY_CONSENT_KEYS.includes(t.form_key),
   );
   const groups: DocListGroup<T>[] = [];
   if (jeung.length) groups.push({ label: DOC_GROUP_LABEL_JEUNGMYEONG, templates: jeung });
   if (mgmt.length) groups.push({ label: DOC_GROUP_LABEL_MGMTRECORD, templates: mgmt });
+  if (consent.length) groups.push({ label: DOC_GROUP_LABEL_CONSENT, templates: consent });
   if (etc.length) groups.push({ label: DOC_GROUP_LABEL_ETC, templates: etc });
   return groups;
 }
