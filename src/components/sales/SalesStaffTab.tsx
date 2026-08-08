@@ -301,6 +301,9 @@ export function SalesStaffTab({ filter }: Props) {
   });
 
   // T-20260605 차감기준 조회 — package_sessions(status='used') → performed_by, session_date
+  // T-20260808 회귀복구: packages→customers FK 2개(packages_customer_id_fkey·packages_transferred_to_fkey)로
+  //   `customers(...)` 임베드가 모호 → PostgREST PGRST201(HTTP 300) → 이 쿼리 throw → deductSessions 전건 소실
+  //   → '차감 매출' 전 치료사 0/blank. 구매자 고객 FK(packages_customer_id_fkey) 명시로 disambiguate(양도대상 아님).
   const { data: deductSessions = [], isLoading: deductLoading } = useQuery<DeductSessionRow[]>({
     queryKey: ['sales-staff-deduct', clinic?.id, from, to],
     enabled: !!clinic,
@@ -314,7 +317,7 @@ export function SalesStaffTab({ filter }: Props) {
             heated_unit_price, unheated_unit_price, iv_unit_price,
             podologe_unit_price, trial_unit_price, reborn_unit_price,
             customer_id,
-            customers(id, name, chart_number)
+            customers!packages_customer_id_fkey(id, name, chart_number)
           ),
           performer:staff!performed_by(id, name)
         `)
