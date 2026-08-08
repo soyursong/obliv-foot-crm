@@ -765,14 +765,14 @@ const DraggableCard = memo(function DraggableCard({
               ALT
             </span>
           )}
+          {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 레이저 타이머 남은시간 카운트다운.
+              위치 SSOT=총괄 빨간박스 스샷(F0BP02NKTLZ) = 하단 배지행 우측 끝(패키지 태그 우측 빈칸). ml-auto로 우측 정렬. */}
+          {timerEndsAt && (
+            <span className="ml-auto pl-1 text-[10px]" data-testid="card-timer-countdown-row">
+              <TimerCountdown endsAt={timerEndsAt} />
+            </span>
+          )}
         </div>
-        {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 우측 하단 레이저 타이머 남은시간 카운트다운.
-            위치 SSOT=총괄 빨간박스 스샷(우측 하단) — 스샷 도착 후 픽셀정밀 재확정 가능. */}
-        {timerEndsAt && (
-          <div className="mt-0.5 flex justify-end text-[10px]" data-testid="card-timer-countdown-row">
-            <TimerCountdown endsAt={timerEndsAt} />
-          </div>
-        )}
       </div>
     );
   }
@@ -963,14 +963,14 @@ const DraggableCard = memo(function DraggableCard({
             ALT
           </span>
         )}
+        {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 레이저 타이머 남은시간 카운트다운(non-compact).
+            위치 SSOT=총괄 빨간박스 스샷(F0BP02NKTLZ) = 하단 배지행 우측 끝(패키지 태그 우측 빈칸). ml-auto로 우측 정렬. */}
+        {timerEndsAt && (
+          <span className="ml-auto pl-1 text-[9px]" data-testid="card-timer-countdown-row">
+            <TimerCountdown endsAt={timerEndsAt} />
+          </span>
+        )}
       </div>
-      {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 우측 하단 레이저 타이머 남은시간 카운트다운(non-compact).
-          위치 SSOT=총괄 빨간박스 스샷(우측 하단) — 스샷 도착 후 픽셀정밀 재확정 가능. */}
-      {timerEndsAt && (
-        <div className="mt-0.5 flex justify-end text-[9px]" data-testid="card-timer-countdown-row">
-          <TimerCountdown endsAt={timerEndsAt} />
-        </div>
-      )}
     </div>
   );
 // T-20260522-foot-DRAG-RESP-OPT: memo 비교자 — data props만 비교, 핸들러 제외
