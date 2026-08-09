@@ -187,6 +187,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: packages 헤더 급여/비급여 회차 split.
+        //   isInsuranceSplitValid/isInsuranceSplitBothEntered/formatInsuranceSplit 순수함수 단언
+        //   (VG2 자기검증 = DB partial CHECK 동형 · 펜차트 '12회 (비11/가1)' 표시 포맷).
+        //   auth/DB/server 불요·결정론(db_change=true 이나 spec 은 순수 로직만). 실 UI 관측 = supervisor field-soak.
+        '**/T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2.spec.ts',
         // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: 처방이력 약 드롭다운 옵션을 처방약 마스터
         //   (services category_label='처방약')와 코드/약품명 양축 교차검증 → 비처방약 라인(진찰료 AA154·검사
         //   D620300HZ) 제외(Option A). parseMedicationToken/buildRxDrugMasterIndex/filterMedicationsByRxMaster

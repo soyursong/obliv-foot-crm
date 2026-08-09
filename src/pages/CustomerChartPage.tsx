@@ -18,6 +18,7 @@ import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 //   피검사/KOH 는 이 박스 체크박스로 이관(既존 KohRequestToggle/BloodTestRequestToggle 상태 공유 → 별도 토글 제거).
 import TreatmentRequestBox from '@/components/TreatmentRequestBox';
 import { PACKAGE_SESSION_TYPE_TO_REQUEST_CODE } from '@/lib/treatmentRequestCodes';
+import { isInsuranceSplitValid, isInsuranceSplitBothEntered, formatInsuranceSplit } from '@/lib/insuranceSessionSplit';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
 import PatientResultFiles from '@/components/PatientResultFiles';
@@ -10563,6 +10564,11 @@ function PackagePurchaseFromTemplateDialog({
   const [treatmentType, setTreatmentType] = useState<PackageTreatmentType | ''>('');
   const [referencePrice, setReferencePrice] = useState(0);
   const [refPriceTouched, setRefPriceTouched] = useState(false);
+  // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여(가)/비급여(비) 회차 split (packages 헤더 grain).
+  //   스태프 판매시 수동 입력. 미입력=null → packages.covered_sessions/noncovered_sessions NULL(미분류).
+  //   펜차트 '12회 (비11/가1)' 표시 leg 는 REWORK 편집형 폼에 별도 착지(본 티켓=데이터 leg).
+  const [coveredSessions, setCoveredSessions] = useState<number | null>(null);
+  const [noncoveredSessions, setNoncoveredSessions] = useState<number | null>(null);
 
   // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭 = /packages 관리 3그룹.
   //   개별 패키지(12회권 등)는 나열하지 않고 그룹 내부 pill 로 선택 → 기존 선택 항목 누락 없음(AC-2).
@@ -10599,6 +10605,12 @@ function PackagePurchaseFromTemplateDialog({
   // T-20260522-foot-PKG-TRIAL: 체험권 포함
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
   const totalSessions = heated + unheated + iv + precon + podologe + trial + reborn;
+
+  // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2 app-level self-test):
+  //   급여/비급여 회차는 "둘 다 입력" 시에만 합=총 회차여야 한다. 둘 중 하나라도 미입력=미분류(NULL 저장·통과).
+  //   순수 로직 = src/lib/insuranceSessionSplit.ts (DB partial CHECK 와 동형·spec 커버).
+  const insuranceSplitBothEntered = isInsuranceSplitBothEntered(coveredSessions, noncoveredSessions);
+  const insuranceSplitValid = isInsuranceSplitValid(coveredSessions, noncoveredSessions, totalSessions);
 
   // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM-REFPRICE-1SESSION 변경2 (DA-20260708-FOOT-PKGBUY-REFPRICE 승인산식):
   //   기준정가 = 시술유형별 마스터 정찰가(treatment_standard_prices) per-line 합 + 업그레이드 가산.
@@ -10802,6 +10814,10 @@ function PackagePurchaseFromTemplateDialog({
       // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷(미입력=null → 할인율 '-').
       treatment_type: treatmentType || null,
       reference_price: referencePrice > 0 ? referencePrice : null,
+      // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여/비급여 회차 split (nullable·미입력=NULL).
+      //   VG3 firewall: 매출 산식과 무접점(매출 급여/비급여 = service_charges only).
+      covered_sessions: coveredSessions,
+      noncovered_sessions: noncoveredSessions,
       paid_amount: 0,
       status: 'active',
       memo: memo.trim() || null,
@@ -10811,6 +10827,8 @@ function PackagePurchaseFromTemplateDialog({
   const submit = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2): 급여+비급여 회차 합=총 회차 자기검증.
+    if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return; }
     // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
     //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
     setSubmitting(true);
@@ -10827,6 +10845,8 @@ function PackagePurchaseFromTemplateDialog({
   const createPackageForPayment = async (): Promise<string | null> => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return null; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return null; }
+    // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2): 급여+비급여 회차 합=총 회차 자기검증.
+    if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return null; }
     const { data, error } = await supabase.from('packages').insert(buildPackageInsertPayload()).select('id');
     // ★VG-4/W2 rows-affected assert: 0행+error=null(RLS/스코프)도 실패로 승격(추적 불가 상태로 과금 금지).
     if (error || !data?.[0]?.id) { toast.error(`티켓 생성 실패: ${error?.message ?? '0행 반영(권한 확인)'}`); return null; }
@@ -10837,6 +10857,8 @@ function PackagePurchaseFromTemplateDialog({
   const submitWithTemplate = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2): 급여+비급여 회차 합=총 회차 자기검증.
+    if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return; }
     // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
     setSubmitting(true);
     // 1) 템플릿 저장
@@ -10873,6 +10895,9 @@ function PackagePurchaseFromTemplateDialog({
       // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷.
       treatment_type: treatmentType || null,
       reference_price: referencePrice > 0 ? referencePrice : null,
+      // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여/비급여 회차 split (nullable·미입력=NULL).
+      covered_sessions: coveredSessions,
+      noncovered_sessions: noncoveredSessions,
       status: 'active', memo: memo.trim() || null,
     });
     setSubmitting(false);
@@ -11358,6 +11383,58 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
 
+          {/* T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여(가)/비급여(비) 회차 split (선택 입력).
+              packages 헤더 grain 수동 입력 → 펜차트 '12회 (비11/가1)' 표시(표시 leg=REWORK 별도).
+              둘 다 입력 시 합=총 회차 자기검증(VG2). 미입력=미분류(NULL 저장). */}
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-2 space-y-2" data-testid="pkg-insurance-split">
+            <div className="text-xs font-semibold text-indigo-800">
+              급여/비급여 회차 <span className="font-normal text-indigo-500">(선택 · 펜차트 표시용)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">급여(가) 회차</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={coveredSessions ?? ''}
+                  onChange={(e) => setCoveredSessions(e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="미분류"
+                  data-testid="pkg-covered-sessions"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-base tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">비급여(비) 회차</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={noncoveredSessions ?? ''}
+                  onChange={(e) => setNoncoveredSessions(e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="미분류"
+                  data-testid="pkg-noncovered-sessions"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-base tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="text-xs" data-testid="pkg-insurance-split-hint">
+              {insuranceSplitBothEntered ? (
+                insuranceSplitValid ? (
+                  <span className="text-indigo-700">
+                    펜차트 표시: <span className="font-semibold tabular-nums">{formatInsuranceSplit(coveredSessions, noncoveredSessions, totalSessions)}</span>
+                  </span>
+                ) : (
+                  <span className="font-medium text-red-600">
+                    급여({coveredSessions})+비급여({noncoveredSessions}) = {(coveredSessions ?? 0) + (noncoveredSessions ?? 0)}회 ≠ 총 {totalSessions}회 — 합을 맞춰야 저장됩니다.
+                  </span>
+                )
+              ) : (
+                <span className="text-gray-400">미입력 시 급여/비급여 구분 없이 저장됩니다(펜차트 회차 분해 표시 생략).</span>
+              )}
+            </div>
+          </div>
+
           {/* 메모 */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-500">메모</label>
@@ -11381,14 +11458,14 @@ function PackagePurchaseFromTemplateDialog({
             취소
           </button>
           <button
-            disabled={submitting || totalSessions === 0}
+            disabled={submitting || totalSessions === 0 || !insuranceSplitValid}
             onClick={submitWithTemplate}
             className="h-8 rounded border border-sage-300 bg-sage-50 px-3 text-xs font-medium text-sage-700 hover:bg-sage-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
           </button>
           <button
-            disabled={submitting || totalSessions === 0}
+            disabled={submitting || totalSessions === 0 || !insuranceSplitValid}
             onClick={submit}
             className="h-8 rounded bg-neutral-800 px-3 text-xs font-medium text-white hover:bg-neutral-900 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
