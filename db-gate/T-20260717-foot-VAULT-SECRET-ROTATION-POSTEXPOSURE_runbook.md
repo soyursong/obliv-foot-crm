@@ -97,3 +97,20 @@
 - ⚠️ plaintext 를 채널에 싣지 말 것(재노출). hash-only 비교로 충분.
 
 **본 task 산출 회신 요지:** foot rotation runbook 준비 완료(§1~4, 미집행) + cross-fork = INCONCLUSIVE → hash-대조 leg 필요. solapi leg 별도(사람 window).
+
+---
+
+## 6. Cross-fork hash-대조 결과 (body leg — 2026-08-10 해소)
+
+dev-body FOLLOWUP(MSG-20260810-080647-wsf3, body ticket `T-20260720-body-VAULT-SECRET-ROTATION-POSTEXPOSURE`)로 §5 확인 leg 실행. **hash-only 교환**(plaintext 미교환, 도메인 격리 유지).
+
+| fork | digest (sha256 hex) | 비고 |
+|------|---------------------|------|
+| foot | `bec0aa00595651a51aff3002cca82665d14e54dd311ace171a695d1641eaa728` | in-DB `encode(digest(decrypted_secret,'sha256'),'hex')` · octet_length=64 · 후행 공백/개행 없음 · digest_raw==digest_trimmed |
+| body | `622078d418c65e613ecc0e12b7934f852ef9e96c62c7bb7d2afb552507426362` | body 회신값 |
+
+- **방법 등가성:** foot in-DB `digest()` = body `printf '%s' '<value>' | shasum -a 256`(개행 미포함)와 byte-equivalent. 후행 공백 없음(digest_raw==digest_trimmed) 확인 → 대조 유효.
+- **판정: MISMATCH → foot ≠ body 값. foot 은 body 노출과 독립.** body compromise 는 foot 로 전파되지 않음 → body rotation 격리 완결(foot 무영향). foot 은 body-공유 compromised 대상 아님.
+- **foot 자체 rotation 은 별 track:** foot-고유 노출창(anon exfil, 2026-07-17 봉합)에 의한 presumed-compromised 는 §0~4 그대로 유효(PREP-ONLY 미집행). body 값 공유 아님 → 신값은 §2 A안대로 fork별 독립 생성.
+- 회신: `mq send --to dev-body` MSG-20260810-085832-davr. 본 대조 = read-only hash 산출, **foot prod vault mutation 0건**.
+- **잔여 fork(scalp/women):** 동일 hash-대조 leg 미실행(별도 planner 스핀 시 foot digest 상단 표값 재사용).
