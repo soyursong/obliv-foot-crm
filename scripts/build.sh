@@ -181,14 +181,36 @@ report_detached() {
       echo "RESULT: OK"
       return 0
     fi
+    # no-silent-failure (AC-2): an ERROR verdict means the detached RUNNER
+    # itself failed to run the build (setsid/spawn/launch fault) — NOT that the
+    # build produced compile errors. Surface it explicitly; never let a runner
+    # fault read as a build FAIL or (worse) fall through to NONE.
+    if [ "${r#ERROR}" != "$r" ]; then
+      echo "RESULT: ERROR ($r)" >&2
+      echo "---- last 30 lines of $LOG_FILE ----" >&2
+      tail -30 "$LOG_FILE" >&2 2>/dev/null || true
+      return 4
+    fi
     echo "RESULT: FAIL ($r)" >&2
     echo "---- last 30 lines of $LOG_FILE ----" >&2
-    tail -30 "$LOG_FILE" 2>/dev/null >&2 || true
+    tail -30 "$LOG_FILE" >&2 2>/dev/null || true
     return "${r#FAIL:}"
   fi
   if build_running; then
     echo "RESULT: RUNNING (detached pid $(cat "$PID_FILE")) — re-run: bash scripts/build.sh --status"
     return 0
+  fi
+  # no-silent-failure (AC-2): no result file and no live build. If this
+  # invocation just tried to launch a detached runner and left a non-empty
+  # launch log with NO pid file, the detached launch itself failed (e.g. the
+  # historical `nohup: can't detach from console` ENOTTY). That is an ERROR, not
+  # an absent build — emit RESULT: ERROR with the launch stderr so a healthy
+  # build can never be misreported as RESULT: NONE.
+  if [ -n "${LAUNCH_LOG:-}" ] && [ -s "$LAUNCH_LOG" ] && [ ! -f "$PID_FILE" ]; then
+    echo "RESULT: ERROR (detached build runner failed to launch — see $LAUNCH_LOG)" >&2
+    echo "---- launch stderr ----" >&2
+    tail -30 "$LAUNCH_LOG" >&2 2>/dev/null || true
+    return 4
   fi
   echo "RESULT: NONE (no detached build found — run: bash scripts/build.sh --bg)" >&2
   return 3
@@ -230,10 +252,22 @@ if [ "$MODE" = "bg" ]; then
     mkdir -p "$STATE_DIR"
     rm -f "$RESULT_FILE" "$PID_FILE"
     : > "$LOG_FILE"
-    # Launch fully detached: _build_runner.py calls os.setsid() so it leaves
-    # build.sh's process group and survives the supervisor's foreground kill.
-    nohup python3 "$SCRIPT_DIR/_build_runner.py" \
-      "$TIMEOUT_SECS" "$LOG_FILE" "$RESULT_FILE" "$PID_FILE" >/dev/null 2>&1 &
+    LAUNCH_LOG="$STATE_DIR/build.launch.log"
+    : > "$LAUNCH_LOG"
+    # Launch fully detached. _build_runner.py calls os.setsid() ITSELF, so it
+    # already leaves build.sh's process group and survives the supervisor's
+    # foreground kill — an outer `nohup` is redundant. Worse, on macstudio's
+    # non-controlling-terminal (setsid'd agent) QA session BSD `nohup` aborts
+    # with "can't detach from console: Inappropriate ioctl for device" (ENOTTY,
+    # rc 127); the old `>/dev/null 2>&1` swallowed it, so the runner never
+    # started and poll_detached reported a FALSE `RESULT: NONE` for a healthy
+    # ~6s build — fleet-wide QA verdict corruption
+    # (T-20260809-meta-QABUILD-SETSID-NOHUP-DETACH-FALSENONE).
+    # Fix: drop nohup (setsid detaches on its own) and capture the runner's own
+    # stdout/stderr to LAUNCH_LOG — NOT /dev/null — so any real launch fault is
+    # surfaced (RESULT: ERROR) instead of silently hidden.
+    python3 "$SCRIPT_DIR/_build_runner.py" \
+      "$TIMEOUT_SECS" "$LOG_FILE" "$RESULT_FILE" "$PID_FILE" >>"$LAUNCH_LOG" 2>&1 &
     disown 2>/dev/null || true
     echo "[build.sh] started detached build (timeout ${TIMEOUT_SECS}s, foreground deadline ${DEADLINE}s)"
   fi
