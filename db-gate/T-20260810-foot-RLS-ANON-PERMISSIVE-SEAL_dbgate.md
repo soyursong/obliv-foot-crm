@@ -2,7 +2,8 @@
 
 - **레포**: obliv-foot-crm (foot / clinics=2 LIVE) · **prod ref**: rxlomoozakkjesdqjtvd
 - **db_change**: true · **change-class**: ADDITIVE (CREATE POLICY x2, permissive DROP 0, 데이터 mutation 0)
-- **작성**: dev-foot / 2026-08-10 · **status**: GO-token 대기 (apply_before_go 금지, C20)
+- **작성**: dev-foot / 2026-08-10 · **status**: APPLIED + RATIFIED (재서명 GO-token 정본 하)
+- **apply evidence**: `applied_at`=2026-08-10 08:33 KST · `ratified_at`=08:40 KST · `go_token_path`=`db-gate/T-20260810-foot-RLS-ANON-PERMISSIVE-SEAL_GO.token.{json,sig}` (재서명 정본, nonce `b97e62291f386919`) · `go_issued_at`=`2026-08-09T23:35:08.527Z` · `apply_ts`=`2026-08-09T23:33Z` · `sql_sha256`=`8f1f037599fd90b3efe0e55c7d1f249d32d33b26e760bb21858ae30d8fed51a5` · 상세=`_apply_evidence.md` §7. ⚠ 프리매처 토큰(nonce `7602dac7`) provenance 하자 → 재서명 supersede.
 - **배경**: umbrella FORKINHERIT-SWEEP Stage-3 fan-out(anon 서브셋). DA INFO(tkv8): anon-도달 노출 = 미인증 누수 → 즉시 봉쇄.
 
 ## 0. 게이트 순서 (db_change=true — 하드)
