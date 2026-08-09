@@ -59,7 +59,7 @@ function fmtDx(row: { name: string; service_code: string | null }): string {
 //   패턴 불일치 → 코드 공란 + 이름 단독 폴백(오탐 차단 — 한글명은 절대 [A-Z][0-9]로 시작 안 함).
 // T-20260613-foot-MEDCHART-DIAG-RX-TABLEVIEW-REFINE AC-2: 진단명을 헤더없는 테이블뷰
 //   [주/부 | 코드 | 상병명] 3컬럼으로 표시 → 코드/이름을 별도 컬럼에 두기 위해 분리값으로 반환.
-function splitDxLabel(label: string): { code: string; name: string } {
+export function splitDxLabel(label: string): { code: string; name: string } {
   const m = label.match(/^([A-Za-z][0-9][0-9A-Za-z.]*)\s+(.+)$/);
   if (m) return { code: m[1], name: m[2] };
   return { code: '', name: label };
@@ -103,6 +103,39 @@ export function makeDxPrimary(entries: string[], idx: number): string[] {
 // 순서 기반 주/부 판정. index 0 = 주상병.
 export function isDxPrimary(idx: number): boolean {
   return idx === 0;
+}
+
+// ── T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT (AC-0 chart_diagnoses 모델 · AC-2 강제) ──
+//   진료차트 상병 저장구조 = 신규 연결테이블 chart_diagnoses(chart_id + service_id + type + code/name 스냅샷 + seq).
+//   diagnosis(text) 는 하위호환·UI 정본으로 보존하고, 저장 시 이 구조화 미러를 파생·동기화한다.
+//   줄 순서가 주/부 순서(index 0 = 주상병)라는 picker 불변식을 그대로 계승 → 중복 구현 없음.
+export interface DerivedChartDiagnosis {
+  diagnosis_code: string | null; // service_code 스냅샷(없으면 null=graceful)
+  diagnosis_name: string;        // 명칭 스냅샷
+  diagnosis_type: 'primary' | 'secondary';
+  seq: number;                   // 정렬(주상병=0). 출력·청구 주/부 순서.
+}
+
+// diagnosis(text) → 구조화 상병 행 배열. 각 줄을 code/name 으로 분해, index 0 = 주상병.
+export function deriveChartDiagnoses(value: string): DerivedChartDiagnosis[] {
+  return parseDxEntries(value).map((label, idx) => {
+    const { code, name } = splitDxLabel(label);
+    return {
+      diagnosis_code: code.trim() ? code.trim() : null,
+      diagnosis_name: name.trim() || label.trim(),
+      diagnosis_type: idx === 0 ? 'primary' : 'secondary',
+      seq: idx,
+    };
+  });
+}
+
+// AC-2 (A안, 문지은 대표원장 2026-08-08): 상병이 1건 이상이면 주상병(primary) 최소 1건 필수.
+//   미충족 시 저장 차단 대상. 상병 0건은 요건 없음(진단명 optional).
+//   (order-model 상 index0=primary 로 구조적 보장 → 정상 동선은 통과. 구조화 파생 결과에 대한
+//    최종 방어 불변식 — 향후 파생 규칙 변경/일괄적용 버그로 주상병 누락 시 저장을 막는다.)
+export function chartDiagnosesHasPrimary(value: string): boolean {
+  const rows = deriveChartDiagnoses(value);
+  return rows.length === 0 || rows.some((r) => r.diagnosis_type === 'primary');
 }
 
 function useDxMaster(clinicId: string | null) {

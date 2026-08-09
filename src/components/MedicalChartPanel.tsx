@@ -91,7 +91,11 @@ import RxCountInput from '@/components/admin/RxCountInput';
 //   단일 토큰 경로(SSOT)로 수렴 — 진료차트 처방내역/미리보기 raw text 제거.
 import { formatRxItemToken } from '@/lib/rxTooltip';
 // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2/AC-3): 상병명 폴더 탐색 선택기(자동완성 폐지)
-import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
+// T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT: chart_diagnoses 구조화 파생/주상병 강제 헬퍼 재사용(중복 구현 금지).
+import DiagnosisFolderPicker, {
+  deriveChartDiagnoses,
+  chartDiagnosesHasPrimary,
+} from '@/components/medical/DiagnosisFolderPicker';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
 import type { SuperPhrase } from '@/components/admin/SuperPhrasesTab';
 // T-20260603-foot-CHART-DRAFT-SAVE: 진료차트 localStorage 경량 임시저장(작성 중 내용 유지).
@@ -1555,6 +1559,14 @@ export default function MedicalChartPanel({
       toast.error('선택한 진료의 정보를 찾을 수 없습니다 — 다시 선택해주세요');
       return;
     }
+    // T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT AC-2 (A안, 문지은 대표원장 2026-08-08, 시나리오 4):
+    //   상병이 1건 이상이면 주상병(primary) 최소 1건 필수 — 미지정 시 저장 차단(보험청구 주/부상병 정합).
+    //   picker order-model 상 index0=주상병 구조 보장이나, 구조화 chart_diagnoses 파생 결과에 대한
+    //   최종 방어선(주상병 누락 set 을 절대 저장하지 않음).
+    if (!chartDiagnosesHasPrimary(formDx)) {
+      toast.error('주상병을 지정해 주세요');
+      return;
+    }
     // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 정식 저장 성공 시 clear 할 draft key 를 저장 전 캡처.
     //   (신규 INSERT 시 selectedChartId 가 바뀌어 key 가 달라지므로 저장 직전 값 보존.)
     const preSaveDraftKey = draftKeyStr;
@@ -1634,6 +1646,52 @@ export default function MedicalChartPanel({
           changed_by: currentUserEmail,
           changed_by_name: currentUserName,
         });
+      }
+
+      // T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT (AC-0/AC-1/AC-2): 구조화 상병 미러 동기화.
+      //   medical_charts.diagnosis(text) 는 하위호환·UI 정본으로 보존하고, 별도 연결테이블
+      //   chart_diagnoses(주/부·코드/명칭 스냅샷·정렬·service_id FK)에 파생 행을 동기화한다
+      //   → 보험청구 주/부상병 정합·출력 구조화 소스. 저장 시 delete-then-insert(멱등, chart_doctor_memos 톤).
+      //   ⚠ deploy-tolerant: chart_diagnoses 테이블 미적용(42P01) 환경에서도 진료차트 저장은 성공해야 한다
+      //     (마이그 게이트 전 FE 선배포 방어막). 실패는 삼켜 차트 저장 성공을 깨지 않는다(text 정본은 이미 저장됨).
+      if (chartId) {
+        try {
+          const derived = deriveChartDiagnoses(formDx);
+          // service_id 매칭: 상병 마스터(services category_label='상병', clinic 스코프)에서 code/name 역조회(graceful null).
+          const dxMasterById = new Map<string, string>(); // 'code'|'name#name' → service_id
+          if (derived.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: dxMaster } = await (supabase as any)
+              .from('services')
+              .select('id, name, service_code')
+              .eq('clinic_id', clinicId)
+              .eq('category_label', '상병');
+            for (const s of (dxMaster ?? []) as { id: string; name: string; service_code: string | null }[]) {
+              if (s.service_code) dxMasterById.set(`code#${s.service_code}`, s.id);
+              if (s.name) dxMasterById.set(`name#${s.name}`, s.id);
+            }
+          }
+          // 기존 행 제거(멱등) 후 재삽입.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any).from('chart_diagnoses').delete().eq('chart_id', chartId);
+          if (derived.length > 0) {
+            const rows = derived.map((d) => ({
+              chart_id: chartId,
+              service_id:
+                (d.diagnosis_code ? dxMasterById.get(`code#${d.diagnosis_code}`) : undefined) ??
+                dxMasterById.get(`name#${d.diagnosis_name}`) ??
+                null,
+              diagnosis_type: d.diagnosis_type,
+              diagnosis_code: d.diagnosis_code,
+              diagnosis_name: d.diagnosis_name,
+              seq: d.seq,
+            }));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any).from('chart_diagnoses').insert(rows);
+          }
+        } catch {
+          /* chart_diagnoses 미적용/일시오류 — text 정본은 저장됨. 구조화 미러는 다음 저장 시 재동기화(무회귀). */
+        }
       }
 
       // director면 doctor_memo upsert (chart_doctor_memos)

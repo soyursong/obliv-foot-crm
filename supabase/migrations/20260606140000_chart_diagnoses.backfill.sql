@@ -7,6 +7,16 @@
 --   코드 추출 실패     → code=null,    name=원본 텍스트
 --   기존 단일 diagnosis → diagnosis_type='primary', seq=0 (1차 backfill)
 -- 정규식: ^[A-Z][0-9]{2,3}(\.[0-9])?\s+(.+)$
+--
+-- ── HARD-3 파생-backfill 마이크로 규율 (da_consult_ref Q4 · parseIcdFromText=machine-derived inference) ──
+--   full Data-Correction Backfill SOP 불요(신규 빈 테이블 INSERT-only·소스 medical_charts.diagnosis 무변경·
+--   완전 reversible=TRUNCATE/DROP). 단 파생추론이므로 4항 준수:
+--   (a) fail-open-to-text  = CONFIRM: 미파싱 시 name=btrim(원문 raw) 폴백(STEP2 coalesce), 유실 0.
+--   (b) no-fabrication     = CONFIRM: 파싱 실패 시 diagnosis_code=NULL(추정/default/합성 금지). §3-2 무저촉.
+--   (c) idempotency        = CONFIRM: WHERE NOT EXISTS(chart_diagnoses.chart_id) 가드로 재실행 안전 +
+--                            chart당 primary 1행만 생성 → HARD-2(uq_chart_diagnoses_one_primary)와 결속(중복 primary 불가).
+--   (d) parse-accuracy 검수 = STEP1 (1-b) sample20 은 count 뿐 아니라 raw→parsed_code/parsed_name 병치로
+--                            **파싱 정확도를 사람이 육안 검수**한 뒤에만 STEP2 실행(보험청구 직결).
 
 -- ============================================================
 -- STEP 1) DRY-RUN — 영향 건수 + 파싱 샘플 확인 (실제 변경 없음)

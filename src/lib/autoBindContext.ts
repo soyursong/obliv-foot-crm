@@ -638,25 +638,47 @@ export async function loadAutoBindContext(
       .limit(1)
       .maybeSingle();
     if (chartRow?.diagnosis) {
-      const parsed = parseIcdFromText(chartRow.diagnosis);
-      // T-20260606-foot-DX-MGMT-OVERHAUL Stage 4 [D]: 출력에 상병코드 동반 표시.
-      //   폴더 picker(DiagnosisFolderPicker)는 저장값을 "순수 상병명"만 기록(텍스트 오염 방지)
-      //   → parseIcdFromText 는 코드를 못 뽑음(code='') → 출력에 코드 누락. 이를 보강:
-      //   상병명으로 services(category_label='상병') 마스터를 역조회해 service_code 를 채운다.
-      //   (clinic 스코프·등록 상병만 — 타 환자 차트 이력 비참조, 보안 불변식 유지.)
-      let code1 = parsed.code;
-      if (!code1 && parsed.name) {
-        const { data: dxMaster } = await supabase
-          .from('services')
-          .select('service_code')
-          .eq('clinic_id', checkIn.clinic_id)
-          .eq('category_label', '상병')
-          .eq('name', parsed.name)
-          .limit(1)
-          .maybeSingle();
-        if (dxMaster?.service_code) code1 = dxMaster.service_code;
+      // T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT AC-3 [D] (다중 상병 출력코드):
+      //   기존엔 diagnosis 텍스트의 첫 줄(단일)만 parse → code1/name1 만 채워 다중 상병이 출력에 누락됐다.
+      //   picker(DiagnosisFolderPicker)는 다중 상병을 줄바꿈('\n')으로 직렬화하고 줄 순서가 주/부 순서
+      //   (index 0 = 주상병)다 → 각 줄을 순서대로 parse 해 diag_code_1..4/name_1..4 를 채운다(최대 4건).
+      //   T-20260606-foot-DX-MGMT-OVERHAUL Stage 4 [D] 보강 유지: 코드 미동반(순수 상병명) 줄은
+      //   상병명으로 services(category_label='상병', clinic 스코프·등록 상병만) 마스터를 역조회해 코드 보강.
+      //   (타 환자 차트 이력 비참조 — 보안 불변식 유지.)
+      const dxLines = String(chartRow.diagnosis)
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .slice(0, 4); // diag_code_1..4 슬롯 상한
+      const resolved: { code: string; name: string }[] = [];
+      for (const line of dxLines) {
+        const parsed = parseIcdFromText(line);
+        let code = parsed.code;
+        if (!code && parsed.name) {
+          const { data: dxMaster } = await supabase
+            .from('services')
+            .select('service_code')
+            .eq('clinic_id', checkIn.clinic_id)
+            .eq('category_label', '상병')
+            .eq('name', parsed.name)
+            .limit(1)
+            .maybeSingle();
+          if (dxMaster?.service_code) code = dxMaster.service_code;
+        }
+        resolved.push({ code, name: parsed.name });
       }
-      diagCodes = { code1, name1: parsed.name };
+      if (resolved.length > 0) {
+        diagCodes = {
+          code1: resolved[0]?.code ?? '',
+          name1: resolved[0]?.name ?? '',
+          code2: resolved[1]?.code ?? '',
+          name2: resolved[1]?.name ?? '',
+          code3: resolved[2]?.code ?? '',
+          name3: resolved[2]?.name ?? '',
+          code4: resolved[3]?.code ?? '',
+          name4: resolved[3]?.name ?? '',
+        };
+      }
     }
   }
 
