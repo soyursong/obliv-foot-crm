@@ -1,0 +1,17 @@
+{
+  "_note": "APPLY-USED GO-TOKEN 보존 스냅샷 (audit hygiene). supervisor 사후검증 FYI(MSG-20260810-084204-tyke §NON-BLOCKING) 반영: 디스크상 _GO.token.json 은 08:35 재서명(ratify) 토큰(nonce b97e62291f386919)으로 overwrite 되었으므로, 08:33 물리 apply 에 실제 사용된 프리매처 토큰 레코드를 별 파일로 보존한다. 서명 원본 blob(.sig) 은 overwrite 로 유실됐으나, 아래 필드는 durable append-only 로그(db-gate/_apply_evidence/runner_apply.log.jsonl) 와 apply_evidence.md §0/§7 에서 추출한 authoritative 레코드다.",
+  "ticket_id": "T-20260810-foot-RLS-ANON-PERMISSIVE-SEAL",
+  "role": "apply-used (premature / pre-supervisor-verification)",
+  "status": "SUPERSEDED_BY_RATIFY — 08:35 재서명 supervisor 토큰이 정본(nonce b97e62291f386919). 본 토큰 하 apply(08:33)는 재서명 토큰으로 ratify 완료(apply_evidence §7).",
+  "nonce": "7602dac7c54105b6",
+  "key_id": "supv-dbgate-2026a",
+  "issued_at": "2026-08-09T23:26:21.336Z",
+  "expires_at": "2026-08-10T00:11:21.336Z",
+  "gate": "db-gate",
+  "target_ref": "rxlomoozakkjesdqjtvd",
+  "lane": "prod",
+  "sql_sha256": "8f1f037599fd90b3efe0e55c7d1f249d32d33b26e760bb21858ae30d8fed51a5",
+  "applied_at": "2026-08-10T23:33Z-equiv (08:33 KST)",
+  "authoritative_source": "db-gate/_apply_evidence/runner_apply.log.jsonl (guard=assertApplyGateForRunner, gated=true, go_issued_at=2026-08-09T23:26:21.336Z, sql_sha256 일치)",
+  "ratifying_token": "db-gate/T-20260810-foot-RLS-ANON-PERMISSIVE-SEAL_GO.token.json (nonce b97e62291f386919, issued 2026-08-09T23:35:08.527Z, supervisor 독립검증 PASS)"
+}
