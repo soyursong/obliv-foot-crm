@@ -1,8 +1,9 @@
 -- ROLLBACK: T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT
--- consent_forms.form_type CHECK 를 확장 이전(4값)으로 되돌림.
--- 주의(forward-only): 이미 form_type='unique_id' 행이 존재하면 4값 CHECK ADD 가 실패함(정상).
+-- consent_forms.form_type CHECK 를 확장 이전 = prod 실재 5값(nhis_lookup 포함)으로 되돌림.
+--   ※ prod-real base = ('refund','non_covered','treatment','privacy','nhis_lookup') — 4값 복원 금지(nhis_lookup 유실).
+-- 주의(forward-only): 이미 form_type='unique_id' 행이 존재하면 5값 CHECK ADD 가 실패함(정상).
 --   그 경우 롤백 전 해당 행 정리/보존 판단 선행 필요(파괴 금지).
--- 2026-08-09 dev-foot
+-- 2026-08-09 dev-foot (FIX: 4값 복원 → prod-real 5값 복원, nhis_lookup 유실 회귀 제거)
 
 DO $$
 DECLARE
@@ -23,5 +24,5 @@ BEGIN
 
   ALTER TABLE public.consent_forms
     ADD CONSTRAINT consent_forms_form_type_check
-    CHECK (form_type IN ('refund','non_covered','treatment','privacy'));
+    CHECK (form_type IN ('refund','non_covered','treatment','privacy','nhis_lookup'));
 END $$;
