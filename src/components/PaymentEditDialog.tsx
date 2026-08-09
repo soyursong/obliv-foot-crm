@@ -505,6 +505,12 @@ export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsP
     delete: 'text-red-700',
   };
 
+  // T-20260730-foot-SUSU-PAYMETHOD-CHANGE: 결제수단 코드 → 한글 라벨(감사 이력 델타 표기용)
+  const METHOD_KO_AUDIT: Record<string, string> = {
+    card: '카드', cash: '현금', transfer: '이체', membership: '패키지',
+  };
+  const methodLabel = (v: unknown) => METHOD_KO_AUDIT[String(v ?? '')] ?? String(v ?? '');
+
   if (!loaded) {
     return (
       <button
@@ -551,7 +557,15 @@ export function PaymentAuditLogsPanel({ paymentId, autoLoad }: PaymentAuditLogsP
             </div>
             {log.action === 'edit' && log.before_data && log.after_data && (
               <div className="text-muted-foreground">
-                금액: {String(log.before_data.amount ?? '')}→{String(log.after_data.amount ?? '')}
+                {/* 금액 변경(있을 때만) — 결제수단만 바뀐 이력에는 빈 '금액: →' 미표시 */}
+                {(log.before_data.amount != null || log.after_data.amount != null) && (
+                  <div>금액: {String(log.before_data.amount ?? '')}→{String(log.after_data.amount ?? '')}</div>
+                )}
+                {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE: 결제수단 델타(before≠after 일 때만) */}
+                {log.before_data.method != null && log.after_data.method != null
+                  && log.before_data.method !== log.after_data.method && (
+                  <div>결제수단: {methodLabel(log.before_data.method)}→{methodLabel(log.after_data.method)}</div>
+                )}
               </div>
             )}
             {log.reason && (

@@ -1,0 +1,70 @@
+{
+  "ticket": "T-20260730-foot-PAYEDIT-METHOD-TO-CARD-DUALPATH",
+  "vg": {
+    "VG7_payments_cols": {
+      "status": true,
+      "method": true,
+      "payment_type": true,
+      "external_trxid": true,
+      "external_approval_no": true,
+      "external_tid": true,
+      "external_status": true,
+      "accounting_date": true,
+      "reconciled_at": true,
+      "card_no_masked": true,
+      "payment_attempt_id": true,
+      "merchant_no": true,
+      "linked_payment_id": true,
+      "card_issuer": false,
+      "card_company": false,
+      "installment": true,
+      "deleted_at": true
+    },
+    "VG7_daily_closings_cols": {
+      "status": true,
+      "close_date": true,
+      "revision": true,
+      "clinic_id": true
+    },
+    "VG7_payments_status_dist": {
+      "active": 735,
+      "cancelled": 3,
+      "deleted": 7,
+      "voided": 0
+    },
+    "VG7_daily_closings_status_dist": {
+      "open": 7,
+      "closed": 13,
+      "confirmed": 0,
+      "draft": 0
+    },
+    "VG1_candidate_universe": {
+      "cash_payments_active": 22,
+      "transfer_payments_active": 16,
+      "card_payments_active": 622
+    },
+    "VG1_refund_pattern": {
+      "refund_rows_total": 76,
+      "refund_rows_cash": 1,
+      "refund_rows_card": 69,
+      "refund_with_link": 70
+    },
+    "VG2_van_cohort": {
+      "approved_total": 739,
+      "approved_matched": 443,
+      "approved_unmatched": 296
+    },
+    "VG5_closed_date_count": 13,
+    "VG5_closed_date_range": {
+      "min": "2026-04-20",
+      "max": "2026-08-07"
+    },
+    "VG5_closed_crossing": {
+      "candidate_cash_transfer_active": 38,
+      "in_closed_period": 29,
+      "open_or_uncommitted_period": 9,
+      "null_accounting_date": 0,
+      "note": "in_closed_period = method-edit 시 restatement 위험(마감취소 선행 or 박민지 comp-gate 필요 규모 상한). same-day mis-entry(당일 편집)은 monthly-neutral 이라 이 상한보다 실제 comp-gate 대상은 더 적음."
+    }
+  }
+}

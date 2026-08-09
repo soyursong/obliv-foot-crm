@@ -65,6 +65,12 @@ interface Props {
   payment: CbandTerminalCancelPayment;
   clinicId: string;
   customerId: string | null;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4) — 패키지 CAT 결제 취소면 packageId 전달.
+   *   비-null → 재취소 가드는 package_payments 를 조회하고, 취소 refund 행도 package_payments 에 착지한다
+   *   (payments 아님 · DA(b) firewall). 미전달(카드 탭)=payments 경로 회귀 0.
+   */
+  packageId?: string | null;
   /** 취소 성공 후 상위 목록 갱신. */
   onDone: () => void;
 }
@@ -87,7 +93,7 @@ export function isPlanACardPayment(p: CbandTerminalCancelPayment): boolean {
   return !!p.payment_attempt_id && !!(p.external_approval_no && p.external_approval_no.trim());
 }
 
-export default function CbandTerminalCancelButton({ payment, clinicId, customerId, onDone }: Props) {
+export default function CbandTerminalCancelButton({ payment, clinicId, customerId, packageId, onDone }: Props) {
   const [open, setOpen] = useState(false);
   const [ui, setUi] = useState<UiState>('confirm');
   const [result, setResult] = useState<PaymentFlowResult | null>(null);
@@ -130,14 +136,25 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
     setResult(null);
     try {
       // ── AC-5: 재취소 가드(멱등). 원거래 AUTHNO 로 링크된 refund 행이 이미 있으면 전문 미전송. ──
+      //   ★PKG-PAY-EXPAND(AC-4): 패키지 CAT(packageId 비-null)은 package_payments(package_id 스코프)에서,
+      //     카드 탭은 payments(clinic_id 스코프)에서 조회. refund 착지 테이블과 가드 조회 테이블이 정합(양쪽 동일).
       const authNo = (payment.external_approval_no ?? '').trim();
-      const { data: existingRefunds, error: guardErr } = await supabase
-        .from('payments')
-        .select('id')
-        .eq('clinic_id', clinicId)
-        .eq('payment_type', 'refund')
-        .eq('external_approval_no', authNo)
-        .limit(1);
+      const guardQuery = packageId
+        ? supabase
+            .from('package_payments')
+            .select('id')
+            .eq('package_id', packageId)
+            .eq('payment_type', 'refund')
+            .eq('external_approval_no', authNo)
+            .limit(1)
+        : supabase
+            .from('payments')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .eq('payment_type', 'refund')
+            .eq('external_approval_no', authNo)
+            .limit(1);
+      const { data: existingRefunds, error: guardErr } = await guardQuery;
       if (guardErr) {
         // 가드 조회 실패 = 안전측 정지(중복취소 위험 배제 못하면 진행하지 않음).
         setUi('failed');
@@ -167,6 +184,8 @@ export default function CbandTerminalCancelButton({ payment, clinicId, customerI
           clinicId,
           customerId,
           checkInId: payment.check_in_id ?? null,
+          // ★PKG-PAY-EXPAND(AC-4): 비-null → 취소 refund 행이 package_payments 로 착지(paid_amount 재계산 반영). 카드 탭=payments.
+          packageId: packageId ?? null,
           originalAuthNo: authNo,
           originalAuthDate: toYYMMDD(payment.accounting_date ?? payment.created_at) ?? undefined,
           // ★취소 HALBU = 원거래 동일값(실측 MSG-iyn7). "00" 고정/재시도 금지 — 원거래 installment 그대로 전달.

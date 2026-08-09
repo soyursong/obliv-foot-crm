@@ -1,0 +1,13 @@
+{
+  "gate": "DB-GATE-GO",
+  "issued_by": "supervisor",
+  "ticket_id": "T-20260808-foot-VISITTYPE-DEFAULT-SETNEW-REMEDIATE",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "migration_sha256": "02517b81ff0d48a00521c8e68f79c785f56fb1ff1b72725ca464ecd355dd69ae",
+  "migration_version": "20260809120000",
+  "migration_name": "foot_reservations_visittype_default_setnew",
+  "issued_at": "2026-08-08T23:33:12.972Z",
+  "expires_at": "2026-08-09T01:33:12.972Z",
+  "key_id": "supv-dbgate-2026a",
+  "nonce": "8fe2a749f2a28f0a84327da7"
+}

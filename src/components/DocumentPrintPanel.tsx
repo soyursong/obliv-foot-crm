@@ -115,6 +115,12 @@ import {
   applyNightHolidaySurcharge,
   resolveSurchargeRefDate,
   toLocalDateStr,
+  // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 C 가산 배선): 재발급 영수증(bill_receipt)에도 A/B/D 와 동일
+  //   SSOT 로 야간·공휴일 가산 산출·folding.
+  detectSurchargeKind,
+  computeSurcharge,
+  surchargeMark,
+  SURCHARGE_KIND_LABEL,
 } from '@/lib/nightHolidaySurcharge';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
 import { ensureChartSavedBeforePublish } from '@/lib/unsavedGuard';
@@ -137,6 +143,8 @@ import {
   buildFootBillDetailItems,
   fillBillItemCopayment,
   computeBillDetailRounding,
+  // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED: 고시 제19조(끝수계산) 단일 SSOT — 4경로 공통.
+  applyArticle19Rounding,
   // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST NO-GO §수정1/§수정3): bill_receipt_new ⑧/⑩
   //   환자부담총액(=환자 실수납액, 수납 aggregate grain) 절사 SSOT — 외래 본인부담 급여 component 만 floor100,
   //   비급여 무절사(별표2 제19조제1항 다만조항). PMW(수납창)와 동일 SSOT 로 same-receipt cross-render 정합.
@@ -1114,17 +1122,49 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           bindValues.insurance_covered = formatAmount(fb.liveBillingValues.insuranceCovered);
           bindValues.copayment = formatAmount(fb.liveBillingValues.copayment);
           bindValues.non_covered = formatAmount(fb.liveBillingValues.nonCovered);
-          // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 영수증 '합계' = 본인부담금 + 비급여(공단 제외).
-          //   공단부담(insurance_covered) 표시는 위에서 그대로 유지 — 합계 산식에서만 공단 제외.
-          bindValues.receipt_total = formatAmount(
-            fb.liveBillingValues.copayment + fb.liveBillingValues.nonCovered,
-          );
           // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 재발급 영수증도 항목별 그리드(공단/본인/비급여).
           //   세부산정내역과 동일 SSOT(buildFootBillDetailItems)로 항목별 집계 → 소계와 구조적 정합.
           const receiptBillItems = buildFootBillDetailItems(fb.pricingItems, autoValues.visit_date ?? '', {
             insuranceGrade: fbGrade,
             copaymentTotal: fb.copaymentTotal,
           });
+          // ── T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 C 야간·공휴일 가산 배선, AC-3) ──
+          //   핸드오프 §3: 경로 C(영수증 재발급)는 가산이 통째 누락돼 A/B/D 와 금액이 어긋난다. A/B/D 와 동일
+          //   SSOT(computeSurcharge, 진찰료 급여 30% — 균검사 등 제외)로 가산을 aggregate(본인/공단/총액)에 fold 하고,
+          //   항목별 그리드에 가산 진찰료 급여 행을 append 해 Σ(행)=합계 정합을 유지한다. 절사(제19조)는 아래 1회 SSOT.
+          const reissueRefDate = resolveSurchargeRefDate(checkIn.checked_in_at, new Date());
+          const reissueScKind = detectSurchargeKind(
+            reissueRefDate,
+            batchHolidayDateSet.has(toLocalDateStr(reissueRefDate)),
+          );
+          const reissueScBase = computeConsultationSurchargeBase(fbItems, fbGrade);
+          const reissueSc = computeSurcharge(reissueScBase.covered, reissueScBase.copay, reissueScKind);
+          if (reissueSc.amount > 0) {
+            bindValues.copayment = formatAmount(parseAmountStr(bindValues.copayment) + reissueSc.copay);
+            bindValues.insurance_covered = formatAmount(parseAmountStr(bindValues.insurance_covered) + reissueSc.covered);
+            bindValues.total_amount = formatAmount(parseAmountStr(bindValues.total_amount) + reissueSc.amount);
+            bindValues.subtotal_amount = formatAmount(parseAmountStr(bindValues.subtotal_amount) + reissueSc.amount);
+            bindValues.night_mark = surchargeMark(reissueScKind, 'night');
+            bindValues.holiday_mark = surchargeMark(reissueScKind, 'holiday');
+            bindValues.surcharge_kind_label = reissueScKind ? SURCHARGE_KIND_LABEL[reissueScKind] : '';
+            bindValues.surcharge_amount = formatAmount(reissueSc.amount);
+            receiptBillItems.push({
+              category: '진찰료',
+              date: autoValues.visit_date ?? '',
+              code: '',
+              name: reissueScKind ? `${SURCHARGE_KIND_LABEL[reissueScKind]} 가산` : '가산',
+              amount: reissueSc.amount,
+              count: 1,
+              days: 1,
+              is_insurance_covered: true,
+              copayment_amount: reissueSc.copay,
+            });
+          }
+          // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 영수증 '합계' = 본인부담금 + 비급여(공단 제외).
+          //   가산 fold 반영 raw 값. ★제19조 절사 후 최종 receipt_total 은 applyArticle19Rounding 뒤 재계산(아래).
+          bindValues.receipt_total = formatAmount(
+            parseAmountStr(bindValues.copayment) + fb.liveBillingValues.nonCovered,
+          );
           bindValues.fee_grid_html = buildBillReceiptFeeGridHtml(receiptBillItems);
         } else if (serviceItems.length > 0) {
           // 폴백: check_in_services 미기록 구 데이터 → service_charges 직결(bill_detail 폴백과 동일 규칙).
@@ -1159,6 +1199,18 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
         // T-20260714-foot-DOCPRINT-GONGDAN-HIDE-COPAY-ONLY (B안): 급여 분해 불가한 구 데이터 →
         //   실 결제액(paymentsTotal=환자 실납부액)으로 수렴(이미 공단 미포함).
         bindValues.receipt_total = formatAmount(paymentsTotal);
+      }
+      // ── T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 C, 제19조 끝수계산 배선, AC-3) ──
+      //   가산 fold 후 최종 aggregate 에 제19조① 적용: 본인 floor100(①)·급여총액 floor10(②)·공단 끝수흡수(③)·
+      //   total_amount ⑥가드. A/B/D 와 동일 SSOT(applyArticle19Rounding) → 같은 방문 어느 경로든 금액 동일(DoD #6/#7).
+      //   구 데이터 폴백(급여 토큰 부재)·결제액 total 은 함수 내부 가드로 무접촉.
+      applyArticle19Rounding(bindValues);
+      // 합계(공단 제외 = 본인 + 비급여)를 절사 반영 최종 copayment 로 재계산 → bill_receipt_new ⑧(floor100 본인 + 비급여)과
+      //   동일 grain·동일 값(same-visit cross-render 정합). 급여 미보유 폴백/결제액 경로는 위에서 설정한 값 유지(copayment 부재 시 skip).
+      if ('copayment' in bindValues) {
+        bindValues.receipt_total = formatAmount(
+          parseAmountStr(bindValues.copayment) + parseAmountStr(bindValues.non_covered),
+        );
       }
       // T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT: 정적 그리드 제거로 fee_grid_html 미설정 시
       //   본문 공란 회귀 방지 — 항목 없어도 표준 빈 그리드 rows 를 명시 렌더.
@@ -1625,12 +1677,21 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
           if (rawPatient > 0) v.patient_amount = formatAmount(patientFloored);
           // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식, AC-6). ⑧절사 후·행분해 전.
           absorbBillReceiptNewCopayFloorRemainder(v);
+          // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 A): 제19조① 본문 급여총액 floor10(②)·본인 floor100(①)·
+          //   공단 끝수흡수(③)·total_amount ⑥가드 SSOT 1회 적용. absorb 이후·CoveredTokens(행 분해) 이전 = Σ(행)=floored aggregate 정합.
+          applyArticle19Rounding(v);
           // 결함A: 급여 category remainder 토큰(최종 aggregate 기준 — 진찰료 흡수 방지).
           applyBillReceiptNewCoveredTokens(v, batchRnItems);
           // ── T-20260724-foot-BILLRECEIPT-PREPRINT-PAYMETHOD-MANUAL (일괄출력 경로, 캐논 supersede) ──
           //   ⑨=환자부담총액(완납)·⑩=공란·미납=0. 일괄출력은 편집 UI가 없어 결제수단 수기체크 불가 →
           //   ⑪ 수단칸·현금영수증칸은 공란(현장 수기 체크). 단건 경로와 ⑨/⑩/미납 canon 대칭.
           applyBillReceiptPreprintPaymethodTokens(v, patientFloored, {});
+        } else {
+          // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 A, 전 양식): bill_receipt_new 외 양식
+          //   (bill_detail·처방전·치료확인서·검사결과지·진료의뢰서 등)도 공통 값 객체 v 에 급여/총액 토큰을 쓰므로
+          //   동일 SSOT 로 제19조 끝수계산 적용. bill_detail 은 surcharge fold 이후·행 재집계와 무관(요약 총액만 절사,
+          //   detail_total/detail_subtotal 무접촉). CoveredTokens 없는 경로라 여기서 1회 적용으로 충분.
+          applyArticle19Rounding(v);
         }
         return v;
       };
@@ -3567,6 +3628,9 @@ function IssueDialog({
       // T-20260805-foot-COPAY-TRUNCATE-FUND-TRANSFER-MISSING: ①본인부담 floor100 끝수 → ②공단부담 흡수(보존식, AC-6).
       //   ⑧절사 후 · 행분해(CoveredTokens) 전 순서 — 수납창(PMW)·일괄인쇄와 동일 보존식 값(3경로 정합).
       absorbBillReceiptNewCopayFloorRemainder(base);
+      // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 B): 제19조① 급여총액 floor10(②)·본인 floor100(①)·
+      //   공단 끝수흡수(③)·total_amount ⑥가드 SSOT 1회. absorb 이후·CoveredTokens(행 분해) 이전 = Σ(행)=floored aggregate 정합.
+      applyArticle19Rounding(base);
       // ── T-20260722-foot-BILLRECEIPT-NEWFORM-CATSPLIT-PAIDBOX ──
       // 결함A: 급여 category 분해 토큰 주입. ★야간가산 fold 이후(여기)에 호출해야 진찰료 remainder 가
       //   최종 aggregate({{copayment}}/{{insurance_covered}}) 기준으로 산출돼 Σ(행)=합계 정합(§3.3 순서강제).
@@ -3581,6 +3645,11 @@ function IssueDialog({
         cashReceiptIdNo: base.cashreceipt_id_number,
         cashReceiptApprovalNo: base.cashreceipt_approval_no,
       });
+    } else {
+      // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 B, 전 양식): bill_receipt_new 외 양식
+      //   (bill_detail·처방전·치료확인서·검사결과지·진료의뢰서 등)도 공통 값 객체 base 에 급여/총액 토큰을 쓰므로
+      //   동일 SSOT 로 제19조 끝수계산 적용. surcharge fold(3532) 이후 · 사용자 편집 오버라이드(아래) 이전 순서.
+      applyArticle19Rounding(base);
     }
 
     // T-20260629-foot-DOCPRINT-EDIT-BTN: [수정] 팝업 편집값(용도/발행일/비고)을 최종 오버라이드.

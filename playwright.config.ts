@@ -187,6 +187,47 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: packages 헤더 급여/비급여 회차 split.
+        //   isInsuranceSplitValid/isInsuranceSplitBothEntered/formatInsuranceSplit 순수함수 단언
+        //   (VG2 자기검증 = DB partial CHECK 동형 · 펜차트 '12회 (비11/가1)' 표시 포맷).
+        //   auth/DB/server 불요·결정론(db_change=true 이나 spec 은 순수 로직만). 실 UI 관측 = supervisor field-soak.
+        '**/T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2.spec.ts',
+        // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: 처방이력 약 드롭다운 옵션을 처방약 마스터
+        //   (services category_label='처방약')와 코드/약품명 양축 교차검증 → 비처방약 라인(진찰료 AA154·검사
+        //   D620300HZ) 제외(Option A). parseMedicationToken/buildRxDrugMasterIndex/filterMedicationsByRxMaster
+        //   순수함수 단언 + fail-open 가드 + 결과행 필터 무회귀(AC-4). auth/DB/server 불요·결정론(read-side, db_change=false).
+        //   진짜 UI 관측 + 제외토큰 육안검증(AC-6) = supervisor field-soak.
+        '**/T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER.spec.ts',
+        // T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT: 고유식별정보 수집 동의(필수) 신규 추가 2곳
+        //   (셀프접수 TabletChecklistPage agree_unique_id 섹션+필수게이트 / 팬차트 ConsentFormDialog unique_id
+        //   FormType) + 동의 텍스트 줄간격 완화. consent_forms.form_type CHECK 5값 확장(da_consult_ref
+        //   DA-20260809-foot-CONSENT-UNIQUEID-FORMTYPE, db_change=true+MIG-GATE). 정적 소스/계약 가드
+        //   (auth/DB/server 불요·결정론). 실 UI(태블릿 셀프접수+팬차트 동의서)+persist = supervisor field-soak.
+        '**/T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT.spec.ts',
+        // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 신규 양식.
+        //   HTML 템플릿(getHtmlTemplate/bindHtmlTemplate) 렌더 + 서류목록 배선(FORM_META/DOCLIST_ORDER_10/
+        //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. auth/DB/server 불요·결정론.
+        //   실 UI+인쇄 관측 = supervisor field-soak(seed row 적용 후).
+        '**/T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM.spec.ts',
+        // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 신규 양식(셀프접수 오류 종이 백업).
+        //   HTML 템플릿(getHtmlTemplate/bindHtmlTemplate) 렌더 + 서류목록 배선(FORM_META/DOCLIST_ORDER_10/
+        //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. 문안 verbatim(authoritative source) 검증.
+        //   auth/DB/server 불요·결정론. 실 UI+인쇄 관측 = supervisor field-soak(seed row 적용 후).
+        '**/T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM.spec.ts',
+        // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형(수정·저장·출력) 재작업.
+        //   seed/overlay/eligibility/print-mask 순수함수(autoVisitLog) 단언 + CustomerChartPage/EditableAutoVisitLogBox
+        //   정적 소스 가드(AC-1 별도탭 폐지·양식 내부 배치 / VG1 ledger write-back0 / VG3 rows-affected / VG4 RRN 미저장).
+        //   저장방식=form_submissions.field_data 재사용(신규 테이블/컬럼0). auth/DB/server 불요·결정론.
+        //   실 UI+persist+print = supervisor field-soak(code-gate: write-correctness+RRN 마스킹 렌더).
+        '**/T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK.spec.ts',
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단(is_trial) 마커 기준 상담 배정 수 제외 + 2번 차트 [체험단].
+        //   Stream A(VG3 LEFT JOIN 등가·walk-in 생존·forward-only) + Stream B(bucketOf) 순수 결정함수 + 마이그 §36 방화벽
+        //   정적 소스 가드. auth/DB/webServer 불요·결정론. 실 UI+데이터경로 = 컬럼 prod 적용 후 supervisor field-soak.
+        '**/T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2.spec.ts',
+        // T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE: 없는 /assets/* 서버오답(HTML 200+immutable) 재발 수정.
+        //   자체 wrangler pages dev(프로덕션 CF Pages 런타임)로 dist 서빙 → request 컨텍스트로 DoD#1~3 검증.
+        //   auth/DB 불요·결정론. Vite webServer(8091) 미의존(자체 CF 런타임 사용). 상시 감시=ci-push §6 curl 스크립트.
+        '**/T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE.spec.ts',
         // T-20260804-foot-PAYCOMPLETE-CONFIRM-GUARD: 결제완료 버튼 오클릭 안전장치 — '정말 결제완료 처리하시겠습니까?'
         //   확인 팝업. 결제완료 트리거 2경로([수납]btn-settle→handleSettle / '결제 완료'btn-payment-submit→handleSubmit)
         //   앞단 confirm 게이트 소스레벨 락(①확인→정상완료 ②취소→무처리 ③바깥/ESC→무처리) + CBAND 무충돌 + AC-3/4 회귀가드.
@@ -354,6 +395,11 @@ export default defineConfig({
         '**/T-20260522-foot-TABLET-DUAL-LAYOUT.spec.ts',
         // T-20260520-ins-COPAY-CALC AC-4: 본인부담 산출 순수 함수 단위테스트 (20 TC)
         '**/insurance-calc.spec.ts',
+        // T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 파생 본인부담 자동판정 — 나이 SSOT(customerAge.ts)
+        //   순수함수(computeAgeFromBirth/deriveAgeCopayGrade/resolveEffectiveGradeWithAge) AC-1~10 +
+        //   세기 하드코딩 26 제거(2027 시한폭탄) + SSOT 수렴 정적 가드. auth/server 불요·결정론.
+        '**/customer-age.spec.ts',
+        '**/T-20260720-foot-COPAY-AGE-DERIVED-AUTO.spec.ts',
         // T-20260602-multi-CALLBACK-EF-4-NEW: 도파민 콜백 outbox 정적 검증 (마이그레이션/EF/롤백 파일 단언, browser 불필요)
         '**/T-20260602-multi-CALLBACK-EF-4-NEW.spec.ts',
         // T-20260714-foot-LIFECYCLE-CALLBACK-OUTBOX-EMIT: 풋→도파민 lifecycle emit(step2) — reschedule CHECK+트리거,
@@ -640,6 +686,15 @@ export default defineConfig({
         //   EXPECT_DEV_DB_REF 자동세팅=PRODREF-HARDGUARD 활성) + fail-closed(prod 오배선 abort) 순수 검증.
         //   브라우저/DB/auth/server 불요·결정론. 실 격리 컷오버 관측 = supervisor(env-diff).
         '**/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts',
+        // T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: 상담실 회차권 결제 3버튼.
+        //   VG-4 판별자(isPlanACardPayment) + AC-3 짝맞춤 진리표(상호배타) + AC-1 atomic classify 분기(승인/FAIL/ATTENTION)
+        //   + AC-1/AC-2 packageId 착지 전파. 순수 함수/판별자 단언. auth/server/page 불요, 결정론. unit 전용.
+        //   화면 배치·실 단말 승인·paid_amount 정합 = field-soak(갤탭)/browser-verify.
+        '**/T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT.spec.ts',
+        // T-20260808-foot-RXHIST-HIDE-SOFTDELETE: 처방이력 개별 건 숨김(soft-delete). 순수 함수(dedup member_ids)
+        //   + 소스 정적 가드(숨기기 버튼/확인 다이얼로그/deleted_at·by UPDATE/rowcheck/is_deleted 필터/role 무게이트).
+        //   auth/DB/server/page 불요·결정론. 실 UI+데이터경로 = supervisor 갤탭 field-soak.
+        '**/T-20260808-foot-RXHIST-HIDE-SOFTDELETE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -658,12 +713,28 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: unit 전용(토큰 파서/마스터 인덱스/교차검증
+        //   순수 함수 + fail-open 가드). 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)
+        //   유입 차단. unit 에서만 실행(브라우저 스모크는 로그인 실패 시 graceful skip).
+        '**/T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER.spec.ts',
+        // T-20260808-foot-RXHIST-HIDE-SOFTDELETE: unit 전용(dedup member_ids 순수 함수 + 소스 정적 가드) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260808-foot-RXHIST-HIDE-SOFTDELETE.spec.ts',
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: unit 전용(Stream A/B 순수 결정함수 + 마이그 정적 소스 가드) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2.spec.ts',
+        // T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE: unit 전용(자체 wrangler CF 런타임) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(auth)/Vite webServer 유입 차단. unit 에서만 실행.
+        '**/T-20260807-foot-CFPAGES-ASSET-404-HTML-IMMUTABLE.spec.ts',
         // T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG: unit 전용(담당자 resolution 미러 + 정적 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260730-foot-CUSTMGMT-CHARTOWNER-SYNC-DIAG.spec.ts',
         // T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER: unit 전용(순수 격리 로직) →
         //   무-project 실행 시 desktop-chrome 매칭→setup 유입 차단. unit 에서만 실행.
         '**/T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.spec.ts',
+        // T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: unit 전용(판별자/짝맞춤/classify 순수 단언) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT.spec.ts',
         // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: unit 전용 정적 소스 가드+순수 함수 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',

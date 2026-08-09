@@ -34,9 +34,13 @@ import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate, seoulISODate, chartNoBadge, formatAmount } from '@/lib/format';
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
+// T-20260808-foot-REFRESH-ROUTE-PERSIST: 상위 서브탭(mainTab)을 URL(?tab=)에 반영 → 새로고침/딥링크 후 복원.
+import { useTabParam } from '@/hooks/useTabParam';
 // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: [랭킹] 탭 데이터 소스 = R1 정합본(fetchConsultantPerf).
 //   랭킹 재발명 금지 — CRM-ASSIGN-RANKING-FIX-R1 이 이미 재직필터+매출정합 교정한 실장 랭킹 산출값을 read-only 소비.
-import { fetchConsultantPerf, type ConsultantRow } from '@/lib/stats';
+// T-20260807-foot-RANKING-STAFFATTR-CONSULTANT-TO-STAFF: 랭킹 탭 귀속축 = assigned_staff_id('2번차트 담당 실장').
+//   fetchConsultantPerf(consultant 축, 통계 매출탭 공유 RPC)는 무접촉 — 랭킹 소비경로는 assigned_staff 축 helper 로 교체.
+import { fetchConsultantPerfByAssignedStaff, type ConsultantRow } from '@/lib/stats';
 // T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC §5: '당월 배정 예상 비율' = 기존 배정비율 설정값 재사용(신규 저장 0).
 //   배정 비율 설정값 = assignment_daily_target_config(top/bottom) + interpolateDailyTargets 랭크별 목표(플레이북 [실행 1b]).
 //   비율 = 랭크별 목표 ÷ Σ목표(스케일 불변). 재발명 금지 — 자동배정 엔진과 동일 산식 SSOT 소비. DB 무변경(READ-only).
@@ -101,6 +105,11 @@ const THERAPY_FLOW: CheckInStatus[] = [
 ];
 const PULL_WAIT_STATUSES: CheckInStatus[] = ['consult_waiting', 'treatment_waiting'];
 const PULL_THRESHOLD_MIN = 10; // 미배정 대기 강조(amber) 임계. 당김 후보 자격 자체는 '미배정'만(PULLCAND-ASSIGNED-EXCLUDE)
+// T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄): 체험단 배정 제외 적용 시점 = 2026-08-01~ 당월.
+//   AC-2/AC-3: 7월 이전 누적 무변경. 이 경계일(KST) 이전 배정은 is_trial=true 여도 제외 미적용(forward-only).
+//   (신규 마커 DEFAULT false + forward-only 라 pre-8/1 행은 원천적으로 false 지만, 8월 이후 예약을 소급편집해도
+//    July 카운트가 흔들리지 않도록 배정 시각(checked_in_at) 기준 명시 가드를 둔다.)
+const TRIAL_EXCL_FROM_ISO = '2026-08-01';
 
 // ── T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC: 랭킹 탭 날짜 구간 헬퍼(KST, DATE-only 순수) ──
 //   fetchConsultantPerf(from,to) 는 DATE 문자열(YYYY-MM-DD)을 받는다(기존 monthStart 호출과 동일 grain).
@@ -161,12 +170,12 @@ async function fetchRankingSourceWithMonthFallback(
   monthStart: string,
   to: string,
 ): Promise<ConsultantRow[]> {
-  const monthRows = await fetchConsultantPerf(clinicId, monthStart, to);
+  const monthRows = await fetchConsultantPerfByAssignedStaff(clinicId, monthStart, to);
   const needFallback = monthRows.length === 0 || monthStart === to;
   if (!needFallback) return monthRows; // 당월 모수 존재 & 월 첫날 아님 → 기존 동작 불변
   const prevMonthEnd = isoAddDays(monthStart, -1); // 전월 말일
   const prevMonthStart = monthStartOfIso(prevMonthEnd); // 전월 1일
-  const prevRows = await fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd);
+  const prevRows = await fetchConsultantPerfByAssignedStaff(clinicId, prevMonthStart, prevMonthEnd);
   // 전월도 공백(신규 오픈 등)이면 당월 결과 유지 — 폴백이 상황을 악화시키지 않음(빈 표시 유지, 회귀0).
   return prevRows.length > 0 ? prevRows : monthRows;
 }
@@ -406,6 +415,11 @@ export default function Assignments() {
   const [monthResvSourceSystem, setMonthResvSourceSystem] = useState<Map<string, string | null>>(
     new Map(),
   );
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄 confirm 2026-08-07): 당월 check_ins 의
+  //   reservation.is_trial(체험단 마커) 맵. Stream A — '상담 배정 수'(직원별 누적/랭킹)에서 체험단 배정 제외용.
+  //   DA CONSULT-REPLY(MSG-20260807-164856-vg1k) VG3: LEFT JOIN 등가(walk-in reservation_id NULL 은 맵 미포함
+  //   → 비-trial 정상 count 생존, INNER JOIN drop 금지) + COALESCE(is_trial,false)=true 만 제외. read-only 참조.
+  const [monthResvTrialMap, setMonthResvTrialMap] = useState<Map<string, boolean>>(new Map());
   const [slotEnter, setSlotEnter] = useState<Map<string, string>>(new Map());
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -420,6 +434,11 @@ export default function Assignments() {
   //   선택일 기준으로 [일누적](선택일 당일) / [당월누적](선택일 월 1일~선택일) 을 연동 집계.
   //   초기값 = 오늘(KST). 오늘 선택 시 [당월누적] = 기존 '직원별 당월 누적' 수치와 동일(회귀0).
   const [selectedDate, setSelectedDate] = useState<string>(() => todaySeoulISODate());
+
+  // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 선택일이 미래(오늘 이후)인지 판정.
+  //   미래 선택 시 [일일 배정 목표]는 실적이 아니라 '예약 기준 미리보기'(reservations 파생)로 semantic 구분.
+  //   당일/과거(< 또는 =오늘)는 기존 실적 경로 불변(회귀0). read-only 표시 파생.
+  const isFutureDate = useMemo(() => selectedDate > todaySeoulISODate(), [selectedDate]);
 
   // T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO: [일일 배정 목표] = 차주(다음 주 월~일) 요일별 초진 예약 건수 자동 표시.
   //   집계 SSOT = monthInitResvCount 와 동일 술어(reservations visit_type='new' + status!=cancelled + reservation_date DATE범위).
@@ -445,7 +464,25 @@ export default function Assignments() {
   //  (preferred_therapist_id=예약단계 선호값), visits 테이블 부재 → TREATING-DOCTOR-SELECT-SYNC 선례와 정합. DB무변경.
   // T-20260726-foot-CRM-ASSIGN-RANKING-TAB-ADMINLOCK: 상위 탭에 [랭킹] 추가('ranking').
   // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: [배정 설정] 탭 추가('assignment-settings', [랭킹] 우측).
-  const [mainTab, setMainTab] = useState<'consult' | 'therapy' | 'list' | 'ranking' | 'assignment-settings'>('consult');
+  // T-20260808-foot-REFRESH-ROUTE-PERSIST: mainTab 을 URL(?tab=)에 반영 → 새로고침/딥링크 후 서브탭 복원(useTabParam SSOT).
+  //   기존 useState('consult') 는 URL 미반영이라 F5 시 항상 [상담] 탭으로 리셋됐다('튕김'의 실체).
+  const [mainTabRaw, setMainTab] = useTabParam<'consult' | 'therapy' | 'list' | 'ranking' | 'assignment-settings'>({
+    valid: ['consult', 'therapy', 'list', 'ranking', 'assignment-settings'],
+    fallback: 'consult',
+  });
+  // 권한 게이트(딥링크 방어): 비admin 이 ?tab=ranking|assignment-settings 로 직접 진입 시 콘텐츠는 하단 && canViewRanking 로 이미 미노출.
+  //   여기서 표시탭 자체를 기본탭으로 강등해 '탭은 활성인데 화면은 빈' 상태를 방지(권한 우회 아님 — 노출만 차단).
+  const mainTab = ((mainTabRaw === 'ranking' || mainTabRaw === 'assignment-settings') && !canViewRanking)
+    ? 'consult'
+    : mainTabRaw;
+
+  // T-20260808-foot-REFRESH-ROUTE-PERSIST: mainTab 이 URL(?tab=)에서 복원될 때(딥링크·새로고침)
+  //   운영 카드 role 필터(activeTab)를 동기화한다. onValueChange 는 클릭시에만 setActiveTab 하므로
+  //   딥링크/F5 로 ?tab=therapy 착지 시 activeTab 이 기본값('consult')에 머물러 치료 탭인데 상담 role 로
+  //   필터되는 불일치가 생긴다 → mainTab(consult/therapy) 기준으로 되맞춘다.
+  useEffect(() => {
+    if (mainTab === 'consult' || mainTab === 'therapy') setActiveTab(mainTab);
+  }, [mainTab]);
   const [listCategory, setListCategory] = useState<AssignmentRole>('consult'); // 드롭①
   const [listStaffId, setListStaffId] = useState<string>(''); // 드롭② ('' = 미선택 → AC5 전체 표시)
 
@@ -502,8 +539,16 @@ export default function Assignments() {
       // T-20260720-foot-ASSIGN-LABEL-DATE-SELECT: 누적 조회 하한 = 선택일이 속한 월의 1일.
       //   선택일이 과거 달이면 그 달 1일부터, 상한은 없음(now)까지 로드 → 선택 월분 + 오늘분(금일 배분 이력)
       //   을 모두 포함. 일/당월 분기는 아래 staffStats 에서 선택일 경계로 client-side 필터.
-      //   선택일이 미래가 되지 않도록 날짜 picker max=오늘 로 제한(회귀0 보장: 오늘 선택 시 기존 범위와 동일).
-      const monthStart = `${selectedDate.slice(0, 7)}-01T00:00:00+09:00`;
+      // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래 날짜 선택 허용에 따른 로드 하한 가드.
+      //   당월누적(staffStats)은 항상 '기준일(오늘) 당월'만 집계하는데, 로드 하한을 선택월 1일로만 두면
+      //   미래 '월'을 선택할 때 하한이 오늘 이후로 밀려 당월 check_ins 가 0건 로드 → 당월누적 회귀.
+      //   → 하한 = min(선택월 1일, 오늘 당월 1일)로 두어 당월누적을 항상 커버(미래 경로만 additive).
+      //   ▸ 당일/과거 선택: 선택월 1일 ≤ 오늘 당월 1일 → 기존 값과 동일(회귀0).
+      //   ▸ 미래 '월' 선택: 오늘 당월 1일로 하한 유지 → 당월누적 실적 보존. 미래일 자체 check_ins 는 원래 0건.
+      const selMonthStart = `${selectedDate.slice(0, 7)}-01`;
+      const todayMonthStart = `${todayIso.slice(0, 7)}-01`;
+      const effMonthStart = selMonthStart < todayMonthStart ? selMonthStart : todayMonthStart;
+      const monthStart = `${effMonthStart}T00:00:00+09:00`;
 
       // 1) staff (active)
       // ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
@@ -610,20 +655,33 @@ export default function Assignments() {
         new Set(monthCi.map((c) => c.reservation_id).filter(Boolean)),
       ) as string[];
       const monthResvSrcMap = new Map<string, string | null>();
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 동일 fetch 로 is_trial(체험단 마커) 동반 조회 →
+      //   Stream A 배정 수 제외맵(reservation_id → is_trial). 컬럼 미반영 DB(마이그 적용 랙)면 값 부재 → 폴백 false.
+      const monthResvTrial = new Map<string, boolean>();
       if (monthResvIds.length > 0) {
         const CHUNK = 200;
         for (let i = 0; i < monthResvIds.length; i += CHUNK) {
           const slice = monthResvIds.slice(i, i + CHUNK);
-          const { data: rsvRows } = await supabase
+          let { data: rsvRows, error: rsvErr } = await supabase
             .from('reservations')
-            .select('id, source_system')
+            .select('id, source_system, is_trial')
             .in('id', slice);
-          for (const r of (rsvRows ?? []) as Array<{ id: string; source_system: string | null }>) {
+          // 컬럼 미반영 DB(마이그 적용 랙: 42703/PGRST204)면 is_trial 제외 후 재조회 → source_system 폴백 라벨 보존.
+          if (rsvErr && (rsvErr.code === '42703' || rsvErr.code === 'PGRST204' || /is_trial/.test(rsvErr.message ?? ''))) {
+            const retry = await supabase
+              .from('reservations')
+              .select('id, source_system')
+              .in('id', slice);
+            rsvRows = retry.data as typeof rsvRows;
+          }
+          for (const r of (rsvRows ?? []) as Array<{ id: string; source_system: string | null; is_trial?: boolean | null }>) {
             monthResvSrcMap.set(r.id, r.source_system ?? null);
+            if (r.is_trial === true) monthResvTrial.set(r.id, true);
           }
         }
       }
       setMonthResvSourceSystem(monthResvSrcMap);
+      setMonthResvTrialMap(monthResvTrial);
       // T-20260727 RECLASS 2A: 월간 상담 축(monthAxisOf)도 **check_in 레코드 단위(시점정합)** recency 로 판정.
       //   RC = 고객단위 판정이 과거날짜 자기 첫 완료방문을 "과거 done" 으로 잡아 순수초진을 재진 오승격.
       //   per-checkin 판정 = 각 배정 check_in 을 그 방문 시각 이전 done 방문에 대해서만 판정(+owner-forced pin).
@@ -859,9 +917,28 @@ export default function Assignments() {
       //   재배정(done)되면 두 실장 팝업에 동시 노출(F-5247 장홍석: 최현희 cancelled + 강경민 done). 당월 유령후보 9건.
       //   done 은 완료된 실제 배정이므로 유지 — cancelled 만 배제(원내 대기 목록의 done/cancelled 제외와 정합).
       if (ci.status === 'cancelled') continue;
-      if (ci.consultant_id) {
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄 confirm 2026-08-07): 체험단(is_trial) 배정은
+      //   '상담 배정 수'(직원별 누적)에서 제외. DA VG3 = LEFT JOIN 등가: reservation_id 존재 + 그 예약 is_trial=true
+      //   인 경우만 제외(walk-in reservation_id NULL 은 맵 미포함 → 비-trial 정상 count 생존, INNER JOIN drop 금지).
+      //   scope = 8/1~ (checked_in_at KST 기준, 7월 이전 무변경). ⚠ 상담축 한정 — 치료(therapist)축 카운트는 불변.
+      const ciDateIso = ci.checked_in_at ? seoulISODate(ci.checked_in_at) : null;
+      const isTrialAssign =
+        !!ci.reservation_id &&
+        monthResvTrialMap.get(ci.reservation_id) === true &&
+        ciDateIso != null &&
+        ciDateIso >= TRIAL_EXCL_FROM_ISO;
+      if (ci.consultant_id && !isTrialAssign) {
         const s = staff.find((x) => x.id === ci.consultant_id);
-        if (s && s.role === 'consultant') {
+        // T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID 결정①(방법 C · 김주연 총괄 confirm 2026-08-07):
+        //   KPI '상담 배정 수'(직원별 누적) = [확정] 클릭된 배정만 count. [확정] 미클릭(consult_notify_status IS NULL)
+        //   auto_assign 배정은 집계 제외 → "확정 없이 자동 카운팅 금지". 박효식(F-5716)類 phantom(미상담·미확정 auto)
+        //   전건이 NULL → 이 게이트로 즉시 자동 제외(write 무접촉·파괴적 backfill 불요).
+        //   ★게이트 술어 = consult_notify_status IS NOT NULL(='sending'|'sent'|'failed') = "[확정] 클릭됨"(내구 신호).
+        //     'sent' 단독 금지 — CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN(ebbd230a) 후 Slack 발송 실패는 'failed'
+        //     (channel_gone) / 'sending'(transient 재시도)로 착지(NULL 롤백 아님)이며 그 배정도 [확정] 클릭된 정당
+        //     배정 → 미계수 시 under-count. IS NOT NULL 은 pre/post DECOUPLE 양쪽에서 정확(merge-order 무관 안전).
+        //   ⚠ 상담축 한정 — 치료(therapist_id)축은 [확정]/notify 개념 부재 → 아래 therapy 분기는 게이트 미적용(불변).
+        if (s && s.role === 'consultant' && ci.consult_notify_status != null) {
           // 상담축: COALESCE(수동 assignment_consult_type, recency deriveConsultAxis) → 3-state effective.
           bumpAssign(
             ensure(s),
@@ -916,7 +993,7 @@ export default function Assignments() {
     return Array.from(byId.values())
       .filter((st) => st.staff.role === wantRole)
       .sort((x, y) => y.month.assigned.length - x.month.assigned.length);
-  }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate]);
+  }, [staff, actions, monthCheckIns, monthCustomers, monthAxisOf, activeTab, selectedDate, monthResvTrialMap]);
 
   // T-20260729-foot-ASSIGN-TARGETCOL-STAFFCUMUL-EMPTY-WIRE (총괄 결정 B):
   //   '일일 배정 목표' = (선택일 초진 예약 수) × (그 실장 랭킹 배정 비율). 느슨결합 단일 지점 유지.
@@ -932,8 +1009,17 @@ export default function Assignments() {
     if (!canViewRanking) return null;
     if (targetCfg == null || selDayInitResvCount == null) return null; // config 미설정/미조회 → '—'
     const N = selDayInitResvCount;
-    // 출근 실장만 분배 대상 (당일 휴무자 제외 = CARDLABEL 정합). targetPerfRows = 재직 상담실장 랭킹 소스.
-    const workingRows = targetPerfRows.filter((r) => workingIds.has(r.consultant_id));
+    // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래 '빈 날'(예약 0건)은 미리보기 대상 아님 →
+    //   null 반환 → 목표 셀 '—' + 배너로 '예약없음' 설명(0/— 오인 방지). 당일/과거 N=0 은 기존 '0' 표시 불변(회귀0).
+    if (isFutureDate && N === 0) return null;
+    // 분배 대상:
+    //   · 당일/과거: 출근 실장만(당일 휴무자 제외 = CARDLABEL 정합, 기존 동작 불변).
+    //   · 미래(예약 기준 미리보기): 미래 근무 로스터 미상(workingIds=오늘 출근명단) → 출근필터 미적용,
+    //     전체 랭킹 상담실장에 예약건 비례 분배(미래 경로만 additive). Σ목표=N 불변.
+    // targetPerfRows = 재직 상담실장 랭킹 소스.
+    const workingRows = isFutureDate
+      ? targetPerfRows
+      : targetPerfRows.filter((r) => workingIds.has(r.consultant_id));
     if (workingRows.length === 0) return new Map();
     // 랭킹순(매출 desc, 이름 ko) — rankAssignmentRatios 와 동일 comparator. 최하위 랭킹 = 배열 끝(나머지 흡수 대상).
     const rankedIds = [...workingRows]
@@ -961,18 +1047,20 @@ export default function Assignments() {
     const lastId = rankedIds[rankedIds.length - 1];
     out.set(lastId, (out.get(lastId) ?? 0) + (N - running));
     return out;
-  }, [canViewRanking, targetCfg, selDayInitResvCount, targetPerfRows, workingIds]);
+  }, [canViewRanking, targetCfg, selDayInitResvCount, targetPerfRows, workingIds, isFutureDate]);
 
   const dailyTargetOf = useCallback(
     (st: StaffStat): number | null => {
       // 접근통제 + 랭킹 개념 게이트: admin 전용 + 상담(consultant) 탭 + 산식 입력 로딩 완료.
       if (!canViewRanking) return null;
       if (st.staff.role !== 'consultant') return null; // 치료사는 랭킹 배정 비율 대상 아님
-      if (dailyTargetMap == null) return null; // config 미설정/미조회 → '—'
-      if (!workingIds.has(st.staff.id)) return null; // 당일 휴무 → '—' (CARDLABEL 정합; 분배 대상 아님)
+      if (dailyTargetMap == null) return null; // config 미설정/미조회/미래 빈 날 → '—'
+      // T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래(예약 기준 미리보기)는 근무 로스터 미상 →
+      //   출근 게이트 미적용(전체 랭킹 실장 미리보기). 당일/과거는 기존 휴무 게이트 불변(회귀0).
+      if (!isFutureDate && !workingIds.has(st.staff.id)) return null; // 당일 휴무 → '—' (CARDLABEL 정합)
       return dailyTargetMap.get(st.staff.id) ?? 0; // 출근·랭킹 미포함 = 0
     },
-    [canViewRanking, dailyTargetMap, workingIds],
+    [canViewRanking, dailyTargetMap, workingIds, isFutureDate],
   );
 
   // ── T-20260729-foot-DAILY-TARGET-NEXTWEEK-AUTO ────────────────────────────────
@@ -1039,7 +1127,8 @@ export default function Assignments() {
   }, [clinic, mainTab, fetchNextWeekTargets]);
 
   // ── T-20260729-foot-ASSIGN-TARGETCOL: '일일 배정 목표' 산식 입력 3종 병렬 조회 ──────────────
-  //   ① 선택일 월누적 매출(랭킹 순서) = fetchConsultantPerf(선택일 1일~선택일) — 랭킹 탭과 동일 진입점(SECDEF admin-gated).
+  //   ① 선택일 월누적 매출(랭킹 순서) = fetchConsultantPerfByAssignedStaff(선택일 1일~선택일) — 랭킹 탭과 동일 소스.
+  //     T-20260807-foot-RANKING-STAFFATTR: 귀속축 = customers.assigned_staff_id('2번차트 담당 실장'). 배정비율 SSOT 정합.
   //   ② 하루 목표건수 config(top/bottom) = fetchDailyTargetConfig — 랭킹 비율 SSOT 입력.
   //   ③ 선택일 초진 예약 수 = reservations(visit_type='new' + status!=cancelled + reservation_date=선택일).
   //      술어 SSOT = fetchNextWeekTargets/monthInitResvCount 와 동일(취소 제외). day 경계 = [selectedDate, +1일).
@@ -1095,8 +1184,11 @@ export default function Assignments() {
   }, [clinic, canViewRanking, mainTab, fetchDailyTargetInputs]);
 
   // ── [랭킹] 탭 (T-20260726-...-ADMINLOCK + T-20260727-foot-RANKING-TAB-DATEPICKER-6SPEC) ──────
-  //  · 데이터 소스 = fetchConsultantPerf (CRM-ASSIGN-RANKING-FIX-R1 정합본: 재직 실장만 + 매출 총액 정합).
-  //    랭킹 산식/집계를 이 탭에서 새로 만들지 않는다(재발명 금지). R1 산출값을 date-range 재호출로 read-only 소비.
+  //  · 데이터 소스 = fetchConsultantPerfByAssignedStaff (T-20260807-foot-RANKING-STAFFATTR):
+  //    귀속축 = customers.assigned_staff_id('2번차트 담당 실장' = 고객 카드 담당자, 8/6 총괄 확정 canonical).
+  //    매출집계>담당실장별(SalesDoctorTab)과 동일 귀속축(assigned_staff_id) 사용 → 두 화면 귀속기준 일치.
+  //    net(환불 차감 후, 랭킹 유지) · 재직 상담실장 로스터 · 시뮬레이션 고객 제외 · date-range read-only 재호출.
+  //    (구 consultant 축 RPC foot_stats_consultant 는 통계 매출탭 전용으로 무접촉 — 축 혼재 회귀 방지.)
   //  · #1 선택일(rankingDate) 기준 6-read 병렬(모두 READ, DB 무변경):
   //     ① 월매출(1일~선택일) = 순위 기준  ② 전주매출(직전주 월~일)  ③ 이번주매출(이번주 월~선택일, 변동표용)
   //     ④ 당일 배정건수(check_ins.consultant_id — 배정 SSOT, deleted_at + cancelled 제외)  ⑤ 당월 초진예약 총건수
@@ -1121,13 +1213,14 @@ export default function Assignments() {
           // 월경계 폴백(MONTHBOUNDARY-WINDOW-FIX): 월 첫날/당월 공백이면 전월 전체로 랭킹 모수 채움.
           //   당월 순위·배정비율·예상건수 소스(perfRows) 정정. 전주/이번주/전월 변동표 소스는 불변.
           fetchRankingSourceWithMonthFallback(clinicId, monthStart, rankingDate),
-          fetchConsultantPerf(clinicId, prevWeekMon, prevWeekSun),
-          fetchConsultantPerf(clinicId, thisWeekMon, rankingDate),
-          // 월간 변동표 전월 순위 소스(전월 1일~말일). 동일 엔진·동일 R1 정합(재직/clinic/deleted_at) 계승.
-          fetchConsultantPerf(clinicId, prevMonthStart, prevMonthEnd),
+          fetchConsultantPerfByAssignedStaff(clinicId, prevWeekMon, prevWeekSun),
+          fetchConsultantPerfByAssignedStaff(clinicId, thisWeekMon, rankingDate),
+          // 월간 변동표 전월 순위 소스(전월 1일~말일). 동일 assigned_staff_id 귀속축·동일 재직 상담실장 로스터 계승.
+          fetchConsultantPerfByAssignedStaff(clinicId, prevMonthStart, prevMonthEnd),
           supabase
             .from('check_ins')
-            .select('consultant_id')
+            // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: reservation_id 동반 조회 → 체험단(is_trial) 배정 제외 join.
+            .select('consultant_id, reservation_id')
             .eq('clinic_id', clinicId)
             .not('consultant_id', 'is', null)
             .is('deleted_at', null)
@@ -1159,9 +1252,27 @@ export default function Assignments() {
         setPrevWeekRevenue(toRevMap(prevPerf));
         setThisWeekRevenue(toRevMap(thisPerf));
         setPrevMonthRevenue(toRevMap(prevMonthPerf));
+        const dayRows = (dayCi.data ?? []) as { consultant_id: string | null; reservation_id: string | null }[];
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: [랭킹] '당일 배정건수'에서 체험단(is_trial) 배정 제외.
+        //   VG3(LEFT JOIN 등가): reservation_id 있는 배정 中 그 예약 is_trial=true 만 제외(walk-in reservation_id NULL 은
+        //   비-trial 정상 count 생존). scope = 8/1~ (rankingDate 기준, 7월 이전 무변경). 컬럼 미반영 DB 는 조회실패→제외 0.
+        const trialResvIds = new Set<string>();
+        if (rankingDate >= TRIAL_EXCL_FROM_ISO) {
+          const rids = Array.from(new Set(dayRows.map((r) => r.reservation_id).filter(Boolean))) as string[];
+          if (rids.length > 0) {
+            const { data: trialRows, error: trialErr } = await supabase
+              .from('reservations')
+              .select('id')
+              .eq('is_trial', true)
+              .in('id', rids);
+            if (!trialErr) for (const tr of (trialRows ?? []) as Array<{ id: string }>) trialResvIds.add(tr.id);
+          }
+        }
         const dc = new Map<string, number>();
-        for (const r of (dayCi.data ?? []) as { consultant_id: string | null }[]) {
-          if (r.consultant_id) dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
+        for (const r of dayRows) {
+          if (!r.consultant_id) continue;
+          if (r.reservation_id && trialResvIds.has(r.reservation_id)) continue; // 체험단 제외
+          dc.set(r.consultant_id, (dc.get(r.consultant_id) ?? 0) + 1);
         }
         setDayAssignCounts(dc);
         setMonthInitResvCount(initResv.count ?? 0);
@@ -2247,7 +2358,9 @@ export default function Assignments() {
         <CardHeader className="py-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-sm">직원별 누적</CardTitle>
-            {/* 날짜 선택 UI — 기존 CRM 컴포넌트(native date input) 재사용. max=오늘(미래 선택 차단·회귀0 보장). */}
+            {/* 날짜 선택 UI — 기존 CRM 컴포넌트(native date input) 재사용.
+                T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래 날짜 상한(max=오늘) 해제 →
+                미래일 선택 시 [일일 배정 목표]를 '예약 기준 미리보기'로 조회(read-only). */}
             <div className="flex items-center gap-2 text-xs">
               <label htmlFor="assign-accum-date" className="font-medium text-muted-foreground">
                 기준일
@@ -2257,14 +2370,37 @@ export default function Assignments() {
                 data-testid="assignments-accum-date"
                 type="date"
                 value={selectedDate}
-                max={todaySeoulISODate()}
                 onChange={(e) => {
                   if (e.target.value) setSelectedDate(e.target.value);
                 }}
                 className="rounded border bg-background px-2 py-1"
               />
+              {isFutureDate && (
+                <Badge
+                  variant="secondary"
+                  data-testid="assignments-future-preview-badge"
+                  className="border-teal-300 bg-teal-100 text-teal-700"
+                >
+                  예약 기준 미리보기
+                </Badge>
+              )}
             </div>
           </div>
+          {/* 미래 날짜 안내 배너 — 실적이 아닌 '예약 기준 미리보기'임을 명시(0/— 오인 방지). */}
+          {isFutureDate && (
+            <div
+              data-testid="assignments-future-preview-note"
+              className="mt-2 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800"
+            >
+              {selDayInitResvCount == null ? (
+                <>미래 날짜 <span className="font-medium tabular-nums">{selectedDate}</span> — 예약 기준 미리보기를 불러오는 중입니다…</>
+              ) : selDayInitResvCount === 0 ? (
+                <>미래 날짜 <span className="font-medium tabular-nums">{selectedDate}</span>에 등록된 초진 예약이 없어 미리보기할 배정 목표가 없습니다. (예약이 등록되면 자동 표시)</>
+              ) : (
+                <>예약 기준 미리보기 · <span className="font-medium tabular-nums">{selectedDate}</span> 초진 예약 <span className="font-medium tabular-nums">{selDayInitResvCount}</span>건 기준 예상 배정 목표입니다. (실적 아님 · [일누적] 배정·토스·당김 수치는 아직 실적이 없어 0)</>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {/* T-20260629-foot-ASSIGNMONTHLY-SCROLL-REMOVE: 스크롤/높이 제한 제거 → 직원 수만큼 전체 펼침.
@@ -2300,8 +2436,15 @@ export default function Assignments() {
                     /* T-20260730-foot-ASSIGN-DAILYTGT-NPROP-CALC-FIX: 금일 초진 N(분배 총량) 노출 —
                        비가시 data-* 어피던스(레이아웃/색상 무변경). 출근 실장 목표 합계 = N 정합 검증용. */
                     data-daily-target-n={selDayInitResvCount ?? ''}
+                    /* T-20260808-foot-ASSIGN-DAILYTGT-FUTUREDATE-PREVIEW: 미래일은 실적 아님 → 미리보기 표기. */
+                    data-future-preview={isFutureDate ? 'true' : 'false'}
                   >
                     일일 배정 목표
+                    {isFutureDate && (
+                      <span className="ml-1 block text-[10px] font-normal text-teal-600">
+                        (예약 기준 미리보기)
+                      </span>
+                    )}
                   </th>
                   <th className="px-2 py-1.5 text-right font-medium">배정(초진)</th>
                   <th className="px-2 py-1.5 text-right font-medium">배정(재진)</th>
@@ -2560,6 +2703,8 @@ export default function Assignments() {
                 <CardTitle className="text-sm">실장 랭킹</CardTitle>
                 <p className="text-xs text-muted-foreground">
                   재직 상담 실장 기준 · 월매출(1일~선택일) 순 · 관리자 전용
+                  <br />
+                  ※ 매출 귀속 = 고객 카드 담당자(2번차트 담당 실장) 기준 · 매출집계 담당실장별과 동일 기준
                 </p>
               </div>
               {/* #1 DatePicker — 기존 CRM 컴포넌트(native date input) 재사용(신규 npm 0). 기본=오늘, max=오늘(미래 차단). */}

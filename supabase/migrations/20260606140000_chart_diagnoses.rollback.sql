@@ -9,6 +9,7 @@ drop policy if exists "chart_diagnoses_insert" on public.chart_diagnoses;
 drop policy if exists "chart_diagnoses_update" on public.chart_diagnoses;
 drop policy if exists "chart_diagnoses_delete" on public.chart_diagnoses;
 
+drop index if exists public.uq_chart_diagnoses_one_primary;   -- HARD-2 partial-unique
 drop index if exists public.idx_chart_diagnoses_service;
 drop index if exists public.idx_chart_diagnoses_chart;
 

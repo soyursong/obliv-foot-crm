@@ -184,6 +184,9 @@ const NAV_ITEMS: {
   //   (봉직의=director,flag無 → 운영최고권한 無, 진료만). admin/manager 등은 roles 로 이미 운영 role-implied → 영향 없음.
   //   ★lock-out-safe: 현재 운영자 전원 admin → roles 로 통과(이 단서는 director 한정). prod director=0 → 현 영향 0.★
   requiresOpsAuthority?: boolean;
+  // T-20260808-foot-SIDEBAR-DAILYHIST-MENU-HIDE: true 면 사이드바 메뉴에서 비노출(삭제 아님).
+  //   route(App.tsx)·컴포넌트(DailyHistory)는 보존 — UI 노출만 차단하는 되돌리기 쉬운 토글.
+  hidden?: boolean;
 }[] = [
   { to: '/admin', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/admin/reservations', label: '예약관리', icon: CalendarDays },
@@ -224,7 +227,9 @@ const NAV_ITEMS: {
   //   ★이전 LOCK(coordinator/therapist 회수)은 '일마감'을 '매출집계'로 오분류한 것 → 정정. 매출집계(실장별·치료사별 성과)는 별도 /admin/sales(admin/manager).★
   //   nav(여기) = route(App.tsx) = PERM_MATRIX.closing 3-gate 파리티 SSOT 정렬(메뉴 보이는데 route 튕김=NAV-BOUNCE 차단). WRITE=admin/manager만(RLS daily_closings_admin_all).
   { to: '/admin/closing', label: '일마감', icon: Receipt, roles: ['admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff'] },
-  { to: '/admin/history', label: '일일 이력', icon: ClipboardList },
+  // T-20260808-foot-SIDEBAR-DAILYHIST-MENU-HIDE: '일일 이력' 사이드바 메뉴만 비노출(hidden).
+  //   삭제 아님 — route(App.tsx /admin/history)·컴포넌트(DailyHistory.tsx) 보존. 되돌리려면 hidden 제거/false.
+  { to: '/admin/history', label: '일일 이력', icon: ClipboardList, hidden: true },
   // AC-6: 통계 미노출 유지 (consultant/coordinator/therapist 제외)
   // T-20260610-foot-STAFF-ROLE-TM-ADD AC6 (박민지 팀장 C안): TM → 통계 메뉴 노출 (route 가드와 패리티).
   // AC-6: 통계 미노출 유지 / STAFF-ROLE-TM-ADD: tm. T-20260619-foot-ROLE-MATRIX-3TIER-RBAC: 운영최고권한 → director 는 flag 필요(봉직의 배제).
@@ -245,9 +250,11 @@ const NAV_ITEMS: {
 //   ② requiresOpsAuthority → director(임상)는 has_ops_authority=true 일 때만(봉직의=director,flag無 배제).
 //      admin/manager 등은 roles 로 이미 통과(운영 role-implied) → 영향 없음. ★lock-out-safe(현 운영자 admin·prod director=0).★
 function isNavItemVisible(
-  item: { roles?: UserRole[]; requiresOpsAuthority?: boolean },
+  item: { roles?: UserRole[]; requiresOpsAuthority?: boolean; hidden?: boolean },
   profile: UserProfile | null,
 ): boolean {
+  // T-20260808-foot-SIDEBAR-DAILYHIST-MENU-HIDE: hidden 플래그 = 사이드바 비노출(삭제 아님, route/컴포넌트 보존).
+  if (item.hidden) return false;
   if (item.roles && !(profile?.role && item.roles.includes(profile.role))) return false;
   if (item.requiresOpsAuthority && profile?.role === 'director' && !hasOpsAuthority(profile)) return false;
   return true;

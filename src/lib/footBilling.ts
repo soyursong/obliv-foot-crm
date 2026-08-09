@@ -22,7 +22,9 @@
  */
 import { type InsuranceGrade, getBaseCopayRate, copayFromBase } from './insurance';
 import { supabase } from './supabase';
-import { formatAmount, parseAmount } from './format';
+import { formatAmount, parseAmount, todaySeoulISODate } from './format';
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO: 나이 파생 등급(elderly_flat/infant) SSOT.
+import { deriveAgeCopayGrade } from './customerAge';
 
 // [CI-UNBLOCK] getBaseCopayRate 재수출(facade). footBilling 은 급여 본인부담 산정의 SSOT 파사드라
 //   copay 기본률 조회를 이 모듈 표면에서 함께 노출한다. T-20260715-FOOTBILLING-COPAY-CEIL-SWEEP-VERIFY
@@ -233,6 +235,31 @@ export const COVERED_GRADES = new Set<InsuranceGrade>([
   'medical_aid_1', 'medical_aid_2', 'infant', 'elderly_flat',
 ]);
 
+/**
+ * T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING — 등급 + 나이파생 infant 세부율 → 유효 정률(본인부담률).
+ *
+ * getBaseCopayRate 는 grade-only 라 infant 를 21%(만6세미만 공통)로 수렴시킨다. 그러나 만 1세 미만
+ * 외래는 법정 5%(국민건강보험법 시행령 별표2)이며, 그 세부율(만0세 0.05 / 만1~5세 0.21)은 나이 파생
+ * SSOT(customerAge.deriveAgeCopayGrade.rate)만 안다. 이 헬퍼가 **라이브 배선의 유일 지점** —
+ * grade==='infant' 이고 나이 파생 세부율(ageInfantRate)이 주어지면 그 값을 정률로 쓰고, 그 외
+ * 등급/미상은 getBaseCopayRate 로 폴백한다(회귀 0).
+ *
+ * ⚠ SSOT 단일소비(DA §제약1): 병렬 재계산 경로 신설 아님 — copayFromBase 일반(정률) 경로의 rate 결정만
+ *   보정한다. 정액/면제(의급·차상위)·노인 4구간 등급은 ageInfantRate 무관(그 분기가 정본, rate 정보성).
+ * ⚠ db_change=false: 서버 RPC calc_copayment(미러)는 stored grade 기반이라 미접촉 — 나이 파생은 FE 전용
+ *   (부모 T-20260720-foot-COPAY-AGE-DERIVED-AUTO 계약 계승). infant 는 정률경로라 rate 보정만으로 5% 라이브.
+ * ⚠ ageInfantRate 미전달(undefined/null) = 기존 grade-only 동작 그대로(전 호출부 backward-compat).
+ */
+export function effectiveCopayRate(
+  grade: InsuranceGrade | null,
+  ageInfantRate?: number | null,
+): number | null {
+  if (!grade || !COVERED_GRADES.has(grade)) return null;
+  // 나이 파생 infant 세부율(만0세 0.05 / 만1~5세 0.21) 라이브 배선 — grade==='infant' 에만 적용.
+  if (grade === 'infant' && ageInfantRate != null) return ageInfantRate;
+  return getBaseCopayRate(grade);
+}
+
 /** getTaxClass / isCodeItem 가 참조하는 service 의 구조적 최소 형태 (Service 와 호환). */
 export interface BillingService {
   id: string;
@@ -310,7 +337,9 @@ export function computeFootBilling(
   //   opts.hiraUnitValue 전달 시 급여(getTaxClass='급여')×hira_score 존재 항목의 base 를 서버
   //   calc_copayment 와 동일하게 ROUND(hira_score × hira_unit_value) 로 산출(services.price 사용 중단).
   //   미전달(undefined/null) 시 = 기존 price base 그대로(전 호출부 회귀 0 · backward-compat).
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: ageInfantRate = 나이 파생 infant 세부율(만0세 0.05 /
+  //   만1~5세 0.21). grade==='infant' 정률경로에만 라이브 적용(effectiveCopayRate). 미전달=grade-only 그대로.
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
   // ── 급여 base 권위 소스 (1원 canon) = ROUND(hira_score × hira_unit_value) ──────────────
@@ -352,9 +381,9 @@ export function computeFootBilling(
   }
 
   const coveredTotal = totalByTax['급여'];
-  const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
-    ? getBaseCopayRate(insuranceGrade)
-    : null;
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 나이 파생 infant 세부율(만0세 5% / 만1~5세 21%) 라이브
+  //   배선. effectiveCopayRate 단일 헬퍼 — infant 외 등급은 getBaseCopayRate 그대로(회귀 0, backward-compat).
+  const copayRate = effectiveCopayRate(insuranceGrade, opts?.ageInfantRate);
   // ★ 등급→copay = copayFromBase 단일 SSOT 헬퍼(copayCalc.ts, RPC calc_copayment v1.6 미러) 소비.
   //   병렬 재계산 경로 신설 금지(DA §제약1: SSOT 단일소비). 정액(의급 1·2종·차상위2)/면제(차상위1)/
   //   정률(general·infant)/노인 4구간 분기가 이 경로(수납·서류 grain)에도 동일 적용된다.
@@ -509,12 +538,30 @@ export async function loadClinicHiraUnitValue(
  *   동일 저장 등급으로 수렴한다(AC-3). 급여 charge 가 없는 무보험 방문은 유효 covered 등급이 없어
  *   null 반환 → 비급여로 정상 표기(무파괴).
  */
-export async function loadEffectiveInsuranceGrade(
+/**
+ * T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING — 유효 등급 + 나이 파생 infant 세부율 동반 반환.
+ *
+ * loadEffectiveInsuranceGrade 와 동일 판정(live → service_charges 저장등급 폴백 → 나이 파생)을 하되,
+ * 나이 파생 infant 의 세부율(만0세 0.05 / 만1~5세 0.21)을 함께 반환한다. 호출부는 이 rate 를
+ * computeFootBilling/fillBillItemCopayment 의 ageInfantRate 로 배선해 만0세 5% 를 **라이브**로 적용한다.
+ *
+ * ⚠ infantCopayRate 는 grade==='infant' **AND 나이 파생**일 때만 non-null. 저장 charge 등급 폴백으로 얻은
+ *   'infant'(과거 21% 로 확정 적재된 값)은 null → getBaseCopayRate('infant')=21% 유지(forward-only, 기존
+ *   적재값과 정합). 명시 등급/비-infant/미상 = null(회귀 0).
+ */
+export interface EffectiveInsuranceGrade {
+  grade: InsuranceGrade | null;
+  /** 나이 파생 infant 세부 본인부담률(만0세 0.05 / 만1~5세 0.21). 그 외 = null. */
+  infantCopayRate: number | null;
+}
+
+export async function loadEffectiveInsuranceGradeEx(
   customerId: string | null | undefined,
   checkInId: string,
-): Promise<InsuranceGrade | null> {
+): Promise<EffectiveInsuranceGrade> {
   const live = await loadCustomerInsuranceGrade(customerId);
-  if (live) return live; // 등급 존재 → 기존 경로 그대로(회귀 0)
+  // 명시 등급(unverified 제외) → 기존 경로 그대로(회귀 0). 스태프/조회 확정값은 나이 파생이 덮지 않는다.
+  if (live && live !== 'unverified') return { grade: live, infantCopayRate: null };
 
   // 폴백: 이 방문에 저장된 급여 계산 당시 등급(service_charges.customer_grade_at_charge).
   //   is_insurance_covered 급여 행에서만 채택('manual'/비급여 행 제외) — 유효 covered 등급만.
@@ -527,9 +574,74 @@ export async function loadEffectiveInsuranceGrade(
     is_insurance_covered: boolean | null;
   }>) {
     const g = r.customer_grade_at_charge as InsuranceGrade | null;
-    if (r.is_insurance_covered && g && COVERED_GRADES.has(g)) return g;
+    // 저장 charge 등급은 과거 확정 적재값(infant=21%) → infantCopayRate 미부여(forward-only 정합).
+    if (r.is_insurance_covered && g && COVERED_GRADES.has(g)) return { grade: g, infantCopayRate: null };
   }
-  return null;
+
+  // ── T-20260720-foot-COPAY-AGE-DERIVED-AUTO (나이 파생, ADDITIVE) ──────────────────
+  //   등급 미설정(null)/unverified 이고 저장 charge 등급도 없을 때만: 생년월일로 노인정액(65세+)·
+  //   영유아(6세미만) 등급을 **외부 자격조회 없이** 자동판정한다(라이브 89% 등급 미설정 대응, §2/§6).
+  //   생년 소스 = 서버 RPC fn_customer_birthdates(세기코드 정확판정, rrn 평문 미노출) — 클라 세기
+  //   휴리스틱 금지(§3). 나이 미상(생년 파싱 불가) → null 반환 → 기존 폴백 위임(등급 날조 금지, AC-8).
+  //   ⚠ 명시 등급 미접촉(위에서 early-return) + non-throwing(판정 실패가 빌링을 막지 않음, 회귀 0).
+  //   ★ T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율(만0세 5% vs 만1~5세 21%)을 함께 반환 →
+  //     라이브 rate 배선. 종전엔 grade='infant'(→21%)로 수렴하던 것(SSOT 는 5% 를 알되 미배선)을 완성한다.
+  const ageGrade = await deriveAgeGradeForCheckIn(customerId, checkInId);
+  if (ageGrade) return { grade: ageGrade.grade, infantCopayRate: ageGrade.infantRate };
+
+  return { grade: live ?? null, infantCopayRate: null }; // unverified 보존(무회귀) 또는 null(기존 폴백 경로 유지)
+}
+
+/**
+ * 유효 등급만 반환하는 얇은 래퍼(backward-compat). infant 세부율 라이브 배선이 필요한 호출부는
+ * loadEffectiveInsuranceGradeEx 를 쓴다(rate 를 computeFootBilling 등에 배선).
+ */
+export async function loadEffectiveInsuranceGrade(
+  customerId: string | null | undefined,
+  checkInId: string,
+): Promise<InsuranceGrade | null> {
+  return (await loadEffectiveInsuranceGradeEx(customerId, checkInId)).grade;
+}
+
+/**
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO — 방문(check_in)의 고객 생년월일로 나이 파생 등급 판정.
+ *
+ * 생년 소스 = 서버 RPC fn_customer_birthdates(p_clinic_id, p_ids) → 'YYYY-MM-DD'(세기 정확, PHI 미노출).
+ *   clinic_id 는 방문(check_ins)에서 취득. 65세+ → elderly_flat / 6세미만 → infant.
+ *   나이 미상/조회 실패 → null(등급 날조 금지). best-effort — throw 하지 않는다.
+ */
+async function deriveAgeGradeForCheckIn(
+  customerId: string | null | undefined,
+  checkInId: string,
+): Promise<{ grade: InsuranceGrade; infantRate: number | null } | null> {
+  if (!customerId) return null;
+  try {
+    const { data: ci } = await supabase
+      .from('check_ins')
+      .select('clinic_id')
+      .eq('id', checkInId)
+      .maybeSingle();
+    const clinicId = (ci?.clinic_id ?? null) as string | null;
+    if (!clinicId) return null;
+
+    const { data, error } = await supabase.rpc('fn_customer_birthdates', {
+      p_clinic_id: clinicId,
+      p_ids: [customerId],
+    });
+    if (error || !data) return null;
+    const rows = data as Array<{ customer_id: string; birth_date_display: string | null }>;
+    const birth = rows.find((r) => r.customer_id === customerId)?.birth_date_display ?? null;
+    if (!birth) return null;
+
+    const ag = deriveAgeCopayGrade(birth, todaySeoulISODate());
+    if (!ag) return null;
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율(만0세 0.05 / 만1~5세 0.21) 동반 반환 →
+    //   라이브 rate 배선(computeFootBilling opts.ageInfantRate). elderly_flat 은 4구간이라 null(copayFromBase 처리).
+    return { grade: ag.grade, infantRate: ag.grade === 'infant' ? ag.rate : null };
+  } catch (e) {
+    console.warn('[footBilling] 나이 파생 등급 판정 실패 — 기존 폴백 위임:', e);
+    return null;
+  }
 }
 
 /**
@@ -698,7 +810,9 @@ export function isFlatPublishedExamFee(
 export function computeConsultationSurchargeBase(
   items: FootBillingItem[],
   insuranceGrade: InsuranceGrade | null,
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null },
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: ageInfantRate 도 computeFootBilling 로 pass-through
+  //   (진찰료 가산 base 의 infant 본인부담이 aggregate 5% 와 정합하도록). 미전달=grade-only 그대로.
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null },
 ): { covered: number; copay: number } {
   const consultItems = items.filter((i) => isConsultationFeeItem(i.service, insuranceGrade));
   if (consultItems.length === 0) return { covered: 0, copay: 0 };
@@ -813,6 +927,9 @@ export function fillBillItemCopayment(
     copayment_amount?: number;
   }>,
   insuranceGrade: InsuranceGrade | null,
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 나이 파생 infant 세부율(만0세 0.05 / 만1~5세 0.21).
+  //   grade==='infant' 정률경로에만 라이브 적용(effectiveCopayRate). 미전달=grade-only 그대로(backward-compat).
+  ageInfantRate?: number | null,
 ): void {
   const covered = billItems
     .map((it, i) => ({ i, total: it.amount * (it.count ?? 1) * (it.days ?? 1) }))
@@ -823,9 +940,9 @@ export function fillBillItemCopayment(
   const anyExisting = covered.some((x) => billItems[x.i].copayment_amount != null);
   if (anyExisting) return;
 
-  const copayRate = insuranceGrade && COVERED_GRADES.has(insuranceGrade)
-    ? getBaseCopayRate(insuranceGrade)
-    : null;
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율(만0세 5% / 만1~5세 21%) 라이브 배선 —
+  //   effectiveCopayRate 단일 헬퍼(computeFootBilling 과 동일 SSOT). infant 외 등급은 getBaseCopayRate 그대로.
+  const copayRate = effectiveCopayRate(insuranceGrade, ageInfantRate);
 
   const coveredSum = covered.reduce((s, x) => s + x.total, 0);
   // ★ 등급→copay = copayFromBase 단일 SSOT 헬퍼(copayCalc.ts, RPC calc_copayment v1.6 미러) 소비.
@@ -970,6 +1087,78 @@ export function absorbBillReceiptNewCopayFloorRemainder(values: Record<string, s
   const gupyeoTotal = copay + ins;                        // 급여 총액(본인+공단, 절사 전) — 보존 대상 불변량
   values.copayment = formatAmount(flooredCopay);
   values.insurance_covered = formatAmount(Math.max(0, gupyeoTotal - flooredCopay)); // 끝수 공단 흡수(보존식)
+}
+
+/**
+ * T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED — 건강보험 고시 「요양급여비용 청구방법·심사청구서·명세서서식
+ *   및 작성요령」 **제19조(끝수계산)** 를 서류 금액 확정 직후 **1회** 적용하는 단일 SSOT.
+ *   4경로(DPP valuesFor / DPP base / DPP 영수증재발급 bindValues / PMW enriched) 전부 이 함수를 경유해
+ *   같은 방문이 어느 경로로 출력돼도 급여·총액 금액이 규정단위로 동일 산출된다(양식별 분기 신설 금지).
+ *
+ * 규칙(순서 고정):
+ *   ① 본인일부부담금 = floor100(본인 raw)               — 제19조① 단서(외래·약국 본인일부부담금 100원 미만 절사)
+ *   ② 요양급여비용총액 = floor10(본인 raw + 공단 raw)      — 제19조① 본문(요양급여비용총액 등 10원 미만 절사)
+ *   ③ 청구액(공단)   = ② − ①                           — 끝수 자동 공단 흡수(독립 절사 아님, 보존식 base=①+③)
+ *   ④ 비급여        = 무절사                             — 요양급여비용 아님(제19조 대상 아님)
+ *   ⑤ delta = (①+③) − (본인 raw + 공단 raw) (≤ 0)        — 급여분 floor10 변화량
+ *   ⑥ total_amount  = ★가드★ — (본인 raw+공단 raw+비급여) == total_amount 인 건만 +delta, 아니면 **무접촉**
+ *
+ * ★ 법무 경계(형제 T-20260803 legal NO-GO): ①본인 floor100 과 ②급여총액 floor10 은 **서로 다른 절사단위**다.
+ *   각 quantity 에 규정단위를 정확히 적용할 뿐 서류 간 total 을 강제로 같게(equality) 만들지 않는다
+ *   (별표2 제1항 위반 금지 경계 준수 — 서류별 total 이 규정상 달라질 수 있음은 정당).
+ * ★ ⑥ 가드: total_amount 는 경로에 따라 (a)진료비총액(급여+비급여) 또는 (b)실 결제액을 담는다(단일 의미 아님).
+ *   결제액인 건(본인raw+공단raw+비급여 ≠ total_amount)은 **무접촉** — 결제액이 진료비총액으로 덮여 날아가는
+ *   사고를 차단(실측 51건 무접촉·값 변경 0). non_covered 토큰 부재로 비급여 판별 불가한 모호 건도 무접촉(보수).
+ * ★ 무접촉(§4): non_covered/subtotal_noncovered(무절사) · detail_total/detail_subtotal(이미 floor10, 별 grain)
+ *   · patient_amount(수납 grain floor100, floorBillReceiptNewPatientTotal 소관). DB write 0(forward-only 표시 절사).
+ * ★ 번들 전체 floor10 금지: 비급여까지 절사되는 신규버그(DPP:1614/:3553 기록). 급여분(①본인+③공단)만 절사한다.
+ * ★ 순서: applyNightHolidaySurcharge(가산 fold)·absorbBillReceiptNewCopayFloorRemainder **이후**,
+ *   applyBillReceiptNewCoveredTokens(행 분해) **이전** 호출 → Σ(행)=floored aggregate 정합.
+ *   floor100(①)은 멱등이라 absorb 뒤 재적용해도 무회귀 · absorb 미경유 경로(bill_detail/영수증 재발급)에서도 자립 적용.
+ *
+ * @param values 서류 바인딩 토큰 레코드(제자리 변경). 존재하는 토큰만 갱신(양식에 없는 토큰 신설 안 함).
+ */
+export function applyArticle19Rounding(values: Record<string, string>): void {
+  const COPAY_KEYS = ['copayment', 'subtotal_copayment', 'total_copayment']; // 본인일부부담금
+  const FUND_KEYS = ['insurance_covered', 'subtotal_fund', 'total_fund'];     // 공단부담(청구액)
+  const NONCOV_KEYS = ['non_covered', 'subtotal_noncovered', 'total_noncovered']; // 비급여(무절사)
+  const TOTAL_KEYS = ['total_amount', 'subtotal_amount'];                     // 총액(⑥ 가드)
+
+  const firstPresent = (keys: string[]): number | null => {
+    for (const k of keys) {
+      if (k in values) return parseAmount(values[k] ?? '');
+    }
+    return null;
+  };
+
+  const copayRaw = firstPresent(COPAY_KEYS);
+  const fundRaw = firstPresent(FUND_KEYS);
+  if (copayRaw == null && fundRaw == null) return; // 급여 토큰 전무 = 절사 대상 없음(비급여-only/비billing 서류 무접촉)
+  const copay = copayRaw != null && copayRaw > 0 ? copayRaw : 0;
+  const fund = fundRaw != null && fundRaw > 0 ? fundRaw : 0;
+  const gupyeoTotalRaw = copay + fund;
+  if (gupyeoTotalRaw <= 0) return; // 급여 0(비급여-only/등급부재 공단0) — floor10 대상 없음, 무접촉
+
+  // ① 본인 floor100 · ② 급여총액 floor10 · ③ 공단 = ②−①(끝수 공단 흡수). SSOT 재사용(재발명 금지).
+  const copayNew = floorOutpatientCopayment(copay);                              // floor100 (제19조① 단서)
+  const gupyeoTotalNew = computeBillDetailRounding(gupyeoTotalRaw).roundedTotal;  // floor10  (제19조① 본문)
+  const fundNew = Math.max(0, gupyeoTotalNew - copayNew);
+  const delta = gupyeoTotalNew - gupyeoTotalRaw;                                 // ⑤ ≤ 0
+
+  // 존재하는 본인/공단 토큰에만 일관 기입 — 보존식 ①+③=급여총액, 절사단위(floor100/floor10) 분리 보존.
+  for (const k of COPAY_KEYS) if (k in values) values[k] = formatAmount(copayNew);
+  for (const k of FUND_KEYS) if (k in values) values[k] = formatAmount(fundNew);
+
+  // ⑥ total_amount 가드 — 진료비총액(본인raw+공단raw+비급여)인 건만 delta 반영, 결제액 등 다른 의미면 무접촉.
+  const nonCovRaw = firstPresent(NONCOV_KEYS);
+  const nonCov = nonCovRaw != null && nonCovRaw > 0 ? nonCovRaw : 0;
+  const treatmentTotalRaw = gupyeoTotalRaw + nonCov;
+  for (const k of TOTAL_KEYS) {
+    if (!(k in values)) continue;
+    const cur = parseAmount(values[k] ?? '');
+    if (cur === treatmentTotalRaw) values[k] = formatAmount(cur + delta); // 진료비총액 → 급여 floor10 반영
+    // else: 결제액/비급여 미포함 등 다른 의미 → 무접촉(결제액 보존)
+  }
 }
 
 /**

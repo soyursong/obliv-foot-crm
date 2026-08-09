@@ -23,13 +23,23 @@
  *        node scripts/apply_20260804170000_foot_closing_herald_payload_pkg_reconcile.mjs --apply  (실적용 + POSTCHECK)
  * author: dev-foot / 2026-08-04
  */
-import { query, applyMigration, ledgerVersions } from './lib/foot_migration_ledger.mjs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { query, applyMigration, ledgerVersions, MIG_DIR } from './lib/foot_migration_ledger.mjs';
+import { assertApplyGateForRunner, FOOT_PROD_REF } from './apply_gate_lib.mjs';
 
 const APPLY = process.argv.includes('--apply');
 const MODE = APPLY ? 'APPLY(실적용)' : 'DRY(BEFORE 실측만)';
 const VERSION = '20260804170000';
 const FILE = '20260804170000_foot_closing_herald_payload_pkg_reconcile.sql';
 const nowKst = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }) + ' KST';
+
+// ── T-20260801 DBGATE-GUARD: prod apply chokepoint content-binding 상수 ──
+const TICKET_ID = 'T-20260804-foot-CLOSING-HERALD-PAYLOAD-RECONCILE';
+const REF = FOOT_PROD_REF;
+const __gate_dir = dirname(fileURLToPath(import.meta.url));
+const EVIDENCE_LOG = join(__gate_dir, '../db-gate/_apply_evidence/runner_apply.log.jsonl');
+const SQL_FILE = join(MIG_DIR, FILE); // applyMigration 이 읽는 파일 = content-binding 대상
 
 const FNS = [
   'closing_source_split(uuid,date)',
@@ -75,6 +85,14 @@ console.log('');
 if (!APPLY) {
   console.log('DRY 종료. 실적용: node scripts/apply_20260804170000_foot_closing_herald_payload_pkg_reconcile.mjs --apply');
   process.exit(0);
+}
+
+// ── T-20260801 DBGATE-GUARD: APPLY 게이트 chokepoint (실 COMMIT 직전, fail-closed) ──
+try {
+  assertApplyGateForRunner({ ticketId: TICKET_ID, targetRef: REF, applyRequested: APPLY, migrationSqlFile: SQL_FILE, evidenceLog: EVIDENCE_LOG });
+} catch (e) {
+  console.error(`❌ APPLY-GATE 거부 [${e.code}]: ${e.message}\n   → GO-token 부재/무효. COMMIT 미도달(abort).`);
+  process.exit(1);
 }
 
 // ── APPLY (단일경로: up.sql BEGIN..COMMIT 단일배치 + 원장 기록) ──

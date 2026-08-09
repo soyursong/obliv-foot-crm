@@ -22,7 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import { format, subDays, addDays } from 'date-fns';
 import { todaySeoulISODate } from '@/lib/format';
 import { ko } from 'date-fns/locale';
-import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2, FileText, Droplet } from 'lucide-react';
+import { Stethoscope, ClipboardList, Calendar, ChevronLeft, ChevronRight, TrendingUp, Settings2, FileText, Droplet, Pill } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import DoctorHistorySection from '@/components/treatment/DoctorHistorySection';
@@ -37,6 +37,9 @@ import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 // T-20260719-foot-DIAGDOC-TAB-DASHBOARD-SYNC: 진료대시보드 [서류작성] read-only ADDITIVE 재노출 탭(맨 뒤).
 //   치료테이블(치료사 공간)에 소견서·진단서 신청/발행여부를 read-only 표시. opinionRequest.ts 훅 재사용(단일 소스).
 import DiagDocSection from '@/components/treatment/DiagDocSection';
+// T-20260807-foot-TREATTBL-RX-HISTORY-BYDRUG-LOOKUP: '처방 이력'(약별 조회) 탭 신설 — read-only.
+//   canonical SSOT=form_submissions(rx_standard) 발행 이력 축(rxIssuanceHistory.ts 재사용). self-contained(useClinic).
+import RxHistorySection from '@/components/treatment/RxHistorySection';
 import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import MedicalChartPanel from '@/components/MedicalChartPanel';
 import SendSmsDialog from '@/components/SendSmsDialog';
@@ -57,7 +60,7 @@ import type { CheckIn } from '@/lib/types';
 //      콘텐츠 미합침 — 부모=경과분석, 하위 2서브탭 각각 유지:
 //        서브탭1 '경과분석'(targets = ProgressTargetsSection = 오늘 대상자) / 서브탭2 '경과분석 플랜'(plan = ProgressPlansTab = 설정).
 //      value="plan"·testid=tab-progress-plans·testid=tab-progress-targets 전량 보존(하위 서브탭으로 이동).
-type SectionTab = 'history' | 'diagdoc' | 'exam' | 'blood' | 'progress';
+type SectionTab = 'history' | 'diagdoc' | 'exam' | 'blood' | 'progress' | 'rxhistory';
 /** C. 경과분석(progress) 부모 탭의 하위 서브탭 — 'targets'(오늘 대상자) / 'plan'(회차tier 체크포인트 설정). */
 type ProgressSubTab = 'targets' | 'plan';
 
@@ -244,6 +247,11 @@ export default function TreatmentTable() {
             <TrendingUp className="size-3.5 mr-1.5" />
             경과분석
           </TabsTrigger>
+          {/* ⑥ 처방 이력 — T-20260807-foot-TREATTBL-RX-HISTORY-BYDRUG-LOOKUP: 약별 처방 환자 조회(read-only). */}
+          <TabsTrigger value="rxhistory" data-testid="tab-rx-history">
+            <Pill className="size-3.5 mr-1.5" />
+            처방 이력
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="mt-0">
@@ -288,6 +296,10 @@ export default function TreatmentTable() {
               <ProgressPlansTab />
             </TabsContent>
           </Tabs>
+        </TabsContent>
+        {/* ⑥ 처방 이력(약별 조회) — read-only. self-contained(useClinic), date/nameInteraction 불요. */}
+        <TabsContent value="rxhistory" className="mt-0">
+          <RxHistorySection />
         </TabsContent>
       </Tabs>
 

@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+// T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY: 주탭/서브탭 모두 URL query(?tab=/?paytab=) 단일 축으로 통일(재사용).
+import { useTabParam } from '@/hooks/useTabParam';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from '@/lib/toast';
@@ -22,7 +24,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { isStaffUnlockRole, canEditConfirmedClosing } from '@/lib/permissions';
+import { isStaffUnlockRole, canEditConfirmedClosing, hasOpsAuthority } from '@/lib/permissions';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
@@ -31,6 +33,8 @@ import { loadCustomerOutstanding } from '@/lib/footBilling';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC (옵션A): 수기입력 → 정본 write-path 연동(단일 SSOT)
 import { recordManualPayment, type ManualPayAttribution, type ManualPayCheckIn, type PaymentSplit } from '@/lib/manualPaymentWritePath';
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
+// ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3) — 플랜A(단말기 직결) 환불 버튼 + 짝맞춤 판별자.
+import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/CbandTerminalCancelButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -53,6 +57,12 @@ import { RedpayReconcileTab } from '@/components/closing/RedpayReconcileTab';
 import { ReceiptSettlementTab } from '@/components/closing/ReceiptSettlementTab';
 // T-20260805-foot-DAYCLOSE-AC3-DXGUBUN-POPUP: [시술명] 셀 클릭 → 수납 상세 팝업(view-layer only)
 import { PaymentSusuDetailModal } from '@/components/closing/PaymentSusuDetailModal';
+// T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 화면의 '일자별 매출 비교(당월 vs 전월)' 데이터/컴포넌트를
+//   일마감 신규 탭으로 재사용(신규 산식 창작 금지·기존 SSOT 그대로 소비). staffBreakdown(실장 개인성과)은 미노출.
+import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSection';
+// T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: 통계>MTM매출 [이번달 목표매출]·[실장별 일별매출] 뷰 재사용(신규 산식 창작 0).
+import MonthlyTargetSection from '@/components/stats/MonthlyTargetSection';
+import { fetchMonthlyComparison, fetchStaffDailyBreakdown, type MonthlyComparison, type StaffDailyBreakdown } from '@/lib/mtmSales';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -86,6 +96,10 @@ interface PaymentRow {
   created_by?: string | null;
   /** T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: user_profiles!payments_created_by_fkey embed(name). NULL=미기록. */
   processor?: { name: string | null } | null;
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 플랜A 짝맞춤 판별자(payments 축).
+  payment_attempt_id?: string | null;
+  external_approval_no?: string | null;
+  accounting_date?: string | null;
 }
 
 interface PackagePaymentRow {
@@ -110,6 +124,9 @@ interface PackagePaymentRow {
   created_by?: string | null;
   /** T-20260727-foot-CLOSING-REFUND-ACTOR-HISTORY: user_profiles!package_payments_created_by_fkey embed(name). NULL=미기록('—'). */
   processor?: { name: string | null } | null;
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 플랜A 짝맞춤 판별자(package_payments 축).
+  payment_attempt_id?: string | null;
+  external_approval_no?: string | null;
 }
 
 interface UnpaidCheckIn {
@@ -247,6 +264,29 @@ interface EnrichedRow {
   /** 환불행 → 원결제행 매칭 키(단건=linked_payment_id / 패키지=parent_payment_id). */
   linked_payment_id?: string | null;
   parent_payment_id?: string | null;
+  // ── ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3) 플랜A 환불 짝맞춤 판별자 ──
+  //   VG-4 결정론: 플랜A(단말기 직결결제) 여부 = payment_attempt_id IS NOT NULL ∧ external_approval_no 존재
+  //   (isPlanACardPayment). 이 축으로만 환불방식을 판단(구분 패키지/단건 무관). payments·package_payments 양쪽 착지.
+  /** CAT-origin 판별자(FK). NOT NULL = 플랜A(단말기 직결) 결제행. */
+  payment_attempt_id?: string | null;
+  /** 원거래 승인번호(AUTHNO) — 취소 전문 ORI_AUTHNO. */
+  external_approval_no?: string | null;
+  /** 매출일자 앵커(ISO) — 취소 전문 ORI_DATE 파생. */
+  row_accounting_date?: string | null;
+  /** 원거래 할부 개월(취소 HALBU=원거래 동일값). */
+  pay_installment?: number | null;
+}
+
+// ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3/VG-4) — 결제행이 플랜A(단말기 직결결제)인지 결정론 판별.
+//   payment_attempt_id(CAT-origin FK) ∧ external_approval_no(AUTHNO) 존재 = 플랜A. 구분(패키지/단건) 무관, 결제방식으로만 판단.
+//   이 판별로 '기존 환불' vs '플랜A 환불' 버튼의 활성/비활성을 강제(안내문 아닌 disabled 강제).
+function rowIsPlanAPayment(r: EnrichedRow): boolean {
+  return isPlanACardPayment({
+    id: '',
+    amount: r.amount,
+    external_approval_no: r.external_approval_no ?? null,
+    payment_attempt_id: r.payment_attempt_id ?? null,
+  });
 }
 
 const LEAD_SOURCE_OPTIONS = ['TM', '인바운드', '워크인', '지인소개', '온라인', '기타'];
@@ -292,32 +332,61 @@ export default function Closing() {
   const [confirmedEditMode, setConfirmedEditMode] = useState(false);
   // T-20260525-foot-ROLE-PERM-CUSTOM AC-4 → 6MENU ②: 환불 처리도 동일 6역할 set(기존 admin/manager/consultant/coordinator/therapist 포함, +director).
   const canRefund = isAdminOrManager;
+  // ── T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item5, 접근권한 축소) ──
+  //   '총 매출' 탭 = 매출 surface → cross_crm §12-3 EXCL-3 표준상 has_ops_authority 게이트 대상(T-20260619 RBAC).
+  //   reporter(김주연 총괄) 요건 '관리자 필수 + 일반직원 중 상담실장만' = has_ops_authority(admin/manager role-implied
+  //   + flag 부여된 실장급) 게이트로 정렬(planner GO_WARN 기본해석). 선행 DAYCLOSE-REVENUE-COMPARE-TAB '전직원 열람'을
+  //   authorized supersede(동일 reporter=ops 권위)해 좁힘.
+  //   ★lock-out-safe: DB 역배정 전(전원 admin)엔 admin escape 로 inert(전원 통과) — 역배정 시점에 비로소 실효.
+  const canViewTotalRevenue = hasOpsAuthority(profile);
 
-  // T-20260525-foot-CLOSING-CALC-BUG AC-1: 탭 상태를 URL hash로 persist
-  // 브라우저 새로고침(F5) 시 현재 탭(summary/payments) 유지
-  // hash: #payments → "payments" 탭, 그 외 → "summary" 탭 (기본값)
-  const tabFromHash = (): 'summary' | 'payments' =>
-    location.hash === '#payments' ? 'payments' : 'summary';
-  const [tab, setTab] = useState<'summary' | 'payments'>(tabFromHash);
-  // T-20260708-foot-REDPAY-CLOSING-TAB: 결제 탭 하위탭 (CRM 수납 / 레드페이). 기본=CRM 수납.
-  // T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD: '영수증 수납' 3번째 하위탭 신설(레드페이 우측).
-  const [paySubTab, setPaySubTab] = useState<'crm' | 'redpay' | 'receipt'>('crm');
+  // T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY (부모 T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST AC-2 자식):
+  //   [RC] 주탭(summary/payments/compare)은 구 URL hash(#payments/#compare) 기반, 서브탭(paySubTab)은 useState 만
+  //     관리 → 서브탭이 새로고침(F5)에 첫 탭으로 리셋. hash 와 query(?paytab=) 를 병행하면 react-router
+  //     navigate/setSearchParams 가 서로의 hash·search 를 상호 소거(stomp)해 서브탭 유지가 구조적으로 불가.
+  //   [Fix] 주탭 라우팅 mechanism 을 hash → query(?tab=) 로 통일(useTabParam 재사용, 부모 티켓의 서브탭 훅과 동일 축).
+  //     이로써 서브탭도 같은 query 축(?paytab=)에 실어 stomp 를 제거하고 새로고침/딥링크에 함께 유지된다.
+  //     기존 #payments/#compare 딥링크·북마크는 아래 레거시 호환 리다이렉트(1회 이관)로 회귀 방지.
+  const [tab, setTab] = useTabParam<'summary' | 'payments' | 'compare'>({
+    key: 'tab',
+    valid: ['summary', 'payments', 'compare'],
+    fallback: 'summary',
+  });
+  // T-20260708-foot-REDPAY-CLOSING-TAB / T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD:
+  //   결제 탭 하위탭(CRM 수납 / 레드페이 / 영수증 수납). 기본=CRM 수납.
+  //   T-20260809-HASHUNIFY: 주탭 query 통일로 stomp 해소 → paySubTab 도 URL query(?paytab=) 에 반영해
+  //   새로고침/딥링크 유지. 유효값 화이트리스트로 딥링크 오염 방어.
+  const [paySubTab, setPaySubTab] = useTabParam<'crm' | 'redpay' | 'receipt'>({
+    key: 'paytab',
+    valid: ['crm', 'redpay', 'receipt'],
+    fallback: 'crm',
+  });
 
-  // hash 변경 시(브라우저 앞/뒤 네비게이션) 탭 동기화
+  // ── 레거시 hash 딥링크 호환 리다이렉트 (#payments/#compare → ?tab=) ──
+  //   기존 북마크/딥링크(#payments, #compare)로 진입 시 1회 query 로 이관하고 hash 를 제거한다.
+  //   단일 navigate(pathname+search+hash 동시 지정)로 처리해 hash↔search stomp 를 원천 차단.
+  //   이미 ?tab= 가 있으면 query 우선(hash 무시) — 신규 링크와 충돌 없음. 마운트 1회만.
   useEffect(() => {
-    setTab(tabFromHash());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.hash]);
-
-  // 탭 전환 핸들러: URL hash 업데이트 + 상태 반영
-  const handleTabChange = (v: string) => {
-    const next = v as 'summary' | 'payments';
-    setTab(next);
+    const h = location.hash;
+    if (h !== '#payments' && h !== '#compare') return;
+    const legacy = h === '#payments' ? 'payments' : 'compare';
+    const params = new URLSearchParams(location.search);
+    if (!params.get('tab')) params.set('tab', legacy);
     navigate(
-      { hash: next === 'payments' ? '#payments' : '' },
+      { pathname: location.pathname, search: params.toString(), hash: '' },
       { replace: true },
     );
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item5, NAV-BOUNCE parity) ──
+  //   총매출 탭 트리거는 canViewTotalRevenue 시에만 노출하지만, 직접 URL(?tab=compare) 딥링크로 진입할 수 있어
+  //   권한 없는 계정이 compare 탭에 착지하면 요약 탭으로 바운스(탭 숨김 + 직접접근 차단 둘 다 = NAV-BOUNCE 패리티).
+  //   lock-out-safe: 전원 admin 환경에선 canViewTotalRevenue=true 라 바운스 없음(inert).
+  useEffect(() => {
+    if (tab === 'compare' && !canViewTotalRevenue) setTab('summary');
+  }, [tab, canViewTotalRevenue, setTab]);
+
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
   const [actualCash, setActualCash] = useState(0);
@@ -363,7 +432,7 @@ export default function Closing() {
         // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: created_by + processor JOIN 추가(SalesPatientTab 패턴 REUSE).
         //   환불 이력 '처리자' = payments.created_by(refund_single_payment RPC 캡처) → user_profiles.name.
         //   FK 기본명 payments_created_by_fkey (prod 확인·20260717140000 마이그 dryrun §2 검증필). 과거행 NULL → '—'.
-        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id, created_by, processor:user_profiles!payments_created_by_fkey(name)')
+        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id, created_by, payment_attempt_id, external_approval_no, accounting_date, processor:user_profiles!payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -424,7 +493,7 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('package_payments')
-        .select('id, package_id, amount, method, payment_type, created_at, accounting_date, customer_id, installment, memo, parent_payment_id, created_by, processor:user_profiles!package_payments_created_by_fkey(name)')
+        .select('id, package_id, amount, method, payment_type, created_at, accounting_date, customer_id, installment, memo, parent_payment_id, created_by, payment_attempt_id, external_approval_no, processor:user_profiles!package_payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .eq('accounting_date', date)
         .order('created_at', { ascending: true });
@@ -756,6 +825,28 @@ export default function Closing() {
     },
   });
 
+  // ── T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: '매출 비교' 탭 데이터 ──
+  //   통계>MTM매출 02섹션 '일자별 매출 비교(당월 vs 전월)'와 동일 소스(fetchMonthlyComparison/mtmSales.ts)를
+  //   그대로 재사용(신규 산식·별도 쿼리 창작 없음 = AC-2, 통계 화면과 값 동일 SSOT). refISO=선택일(date)이 속한 달 기준.
+  //   ★스코프: 카드 #1(일자별 당월vs전월)만 노출 — 실장 개인성과(카드 #2)는 fetch/렌더 안 함(staff 노출 경계, AC-3).
+  //   월 단위 캐시(같은 달 내 날짜 변경 시 재조회 안 함). 통계 화면(admin 전용)과 달리 일마감은 전직원 open.
+  const compareMonth = date.slice(0, 7); // yyyy-MM
+  const { data: monthlyCompare = null, isLoading: compareLoading } = useQuery<MonthlyComparison | null>({
+    queryKey: ['closing-monthly-compare', clinic?.id, compareMonth],
+    enabled: !!clinic && tab === 'compare' && canViewTotalRevenue,
+    queryFn: () => fetchMonthlyComparison(clinic!.id, `${compareMonth}-01`),
+  });
+
+  // ── T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item2·item3): 실장별 일별 매출 데이터 ──
+  //   통계>MTM매출 대시보드 [실장별 일별매출] 뷰와 '동일 소스'(fetchStaffDailyBreakdown/mtmSales.ts SSOT)를 그대로
+  //   재사용 — 신규 산식/쿼리 창작 0. MonthlyComparisonSection(공유 렌더러)에 staffBreakdown 으로 주입해 통계 화면과
+  //   같은 표를 3번 항목으로 노출. 총매출 열람권(canViewTotalRevenue)자에게만 fetch. 월 단위 캐시(compareMonth).
+  const { data: staffDaily = null, isLoading: staffDailyLoading } = useQuery<StaffDailyBreakdown | null>({
+    queryKey: ['closing-staff-daily', clinic?.id, compareMonth],
+    enabled: !!clinic && tab === 'compare' && canViewTotalRevenue,
+    queryFn: () => fetchStaffDailyBreakdown(clinic!.id, `${compareMonth}-01`),
+  });
+
   // ── 기존 마감 데이터로 폼 초기화 ────────────────────────────
   useEffect(() => {
     if (existing) {
@@ -1016,6 +1107,11 @@ export default function Closing() {
         row_customer_id: p.customer_id ?? undefined,
         // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 환불행→원결제행 매칭 키
         linked_payment_id: p.linked_payment_id ?? null,
+        // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 플랜A 짝맞춤 판별자(payments 축).
+        payment_attempt_id: p.payment_attempt_id ?? null,
+        external_approval_no: p.external_approval_no ?? null,
+        row_accounting_date: p.accounting_date ?? null,
+        pay_installment: p.installment ?? null,
       });
     }
 
@@ -1065,6 +1161,11 @@ export default function Closing() {
         row_customer_id: p.customer_id,
         // T-20260715-foot-DAYCLOSE-PAYGATE-REFUNDROW REQ②: 패키지 환불행→원결제행 매칭 키
         parent_payment_id: p.parent_payment_id ?? null,
+        // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 플랜A 짝맞춤 판별자(package_payments 축).
+        payment_attempt_id: p.payment_attempt_id ?? null,
+        external_approval_no: p.external_approval_no ?? null,
+        row_accounting_date: p.accounting_date ?? null,
+        pay_installment: p.installment ?? null,
       });
     }
 
@@ -1633,7 +1734,7 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={handleTabChange}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as 'summary' | 'payments' | 'compare')}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="summary" className="flex-1 sm:flex-none">
             총 합계
@@ -1641,6 +1742,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           <TabsTrigger value="payments" className="flex-1 sm:flex-none">
             결제내역 <Badge variant="secondary" className="ml-1.5">{enrichedRows.length}</Badge>
           </TabsTrigger>
+          {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 '일자별 매출 비교(당월 vs 전월)' 재노출 탭.
+              T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item5): '총 매출' = 매출 surface →
+              canViewTotalRevenue(has_ops_authority) 열람권자에게만 트리거 노출(전직원 열람 supersede). */}
+          {canViewTotalRevenue && (
+            <TabsTrigger value="compare" className="flex-1 sm:flex-none">
+              총 매출
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ════════════════════════ 탭 1: 총 합계 ════════════════════════ */}
@@ -2197,12 +2306,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       {/* T-20260804-foot-DAYCLOSE-PAYHIST-REFUND-BADGE-VERTICAL: 환불 시 배지 2~3개 수용 위해 w-16→w-24 */}
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-24">구분</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-16">환불</th>
+                      {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 기존 [환불] 컬럼 오른쪽 신규 컬럼(플랜A 환불 BETA). */}
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-20">플랜A 환불</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredEnrichedRows.length === 0 && (
                       <tr>
-                        <td colSpan={14} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={15} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
@@ -2389,14 +2500,35 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             {/* T-20260713-ITEMSELECT: 클릭 시 같은 고객의 환불 가능 행 묶음을 창으로 전달(유형별 구분+항목 선택) */}
                             {/* [FOLD] AC-B1: 완전환불(잔여 0) 행은 재환불 클릭 차단 → 버튼 숨김 */}
                             {canRefund && r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && !isFullyRefunded(r) && (
-                              <button
-                                data-testid="refund-open-btn"
-                                onClick={() => setRefundTarget(gatherCustomerRefundRows(r))}
-                                className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                                title="환불"
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                              </button>
+                              rowIsPlanAPayment(r) ? (
+                                /* ★AC-3 짝맞춤(VG-4): 플랜A(단말기 직결) 결제행 → 기존 환불 [비활성] 강제. 옆의 BETA 환불 사용.
+                                   안내문 회피가 아니라 버튼 자체를 disabled(오환불 사고 차단). hover tooltip 으로 대체 경로 안내. */
+                                <span
+                                  className="group relative inline-block"
+                                  tabIndex={0}
+                                  title="이 건은 단말기 직결결제 건입니다 → 옆의 BETA 환불을 사용하세요"
+                                  data-testid={`refund-disabled-planA-${r.payment_id ?? r.pkg_payment_id ?? r.sort_key}`}
+                                >
+                                  <button type="button" disabled className="text-gray-300 cursor-not-allowed p-1">
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </button>
+                                  <span
+                                    role="tooltip"
+                                    className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 w-56 max-w-[80vw] -translate-x-1/2 rounded-md bg-gray-900 px-2.5 py-1.5 text-[11px] leading-relaxed text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+                                  >
+                                    이 건은 단말기 직결결제 건입니다 → 옆의 BETA 환불을 사용하세요
+                                  </span>
+                                </span>
+                              ) : (
+                                <button
+                                  data-testid="refund-open-btn"
+                                  onClick={() => setRefundTarget(gatherCustomerRefundRows(r))}
+                                  className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                                  title="환불"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                </button>
+                              )
                             )}
                             {/* 수기 수정/삭제 버튼 — 확정 후에는 '확정 편집' 모드에서만(원자 재확정+감사) */}
                             {r.source === 'manual' && r.manual_id && r.manual_raw && isAdminOrManager && (!isClosed || confirmedEditMode) && (
@@ -2418,6 +2550,32 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                               </>
                             )}
                           </div>
+                        </td>
+                        {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3) — 신규 컬럼: 플랜A 환불(BETA).
+                            짝맞춤(VG-4): CbandTerminalCancelButton 이 플랜A 결제행에서만 활성, 기존방식 결제행에서는 자체 [비활성]+툴팁(AC-8).
+                            결제방식으로만 판단(구분 패키지/단건 무관). 패키지행(source==='package')은 packageId 전달 → 취소 refund 가 package_payments 착지. */}
+                        <td className="px-1 py-1.5 text-center" data-testid={`planA-refund-cell-${r.payment_id ?? r.pkg_payment_id ?? r.sort_key}`}>
+                          {r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && !isFullyRefunded(r) && clinic && (
+                            <CbandTerminalCancelButton
+                              payment={{
+                                id: (r.source === 'package' ? r.pkg_payment_id : r.payment_id) ?? '',
+                                amount: r.amount,
+                                clinic_id: clinic.id,
+                                check_in_id: r.pay_check_in_id ?? null,
+                                external_approval_no: r.external_approval_no ?? null,
+                                accounting_date: r.row_accounting_date ?? null,
+                                payment_attempt_id: r.payment_attempt_id ?? null,
+                                installment: r.pay_installment ?? null,
+                              }}
+                              clinicId={clinic.id}
+                              customerId={r.row_customer_id ?? null}
+                              packageId={r.source === 'package' ? (r.package_id ?? null) : null}
+                              onDone={() => {
+                                refreshPayments();
+                                qc.invalidateQueries({ queryKey: ['closing-refund-alldates', clinic.id] });
+                              }}
+                            />
+                          )}
                         </td>
                       </tr>
                       );
@@ -2450,7 +2608,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             return n > 0 ? `${n}건` : '-';
                           })()}
                         </td>
-                        <td colSpan={3}></td>
+                        {/* 결제수단 · 구분 · 환불 · 플랜A 환불 4개 컬럼(T-20260807 AC-3 컬럼 추가로 3→4). */}
+                        <td colSpan={4}></td>
                       </tr>
                     </tfoot>
                   )}
@@ -2575,6 +2734,25 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               {clinic && <ReceiptSettlementTab date={date} clinicId={clinic.id} />}
             </TabsContent>
           </Tabs>
+        </TabsContent>
+
+        {/* ════════════════════════ 탭 3: 총 매출 ════════════════════════ */}
+        {/* T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: '총 매출' 탭 = 통계>MTM매출 대시보드 뷰 3항목 재배치.
+            신규 산식/쿼리 창작 0 — 3항목 모두 통계 대시보드 기존 컴포넌트/뷰를 그대로 소비(쌍방향 연동 정책).
+            순서: 1)이번달 목표매출(read-only) 2)전월대비 매출추이(2단 15일) 3)실장별 일별매출.
+            item5 접근권한: canViewTotalRevenue(has_ops_authority) 게이트 — 트리거 숨김 + NAV-BOUNCE(위 useEffect). */}
+        <TabsContent value="compare" className="space-y-4">
+          {/* 1. 이번달 목표 매출 — 통계 대시보드 [이번달 목표매출] 뷰 재사용, [수정] 버튼만 제거(read-only). */}
+          <MonthlyTargetSection clinicId={clinic?.id} refISO={date} readOnly />
+          {/* 2. 전월 대비 매출 추이(2단 15일) + 3. 실장별 일별 매출 — 통계 공유 렌더러(MonthlyComparisonSection).
+              staffBreakdown 주입 + showStaffBreakdown=true → 통계 대시보드 [실장별 일별매출]과 동일 뷰를 3번 항목으로 노출.
+              (item5로 매출 surface 열람권 게이트가 적용됐으므로 실장 개인성과 노출 경계 충족.) */}
+          <MonthlyComparisonSection
+            data={monthlyCompare}
+            staffBreakdown={staffDaily}
+            loading={compareLoading || staffDailyLoading}
+            showStaffBreakdown={true}
+          />
         </TabsContent>
       </Tabs>
 

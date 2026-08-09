@@ -40,8 +40,11 @@ const RECEIPT_TAB = 'src/components/closing/ReceiptSettlementTab.tsx';
 test.describe('T-20260710 FE build — [영수증 수납] 하위탭 소스 검증', () => {
   test('Closing.tsx: 레드페이 우측 3번째 하위탭(receipt) 배선', () => {
     const src = fs.readFileSync(CLOSING, 'utf-8');
-    // 하위탭 상태에 receipt 추가
-    expect(src).toContain("useState<'crm' | 'redpay' | 'receipt'>('crm')");
+    // 하위탭 상태에 receipt 포함 — T-20260809-HASHUNIFY 로 useState → useTabParam(?paytab=) URL 유지 전환.
+    //   (구 assertion: useState<'crm'|'redpay'|'receipt'>('crm'). 서브탭 새로고침 유지 위해 URL query 축으로 통일.)
+    expect(src).toContain("useTabParam<'crm' | 'redpay' | 'receipt'>");
+    expect(src).toContain("key: 'paytab'");
+    expect(src).toContain("valid: ['crm', 'redpay', 'receipt']");
     // 3개 하위탭 트리거 (crm / redpay / receipt) + '영수증 수납' 라벨
     expect(src).toContain('<TabsTrigger value="receipt"');
     expect(src).toContain('영수증 수납');

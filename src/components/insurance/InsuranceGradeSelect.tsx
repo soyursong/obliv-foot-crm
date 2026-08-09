@@ -9,7 +9,7 @@
  * - 태블릿 터치 UX (button-grid, h-10 이상)
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateDots } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
@@ -52,6 +52,12 @@ interface Props {
   onChanged?: () => void;
   /** false 시 수정 차단 (읽기 전용) */
   editable?: boolean;
+  /**
+   * T-20260806-foot-NHIS-LOOKUP-SOURCE-UNATTRIBUTED
+   * 포털 딥링크 조회 개시 상태(useNhisLookup.captureOpen). true 면 source 초안을 'hira_lookup' 으로 프리셋.
+   * 사용자가 라디오로 바꾸면 그 선택이 우선(강제 아님). 기존 source 값이 있으면 그 값이 유지됨.
+   */
+  lookupInProgress?: boolean;
 }
 
 export function InsuranceGradeSelect({
@@ -59,10 +65,13 @@ export function InsuranceGradeSelect({
   clinicId,
   onChanged,
   editable = true,
+  lookupInProgress = false,
 }: Props) {
   const { grade, source, verifiedAt, memo, refresh } = useInsuranceGrade(customerId);
   const [draftGrade, setDraftGrade] = useState<InsuranceGrade>('unverified');
-  const [draftSource, setDraftSource] = useState<InsuranceGradeSource>('manual_input');
+  const [draftSource, setDraftSource] = useState<InsuranceGradeSource>(
+    lookupInProgress ? 'hira_lookup' : 'manual_input',
+  );
   const [draftMemo, setDraftMemo] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -74,11 +83,25 @@ export function InsuranceGradeSelect({
   const [ageYears, setAgeYears] = useState<number | null>(null);
 
   // 초기 로딩 시 폼 동기화
+  //   T-20260806-...-REWORK: deps 에서 lookupInProgress(=captureOpen, 양방향 토글) 제거.
+  //   draftSource 초기값은 manual_input 고정 — 조회 프리셋은 아래 rising-edge effect 전담.
   useEffect(() => {
     setDraftGrade((grade ?? 'unverified') as InsuranceGrade);
     setDraftSource((source ?? 'manual_input') as InsuranceGradeSource);
     setDraftMemo(memo ?? '');
   }, [grade, source, memo]);
+
+  // 딥링크 조회 **개시 순간(false→true)** 에만 출처 초안을 프리셋.
+  //   captureOpen 은 양방향 토글(패널 닫기·차트 전환 시 false)이라 deps 에 그대로 두면
+  //   닫는 순간 manual_input 으로 되돌아가 본 티켓의 목적이 무산된다(rising edge 한정).
+  //   등급·메모는 건드리지 않는다 — 편집 중 조회해도 입력이 보존돼야 한다.
+  const prevLookupRef = useRef(false);
+  useEffect(() => {
+    if (lookupInProgress && !prevLookupRef.current) {
+      setDraftSource('hira_lookup');
+    }
+    prevLookupRef.current = lookupInProgress;
+  }, [lookupInProgress]);
 
   // 나이 자동(§3) — 나이 SSOT = fn_customer_birthdates RPC(서버파생 'YYYY-MM-DD', 세기 정확).
   //   REDEFINITION_RISK 정렬: 클라 세기-휴리스틱 신설 없이 RPC 재사용. clinicId 없으면 나이 추천 생략.
@@ -117,7 +140,7 @@ export function InsuranceGradeSelect({
 
   const startEdit = () => {
     setDraftGrade((grade ?? 'unverified') as InsuranceGrade);
-    setDraftSource((source ?? 'manual_input') as InsuranceGradeSource);
+    setDraftSource((source ?? (lookupInProgress ? 'hira_lookup' : 'manual_input')) as InsuranceGradeSource);
     setDraftMemo(memo ?? '');
     // 판정 보조 입력은 매 편집 시 비움(이전 값 잔류 = 오판정 방지).
     setBenefitText('');

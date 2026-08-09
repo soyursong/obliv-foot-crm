@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Layers, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { useTabParam } from '@/hooks/useTabParam';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,8 +24,12 @@ import { useClinic } from '@/hooks/useClinic';
 import { useTreatmentStandardPrices } from '@/hooks/useTreatmentStandardPrices';
 import { formatAmount, formatPhone, chartNoBadge, todaySeoulISODate, seoulHHMM, formatDateTimeDots } from '@/lib/format';
 import { isSinglePaymentByCount, computeOutstanding, balanceStatus, balanceStatusLabel, netPaidFromPayments, effectiveNetPaid } from '@/lib/footBilling';
+import { regeneratePackage } from '@/lib/packageCreditLedger';
 import { cn } from '@/lib/utils';
 import { useChartNoPopup, CHARTNO_LINK_CLASS } from '@/hooks/useChartNoPopup';
+// ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1/AC-4) — 패키지 탭 코밴 CAT 단말결제/취소(카드 탭 동일 버튼 재사용).
+import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/CbandTerminalCancelButton';
 import type { Customer, Package, PackageRemaining, PackageTemplate } from '@/lib/types';
 import { TREATMENT_TYPES, treatmentTypeLabel, type TreatmentType } from '@/lib/types';
 
@@ -437,7 +442,11 @@ function TemplateManageSheet({
   const [loading, setLoading] = useState(false);
   const [editTarget, setEditTarget] = useState<PackageTemplate | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [subTab, setSubTab] = useState<PkgManageTab>('standard');
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): 패키지관리 서브탭을 URL(?tab=)에 반영 → 새로고침 복원.
+  const [subTab, setSubTab] = useTabParam<PkgManageTab>({
+    valid: ['standard', 'official', 'custom'],
+    fallback: 'standard',
+  });
 
   const load = useCallback(async () => {
     if (!clinicId) return;
@@ -1460,7 +1469,9 @@ function PackageDetailSheet({
     { id: string; session_number: number; session_type: string; session_date: string; status: string }[]
   >([]);
   const [pkgPayments, setPkgPayments] = useState<
-    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null; parent_payment_id?: string | null }[]
+    { id: string; amount: number; method: string; payment_type: 'payment' | 'refund'; created_at: string; fee_kind?: string | null; parent_payment_id?: string | null;
+      // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4): 코밴 CAT 단말취소용 필드(CAT-origin 판별·ORI 전문 파생).
+      external_approval_no?: string | null; external_tid?: string | null; payment_attempt_id?: string | null; installment?: number | null; accounting_date?: string | null }[]
   >([]);
   const [refundOpen, setRefundOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -1469,6 +1480,8 @@ function PackageDetailSheet({
   // T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 복구(환불 오표시 → 활성) / 취소(차감이력 有 → cancelled)
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE: 재생성(구성 변경) — 원장 re-anchor + superseded_by lineage
+  const [regenOpen, setRegenOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!packageId) return;
@@ -1480,7 +1493,8 @@ function PackageDetailSheet({
       supabase.from('package_sessions').select('id, session_number, session_type, session_date, status')
         .eq('package_id', packageId).neq('status', 'deleted').order('session_number', { ascending: true }),
       // T-20260714-foot-PKG-REFUND-AMOUNT-MISMATCH: parent_payment_id 추가(결제행 단위 환불 잔여 산출용)
-      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind, parent_payment_id')
+      // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4): CAT 단말취소 판별/전문 파생 필드 동반 조회.
+      supabase.from('package_payments').select('id, amount, method, payment_type, created_at, fee_kind, parent_payment_id, external_approval_no, external_tid, payment_attempt_id, installment, accounting_date')
         .eq('package_id', packageId).order('created_at', { ascending: false }),
     ]);
     setPkg(pkgRes.data as unknown as PackageListItem);
@@ -1632,8 +1646,25 @@ function PackageDetailSheet({
               {/* T-20260521-foot-STAFF-PKG-ROLLBACK: canWrite=false(therapist) → 쓰기 버튼 숨김 */}
               {(canWrite !== false) && <Button size="sm" onClick={() => setUseSessionOpen(true)}>회차 소진</Button>}
               {(canWrite !== false) && <PackagePaymentAdd packageId={pkg.id} customerId={pkg.customer_id} clinicId={pkg.clinic_id} onAdded={reload} />}
+              {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1): 패키지 탭 코밴 CAT 단말결제(카드 탭과 동일 버튼).
+                  내부 기능플래그(VITE_CBAND_PAY) OFF 면 null 렌더 → 프로덕션 노출 0(카드 탭과 동일 게이트).
+                  defaultAmount=패키지 미수잔금(≤0 이면 빈칸). packageId → package_payments 행 착지(DA(b)·VG-1 firewall).
+                  checkInId 미전달(내원 비종속). onApproved=reload(승인 즉시 잔금·결제이력 반영). */}
+              {(canWrite !== false) && (
+                <div className="w-full">
+                  <CbandPayEntryButton
+                    clinicId={pkg.clinic_id}
+                    customerId={pkg.customer_id}
+                    packageId={pkg.id}
+                    defaultAmount={Math.max(0, computeOutstanding(pkg.total_amount, effectiveNetPaid(pkg, pkgPayments)))}
+                    onApproved={reload}
+                  />
+                </div>
+              )}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setRefundOpen(true)} disabled={(pkg.status as string) === 'refunded'}>환불</Button>}
               {(canWrite !== false) && <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)}>양도</Button>}
+              {/* T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE: 재생성 = 취소+신규를 원장 re-anchor + superseded_by lineage 로 대체(paid_amount 수동 bump 제거). */}
+              {(canWrite !== false) && <Button variant="outline" size="sm" data-testid="pkg-regen-btn" onClick={() => setRegenOpen(true)}>재생성</Button>}
               {/* T-20260805-foot-PACKAGE-RESTORE-CANCEL-BTN: 취소(차감이력 有 패키지 → cancelled). status='cancelled'=트리거 보호축(early-RETURN)·재역전 없음. 자동환불 안 함(사용분 매출확정·미사용분은 기존 '환불' 버튼). */}
               {(canWrite !== false) && <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" data-testid="pkg-cancel-btn" onClick={() => setCancelOpen(true)}>패키지 취소</Button>}
               {isAdmin && sessions.length === 0 && pkgPayments.length === 0 && (
@@ -1685,10 +1716,30 @@ function PackageDetailSheet({
             <div className="space-y-1">
               {pkgPayments.length === 0 && <div className="py-3 text-center text-xs text-muted-foreground">결제 없음</div>}
               {pkgPayments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5 text-xs">
+                <div key={p.id} className="flex items-center justify-between gap-2 rounded bg-muted/30 px-2.5 py-1.5 text-xs">
                   <span>{formatDateTimeDots(p.created_at)}</span>
-                  <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
-                    {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)} · {methodLabel(p.method)}
+                  <span className="flex items-center gap-2">
+                    <span className={p.payment_type === 'refund' ? 'text-red-600' : ''}>
+                      {p.payment_type === 'refund' ? '-' : ''}{formatAmount(p.amount)} · {methodLabel(p.method)}
+                    </span>
+                    {/* ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-4): CAT 결제(payment_attempt_id 有) 행에만 [단말기 취소].
+                        기능플래그 OFF 면 null. 재취소 가드·refund 착지 모두 package_payments(packageId 스코프). */}
+                    {(canWrite !== false) && p.payment_type === 'payment' && isPlanACardPayment({
+                      id: p.id, amount: p.amount, external_approval_no: p.external_approval_no,
+                      payment_attempt_id: p.payment_attempt_id,
+                    }) && (
+                      <CbandTerminalCancelButton
+                        payment={{
+                          id: p.id, amount: p.amount, clinic_id: pkg.clinic_id, check_in_id: null,
+                          external_approval_no: p.external_approval_no, accounting_date: p.accounting_date,
+                          created_at: p.created_at, payment_attempt_id: p.payment_attempt_id, installment: p.installment,
+                        }}
+                        clinicId={pkg.clinic_id}
+                        customerId={pkg.customer_id}
+                        packageId={pkg.id}
+                        onDone={reload}
+                      />
+                    )}
                   </span>
                 </div>
               ))}
@@ -1714,6 +1765,10 @@ function PackageDetailSheet({
         <CancelPackageDialog open={cancelOpen} pkg={pkg} sessions={sessions}
           onOpenChange={setCancelOpen}
           onDone={() => { setCancelOpen(false); reload(); onChanged(); }} />
+        {/* T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE */}
+        <RegeneratePackageDialog open={regenOpen} pkg={pkg} unusedAmountHint={Math.max(0, totalPaid - totalRefunded)}
+          onOpenChange={setRegenOpen}
+          onDone={(newId) => { setRegenOpen(false); onClose(); onChanged(); void newId; }} />
       </SheetContent>
     </Sheet>
   );
@@ -2363,6 +2418,103 @@ function CancelPackageDialog({ open, pkg, sessions, onOpenChange, onDone }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>
           <Button variant="destructive" data-testid="pkg-cancel-submit" disabled={submitting} onClick={process}>취소 처리</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// 패키지 재생성 — T-20260715-foot-PKG-REGEN-LEDGER-FE-CONVERGE
+// 취소+신규+paid_amount 수동 bump 를 원장 re-anchor(charge/use) + superseded_by lineage 로 대체.
+//   · 원본은 cancelled + superseded_by=new.id 로 계보 보존(파괴적 delete 아님).
+//   · 미사용 크레딧(calc_refund_amount 미사용분 상당액)을 원장 transfer(use old / charge new)로 이관 → 고아 credit 0.
+//   · new.paid_amount = 원장 파생값 sync(수동 bump 아님). 정본 write-path 병렬경로 신설 없음.
+// ============================================================
+function RegeneratePackageDialog({ open, pkg, unusedAmountHint, onOpenChange, onDone }: {
+  open: boolean; pkg: PackageListItem; unusedAmountHint: number;
+  onOpenChange: (o: boolean) => void; onDone: (newPackageId: string) => void;
+}) {
+  const { profile } = useAuth();
+  const [name, setName] = useState(pkg.package_name);
+  const [amount, setAmount] = useState(pkg.total_amount);
+  const [reason, setReason] = useState('');
+  const [carry, setCarry] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(pkg.package_name); setAmount(pkg.total_amount); setReason(''); setCarry(null);
+    (async () => {
+      // 미사용분 상당액(참고표시와 동일 SSOT, 무영속 SQL 함수) → 이관 크레딧 프리필.
+      const { data } = await supabase.rpc('calc_refund_amount', { p_package_id: pkg.id });
+      const q = (data ?? null) as { refund_amount?: number } | null;
+      setCarry(q?.refund_amount ?? unusedAmountHint);
+    })();
+  }, [open, pkg, unusedAmountHint]);
+
+  const process = async () => {
+    if (!name.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (!window.confirm(
+      `「${pkg.package_name}」 패키지를 재생성하시겠습니까?\n\n` +
+      `· 원본은 '취소(cancelled)' + 계보 연결로 보존됩니다(이력 삭제 없음).\n` +
+      `· 미사용 크레딧 ${formatAmount(carry ?? 0)} 이 새 패키지로 원장 이관됩니다.`,
+    )) return;
+    setSubmitting(true);
+    try {
+      const res = await regeneratePackage({
+        source: pkg as unknown as Parameters<typeof regeneratePackage>[0]['source'],
+        newTotalAmount: amount,
+        newPackageName: name.trim(),
+        carryCredit: carry ?? undefined,
+        reason: reason.trim() || null,
+        actor: profile?.id ?? null,
+      });
+      toast.success(`재생성 완료 — 크레딧 ${formatAmount(res.carriedCredit)} 이관`);
+      onDone(res.newPackageId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '재생성 실패');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>패키지 재생성</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="rounded-md border border-teal-200 bg-teal-50/50 px-3 py-2.5 text-xs text-teal-800">
+            <div className="font-medium mb-1">재생성 안내</div>
+            <ul className="list-disc pl-4 space-y-0.5 text-teal-700">
+              <li>원본 패키지를 <b>취소 + 계보 연결(superseded_by)</b>로 보존합니다.</li>
+              <li>미사용 크레딧을 <b>원장으로 이관</b>합니다(수동 금액 입력 없음 · 고아 크레딧 0).</li>
+              <li>같은 구성으로 새 활성 패키지를 만듭니다(총 계약금·패키지명은 아래에서 조정 가능).</li>
+            </ul>
+          </div>
+          <div className="space-y-1.5">
+            <Label>새 패키지명</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>새 총 계약금</Label>
+            <AmountInput value={amount} onChange={(raw) => setAmount(Number(raw) || 0)} />
+          </div>
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+            이관 크레딧(미사용분 상당액){' '}
+            <span className="font-semibold tabular-nums">{carry == null ? '계산 중…' : formatAmount(carry)}</span>
+            <span className="text-muted-foreground"> — 원장(charge/use)으로 이관</span>
+          </div>
+          <div className="space-y-1.5">
+            <Label>재생성 사유 (선택)</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: 구성 변경 / 회차 조정" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>
+          <Button data-testid="pkg-regen-submit" disabled={submitting || !name.trim()} onClick={process}>
+            {submitting ? '재생성 중…' : '재생성'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

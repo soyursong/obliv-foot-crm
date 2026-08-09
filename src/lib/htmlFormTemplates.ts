@@ -2566,6 +2566,218 @@ ${COMMON_STYLE}
 </div>
 `;
 
+// ─── 외국인 비급여 진료 동의서 (국·영문 병기) ───
+// T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM
+//   한국 건강보험 미적용 외국인 환자 대상 전액 비급여 진료 안내 동의서.
+//   기존 비급여 동의서(서류 발행 화면)와 동일 방식(HTML 템플릿 + form_templates seed) — 순수 ADDITIVE.
+//   자동바인딩: 날짜={{issue_date}}(오늘), 성명={{patient_name}}(대상 환자). 서명=수기(빈칸, 인쇄 후 손서명).
+//   현장 확정 5개 조항(bilingual 제목 verbatim + 국문 본문 verbatim + 외국인 대상 영문 병기).
+const FOREIGNER_NONCOVERED_CONSENT_HTML = `
+${COMMON_STYLE}
+<style>
+  .fnc-clause { border: 1px solid #000; margin-top: 4px; padding: 6px 9px; }
+  .fnc-clause-head { font-size: 10pt; font-weight: bold; margin-bottom: 3px; }
+  .fnc-ko { font-size: 9.5pt; line-height: 1.5; }
+  .fnc-en { font-size: 8.5pt; line-height: 1.45; color: #333; margin-top: 2px; }
+  .fnc-ko li, .fnc-en li { margin-left: 16px; }
+  .fnc-sign-tbl { margin-top: 14px; table-layout: fixed; }
+  .fnc-sign-tbl td { height: 30px; }
+  .fnc-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
+  .fnc-sig-cell { width: 28%; }
+</style>
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">외국인 비급여 진료 동의서</div>
+    <div style="flex:1;"></div>
+  </div>
+  <div class="subtitle" style="font-size:10pt; margin-bottom:6px;">Agreement on Non-Covered Medical Treatment &amp; Fees</div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">1. 비급여 진료 안내 / Non-Covered Medical Care</div>
+    <div class="fnc-ko">한국 건강보험이 적용되지 않는 외국인 환자는 전액 비급여 진료가 적용됨을 안내드립니다.</div>
+    <div class="fnc-en">As a foreign patient not covered by Korean National Health Insurance, all medical treatment is provided on a fully non-covered (out-of-pocket) basis.</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">2. 진료 및 서비스 비용 / Medical &amp; Service Fees</div>
+    <div class="fnc-ko">본치료비 및 장치·재료비 외에 의사 진찰료 및 관리사 서비스 비용이 별도로 부과됨에 동의합니다.</div>
+    <div class="fnc-en">I agree that, in addition to the treatment fee and device/material costs, a separate physician consultation fee and practitioner service fee will be charged.</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">3. 포도로게(교정기) 관련 안내 / Podology (Orthotic Device) Terms</div>
+    <ul class="fnc-ko">
+      <li>장치 장착 후 출국 시, 사후 관리(재조정·추가 시술)가 제한될 수 있습니다.</li>
+      <li>귀국 후 추가 처치가 필요한 경우 그 비용은 환자 본인이 부담합니다.</li>
+      <li>교정 결과는 개인의 발 상태에 따라 차이가 있을 수 있습니다.</li>
+    </ul>
+    <ul class="fnc-en">
+      <li>If you leave Korea after the device is fitted, follow-up care (readjustment / additional procedures) may be limited.</li>
+      <li>Any additional treatment required after returning to your home country shall be borne by the patient.</li>
+      <li>Correction results may vary depending on each individual's foot condition.</li>
+    </ul>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">4. 원내 정책 및 책임 범위 / Clinic Policy &amp; Scope of Responsibility</div>
+    <div class="fnc-ko">본원은 의료 서비스만을 제공하며, 비의료적 개인 요청(택시 호출, 출입국 관련 서명 등)에는 응할 의무가 없습니다.</div>
+    <div class="fnc-en">The clinic provides medical services only and is under no obligation to fulfill non-medical personal requests (e.g., calling a taxi, signing immigration-related documents).</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">5. 수납 및 환불 정책 / Payment &amp; Refund Policy</div>
+    <div class="fnc-ko">상담 및 시술 후 발생한 진료비의 납부에 동의하며, 이미 완료된 서비스에 대해서는 환불이 불가함을 확인합니다.</div>
+    <div class="fnc-en">I agree to pay the fees incurred after consultation and treatment, and I acknowledge that services already rendered are non-refundable.</div>
+  </div>
+
+  <div class="confirm-text" style="margin-top:8px; font-size:10pt;">
+    본인은 위 내용을 충분히 이해하였으며 이에 동의합니다.<br>
+    <span style="font-weight:normal; font-size:8.5pt;">I have fully read and understood the above and hereby agree to its terms.</span>
+  </div>
+
+  <table class="fnc-sign-tbl">
+    <tbody>
+      <tr>
+        <td class="fnc-sign-label">날짜 / Date</td>
+        <td>{{issue_date}}</td>
+        <td class="fnc-sign-label">성명 / Name</td>
+        <td>{{patient_name}}</td>
+      </tr>
+      <tr>
+        <td class="fnc-sign-label">서명 / Signature</td>
+        <td class="fnc-sig-cell"></td>
+        <td class="fnc-sign-label">기관 / Clinic</td>
+        <td>{{clinic_name}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+`;
+
+// ─── 개인정보 수집·이용 등 동의서 (셀프접수 필수 동의 종이 백업용) ───
+// T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM (scope: uem5-fold → 셀프접수 필수 동의 전건 백업)
+//   셀프접수(foot-checkin) 오류로 라이브 동의 미수집 시 종이 백업용 동의서.
+//   기존 동의서(외국인 비급여)와 동일 방식(HTML 템플릿 + form_templates seed) — 순수 ADDITIVE.
+//   ★문안은 dev 창작 아님: 셀프접수 라이브 동의문(foot-checkin SelfCheckIn.tsx)을 authoritative
+//     source 로 verbatim 서식화. 안전망 목적상 셀프접수 실패 시 필수 동의 전건을 종이로 확보해야
+//     하므로 단건(#2)이 아니라 필수 3종 + 선택 1종 = 4개 블록 전체를 수록(uem5 scope 확장).
+//     [1] 개인정보 수집·이용 (필수) — privacyConsentLabel / privacyConsentNote
+//     [2] 민감정보(건강·진료정보) 수집·이용 (필수, 개보법 §23) — consentSensitiveLabel / consentSensitiveItems
+//     [3] 건강보험 자격조회 (필수) — insuranceConsentLabel / insuranceConsentNote
+//     [4] 예약 안내 문자(SMS) 수신 (선택) — smsOptIn / smsOptInNote
+//   자동바인딩: 날짜={{issue_date}}(오늘), 성명={{patient_name}}(대상 환자). 서명=수기(빈칸, 인쇄 후 손서명).
+//   A4 1페이지 기준 컴팩트 레이아웃(9~10pt) — 4블록이 A4 초과 시 form_templates 렌더가 자동 흐름.
+//   최종 문안·레이아웃은 AC-5 A4 preview → 현장(김주연 총괄) confirm 게이트에서 확정.
+const PRIVACY_CONSENT_FORM_HTML = `
+${COMMON_STYLE}
+<style>
+  /* T-20260808 AC-7: 블록/줄 간격 확대 — 과밀(다닥다닥) 해소, 가독성 우선 */
+  .pcf-block { margin-top: 18px; }
+  .pcf-block-head { font-size: 10pt; font-weight: bold; margin-bottom: 6px; }
+  .pcf-note { border: 1px solid #000; }
+  .pcf-note td { padding: 8px 11px; font-size: 9.3pt; vertical-align: top; line-height: 1.65; }
+  .pcf-note .pcf-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 20%; white-space: nowrap; }
+  .pcf-consent-line { border: 1px solid #000; border-top: none; padding: 9px 12px; font-size: 9.8pt; font-weight: bold; line-height: 1.5; }
+  .pcf-consent-choice { font-weight: normal; margin-left: 14px; }
+  .pcf-sms-note { border: 1px solid #000; border-top: none; padding: 9px 12px; font-size: 8.7pt; color: #333; line-height: 1.5; }
+  .pcf-sms-choice { font-weight: normal; margin-left: 14px; }
+  .pcf-sign-tbl { margin-top: 22px; table-layout: fixed; }
+  .pcf-sign-tbl td { height: 40px; }
+  .pcf-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
+  .pcf-sig-cell { width: 28%; }
+</style>
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">개인정보 수집·이용 동의서</div>
+    <div style="flex:1;"></div>
+  </div>
+  <div class="subtitle" style="font-size:9.5pt; margin-bottom:2px;">Consent to Collection &amp; Use of Personal Information</div>
+  <div class="subtitle" style="font-size:8.7pt; color:#444; margin-bottom:12px;">※ 셀프접수(태블릿) 오류 시 종이 백업용 — 아래 필수 동의(4종) 및 선택 동의(1종)를 확인 후 서명해 주세요.</div>
+
+  <!-- [1] 개인정보 수집·이용 동의 (필수) — SelfCheckIn.tsx privacyConsentLabel / privacyConsentNote -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">1. 개인정보 수집·이용 동의 (필수)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>성함, 주민등록번호, 연락처, 주소 등 기본 정보</td></tr>
+        <tr><td class="pcf-label">수집목적</td><td>진료를 위한 정보 수집</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>관련 법령에 따른 보관 기간 동안 보유</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">□ 개인정보 수집·이용에 동의합니다 (필수)</div>
+  </div>
+
+  <!-- [2] 고유식별정보 수집·이용 동의 (별도 필수, 개보법 §24) — T-20260809-CONSENT-...-ADD-LAYOUT ConsentFormDialog UNIQUE_ID 문안 verbatim 재사용 (dev 창작 아님) -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">2. 고유식별정보 수집·이용 동의 (별도 필수, 개인정보보호법 §24)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>주민등록번호, 외국인등록번호, 여권번호</td></tr>
+        <tr><td class="pcf-label">이용목적</td><td>의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>의료법에 따른 진료기록 보존기간 (10년)</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">고유식별정보 수집·이용에 동의합니다 (별도 필수)<span class="pcf-consent-choice">□ 동의함    □ 동의하지 않음</span></div>
+  </div>
+
+  <!-- [3] 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개보법 §23) — consentSensitiveLabel / consentSensitiveItems -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">3. 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개인정보보호법 §23)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>건강정보, 진료기록, 상병명, 처방내역 등 민감 의료정보</td></tr>
+        <tr><td class="pcf-label">수집목적</td><td>발건강 케어 및 시술 서비스 제공, 진료 이력 관리</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>관련 법령에 따른 보관 기간 동안 보유</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">□ 민감정보(건강·진료정보) 수집·이용에 동의합니다 (필수)</div>
+  </div>
+
+  <!-- [4] 건강보험 자격조회 동의 (필수) — insuranceConsentLabel / insuranceConsentNote -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">4. 건강보험 자격조회 동의 (필수)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>성함, 주민등록번호, 건강보험 자격정보</td></tr>
+        <tr><td class="pcf-label">수집목적</td><td>진료비 산정 및 청구, 보험 급여 적정성 확인</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>관련 법령에 따른 보관 기간 동안 보유</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">□ 건강보험 자격조회에 동의합니다 (필수)</div>
+  </div>
+
+  <!-- [5] 예약 안내 문자(SMS) 수신 동의 (선택) — smsOptIn / smsOptInNote -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">5. 예약 안내 문자(SMS) 수신 동의 (선택)</div>
+    <div class="pcf-consent-line">예약 안내 문자 수신에 동의합니다 (선택)<span class="pcf-sms-choice">□ 동의    □ 미동의</span></div>
+    <div class="pcf-sms-note">미동의 시 예약 안내 문자, 홈케어 방법 등 자동 발송 대상에서 제외될 수 있습니다.</div>
+  </div>
+
+  <div class="confirm-text" style="margin-top:10px; font-size:10pt;">
+    본인은 위 각 항목의 수집·이용 목적 및 항목·보유기간을 충분히 이해하였으며, 각 동의 항목에 대하여 위와 같이 동의합니다.
+  </div>
+
+  <table class="pcf-sign-tbl">
+    <tbody>
+      <tr>
+        <td class="pcf-sign-label">날짜</td>
+        <td>{{issue_date}}</td>
+        <td class="pcf-sign-label">성명</td>
+        <td>{{patient_name}}</td>
+      </tr>
+      <tr>
+        <td class="pcf-sign-label">서명</td>
+        <td class="pcf-sig-cell"></td>
+        <td class="pcf-sign-label">기관</td>
+        <td>{{clinic_name}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+`;
+
 // ─── 템플릿 맵 ───
 
 const HTML_TEMPLATE_MAP: Record<string, string> = {
@@ -2594,6 +2806,10 @@ const HTML_TEMPLATE_MAP: Record<string, string> = {
   ins_claim_form: INS_CLAIM_FORM_HTML,
   // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지 (9섹션 + 서명영역)
   first_visit_mgmt_record: FIRST_VISIT_MGMT_RECORD_HTML,
+  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 (국·영문 병기, 5조항)
+  foreigner_noncovered_consent: FOREIGNER_NONCOVERED_CONSENT_HTML,
+  // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 (셀프접수 오류 종이 백업용)
+  privacy_consent_form: PRIVACY_CONSENT_FORM_HTML,
 };
 
 /**
@@ -2859,6 +3075,14 @@ export function buildRxItemsHtml(
     //   있으면 약품명 앞에 '코드 | ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
     //   T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 구분자 대괄호 '[코드]' → 파이프 '코드 |'.
     code?: string | null;
+    // T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC3): 처방약 수량 canonical 키 = total_qty.
+    //   구조화 leaf(form_submissions.field_data.rx_items[])와 동일 키로 통일 → display=persist 동일 SSOT(AC2).
+    //   total_qty>1 일 때만 약품명 뒤 ' ×N' 표기. 미전달/1 이면 접미 없음.
+    total_qty?: number;
+    // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD (deprecated · AC4 하위호환 폴백): 구 bare `qty` 키.
+    //   신규 경로는 total_qty 사용. total_qty 미전달 시에만 qty 로 폴백(기존 호출부·구 저장본 무회귀).
+    //   ⚠ bare count/quantity 키는 금지(AC3) — canonical=total_qty, legacy fallback=qty 만 허용.
+    qty?: number;
     unit_dose?: string;
     daily_freq?: string;
     total_days?: string;
@@ -2871,9 +3095,16 @@ export function buildRxItemsHtml(
     // T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 약품명 앞 코드 prefix 구분자 '코드 | 약품명'(파이프).
     //   (구 T-20260718-foot-RXPRINT-DRUGCODE-PREFIX 의 '[코드] 약품명' 대괄호에서 파이프로 변경.)
     //   코드 미등록/미매핑(NULL/공백) 시 파이프 없이 약품명만 출력(AC3 graceful fallback).
-    name: (item.code ?? '').trim()
-      ? `${(item.code ?? '').trim()} | ${item.name}`
-      : item.name,
+    name: (() => {
+      const base = (item.code ?? '').trim()
+        ? `${(item.code ?? '').trim()} | ${item.name}`
+        : item.name;
+      // T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC2/AC3/AC4):
+      //   canonical=total_qty(구조화 leaf 키) 우선, 미전달 시 legacy qty 폴백(구 호출부·구 저장본 무회귀).
+      //   qty>1 시 '바르토벤 ×2' 형태 접미. 처방전 인쇄·처방이력 공통 SSOT.
+      const effectiveQty = typeof item.total_qty === 'number' ? item.total_qty : item.qty;
+      return typeof effectiveQty === 'number' && effectiveQty > 1 ? `${base} ×${effectiveQty}` : base;
+    })(),
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
     // T-20260606-foot-DOC-FIELD-MISSING-3 AC-5: 처방 입력의 총투약일수를 출력물에 표기.

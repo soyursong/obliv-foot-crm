@@ -16,7 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import type { CheckIn } from '@/lib/types';
 
-export type FormType = 'refund' | 'non_covered' | 'treatment' | 'privacy' | 'hira_consent';
+export type FormType = 'refund' | 'non_covered' | 'treatment' | 'privacy' | 'hira_consent' | 'unique_id';
 
 interface Props {
   checkIn: CheckIn | null;
@@ -32,6 +32,7 @@ const FORM_TITLES: Record<FormType, string> = {
   treatment: '시술 동의서',
   privacy: '개인정보 수집·이용 동의서',
   hira_consent: '건강보험 자격조회 동의서',
+  unique_id: '고유식별정보 수집·이용 동의서',
 };
 
 const FORM_CONTENT: Record<FormType, string[]> = {
@@ -68,6 +69,14 @@ const FORM_CONTENT: Record<FormType, string[]> = {
     '3. 개인정보는 진료 목적 외에 사용되지 않으며, 관련 법령에 따라 보호됩니다.',
     '4. 동의를 거부할 수 있으나, 건강보험 급여 적용이 불가할 수 있습니다.',
     '5. 본인은 위 내용을 확인하고 건강보험 자격 조회에 동의합니다.',
+  ],
+  // T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT — 개보법 §24 고유식별정보 별도 필수 동의
+  unique_id: [
+    '1. 수집 항목: 주민등록번호, 외국인등록번호, 여권번호',
+    '2. 이용 목적: 의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인',
+    '3. 보유 기간: 의료법에 따른 진료기록 보존기간 (10년)',
+    '4. 고유식별정보는 관련 법령에 근거하여 수집되며, 동의를 거부할 경우 본인확인 및 건강보험 적용이 제한될 수 있습니다.',
+    '5. 본인은 위 내용을 확인하고 고유식별정보 수집·이용에 동의합니다.',
   ],
 };
 
@@ -199,7 +208,7 @@ export function ConsentFormDialog({ checkIn, formType, open, onOpenChange, onSig
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-4">
-          <div className="rounded-lg border bg-muted/20 p-4 text-sm leading-relaxed space-y-2">
+          <div className="rounded-lg border bg-muted/20 p-4 text-sm leading-relaxed space-y-3">
             {FORM_CONTENT[formType].map((line, i) => (
               <p key={i}>{line}</p>
             ))}
@@ -297,6 +306,7 @@ export function ConsentFormButtons({
     { type: 'non_covered', label: '비급여확인' },
     { type: 'treatment', label: '시술동의' },
     { type: 'privacy', label: '개인정보' },
+    { type: 'unique_id', label: '고유식별정보' },
   ];
 
   return (

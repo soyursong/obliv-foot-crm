@@ -234,6 +234,7 @@ type CanonicalCreateInput = {
   linked_package_id?: string | null;
   preferred_therapist_id?: string | null; // 재진 치료사(역동기화 대상)
   is_healer_intent?: boolean; // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속)
+  is_trial?: boolean; // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 마커(영속, DEFAULT false). 예약 화면 체크박스.
   progressCheck?: { required: boolean; label: string | null } | null;
   maxPerSlot: number;
   changedBy: string | null;
@@ -256,7 +257,9 @@ function isHealerIntentColMissing(err: { code?: string; message?: string } | nul
   return (
     err.code === '42703' ||
     err.code === 'PGRST204' ||
-    /is_healer_intent/.test(err.message ?? '')
+    /is_healer_intent/.test(err.message ?? '') ||
+    // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: is_trial 컬럼 미반영(마이그 적용 랙) 시에도 동일 내성.
+    /is_trial/.test(err.message ?? '')
   );
 }
 
@@ -366,6 +369,10 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     brief_note: input.brief_note?.trim() || null,
     // T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 캘린더 직접예약 시점에 저장.
     is_healer_intent: input.is_healer_intent ?? false,
+    // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 마커(영속) — 예약 화면 체크박스. DA GO·ADDITIVE(DEFAULT false).
+    //   미선택 시 false(=비-체험단). canonical inflow_channel(§36 방화벽) 무접촉 — 직교 독립 축.
+    //   컬럼 미반영 DB(마이그 미적용 타이밍)는 아래 PGRST204/42703 내성 재시도로 graceful(is_healer_intent 동일 패턴).
+    is_trial: input.is_trial ?? false,
     referral_source: (input.visit_type === 'new' && input.visit_route) ? input.visit_route : null,
     // T-20260617-foot-RESVMGMT-COMPACT-POPUPFLOW AC-4: 예약경로/예약등록자를 예약행에 직접 영속(편집경로 popup L928 과 동일 컬럼).
     //   기존 컬럼(reservations.visit_route / registrar_id) — 신규 스키마 0. 미전달(다른 생성경로)이면 null 로 무해.
@@ -400,12 +407,18 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
     .select('id')
     .maybeSingle();
   // T-20260615-foot-RESVPOPUP-3BUG AC2: is_healer_intent 컬럼 미반영(PGRST204/42703) 시 제외 후 1회 재시도.
+  //   T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: is_trial 도 동일 내성(마이그 적용 랙 대비) — 두 옵셔널 마커 컬럼 동시 strip.
   if (result.error && isHealerIntentColMissing(result.error)) {
-    const { is_healer_intent: _omit, ...bodyNoHealer } = insertBody as typeof insertBody & { is_healer_intent?: boolean };
-    void _omit;
+    const {
+      is_healer_intent: _omitHealer,
+      is_trial: _omitTrial,
+      ...bodyNoOptCols
+    } = insertBody as typeof insertBody & { is_healer_intent?: boolean; is_trial?: boolean };
+    void _omitHealer;
+    void _omitTrial;
     result = await supabase
       .from('reservations')
-      .insert(bodyNoHealer)
+      .insert(bodyNoOptCols)
       .select('id')
       .maybeSingle();
   }
@@ -1631,6 +1644,8 @@ export default function Reservations() {
       booking_memo?: string | null;
       // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩(is_healer_intent 영속) — 기존 write-path 위임. 신규 스키마 0.
       is_healer_intent?: boolean | null;
+      // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 마커(is_trial 영속) → 단일소스 write-path 위임. DEFAULT false.
+      is_trial?: boolean | null;
       // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 유입경로 canonical 코드 + inbound.etc 사유(inflow 축).
       inflow_channel?: string | null;
       inflow_reason?: string | null;
@@ -1708,6 +1723,8 @@ export default function Reservations() {
         // T-20260630-foot-RESVMEMO-HEALER-CHIP-YELLOWBOX: 힐러 칩(is_healer_intent) → 기존 write-path(payload L257) 위임.
         //   미선택 시 false(=기존 동작 불변). 컬럼 미반영 DB 는 createReservationCanonical 의 PGRST204 내성화로 graceful.
         is_healer_intent: params.is_healer_intent ?? false,
+        // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단 마커 → 단일소스 write-path 위임(DEFAULT false·PGRST204 내성 graceful).
+        is_trial: params.is_trial ?? false,
         // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 사전예약 접수 유입경로(canonical) + 사유 → 단일소스 write-path 위임.
         //   §36 방화벽: createReservationCanonical 이 reservations.inflow_channel + customers.first_inflow_*(inflow 축)만 각인. referral_source 무접점.
         inflow_channel: params.inflow_channel ?? null,

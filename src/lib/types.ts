@@ -92,7 +92,13 @@ export interface CheckInRealtimeRow {
   [key: string]: unknown;
 }
 
-/** Prescription row from prescriptions + prescription_items join */
+/**
+ * @deprecated T-20260806-foot-RX-PERSIST-FORWARDFIX / DA-20260806-foot-RX-PERSIST-SSOT.
+ *   `prescriptions` / `prescription_items` 테이블 = DEAD SKELETON (INSERT 코드 전무).
+ *   ★ 처방전 발행 이력 canonical SSOT = form_submissions(처방전 = form_key 'rx_standard').
+ *   조회/투영은 RxIssuanceRow(@/lib/rxIssuanceHistory) 사용. prescriptions write 경로 신설 금지(되살리기 금지).
+ *   (본 타입은 dead skeleton 표식으로만 존치 — 신규 소비처 추가 금지.)
+ */
 export interface PrescriptionRow {
   id: string;
   prescribed_by_name: string | null;
@@ -102,6 +108,7 @@ export interface PrescriptionRow {
   prescription_items?: PrescriptionItemRow[];
 }
 
+/** @deprecated dead skeleton — 상기 PrescriptionRow 참조(canonical = form_submissions). */
 export interface PrescriptionItemRow {
   id: string;
   medication_name: string;
@@ -508,6 +515,9 @@ export interface CheckIn {
   created_at: string;
   /** T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE: 유입경로 이벤트값(워크인=예약없는 접수 발급앵커). */
   inflow_channel?: string | null;
+  /** T-20260801-foot-INFLOW-KIOSK-SELFCHECKIN-COVERAGE: 환자 셀프리포트(키오스크/태블릿 체크리스트) 유입경로 CANDIDATE(lower-trust).
+   *  원문 verbatim — 11코드 canonical(inflow_channel)과 별칭=trust-tier 방화벽. 스태프-대면 advisory hint 소스(비권위·참고). */
+  inflow_channel_self_reported?: string | null;
   /** T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: 배정 시 실장 수동 선택 '상담 성격'(초진/재진/당일재상담/대리상담).
    *  NULL=미분류(pre-feature/auto-assign 미오버라이드). App default=초진(신규 배정 pre-select). 운영 카운터축 전용. */
   assignment_consult_type?: '초진' | '재진' | '당일재상담' | '대리상담' | null;
@@ -841,6 +851,10 @@ export interface Reservation {
   healer_flag?: boolean | null;
   /** T-20260614-foot-HEALER-RESV-CLASSIFY-DEF(Option A): 힐러 의도(영속) — 예약 팝업 ON/OFF 토글. 체크인 후에도 유지되는 힐러 분류 SSOT. */
   is_healer_intent?: boolean | null;
+  /** T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단(trial group) 전용 마커(영속). 예약 화면 체크박스로 스태프가 명시 설정.
+   *  DA GO·ADDITIVE(DEFAULT false·forward-only). canonical inflow_channel(§36 방화벽)와 직교 독립 축 — 유입 코드 아님.
+   *  소비: 상담 배정 수 집계 제외(Stream A) + 2번 유입경로 차트 [체험단] 카테고리(Stream B). */
+  is_trial?: boolean | null;
   // ── 도파민 연동 (T-20260520-foot-DOPAMINE-SCHEMA) ─────────────────────
   /** 예약 유입 경로: null=일반/워크인, 'dopamine'=도파민 TM 경유, 'foot-walkin'=풋 자체 워크인 */
   source_system?: string | null;

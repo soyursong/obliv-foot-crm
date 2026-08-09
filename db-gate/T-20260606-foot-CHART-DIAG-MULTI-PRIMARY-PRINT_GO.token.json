@@ -1,0 +1,21 @@
+{
+ "ticket_id": "T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-09T02:15:50.339Z",
+ "expires_at": "2026-08-09T03:00:50.339Z",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "f219e77a1092f9d75fc691012e468f6d477e54e4b55c6807f70a6da09f8280fc",
+ "migration_version": "20260606140000",
+ "migration_name": "chart_diagnoses",
+ "migration_files": [
+  "supabase/migrations/20260606140000_chart_diagnoses.sql",
+  "supabase/migrations/20260606140000_chart_diagnoses.rollback.sql"
+ ],
+ "evidence_commit": "ba299b5a",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "237f0ad1c5f56a85",
+ "da_consult_reply": "MSG-20260809-092205-a4a0 (DA 조건부 GO·ADDITIVE; SSOT da_decision_foot_chart_diagnoses_multi_primary_20260809.md, commit 7819ccfee18). HARD-1/2/3 반영검증 완료.",
+ "ceo_gate": "N/A — ADDITIVE(신규 chart_diagnoses 연결테이블 create-if-not-exists, 기존 medical_charts.diagnosis 보존·drop 0, rollback=DROP 대칭) + DA GO → 대표게이트 면제(autonomy §3.1)",
+ "precheck": "supervisor DDL-diff GO: HARD-1 RLS 4정책 부모 mc_clinic_isolated_v3(20260527) 동형 clinic-격리 parity(chart_id JOIN medical_charts, clinic_id=current_user_clinic_id()::text OR null-role∈{admin,director,manager,coordinator}), TO authenticated·anon 0 / HARD-2 uq_chart_diagnoses_one_primary partial-unique(chart_id WHERE type=primary) 실재 / FK chart_id→medical_charts ON DELETE CASCADE·service_id→services ON DELETE SET NULL nullable / CHECK diagnosis_type∈{primary,secondary} / rollback 대칭(4정책+3인덱스+table drop, medical_charts.diagnosis 보존=무손실). C11 prod 실측(dev-foot Mgmt API): to_regclass chart_diagnoses=null·ledger 20260606140000 부재·OOB 0. C18/C21 DA HOLD·RETRACT CLEAR(signals·MQ 0). C13/C14 FE(ba299b5a) CF live 旣배포. no embedded txn-control(no-persistence dry-run ALL PASS). backfill=step5 별도 사람검수 게이트(본 토큰 미포함)."
+}

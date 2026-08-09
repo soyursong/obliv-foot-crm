@@ -36,6 +36,7 @@ import {
   Layers,
   Printer,
   Plus,
+  Minus,
   Square,
   CheckSquare,
   Trash2,
@@ -74,6 +75,12 @@ import { useAuth } from '@/lib/auth';
 //   두 헬퍼는 완료 이동(handleDrop) 경로가 소유 → 여기 import 제거(unused). 로직 이관 아님, 부수효과 위치 원복.
 import { formatAmount, todaySeoulISODate, chartNoBadge } from '@/lib/format';
 import { isLaserService } from '@/lib/laserService';
+// T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 건강생활유지비 잔액 방문 간 이월(satellite).
+import {
+  loadHealthMaintenanceBalance,
+  persistHealthMaintenanceSnapshot,
+  isSnapshotStale,
+} from '@/lib/healthMaintenanceBalance';
 // T-20260525-foot-AMOUNT-COMMA-FMT: 수가 인라인 편집 쉼표 포맷팅
 import { formatAmountDisplay, parseAmountRaw } from '@/components/ui/AmountInput';
 import type { CheckIn, Service } from '@/lib/types';
@@ -83,6 +90,7 @@ import type { CheckIn, Service } from '@/lib/types';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // ★T-20260803-foot-CBAND-DIRECTPAY-PREDEPLOY-5FIX ①: 코밴 CAT 직결결제 버튼을 수납 미니창 맨 아래(수납 옆)로 이관.
 import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import { shouldShowCbandEntry } from '@/lib/cband/entryVisibility';
 // T-20260526-foot-COPAY-MINI-BUG: 건보 등급 기반 급여 분류
 import { type InsuranceGrade, getBaseCopayRate, copayBasisText } from '@/lib/insurance';
 // T-20260722-foot-SELFCHECKIN-GRADE-CAPTURE-DESK: 셀프체크인(키오스크) 신규 유입 null-grade 데스크 캡처.
@@ -149,13 +157,16 @@ import {
   hasOutstandingDue,
   type CustomerOutstanding,
   // T-20260706-foot-DOCPRINT-FEEBREAKDOWN-INSURANCE-BLANK: grade null 시 저장 등급 폴백(PATH-4 수렴).
-  loadEffectiveInsuranceGrade,
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 등급 + 나이 파생 infant 세부율(만0세 5%) 동반 로드.
+  loadEffectiveInsuranceGradeEx,
   // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base = ROUND(hira_score × 환산지수) 미러용 점당단가.
   loadClinicHiraUnitValue,
   // T-20260707-foot-DOCPRINT-INSURANCE-SPLIT-RECUR: bill_detail 급여구분/본인·공단 split SSOT
   //   (DocumentPrintPanel PATH-1/2/3 와 동일 빌더 재사용 — PMW inline 빌더의 급여구분 공란 RC 해소).
   buildFootBillDetailItems,
   computeBillDetailRounding,
+  // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED: 고시 제19조(끝수계산) 단일 SSOT — 4경로 공통.
+  applyArticle19Rounding,
   // T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE (FIX-REQUEST): 외래 본인부담 수납 aggregate 100원 절사 SSOT
   //   (computeBillDetailRounding=floor10 문서 grain 과 분리 — DA-…-COPAY-TRUNCATE-UNIT, 별표2 제19조제1항 다만조항).
   floorOutpatientCopayment,
@@ -565,11 +576,20 @@ async function persistSubmissionsAndResolveIssueNo(params: {
     // T-20260806-PMWSAVE-PRESURCHARGE: 처방전 저장본도 동일 빌더 경유(surcharge/paid 토큰은 rx_standard 에서 no-op →
     //   값 불변, 3-site 코드 정합만 확보). 교부번호(rxIssueNo)·연번호(rxVisitNo) 주입은 종전과 동일.
     const rxFieldData = buildFieldData('rx_standard', rxIssueNo, rxVisitNo);
-    const { error: updErr } = await supabase
+    // T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC1): 구조화 rx_items leaf 를 담은 처방전
+    //   field_data 의 authoritative persist. Cross-CRM Write Rows-Affected 검증 표준 — RLS 거부/스코프 불일치 시
+    //   supabase 는 0-row(+error=null)를 반환하므로 error 만으로는 silent write-failure 를 못 잡는다.
+    //   .select('id') 로 실제 반영 행수를 확인해 0-row 를 명시 경보(구조화 leaf 유실 방지).
+    const { data: rxUpd, error: updErr } = await supabase
       .from('form_submissions')
       .update({ field_data: rxFieldData })
-      .eq('id', rxRowId);
-    if (updErr) toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+      .eq('id', rxRowId)
+      .select('id');
+    if (updErr) {
+      toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+    } else if (!rxUpd || rxUpd.length === 0) {
+      toast.error('처방전 저장 확인 실패(반영된 행 없음) — 수량·교부번호가 저장되지 않았을 수 있습니다. 다시 시도해 주세요.');
+    }
   }
   return { rxIssueNo, visitNoByTemplateId };
 }
@@ -615,17 +635,31 @@ function buildCodeEnrichedValues(
   // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 독립값, 미입력 시 1/1/7 fallback
   if (formKey === 'rx_standard') {
     const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
-    values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({
-      name: i.service.name,
+    // ── T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC1/AC2/AC3) ──
+    //   구조화 rx_items leaf 를 단일 in-memory SSOT 로 먼저 조립한 뒤 (a) buildRxItemsHtml 입력(표시) 과
+    //   (b) field_data.rx_items(persist) 양쪽에 동일 객체를 사용 → display=persist 동일 SSOT.
+    //   canonical 수량 키 = total_qty(AC3, bare count/quantity/qty 금지).
+    const rxItemsLeaf = rxItems.map((i) => ({
       // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
-      code: i.service.service_code,
+      code: i.service.service_code ?? null,
+      name: i.service.name,
+      // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD → RECONCILE(AC3): 처방약 수량 canonical=total_qty.
+      //   total_qty>1 시 '약품명 ×N' 표기(처방전·처방이력). SelectedItem.qty(하한 1) 를 canonical 키로 승격.
+      total_qty: i.qty,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
       // T-20260721-foot-RXPRINT-TOTALDAYS-BLANK (총괄 김주연 최종): 세 칸 전부 기본 '1' + 수기 수정 가능.
       //   결제미니창 경로(buildCodeEnrichedValues)와 DocumentPrintPanel 경로는 평행 — 반드시 동시 유지(한쪽만 '' 두면 재오픈).
       //   구 T-20260718 LOGIC-LOCK(빈칸이 정답) 해제. 자동 산출 바인딩 아님 — 리터럴 '1' + editable. 구 '7' 폴백 부활 금지.
       total_days: rxItemDosages?.[i.service.id]?.total_days || '1',
-    })));
+    }));
+    // (a) 표시: buildRxItemsHtml 이 구조화 leaf 의 total_qty 를 읽어 ×N 렌더(AC2).
+    values.rx_items_html = buildRxItemsHtml(rxItemsLeaf);
+    // (b) persist: 구조화 rx_items leaf 를 field_data 에 ADDITIVE 저장(AC1) — 수량이 rx_items_html 문자열에만
+    //   착지(단독착지·DA HARD REJECT 패턴)하지 않도록 canonical total_qty 를 구조화 배열로 병행 persist.
+    //   ⚠ field_data 는 JSONB — 중첩 배열 저장 가능(스키마 변경 0, db_change=false). rx_items_html 은 그대로 유지(ADDITIVE).
+    //   bindHtmlTemplate 은 {{key}} placeholder 만 치환하며 {{rx_items}} placeholder 는 없으므로 렌더 무영향.
+    (values as Record<string, unknown>).rx_items = rxItemsLeaf;
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
     // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): 교부번호 = 발행 시점 채번·persist된 확정 문자열(8+N자리) 주입.
@@ -1035,9 +1069,22 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const [healthMaintenanceBalance, setHealthMaintenanceBalance] = useState<number>(0); // 스태프 직접입력 잔액
   const [healthFeeApplied, setHealthFeeApplied] = useState<boolean>(false);            // '공단 차감' 클릭 적용 여부
 
+  // ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 잔액 방문 간 이월(satellite) ──
+  //   PRIMARY = satellite 1:1 스냅샷{verified_balance, verified_at, verified_by}. 현재잔액 = DERIVED
+  //   (verified_balance − Σ(HM payments >= verified_at)) → decrement write 없음, Σ(payments)==payableTotal 불변.
+  //   진입 시 로더가 현재잔액을 파생해 healthMaintenanceBalance 를 prefill(이월). 스태프가 재확인·입력 후
+  //   [잔액 저장]으로 스냅샷 갱신. verified_at 월 경계 넘으면 stale(재확인 유도, DoD#3).
+  const [hmSnapshotBalance, setHmSnapshotBalance] = useState<number | null>(null); // 로드된 검증잔액(파생 현재값)
+  const [hmIsStale, setHmIsStale] = useState<boolean>(false);                       // 월전환 재확인 대상(verified_at 파생)
+  const [hmSaving, setHmSaving] = useState<boolean>(false);
+  const [hmSaved, setHmSaved] = useState<boolean>(false);                           // 이번 세션 저장 완료 표기
+
   // T-20260526-foot-COPAY-MINI-BUG: 고객 건보 등급 (급여/비급여 분류용)
   //   ★ effective grade — live customers.insurance_grade 없으면 이 방문 service_charges 저장등급 폴백(빌링용).
   const [customerInsuranceGrade, setCustomerInsuranceGrade] = useState<InsuranceGrade | null>(null);
+  // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 나이 파생 infant 세부율(만0세 0.05 / 만1~5세 0.21).
+  //   grade==='infant' 정률경로 라이브 배선용. computeFootBilling/surcharge opts.ageInfantRate 로 전달.
+  const [customerInfantCopayRate, setCustomerInfantCopayRate] = useState<number | null>(null);
 
   // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: 고객 ALT(보험 반려 대상) 활성 여부.
   //   서류패널(DocumentReprintPopup line 80)과 동일 패턴 — customers.alt_status 를 컴포넌트가 직접 취득.
@@ -1185,8 +1232,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   → [수납] 버튼 재활성. (동일 방문 리페치는 [checkIn?.id] 미변으로 이 effect 미재실행 → 창 유지 상태 보존.)
     setSettled(false);
     // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT: 새 방문 진입 시 공단 차감 상태 리셋(잔액 입력·적용 초기화).
+    //   T-20260807-BALANCE-NOTPERSISTED: 이월 상태도 초기화 — 실제 잔액은 아래 loader effect(grade=medical_aid_1)
+    //   가 satellite 스냅샷에서 현재잔액을 파생해 prefill 한다(이월). 여기선 0 으로 리셋만.
     setHealthMaintenanceBalance(0);
     setHealthFeeApplied(false);
+    setHmSnapshotBalance(null);
+    setHmIsStale(false);
+    setHmSaved(false);
     setPayMethod('card');
     // T-20260616-foot-PMW-SPLIT-PAYMENT: 분할결제 상태 리셋
     setSplitMode(false);
@@ -1210,6 +1262,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     setRxItemDosages({});
     // T-20260526-foot-COPAY-MINI-BUG: 리셋
     setCustomerInsuranceGrade(null);
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: infant 세부율 리셋(고객 전환 시 stale 5% 차단).
+    setCustomerInfantCopayRate(null);
     // T-20260801-foot-ALT-LASERBLOCK-PAYMINI-PARITY: ALT 상태 리셋(고객 전환 시 stale 차단 방지)
     setCustAltStatus(false);
     // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 환산지수 리셋
@@ -1224,9 +1278,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   이 방문 service_charges 저장 등급(customer_grade_at_charge)으로 폴백 → 급여구분 붕괴 방지.
     //   무파괴: live grade 있으면 그대로, 무보험 방문은 covered charge 없어 null 유지.
     if (checkIn.customer_id) {
-      loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
-        .then((grade) => {
+      loadEffectiveInsuranceGradeEx(checkIn.customer_id, checkIn.id)
+        .then(({ grade, infantCopayRate }) => {
           setCustomerInsuranceGrade(grade);
+          setCustomerInfantCopayRate(infantCopayRate);
         });
     }
 
@@ -1402,6 +1457,30 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         .then(({ data }) => setStaffId(data?.id ?? null));
     });
   }, [checkIn?.clinic_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 건강생활유지비 잔액 이월 로더 ──
+  //   grade=medical_aid_1 로 확정된 뒤 satellite 스냅샷을 읽어 현재잔액(DERIVED)을 prefill(이월).
+  //   스냅샷 없으면 잔액 0 유지(최초 입력). 월 경계 넘으면 stale 표기(재확인 유도). 파생 전용 — 원장 무접점.
+  useEffect(() => {
+    const customerId = checkIn?.customer_id;
+    if (!customerId || customerInsuranceGrade !== 'medical_aid_1') return;
+    let cancelled = false;
+    (async () => {
+      const state = await loadHealthMaintenanceBalance(customerId);
+      if (cancelled) return;
+      if (state.snapshot) {
+        setHealthMaintenanceBalance(state.current); // 파생 현재잔액 이월(0 초기화 아님)
+        setHmSnapshotBalance(state.current);
+        setHmIsStale(state.isStale);
+      } else {
+        setHmSnapshotBalance(null);
+        setHmIsStale(false);
+      }
+      setHmSaved(false);
+      setHealthFeeApplied(false);
+    })();
+    return () => { cancelled = true; };
+  }, [checkIn?.customer_id, customerInsuranceGrade]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // T-20260724-foot-COSMETIC-SELLER-ATTRIB (A-2): 화장품 판매 치료사 후보(clinic active therapist) 로드.
   //   role='therapist' — Reservations/Dashboard 등에서 쓰는 동일 필터 재사용(신규 어휘 발명 금지).
@@ -1754,6 +1833,17 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     });
   };
 
+  // ── T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량 스테퍼 ────────────
+  //   기본값 1(선택 시 handleSelectService 가 qty:1 으로 시작) · 하한 1(0/미입력 방지) · 상한 없음.
+  //   수가항목 계산 로직 무접촉 — 처방약(price 0) 은 pricingItems 에서 제외되므로 결제금액 영향 없음.
+  const handleSetItemQty = (serviceId: string, nextQty: number) => {
+    const clamped = Math.max(1, Math.floor(nextQty || 1));
+    setSelectedItems((prev) =>
+      prev.map((i) => (i.service.id === serviceId ? { ...i, qty: clamped } : i)),
+    );
+    setSaved(false);
+  };
+
   // ── 선수금 보라색 토글 ───────────────────────────────────────────────────
   const togglePrepaid = (serviceId: string) => {
     // T-20260609-foot-TRIAL-REVENUE-ZERO: 체험권은 선수금차감 불가 — 토글 차단
@@ -1846,6 +1936,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   //   (hiraUnitValue 주입 → coveredTotal/공단부담이 명세 calc_copayment 와 정합, 1원 divergence 제거).
   const footBilling = computeFootBilling(footBillingItems, customerInsuranceGrade, {
     hiraUnitValue: clinicHiraUnitValue,
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 만0세 5% 라이브(grade='infant' 정률 보정). 그 외 무영향.
+    ageInfantRate: customerInfantCopayRate,
   });
   const grandTotal = footBilling.grandTotal;                 // 총 진료비(급여 전액 + 비급여) — 서류 총진료비/합계 표시용
   const totalByTax: Record<TaxClass, number> = footBilling.totalByTax;
@@ -1864,6 +1956,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     unknownGradeCopay: 'general_default',
     // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(명세 정합).
     hiraUnitValue: clinicHiraUnitValue,
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 수납 grain 도 만0세 5% 라이브(환자 실수납액 정합).
+    ageInfantRate: customerInfantCopayRate,
   });
   const payCopaymentTotal = payBilling.copaymentTotal;       // 수납 grain 본인부담금(등급 미상 → 30% 기본)
   // ★ 수납잔액(환자 실수납) = 급여 본인부담금 + 비급여 전액. 공단부담금(coveredTotal − 본인부담)은 제외.
@@ -1904,6 +1998,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const settleSurchargeBase = computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, {
     unknownGradeCopay: 'general_default',
     hiraUnitValue: clinicHiraUnitValue,
+    // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 가산 진찰료 본인분도 5% 정합(payBilling grain 동일).
+    ageInfantRate: customerInfantCopayRate,
   });
   const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
   // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE [현장 P0, RC, reporter 김주연 총괄] ──────────────
@@ -1953,6 +2049,34 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
   const healthFeeDeducted = healthFeeApplied && healthFeeEligible ? healthFeeDeductable : 0;
   const healthFeeRemainingBalance = Math.max(0, healthMaintenanceBalance - healthFeeDeducted); // 차감 후 갱신 잔액(표기)
   const netPayableAfterHealthFee = Math.max(0, payableTotalWithSurcharge - healthFeeDeducted);  // 공단 차감 반영 실수납액
+
+  // ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 잔액 저장(스냅샷 영속) ──
+  //   dirty = 입력 잔액이 로드된 스냅샷 파생값과 다르거나(재확인), 스냅샷이 아예 없거나(최초), stale(월전환).
+  //   → 이 경우에만 [잔액 저장] 활성(불필요한 write 억제). 저장 = verified snapshot upsert(decrement write 아님).
+  const hmDirty =
+    isMedicalAid1 &&
+    healthMaintenanceBalance > 0 &&
+    (hmSnapshotBalance === null || healthMaintenanceBalance !== hmSnapshotBalance || hmIsStale);
+  const handleSaveHmBalance = async () => {
+    if (!checkIn?.customer_id || !checkIn?.clinic_id || healthMaintenanceBalance <= 0) return;
+    setHmSaving(true);
+    const { error, verifiedAt } = await persistHealthMaintenanceSnapshot({
+      customerId: checkIn.customer_id,
+      clinicId: checkIn.clinic_id,
+      verifiedBalance: healthMaintenanceBalance,
+      verifiedBy: staffId,
+    });
+    setHmSaving(false);
+    if (error) {
+      toast.error('건강생활유지비 잔액 저장에 실패했습니다.');
+      return;
+    }
+    // 저장 성공 → 스냅샷 재기준선화(verified_at=now, 파생 0). stale 해제. 이월 baseline 갱신.
+    setHmSnapshotBalance(healthMaintenanceBalance);
+    setHmIsStale(isSnapshotStale(verifiedAt));
+    setHmSaved(true);
+    toast.success('건강생활유지비 잔액이 저장되어 다음 방문에 이월됩니다.');
+  };
 
   // 본인부담률 — 표시 라벨(급여 자부담 %)용 rate. 등급 미상(급여 방문)도 수납 산정과 동일하게 general(30%)로 표기.
   const copayRate = customerInsuranceGrade && COVERED_GRADES.has(customerInsuranceGrade)
@@ -2066,6 +2190,9 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     //   ⑧ 절사(floorBillReceiptNewPatientTotal) 후 · 행분해(CoveredTokens) 전 순서(§순서강제). 인쇄 ①② 를 수납창
     //   (payCopaymentWithSurcharge/insuranceCoveredWithSurcharge)과 동일 보존식으로 정합 → 수납==인쇄==명세 3경로 동일값(AC-6).
     absorbBillReceiptNewCopayFloorRemainder(enriched);
+    // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 D): 제19조① 급여총액 floor10(②)·본인 floor100(①)·
+    //   공단 끝수흡수(③)·total_amount ⑥가드 SSOT 1회. absorb 이후·CoveredTokens(행 분해) 이전 = Σ(행)=floored aggregate 정합.
+    applyArticle19Rounding(enriched);
     // 급여 category remainder(진찰료 흡수 방지) — 가산 fold 후 aggregate 기준(§3.3 순서강제).
     applyBillReceiptNewCoveredTokens(enriched, buildPmwBillDetailItems(enriched.visit_date ?? ''));
     // ── T-20260727-foot-SUSU-PRINT-AMOUNT-NOREFLECT ⑨(이미 납부한 금액) 선차감 보정 ──────────────
@@ -2109,6 +2236,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       unknownGradeCopay: 'general_default',
       // T-20260723-foot-HIRA-COPAY-BASE-GRAIN-RECONCILE: 급여 base ROUND 미러(선수금차감 청구 base 정합).
       hiraUnitValue: clinicHiraUnitValue,
+      // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 선수금차감 청구액도 만0세 5% 라이브 정합.
+      ageInfantRate: customerInfantCopayRate,
     });
     // T-20260725-foot-SATURDAY-SURCHARGE-CONSULTFEE-SETTLE: 차감후 청구액에도 동일 진찰료 30% 가산 반영.
     //   ── T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE ──
@@ -2117,6 +2246,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     const deductSurchargeBase = computeConsultationSurchargeBase(deductItems, customerInsuranceGrade, {
       unknownGradeCopay: 'general_default',
       hiraUnitValue: clinicHiraUnitValue,
+      // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 차감후 가산 진찰료 본인분도 5% 정합.
+      ageInfantRate: customerInfantCopayRate,
     });
     const deductSurcharge = computeSurcharge(
       deductSurchargeBase.covered,
@@ -2983,7 +3114,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       // T-20260725-foot-SURCHARGE-SCOPE-GYUNTEST-EXCLUDE: 가산 base 를 진찰료 급여만으로 한정(균검사 등 제외).
       //   서류 aggregate 와 동일 grain({hiraUnitValue}, covered_full 기본) — footBillingItems 비면 null(레거시 폴백).
       const surchargeConsultBase = footBillingItems.length
-        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue })
+        // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 서류 가산 base 진찰료 본인분도 만0세 5% 정합.
+        ? computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, { hiraUnitValue: clinicHiraUnitValue, ageInfantRate: customerInfantCopayRate })
         : null;
 
       // ── T-20260806-foot-DOCREPRINT-PMWSAVE-PRESURCHARGE-PARALLEL: print-binding 값 단일 SSOT 빌더 ──
@@ -2998,6 +3130,10 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         if (visitNoArg) enriched.visit_no = visitNoArg;
         applyNightHolidaySurcharge(enriched, formKey, surchargeIsCalHoliday, new Set(), surchargeRefDate, buildSurchargeDetailRowHtml, surchargeConsultBase);
         applyPostSurchargePaidTokens(enriched, formKey, paidBoxCtx, printSettleCtx);
+        // T-20260806-foot-GUPYEO-TOTAL-FLOOR10-NOTAPPLIED (경로 D, 전 양식): bill_receipt_new 외 양식(bill_detail·처방전 등)도
+        //   공통 값 객체 enriched 에 급여/총액 토큰을 쓰므로 동일 SSOT 로 제19조 끝수계산 적용. bill_receipt_new 는
+        //   applyPostSurchargePaidTokens 내부(absorb 이후·CoveredTokens 이전)에서 이미 적용됨(중복 no-op).
+        if (formKey !== 'bill_receipt_new') applyArticle19Rounding(enriched);
         return enriched;
       };
 
@@ -3212,8 +3348,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                 // 원본 등급 재조회(경고 배너 재판정) + 빌링용 effective 등급 재로드(급여 split 즉시 반영).
                 refreshRawInsuranceGrade();
                 if (checkIn.customer_id) {
-                  loadEffectiveInsuranceGrade(checkIn.customer_id, checkIn.id)
-                    .then((grade) => setCustomerInsuranceGrade(grade));
+                  loadEffectiveInsuranceGradeEx(checkIn.customer_id, checkIn.id)
+                    .then(({ grade, infantCopayRate }) => {
+                      setCustomerInsuranceGrade(grade);
+                      setCustomerInfantCopayRate(infantCopayRate);
+                    });
                 }
               }}
             />
@@ -3444,9 +3583,42 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                           {service.service_code && (
                             <p className="text-[10px] text-blue-600 mt-0.5">
                               {service.service_code}
-                              {qty > 1 && <span className="text-blue-500"> ×{qty}</span>}
                             </p>
                           )}
+                        </div>
+                        {/* T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량 스테퍼 [− N +].
+                            기본값 1 · 하한 1(0/미입력 방지) · 태블릿 큰 터치버튼. name↔🗑 사이 배치. */}
+                        <div
+                          className="shrink-0 flex items-center gap-1"
+                          data-testid={`pmw-rx-qty-stepper-${service.id}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleSetItemQty(service.id, qty - 1)}
+                            disabled={qty <= 1}
+                            className="shrink-0 h-6 w-6 flex items-center justify-center rounded border border-teal-300 bg-white text-teal-700 hover:bg-teal-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title="수량 감소"
+                            aria-label="수량 감소"
+                            data-testid={`pmw-rx-qty-dec-${service.id}`}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span
+                            className="min-w-[1.5rem] text-center text-xs font-semibold text-teal-800 tabular-nums"
+                            data-testid={`pmw-rx-qty-val-${service.id}`}
+                          >
+                            {qty}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleSetItemQty(service.id, qty + 1)}
+                            className="shrink-0 h-6 w-6 flex items-center justify-center rounded border border-teal-300 bg-white text-teal-700 hover:bg-teal-50 transition-colors"
+                            title="수량 증가"
+                            aria-label="수량 증가"
+                            data-testid={`pmw-rx-qty-inc-${service.id}`}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                         <button
                           onClick={() => handleRemoveItem(service.id)}
@@ -3690,6 +3862,26 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                         <div className="text-xs font-semibold text-teal-800">
                           의료급여 1종 · 건강생활유지비 공단 차감
                         </div>
+                        {/* ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 이월/월전환 안내 ──
+                            stale(월 경계 넘음) 시 amber 재확인 유도(DoD#3, 무기한 이월 금지). 아니면 저장된
+                            잔액이 이월됐음을 teal 로 안내(DoD#1). 스냅샷 없으면(최초) 배너 없음. */}
+                        {hmIsStale ? (
+                          <div
+                            data-testid="hm-stale-banner"
+                            className="rounded border border-amber-400 bg-amber-50 px-2 py-1 text-[11px] leading-tight text-amber-800"
+                          >
+                            월이 바뀌었습니다. 공단 포털에서 잔액을 다시 확인해 입력·저장해 주세요.
+                          </div>
+                        ) : (
+                          hmSnapshotBalance !== null && (
+                            <div
+                              data-testid="hm-carryover-note"
+                              className="text-[11px] leading-tight text-teal-700"
+                            >
+                              저장된 잔액이 이월되었습니다.
+                            </div>
+                          )
+                        )}
                         {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC1): 좁은 산정 컬럼(sm:w-56~lg:w-64)
                             에서 [라벨·input·원] 가로 배치가 input을 짓눌러 긴 placeholder 가 잘리고 비율이 어긋났다.
                             → 라벨을 input 위로 스택 + input min-w-0 full-width + placeholder 축약으로 비율 정렬. */}
@@ -3712,6 +3904,31 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                             <span className="shrink-0 text-xs text-muted-foreground">원</span>
                           </div>
                         </div>
+                        {/* ── T-20260807-foot-MEDAID1-HEALTHFEE-BALANCE-NOTPERSISTED: 잔액 저장(이월) ──
+                            입력 잔액을 satellite 스냅샷으로 영속 → 다음 방문 이월(DoD#1). dirty(최초/재확인/월전환)일 때만
+                            활성. 저장 완료 & 미변경이면 '저장됨' 표기. 차감 적용/수납완료 후엔 비활성(스냅샷 고정). */}
+                        {!healthFeeApplied && !settled && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-muted-foreground">
+                              {hmSaved && !hmDirty
+                                ? '저장됨 · 다음 방문 이월'
+                                : hmSnapshotBalance !== null
+                                  ? '잔액 변경 시 저장'
+                                  : '입력 후 저장하면 이월됩니다'}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              data-testid="hm-save-balance"
+                              className="h-8 shrink-0 border-teal-400 text-teal-700 hover:bg-teal-100 text-xs font-semibold"
+                              disabled={!hmDirty || hmSaving}
+                              onClick={handleSaveHmBalance}
+                            >
+                              {hmSaving ? '저장 중…' : '잔액 저장'}
+                            </Button>
+                          </div>
+                        )}
                         {/* T-20260805-foot-MEDAID1-DEDUCTWIN-LAYOUT-BALANCE-FIX (AC2): 건강생활유지비 잔액 상시 표기 복구.
                             구현: 차감 후 잔액이 '적용 클릭 후' + muted 톤으로만 노출돼 현장에서 '안 보임' 회귀. 잔액 입력
                             즉시(적용 전) 현재 잔액을 teal 톤으로 노출해 스태프가 확인 가능하게 한다(적용 후 잔액은 아래 상세). */}
@@ -4064,9 +4281,13 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
                   )}
 
                   {/* ★① 코밴 CAT 직결결제(플랜A) — 결제 미니창 맨 아래 [수납] 옆(현장 동선: 카드 수납 직전).
-                      · 결제수단=카드(단일)일 때만 active. · 분할결제 체크 시 disabled(사유 1줄 노출).
-                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전). */}
-                  {saved && (payMethod === 'card' || splitMode) && (
+                      · 결제수단=카드/패키지 또는 분할결제일 때 노출. · 분할결제 체크 시 disabled(사유 1줄 노출).
+                      · 플래그 OFF PC 는 컴포넌트가 null 반환 → 무노출·회귀0(flag-ON 전 안전).
+                      ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(reopened 2026-08-07 field-soak NEGATIVE): '패키지'(membership) 탭에도 노출.
+                        reporter(최필경 총괄) 화면=결제 미니창의 카드/패키지 결제수단 탭 — 카드 탭엔 있고 패키지 탭엔 없었음.
+                        기존 카드탭과 동일 컴포넌트/동일 착지경로(checkInId→payments) 재사용(신규 착지·DB변경 0).
+                        AC-2(건당 500만원 사전차단) 공용 전송게이트라 자동 계승. */}
+                  {saved && shouldShowCbandEntry(payMethod, splitMode) && (
                     <CbandPayEntryButton
                       checkInId={checkIn.id}
                       clinicId={checkIn.clinic_id}

@@ -68,6 +68,13 @@ export interface AttemptRecord {
   clinicId: string;
   customerId: string | null;
   checkInId: string | null;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1/AC-3/AC-4) — 패키지 탭 CAT 결제 착지 대상.
+   *   set(비-null) 이면 이 CAT 결제/취소는 payments 가 아니라 **package_payments 행**으로 착지한다
+   *   (DA-20260806-...-LANDING-MODEL(b) canonical · VG-1 double-count firewall: payments 중복 revenue행 금지).
+   *   null/undefined = 기존 check_in 수납 경로(payments 착지, 무변경).
+   */
+  packageId?: string | null;
   /** 취소 시 원거래 AUTHNO(승인 시 null). */
   originalAuthNo: string | null;
   /**
@@ -412,6 +419,11 @@ export interface PaymentFlowInput {
   clinicId: string;
   customerId: string | null;
   checkInId: string | null;
+  /**
+   * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND — 패키지 CAT 결제 착지 대상(비-null → package_payments 행 착지).
+   *   approve/cancel 헬퍼가 그대로 전달(Omit 대상 아님). recordCardPayment 이 이 값으로 착지 테이블을 분기한다.
+   */
+  packageId?: string | null;
   /** 취소(0430) 시 원거래 승인번호. */
   originalAuthNo?: string;
   originalAuthDate?: string;
@@ -488,6 +500,7 @@ export async function runPaymentFlow(
     clinicId: input.clinicId,
     customerId: input.customerId,
     checkInId: input.checkInId,
+    packageId: input.packageId ?? null,  // ★PKG-PAY-EXPAND: 비-null → recordCardPayment 이 package_payments 로 착지
     originalAuthNo: input.originalAuthNo ?? null,
     installmentMonths: input.installmentMonths ?? null,  // ★payments.installment(int) 착지 — spec ②③ 요청 개월수 canonical
     isSimulation: isSimulationAmount(input.amount),  // ★C6 테스트금액(1001~1006) 격리

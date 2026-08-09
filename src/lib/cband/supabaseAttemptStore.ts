@@ -140,6 +140,91 @@ export async function persistAuditWriteWithRetry(
   return false;
 }
 
+/**
+ * ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-3) — 패키지 CAT 결제/취소를 package_payments 행으로 착지.
+ *   DA-20260806-foot-PLANA-PKG-PAY-LANDING-MODEL verdict (b): CAT 패키지 결제 = package_payments 단일 착지
+ *   (payments 미착지 = VG-1 double-count firewall). `payments.package_id+union 재계산` 경로 = REJECT.
+ *
+ *   착지 컬럼(mig 20260807120000): external_approval_no=AUTHNO · external_tid=TID ·
+ *     payment_attempt_id=attemptId(FK, CAT-origin 판별자 + partial UNIQUE = 이중결제 2차방어).
+ *     fee_kind='package'(잔금 산식 대상) · method='card' · installment(할부 개월) · payment_type(payment|refund) ·
+ *     is_simulation(C6 테스트금액 격리 · BEFORE INSERT 트리거가 test 고객이면 추가 승격, 명시 true 보존).
+ *   external_trxid 미기입(RedPay 예약키 = payments 전용).
+ *
+ *   ★VG-2/VG-0 paid_amount 불변식: 착지 후 paid_amount = Σ signed package_payments 재계산(refund 음수).
+ *     이는 신규 write-site 이며 기존 recalc 규약(PackagePaymentAdd)과 동일 — 재계산 site 3곳 및 RPC body 무접촉(C19).
+ *   ★VG-4 single-writer: .select('id') rows-affected assert(0-row+error=null = RLS/스코프 = silent write-failure 승격).
+ *   ★L2 멱등: payment_attempt_id partial UNIQUE 위반(23505) = 중복 승인콜백 → 멱등 skip(이중수납 차단).
+ *   ★created_at: package_payments 는 accounting_date 컬럼 부재 → created_at(default now())=승인시각 근사.
+ *     취소 전문 ORI_DATE 는 refund 대상 원거래 created_at 에서 파생(CbandTerminalCancelButton, 동일일 정합).
+ */
+async function recordCatPackagePayment(
+  rec: AttemptRecord & { authNo: string; attemptId: string },
+  isCancel: boolean,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('package_payments')
+    .insert({
+      clinic_id: rec.clinicId,
+      package_id: rec.packageId,
+      customer_id: rec.customerId,
+      amount: rec.amount,
+      method: 'card',
+      installment: rec.installmentMonths && rec.installmentMonths > 1 ? rec.installmentMonths : 0,
+      payment_type: isCancel ? 'refund' : 'payment',
+      fee_kind: 'package',                  // ★잔금 산식(footBilling)이 소비하는 축 — 패키지 결제/환불 명시.
+      external_approval_no: rec.authNo,     // ★AUTHNO(취소 refund 매칭·재취소 멱등 앵커).
+      external_tid: rec.tid,                // ★TID(VG-5 RedPay 도달 축).
+      payment_attempt_id: rec.attemptId,    // ★CAT-origin 판별자(FK) + L2 이중수납 2차방어(partial UNIQUE).
+      is_simulation: rec.isSimulation,      // ★C6 테스트금액 격리(트리거 test-고객 승격과 병존, 명시 true 보존).
+      memo: isCancel ? '코밴 단말 결제취소(패키지)' : '코밴 단말 카드결제(패키지)',
+    })
+    .select('id');
+  if (error) {
+    // ★L2 멱등: payment_attempt_id partial UNIQUE 위반(23505) = 중복 승인콜백 → 이중수납 방지, 멱등 no-op.
+    if (isUniqueViolation(error)) {
+      console.warn(`패키지 수납 기록 멱등 skip(중복 승인콜백, attempt=${rec.attemptId}): ${error.message}`);
+      return;
+    }
+    throw new Error(`패키지 수납 기록 실패: ${error.message}`);
+  }
+  const rowId = data?.[0]?.id as string | undefined;
+  if (!rowId) {
+    // 0-row + error=null = RLS 거부/스코프 불일치(INV-W5). 미영속인데 성공 오인 금지.
+    throw new Error('패키지 수납 기록 실패: 0행 반영(권한/스코프 확인 필요).');
+  }
+  // ★BINDING#3 매출일자 앵커 = 승인일자(TRANDATE) → package_payments.accounting_date(매출 RPC 가 clinic_id+accounting_date
+  //   로 집계). INSERT 트리거는 created_at KST 로 stamp → UPDATE 로 승인일자 덮어써 late/일경계 drift 방지(payments 대칭).
+  //   승인일자 파싱 실패 시 트리거 default 유지. 실패는 수납 성립 되돌리지 않음(로그만).
+  const acctDate = yymmddToISODate(rec.approvalDate);
+  if (acctDate) {
+    const { error: acctErr } = await supabase
+      .from('package_payments')
+      .update({ accounting_date: acctDate })
+      .eq('id', rowId);
+    if (acctErr) console.error(`패키지 매출일자(accounting_date) 착지 실패(id=${rowId}):`, acctErr.message);
+  }
+  // ★VG-0/VG-2: paid_amount = Σ signed package_payments 재계산(PackagePaymentAdd 동일 규약). 소스 불변.
+  //   재계산 실패는 수납 성립을 되돌리지 않음(로그만) — 행은 이미 영속, paid_amount 캐시는 다음 write/조회에서 정합.
+  const { data: sum, error: sumErr } = await supabase
+    .from('package_payments')
+    .select('amount, payment_type')
+    .eq('package_id', rec.packageId!);
+  if (sumErr) {
+    console.error(`패키지 paid_amount 재계산 조회 실패(package_id=${rec.packageId}):`, sumErr.message);
+    return;
+  }
+  const total = (sum ?? []).reduce(
+    (acc, r) => acc + (r.payment_type === 'refund' ? -(r.amount as number) : (r.amount as number)),
+    0,
+  );
+  const { error: updErr } = await supabase
+    .from('packages')
+    .update({ paid_amount: total })
+    .eq('id', rec.packageId!);
+  if (updErr) console.error(`패키지 paid_amount 착지 실패(package_id=${rec.packageId}):`, updErr.message);
+}
+
 export const supabaseAttemptStore: AttemptStore = {
   async insertAttempt(rec: AttemptRecord): Promise<{ id: string }> {
     // ★insert-first: 송신 전 저장. UNIQUE(clinic_id,msg_trace) 위반(중복) 시 error → 상위가 송신 중단(멱등 L1).
@@ -217,6 +302,15 @@ export const supabaseAttemptStore: AttemptStore = {
 
   async recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void> {
     const isCancel = rec.tranType === TRANTYPE_CANCEL;
+    // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1/AC-3/AC-4) — 패키지 CAT 결제 착지 분기.
+    //   rec.packageId 비-null = 패키지 탭 결제/취소 → payments 가 아니라 **package_payments 행**으로 착지한다
+    //   (DA-20260806-...-LANDING-MODEL(b) · VG-1 double-count firewall: payments 중복 revenue행 금지·매출 이중계상 방지).
+    //   payments 경로(else)는 완전 무변경(check_in 수납 회귀 0). paid_amount 는 신규 write-site 로서 기존 recalc
+    //   규약(Σ signed package_payments, PackagePaymentAdd 동일)을 적용 — VG-0/VG-2 단일소스 불변, 재계산 site 3곳 무접촉.
+    if (rec.packageId) {
+      await recordCatPackagePayment(rec, isCancel);
+      return;
+    }
     // ★K1(3-way canon, external_* 착지 · dead-column-free):
     //   external_approval_no=AUTHNO · external_tid=TID · payment_attempt_id=attemptId(FK, CAT-origin 판별자) · merchant_no=MERNO(§9 필수).
     //   pos_provider/pos_transaction_id 는 prod 부재(dead) → write 금지. external_trxid 는 NULL 유지(RedPay 예약키).

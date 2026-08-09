@@ -43,9 +43,35 @@ log_file = sys.argv[2]
 result_file = sys.argv[3]
 pid_file = sys.argv[4]
 
+
+def _write_result(value):
+    """Atomically publish the verdict (temp + rename) so a reader never sees a
+    partial write. A started runner MUST always leave a verdict here — otherwise
+    build.sh's poller reports the misleading `RESULT: NONE` ("no build ran") for
+    a build that actually ran (T-20260809-meta-QABUILD-SETSID-NOHUP-DETACH)."""
+    tmp = result_file + ".tmp"
+    with open(tmp, "w") as rf:
+        rf.write(value)
+    os.replace(tmp, result_file)
+
+
 # Detach into a new session FIRST so a foreground process-group kill of build.sh
 # (supervisor's 50s ceiling) cannot reach this runner or its build child.
-os.setsid()
+#
+# os.setsid() makes this process a session leader with NO controlling terminal:
+# that alone provides SIGHUP immunity, which is why build.sh launches us WITHOUT
+# `nohup` — layering nohup on top only re-introduces its console-detach ioctl and
+# fails on non-controlling-terminal hosts (macstudio launchd/Background session)
+# with "can't detach from console: Inappropriate ioctl for device".
+#
+# setsid() raises EPERM only when we are ALREADY a process-group leader (e.g.
+# launched under an interactive shell's job control, which puts a `&` child in
+# its own pgid). In that case we are already detached from build.sh's process
+# group — exactly what setsid was for — so it is safe to proceed.
+try:
+    os.setsid()
+except OSError:
+    pass
 
 
 def sweep_group(pgid, log, grace=3.0):
@@ -79,38 +105,47 @@ def sweep_group(pgid, log, grace=3.0):
 
 
 result = "FAIL:1"
-with open(log_file, "w") as log:
-    # start_new_session=True → the npm build gets its own process group so a
-    # timeout kill can take down the whole tsc/vite child tree via killpg.
-    proc = subprocess.Popen(
-        ["npm", "run", "build"],
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    # Capture the build's process-group id NOW, while the leader is alive. After
-    # proc.wait() returns the leader (npm) is dead and os.getpgid() would raise,
-    # but surviving grandchildren (the esbuild service) still carry this pgid.
+try:
+    with open(log_file, "w") as log:
+        # start_new_session=True → the npm build gets its own process group so a
+        # timeout kill can take down the whole tsc/vite child tree via killpg.
+        proc = subprocess.Popen(
+            ["npm", "run", "build"],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        # Capture the build's process-group id NOW, while the leader is alive. After
+        # proc.wait() returns the leader (npm) is dead and os.getpgid() would raise,
+        # but surviving grandchildren (the esbuild service) still carry this pgid.
+        try:
+            build_pgid = os.getpgid(proc.pid)
+        except ProcessLookupError:
+            build_pgid = proc.pid  # already gone; pid==pgid for a session leader.
+        with open(pid_file, "w") as pf:
+            pf.write(str(proc.pid))
+        try:
+            rc = proc.wait(timeout=timeout_secs)
+            result = "OK" if rc == 0 else f"FAIL:{rc}"
+        except subprocess.TimeoutExpired:
+            log.write(f"\n[_build_runner] TIMEOUT after {timeout_secs}s — killing build process group\n")
+            result = "FAIL:124"
+        finally:
+            # ALWAYS sweep the build group — on success, failure, OR timeout. A clean
+            # `npm run build` exit can still leave the esbuild service idling at
+            # 0%CPU; without this sweep it becomes a PID-1 orphan on the QA host.
+            sweep_group(build_pgid, log)
+except Exception as exc:  # noqa: BLE001 — no-silent-failure invariant
+    # The runner started but could not even launch/monitor the build (e.g. npm
+    # missing, log dir gone). Record an EXPLICIT verdict so the poller reports
+    # RESULT: ERROR — NEVER let a started runner leave the result file absent,
+    # which build.sh would otherwise misreport as the false RESULT: NONE.
+    result = f"ERROR:{type(exc).__name__}: {exc}"
     try:
-        build_pgid = os.getpgid(proc.pid)
-    except ProcessLookupError:
-        build_pgid = proc.pid  # already gone; pid==pgid for a session leader.
-    with open(pid_file, "w") as pf:
-        pf.write(str(proc.pid))
-    try:
-        rc = proc.wait(timeout=timeout_secs)
-        result = "OK" if rc == 0 else f"FAIL:{rc}"
-    except subprocess.TimeoutExpired:
-        log.write(f"\n[_build_runner] TIMEOUT after {timeout_secs}s — killing build process group\n")
-        result = "FAIL:124"
-    finally:
-        # ALWAYS sweep the build group — on success, failure, OR timeout. A clean
-        # `npm run build` exit can still leave the esbuild service idling at
-        # 0%CPU; without this sweep it becomes a PID-1 orphan on the QA host.
-        sweep_group(build_pgid, log)
+        with open(log_file, "a") as log:
+            log.write(f"\n[_build_runner] launch/monitor error: {result}\n")
+    except OSError:
+        pass
 
-# Write the verdict atomically (temp + rename) so a reader never sees a partial.
-tmp = result_file + ".tmp"
-with open(tmp, "w") as rf:
-    rf.write(result)
-os.replace(tmp, result_file)
+# Publish the verdict atomically so a reader never sees a partial write.
+_write_result(result)

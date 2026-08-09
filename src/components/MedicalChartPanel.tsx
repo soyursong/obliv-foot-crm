@@ -50,6 +50,8 @@ import { createPortal } from 'react-dom';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
+// T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③): zone2 펜차트 read-only 뷰어 — PenChartTab.loadSavedCharts 의 signed-URL 헬퍼 재사용(egress transform 썸네일).
+import { signedThumbUrls, signedOriginalUrl } from '@/lib/photoUrl';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Lock, Pill, Search, Trash2, X } from 'lucide-react';
@@ -89,7 +91,11 @@ import RxCountInput from '@/components/admin/RxCountInput';
 //   단일 토큰 경로(SSOT)로 수렴 — 진료차트 처방내역/미리보기 raw text 제거.
 import { formatRxItemToken } from '@/lib/rxTooltip';
 // T-20260606-foot-DIAGNOSIS-MASTER-MGMT (AC-2/AC-3): 상병명 폴더 탐색 선택기(자동완성 폐지)
-import DiagnosisFolderPicker from '@/components/medical/DiagnosisFolderPicker';
+// T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT: chart_diagnoses 구조화 파생/주상병 강제 헬퍼 재사용(중복 구현 금지).
+import DiagnosisFolderPicker, {
+  deriveChartDiagnoses,
+  chartDiagnosesHasPrimary,
+} from '@/components/medical/DiagnosisFolderPicker';
 // T-20260603-foot-RX-SUPER-PHRASE: 슈퍼상용구 적용(진단명+임상경과+처방 일괄 라우팅)
 import type { SuperPhrase } from '@/components/admin/SuperPhrasesTab';
 // T-20260603-foot-CHART-DRAFT-SAVE: 진료차트 localStorage 경량 임시저장(작성 중 내용 유지).
@@ -163,6 +169,10 @@ interface CustomerBasic {
   chart_number: string | null;
   // T-20260607-foot-MEDCHART-CONSULT-DRAWER: 초진(new) 강조 배지용
   visit_type: 'new' | 'returning' | null;
+  // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (④ 고객메모): zone2 read/클릭 뷰어 소스.
+  //   정본=customer_note, 레거시 폴백=customer_memo (CheckInDetailSheet L701~703 read-fallback 규약과 동일).
+  customer_note?: string | null;
+  customer_memo?: string | null;
 }
 
 interface PhraseTemplate {
@@ -263,6 +273,16 @@ interface TreatmentImage {
   path: string;
   signedUrl: string;
   name: string;
+}
+
+// T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③): zone2 펜차트 read-only 뷰어 항목.
+//   소스 = photos 버킷 customer/{id}/pen-chart/*.png (PenChartTab.loadSavedCharts 스토리지 컨벤션 재사용).
+//   read-only(신규 저장/삭제 0) — 저장은 PenChartTab/PenChartEditorPage 전용.
+interface PenChartThumb {
+  name: string;
+  url: string;      // 원본 signed URL(클릭 확대)
+  thumbUrl: string; // transform 썸네일(egress 절감)
+  uploadedAt: string;
 }
 
 // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 3구역 '발행서류' 탭 — 해당 고객 발행서류 일자별 리스트.
@@ -850,6 +870,12 @@ export default function MedicalChartPanel({
   const [treatImages, setTreatImages] = useState<TreatmentImage[]>([]);
   const [treatImagesLoaded, setTreatImagesLoaded] = useState(false);
   const [treatImagesLoading, setTreatImagesLoading] = useState(false);
+  // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③): zone2 펜차트 read-only 뷰어 상태 (customer/{id}/pen-chart).
+  const [penCharts, setPenCharts] = useState<PenChartThumb[]>([]);
+  const [penChartsLoaded, setPenChartsLoaded] = useState(false);
+  const [penChartsLoading, setPenChartsLoading] = useState(false);
+  // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (④): zone2 메모 클릭 뷰어(팝업) — 치료메모/고객메모 클릭 시 전체 내용 열람. read-only.
+  const [memoViewer, setMemoViewer] = useState<{ title: string; content: string; meta?: string } | null>(null);
   // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (3구역 '발행서류' 탭 상단)
   const [issuedDocs, setIssuedDocs] = useState<IssuedDocEntry[]>([]);
   const [issuedDocsLoaded, setIssuedDocsLoaded] = useState(false);
@@ -894,7 +920,8 @@ export default function MedicalChartPanel({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from('customers')
-          .select('id,name,phone,birth_date,chart_number,visit_type')
+          // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (④ 고객메모): customer_note(정본)·customer_memo(레거시 폴백) read 추가.
+          .select('id,name,phone,birth_date,chart_number,visit_type,customer_note,customer_memo')
           .eq('id', customerId)
           .maybeSingle(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1330,6 +1357,9 @@ export default function MedicalChartPanel({
       setVisitHistLoaded(false);
       setTreatImages([]);
       setTreatImagesLoaded(false);
+      // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③): 펜차트 뷰어 리셋 (새 고객 열림마다)
+      setPenCharts([]);
+      setPenChartsLoaded(false);
       // T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 리스트 리셋 (새 고객 열림마다)
       setIssuedDocs([]);
       setIssuedDocsLoaded(false);
@@ -1529,6 +1559,14 @@ export default function MedicalChartPanel({
       toast.error('선택한 진료의 정보를 찾을 수 없습니다 — 다시 선택해주세요');
       return;
     }
+    // T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT AC-2 (A안, 문지은 대표원장 2026-08-08, 시나리오 4):
+    //   상병이 1건 이상이면 주상병(primary) 최소 1건 필수 — 미지정 시 저장 차단(보험청구 주/부상병 정합).
+    //   picker order-model 상 index0=주상병 구조 보장이나, 구조화 chart_diagnoses 파생 결과에 대한
+    //   최종 방어선(주상병 누락 set 을 절대 저장하지 않음).
+    if (!chartDiagnosesHasPrimary(formDx)) {
+      toast.error('주상병을 지정해 주세요');
+      return;
+    }
     // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 정식 저장 성공 시 clear 할 draft key 를 저장 전 캡처.
     //   (신규 INSERT 시 selectedChartId 가 바뀌어 key 가 달라지므로 저장 직전 값 보존.)
     const preSaveDraftKey = draftKeyStr;
@@ -1608,6 +1646,52 @@ export default function MedicalChartPanel({
           changed_by: currentUserEmail,
           changed_by_name: currentUserName,
         });
+      }
+
+      // T-20260606-foot-CHART-DIAG-MULTI-PRIMARY-PRINT (AC-0/AC-1/AC-2): 구조화 상병 미러 동기화.
+      //   medical_charts.diagnosis(text) 는 하위호환·UI 정본으로 보존하고, 별도 연결테이블
+      //   chart_diagnoses(주/부·코드/명칭 스냅샷·정렬·service_id FK)에 파생 행을 동기화한다
+      //   → 보험청구 주/부상병 정합·출력 구조화 소스. 저장 시 delete-then-insert(멱등, chart_doctor_memos 톤).
+      //   ⚠ deploy-tolerant: chart_diagnoses 테이블 미적용(42P01) 환경에서도 진료차트 저장은 성공해야 한다
+      //     (마이그 게이트 전 FE 선배포 방어막). 실패는 삼켜 차트 저장 성공을 깨지 않는다(text 정본은 이미 저장됨).
+      if (chartId) {
+        try {
+          const derived = deriveChartDiagnoses(formDx);
+          // service_id 매칭: 상병 마스터(services category_label='상병', clinic 스코프)에서 code/name 역조회(graceful null).
+          const dxMasterById = new Map<string, string>(); // 'code'|'name#name' → service_id
+          if (derived.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: dxMaster } = await (supabase as any)
+              .from('services')
+              .select('id, name, service_code')
+              .eq('clinic_id', clinicId)
+              .eq('category_label', '상병');
+            for (const s of (dxMaster ?? []) as { id: string; name: string; service_code: string | null }[]) {
+              if (s.service_code) dxMasterById.set(`code#${s.service_code}`, s.id);
+              if (s.name) dxMasterById.set(`name#${s.name}`, s.id);
+            }
+          }
+          // 기존 행 제거(멱등) 후 재삽입.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any).from('chart_diagnoses').delete().eq('chart_id', chartId);
+          if (derived.length > 0) {
+            const rows = derived.map((d) => ({
+              chart_id: chartId,
+              service_id:
+                (d.diagnosis_code ? dxMasterById.get(`code#${d.diagnosis_code}`) : undefined) ??
+                dxMasterById.get(`name#${d.diagnosis_name}`) ??
+                null,
+              diagnosis_type: d.diagnosis_type,
+              diagnosis_code: d.diagnosis_code,
+              diagnosis_name: d.diagnosis_name,
+              seq: d.seq,
+            }));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any).from('chart_diagnoses').insert(rows);
+          }
+        } catch {
+          /* chart_diagnoses 미적용/일시오류 — text 정본은 저장됨. 구조화 미러는 다음 저장 시 재동기화(무회귀). */
+        }
       }
 
       // director면 doctor_memo upsert (chart_doctor_memos)
@@ -2188,6 +2272,46 @@ export default function MedicalChartPanel({
     }
   }, [customerId, treatImagesLoaded, treatImagesLoading]);
 
+  // ── T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③): 펜차트 read-only 로드 ───────
+  //   PenChartTab.loadSavedCharts(L1229~) 스토리지 컨벤션 그대로 재사용 — photos 버킷 customer/{id}/pen-chart.
+  //   read-only 뷰어(신규 저장/삭제 0). 목록=transform 썸네일(egress 절감) / 클릭 확대=원본 signed URL.
+  const loadPenCharts = useCallback(async () => {
+    if (!customerId || penChartsLoaded || penChartsLoading) return;
+    setPenChartsLoading(true);
+    try {
+      const storagePath = `customer/${customerId}/pen-chart`;
+      const { data: files } = await supabase.storage
+        .from('photos')
+        .list(storagePath, { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+      const filtered = (files ?? []).filter((f) => f.name && !f.id?.endsWith('/') && f.id);
+      if (filtered.length === 0) { setPenCharts([]); return; }
+      const paths = filtered.map((f) => `${storagePath}/${f.name}`);
+      const [thumbs, originals] = await Promise.all([
+        signedThumbUrls('photos', paths, { width: 640, quality: 70, resize: 'contain' }),
+        Promise.all(paths.map((p) => signedOriginalUrl('photos', p))),
+      ]);
+      setPenCharts(
+        filtered
+          .map((file, i) => {
+            const tsMatch = file.name.match(/^(?:[a-z]+_)?(\d{10,})/i);
+            const ts = tsMatch ? parseInt(tsMatch[1], 10) : 0;
+            return {
+              name: file.name,
+              url: originals[i] ?? '',
+              thumbUrl: thumbs[i] ?? originals[i] ?? '',
+              uploadedAt: ts ? new Date(ts).toISOString() : '',
+            };
+          })
+          .filter((c) => c.url || c.thumbUrl),
+      );
+    } catch {
+      // graceful — 빈 목록 유지
+    } finally {
+      setPenChartsLoaded(true);
+      setPenChartsLoading(false);
+    }
+  }, [customerId, penChartsLoaded, penChartsLoading]);
+
   // ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 lazy load ──
   //   원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업". 소스=form_submissions.
   //   CustomerChartPage L3260-3261 발행서류 조회 패턴을 재사용(신규 쿼리 설계 없이 read-only·additive).
@@ -2232,6 +2356,16 @@ export default function MedicalChartPanel({
     else if (rightTab === 'super') loadIssuedDocs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightTab]);
+
+  // ── T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③⑥): zone2 자동연동 ──────────────
+  //   진료이미지(경과사진 ⑥)·펜차트(③)를 우측 탭 진입 없이 패널 열림 시 선로드해 2구역 초록박스에 자동 연동.
+  //   로드 플래그(loaded/loading)를 dep 으로 두어 open effect 리셋 직후(플래그=false) 정확히 재트리거 →
+  //   가드된 로더가 각 1회 실행(idempotent, 무한루프 없음). read-only(신규 저장 0).
+  useEffect(() => {
+    if (!open || !customerId) return;
+    if (!treatImagesLoaded && !treatImagesLoading) loadTreatImages();
+    if (!penChartsLoaded && !penChartsLoading) loadPenCharts();
+  }, [open, customerId, treatImagesLoaded, treatImagesLoading, penChartsLoaded, penChartsLoading, loadTreatImages, loadPenCharts]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -3865,6 +3999,84 @@ export default function MedicalChartPanel({
                     </div>
                   )}
 
+                  {/* ── T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③) 펜차트 뷰어 ──
+                      항목 순서 '진단명 / 처방내역 / 펜차트' 그룹의 펜차트. 당일 2번차트 등록 펜차트(보험차트)
+                      read-only 열람 — 소스=photos 버킷 customer/{id}/pen-chart(PenChartTab 저장분 재사용).
+                      썸네일 클릭 → 원본 확대(새 창). 미등록이면 빈 상태 안내(에러 없음, 시나리오2). */}
+                  <div className="mt-1" data-testid="zone2-penchart-section">
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="text-xs font-semibold text-muted-foreground">펜차트</label>
+                      {penCharts.length > 0 && (
+                        <span className="rounded-full bg-teal-50 px-1.5 text-[10px] text-teal-700">{penCharts.length}</span>
+                      )}
+                    </div>
+                    {penChartsLoading ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground py-1">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 불러오는 중…
+                      </div>
+                    ) : penCharts.length === 0 ? (
+                      <div
+                        className="rounded-lg border border-dashed p-2 text-[11px] text-muted-foreground text-center"
+                        data-testid="zone2-penchart-empty"
+                      >
+                        등록된 펜차트 없음
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1.5" data-testid="zone2-penchart-grid">
+                        {penCharts.map((pc) => (
+                          <button
+                            key={pc.name}
+                            type="button"
+                            onClick={() => pc.url && window.open(pc.url, '_blank')}
+                            className="relative rounded overflow-hidden border border-gray-200 hover:border-teal-400 transition-colors aspect-[3/4] bg-muted"
+                            title={pc.uploadedAt ? fmtDateShort(pc.uploadedAt) : pc.name}
+                            data-testid="zone2-penchart-thumb"
+                          >
+                            <img
+                              src={pc.thumbUrl}
+                              alt="펜차트"
+                              loading="lazy"
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (④) 고객메모 ──
+                      항목 순서 '고객메모 / 상담메모 / 치료메모' 그룹의 고객메모(상담메모=버킷C HOLD, 문원장 confirm 전까지 미도입).
+                      소스=customers.customer_note(정본) ?? customer_memo(레거시 폴백). read-only + 클릭 시 전체 내용 팝업 뷰어. */}
+                  <div className="mt-1" data-testid="zone2-custmemo-section">
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="text-xs font-semibold text-muted-foreground">고객메모</label>
+                    </div>
+                    {(() => {
+                      const custMemo = (customer?.customer_note ?? customer?.customer_memo ?? '').trim();
+                      if (!custMemo) {
+                        return (
+                          <div
+                            className="rounded-lg border border-dashed p-2 text-[11px] text-muted-foreground text-center"
+                            data-testid="zone2-custmemo-empty"
+                          >
+                            등록된 고객메모 없음
+                          </div>
+                        );
+                      }
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setMemoViewer({ title: '고객메모', content: custMemo })}
+                          className="w-full text-left border-l-2 border-teal-300 pl-2 py-0.5 rounded-r hover:bg-teal-50/60 transition-colors cursor-pointer"
+                          data-testid="zone2-custmemo-item"
+                          title="클릭하면 전체 내용을 볼 수 있어요"
+                        >
+                          <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-snug break-words">{custMemo}</p>
+                        </button>
+                      );
+                    })()}
+                  </div>
+
                   {/* T-20260611-foot-MEDCHART-2COL-LABEL-CLEANUP AC-3 row3: 치료사차트(좌) | 치료메모(우) 2단 grid.
                       TREATMEMO-CHART-MERGE(치료메모를 치료사차트 하단에 통합)를 본 티켓이 좌우 2단으로 재분리.
                       AC-1: '읽기전용' 텍스트/배지 미표시(라벨만). AC-2: '치료메모' 태그형 버튼(배지) 아닌 일반 라벨.
@@ -3925,11 +4137,20 @@ export default function MedicalChartPanel({
                           //   AC-1 기본 표시 = 현재 메모만(이전 '(이전 기록)' 블록 접힘).
                           //   AC-2 '이전 이력 보기' 토글로 이전 메모 타임라인 노출(기본 접힘, 펼치면 MEMO-HISTORY 데이터 그대로 read).
                           //   AC-4 GUARD: 데이터·누적로직·열람 무변경(표시 기본값만) — 5/20 MEMO-HISTORY 비파괴.
+                          // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (④): 치료메모 클릭 뷰어化.
+                          //   기존 read-only 인라인 표시(무변경)에 클릭 → 전체 내용 팝업(memoViewer) 열람 추가. read-only(저장 0).
                           const renderMemo = (memo: typeof uniqMemos[number]) => (
-                            <div
+                            <button
                               key={memo.id}
-                              className="border-l-2 border-blue-300 pl-2 py-0.5"
+                              type="button"
+                              onClick={() => setMemoViewer({
+                                title: '치료메모',
+                                content: memo.content ?? '',
+                                meta: `${fmtDateShort(memo.created_at)} · ${memo.created_by_name ?? '알 수 없음'}`,
+                              })}
+                              className="w-full text-left border-l-2 border-blue-300 pl-2 py-0.5 rounded-r hover:bg-blue-50/60 transition-colors cursor-pointer"
                               data-testid="treat-memo-item"
+                              title="클릭하면 전체 내용을 볼 수 있어요"
                             >
                               {/* AC-2: 우측 상단 메타 한 줄 (날짜 · 작성자) — 흐린 작은 글씨 */}
                               <div className="flex items-center justify-end gap-1 text-[9px] text-muted-foreground/60 tabular-nums">
@@ -3938,7 +4159,7 @@ export default function MedicalChartPanel({
                               </div>
                               {/* AC-3: 본문 — 테두리/배경 없이 텍스트만 */}
                               <p className="text-[11px] text-gray-800 whitespace-pre-wrap leading-snug break-words">{memo.content}</p>
-                            </div>
+                            </button>
                           );
                           const current = uniqMemos[0];
                           const previous = uniqMemos.slice(1);
@@ -4150,6 +4371,51 @@ export default function MedicalChartPanel({
                     null
                   )}
                   {/* /임상경과·진료메모 4:1 wrapper */}
+                  </div>
+
+                  {/* ── T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (⑥) 경과사진 ──
+                      항목 순서 마지막 '경과사진'. 당일 2번차트 업로드 진료이미지를 2구역에 자동연동 —
+                      소스=customer/{id}/treatment-images(우측 '진료이미지' 탭과 동일 소스, 탭 진입 없이 자동 표시).
+                      read-only. 썸네일 클릭 → 원본 확대(새 창). 미등록이면 빈 상태 안내(에러 없음, 시나리오2). */}
+                  <div className="mt-1" data-testid="zone2-photos-section">
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="text-xs font-semibold text-muted-foreground">경과사진</label>
+                      {treatImages.length > 0 && (
+                        <span className="rounded-full bg-teal-50 px-1.5 text-[10px] text-teal-700">{treatImages.length}</span>
+                      )}
+                    </div>
+                    {treatImagesLoading ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground py-1">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 불러오는 중…
+                      </div>
+                    ) : treatImages.length === 0 ? (
+                      <div
+                        className="rounded-lg border border-dashed p-2 text-[11px] text-muted-foreground text-center"
+                        data-testid="zone2-photos-empty"
+                      >
+                        등록된 경과사진 없음
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-1.5" data-testid="zone2-photos-grid">
+                        {treatImages.map((img) => (
+                          <button
+                            key={img.path}
+                            type="button"
+                            onClick={() => window.open(img.signedUrl, '_blank')}
+                            className="relative rounded overflow-hidden border border-gray-200 hover:border-teal-400 transition-colors aspect-square bg-muted"
+                            title={img.name}
+                            data-testid="zone2-photo-thumb"
+                          >
+                            <img
+                              src={img.signedUrl}
+                              alt={img.name}
+                              loading="lazy"
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* T-20260606-foot-MEDCHART-NIGHT-REFEEDBACK AC-2: 작성자 서명 — 기록 본문 말미.
@@ -4560,9 +4826,65 @@ export default function MedicalChartPanel({
                   {/* 슈퍼상용구 탭 (T-20260603-foot-RX-SUPER-PHRASE) — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
                   {rightTab === 'super' && (
                     <div className="p-3 space-y-2" data-testid="right-panel-super-content">
-                      {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (상단) ──
-                          원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업 상단에 추가".
-                          소스=form_submissions(read-only·additive). 처방/상용구 HOLD 무관. */}
+                      {/* ── T-20260807-foot-SUPERPHRASE-ACCESS-RESTORE-SEPARATE (AC-1 회귀 복원): 슈퍼상용구(발행서류/템플릿) '불러오기' 진입점 복원 ──
+                          3ZONE(08526db9, 7/31) Phase B '슈퍼상용구'→'발행서류' 개칭 + Phase A '발행 서류 (일자별)' 리스트를 탭 상단 배치 이후,
+                          applySuperPhrase 템플릿 '불러오기' 진입점이 일자별 리스트 아래로 묻혀 현장 인지상 '진입점 소실' 회귀 발생(문지은 대표원장 직접 신고).
+                          → 템플릿 '불러오기' 섹션을 발행서류 탭 상단(primary)으로 복원 + 명시 헤더('서류 템플릿 불러오기')로 진입점 가시화.
+                          · AC-1: 개칭 명칭 '발행서류' 유지(라벨 되돌리지 않음), applySuperPhrase 도달·실행 경로만 복원.
+                          · AC-2: 상용구(phrase 탭)와 슈퍼상용구(발행서류/템플릿)는 서로 다른 별도 경로 유지 — 한 탭 통합 금지(김주연 총괄 MOVE안 superseded).
+                          · AC-3: applySuperPhrase(3ZONE phaseB) 재사용, 새 데이터소스/쿼리 신설 없음, db_change=false.
+                          · AC-4: 발행 서류 일자별 리스트(Phase A)는 삭제하지 않고 하단 참조 위치로 이동(무회귀). testid 전량 보존. */}
+                      <div className="rounded-lg border bg-muted/10" data-testid="super-phrase-template-section">
+                        <div className="flex items-center gap-1.5 px-3 py-2 border-b bg-muted/20 text-xs font-semibold text-foreground">
+                          <FileText className="h-3.5 w-3.5 text-teal-600" />
+                          서류 템플릿 불러오기
+                        </div>
+                        <div className="p-2 space-y-2">
+                          {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
+                              (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
+                          {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
+                          {superLoadError ? (
+                            <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center" data-testid="super-phrase-load-error">
+                              발행서류 템플릿을 불러오지 못했습니다<br />
+                              <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
+                            </div>
+                          ) : superPhrases.length === 0 ? (
+                            <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center" data-testid="super-phrase-empty">
+                              등록된 발행서류 템플릿 없음
+                            </div>
+                          ) : (
+                            superPhrases.map(sp => (
+                              <button
+                                key={sp.id}
+                                type="button"
+                                onClick={() => applySuperPhrase(sp)}
+                                disabled={gateChecking}
+                                className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
+                                data-testid="super-phrase-option"
+                              >
+                                <div className="flex items-center gap-1.5 font-medium text-xs">
+                                  {sp.name}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
+                                  {sp.diagnosis && <div className="truncate"><span className="text-foreground">진단</span> {sp.diagnosis}</div>}
+                                  {sp.clinical_progress && <div className="truncate"><span className="text-foreground">경과</span> {sp.clinical_progress}</div>}
+                                  {sp.rx_items.length > 0 && (
+                                    <div className="truncate">
+                                      <span className="text-foreground">처방 {sp.rx_items.length}개</span>{' '}
+                                      {sp.rx_items.slice(0, 2).map(i => i.name).join(', ')}
+                                      {sp.rx_items.length > 2 ? ' 외' : ''}
+                                    </div>
+                                  )}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── T-20260729-foot-MEDCHART-3ZONE-RESTRUCTURE (Phase A): 발행서류 일자별 리스트 (참조·하단) ──
+                          원장 캐논 "해당 고객 앞으로 발행된 서류 일자별로 리스트업". 소스=form_submissions(read-only·additive).
+                          T-20260807 복원: 템플릿 '불러오기' 진입점을 상단으로 올리면서 일자별 리스트는 하단 참조 위치로 이동(삭제 아님·무회귀). */}
                       <div className="rounded-lg border bg-muted/10" data-testid="issued-docs-section">
                         <div className="flex items-center gap-1.5 px-3 py-2 border-b bg-muted/20 text-xs font-semibold text-foreground">
                           <FileText className="h-3.5 w-3.5 text-teal-600" />
@@ -4609,50 +4931,6 @@ export default function MedicalChartPanel({
                           )}
                         </div>
                       </div>
-
-                      {/* 발행서류 템플릿(구 슈퍼상용구) 목록 — 클릭 시 진단명/임상경과/처방 일괄 적용 */}
-                      <div className="text-[10px] font-semibold text-muted-foreground px-1 pt-1">서류 템플릿</div>
-
-                      {/* T-20260621-foot-MEDCHART-ADMIN-NAV-REMOVE: 슈퍼상용구 관리화면 지름길 버튼 제거
-                          (문원장 요청 — 차트는 원장 전용). 슈퍼상용구 클릭→일괄 적용 기능은 유지. */}
-
-                      {/* T-20260605-foot-RX-SUPER-PHRASE-LOAD-BUG (AC-2): 조회 실패(에러) ≠ 0건(빈) 구분 안내 */}
-                      {superLoadError ? (
-                        <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-xs text-red-600 text-center mt-2" data-testid="super-phrase-load-error">
-                          발행서류 템플릿을 불러오지 못했습니다<br />
-                          <span className="text-[10px]">잠시 후 다시 시도하거나 관리자에게 문의하세요</span>
-                        </div>
-                      ) : superPhrases.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center mt-2" data-testid="super-phrase-empty">
-                          등록된 발행서류 템플릿 없음
-                        </div>
-                      ) : (
-                        superPhrases.map(sp => (
-                          <button
-                            key={sp.id}
-                            type="button"
-                            onClick={() => applySuperPhrase(sp)}
-                            disabled={gateChecking}
-                            className="w-full text-left rounded-lg border bg-card px-3 py-2.5 hover:border-teal-400 hover:bg-teal-50/30 transition-colors disabled:opacity-50"
-                            data-testid="super-phrase-option"
-                          >
-                            <div className="flex items-center gap-1.5 font-medium text-xs">
-                              {sp.name}
-                            </div>
-                            <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
-                              {sp.diagnosis && <div className="truncate"><span className="text-foreground">진단</span> {sp.diagnosis}</div>}
-                              {sp.clinical_progress && <div className="truncate"><span className="text-foreground">경과</span> {sp.clinical_progress}</div>}
-                              {sp.rx_items.length > 0 && (
-                                <div className="truncate">
-                                  <span className="text-foreground">처방 {sp.rx_items.length}개</span>{' '}
-                                  {sp.rx_items.slice(0, 2).map(i => i.name).join(', ')}
-                                  {sp.rx_items.length > 2 ? ' 외' : ''}
-                                </div>
-                              )}
-                            </div>
-                          </button>
-                        ))
-                      )}
                     </div>
                   )}
 
@@ -4780,6 +5058,47 @@ export default function MedicalChartPanel({
           )}
         </div>
       </div>
+
+      {/* ── T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (④): 메모 클릭 뷰어 팝업 ──
+          치료메모/고객메모 클릭 시 전체 내용 read-only 열람(입력능력 0). createPortal로 body 최상위 렌더(패널 overflow 무관). */}
+      {memoViewer && createPortal(
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4"
+          data-testid="memo-viewer-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setMemoViewer(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-3 bg-teal-50 border-b border-teal-100">
+              <div className="min-w-0">
+                <div className="font-semibold text-sm text-teal-800" data-testid="memo-viewer-title">{memoViewer.title}</div>
+                {memoViewer.meta && (
+                  <div className="text-[11px] text-teal-600/80 tabular-nums truncate">{memoViewer.meta}</div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setMemoViewer(null)}
+                className="shrink-0 rounded-full p-1 text-teal-700 hover:bg-teal-100 transition-colors"
+                aria-label="닫기"
+                data-testid="memo-viewer-close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-4 py-3 max-h-[60vh] overflow-y-auto">
+              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed break-words" data-testid="memo-viewer-content">
+                {memoViewer.content || '(내용 없음)'}
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* T-20260603-foot-RX-CHART-ENHANCE AC-2 (구 RX-MODULE-8REQ #2/AC-2): 약품 금기증 확인 게이트.
           prescription_code_id 매칭 금기증 보유 약 추가 시 전체 항목 체크 후에만 진행(우회불가). 의료안전 직결. */}

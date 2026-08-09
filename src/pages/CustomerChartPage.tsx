@@ -5,6 +5,9 @@ import { format, parseISO } from 'date-fns';
 import { AlertTriangle, CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
+// T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형(수정·저장·출력) 초록박스.
+//   parent(T-20260808-...-2CHART, READ-ONLY 별도 탭) supersede — 별도 탭 폐지, 새 차트 작성 양식(펜차트 탭) 내부 배치.
+import { EditableAutoVisitLogBox } from '@/components/EditableAutoVisitLogBox';
 // T-20260730-foot-RRN-CLIPBOARD-COPY-NHIS: 주민번호 앞/뒷자리 클립보드 복사 버튼(공용)
 import { RrnCopyButtons } from '@/components/insurance/RrnCopyButtons';
 // T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
@@ -16,6 +19,7 @@ import { parseFootSites, type FootSite } from '@/components/FootSiteSelector';
 //   피검사/KOH 는 이 박스 체크박스로 이관(既존 KohRequestToggle/BloodTestRequestToggle 상태 공유 → 별도 토글 제거).
 import TreatmentRequestBox from '@/components/TreatmentRequestBox';
 import { PACKAGE_SESSION_TYPE_TO_REQUEST_CODE } from '@/lib/treatmentRequestCodes';
+import { isInsuranceSplitValid, isInsuranceSplitBothEntered, formatInsuranceSplit } from '@/lib/insuranceSessionSplit';
 // T-20260615-foot-KOHTEST-LIFECYCLE-PUBLISH (AC-4): 검사결과 탭 발행된 균검사 결과지 목록
 import KohPublishedResults from '@/components/KohPublishedResults';
 import PatientResultFiles from '@/components/PatientResultFiles';
@@ -44,7 +48,9 @@ import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
-import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, PrescriptionRow, Reservation, VisitType } from '@/lib/types';
+import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, Reservation, VisitType } from '@/lib/types';
+// T-20260806-foot-RX-PERSIST-FORWARDFIX: 처방전 발행 이력 canonical SSOT = form_submissions(처방전). 발행 이력 축 투영 헬퍼.
+import { mapRxIssuanceRows, RX_ISSUANCE_FORM_KEY, type RxIssuanceRow, type RawFormSubmissionRow } from '@/lib/rxIssuanceHistory';
 import { TREATMENT_TYPES, treatmentTypeLabel, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 // T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 예방콜 결과 read-only 배지(상태 무관)
 import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
@@ -55,6 +61,8 @@ import { DocumentViewer } from '@/components/forms/DocumentViewer';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 고객정보 저장 가드
 import { registerPublishSaveGuard } from '@/lib/unsavedGuard';
+// T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 자동 새로고침(배포감지 full-page reload) 시 2번차트 입력 유실 방지.
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 // T-20260507-foot-CHART2-INSURANCE-FIELDS: 건보 자격등급 패널
 import { InsuranceGradeSelect } from '@/components/insurance/InsuranceGradeSelect';
 // T-20260511-foot-C2-INSURANCE-AUTO-CALC: 2번차트 진료비 자동산정 패널
@@ -68,6 +76,9 @@ import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { shouldLinkCheckInPackage } from '@/lib/checkInPackageLink';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
 import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+// ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT — 상담실 회차권 판매 화면 코밴 CAT 결제(AC-1/AC-2).
+import CbandPayEntryButton from '@/components/CbandPayEntryButton';
+import { isCbandPayEnabled, type PaymentFlowResult } from '@/lib/cband/paymentFlow';
 // T-20260714-foot-DAYCLOSE-MANUAL-PAY-CUSTBOX-UNPAID-SYNC: 수기수납 정본 write-path 옵션A(단일 SSOT)
 import { recordManualPayment, type ManualPayAttribution } from '@/lib/manualPaymentWritePath';
 // T-20260514-foot-CHART2-OPEN-BUG: Sheet 모드 닫기 (window.close 대체)
@@ -76,6 +87,13 @@ import { useChartSheetClose, useRegisterChartSave, useChartSheetMarkClean, useCh
 import { LaserTimerPanel } from '@/components/chart/LaserTimerPanel';
 // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 패널
 import { PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
+// T-20260730-foot-SUSU-PAYMETHOD-CHANGE: 결제수단 변경(수기 수납, RedPay-앵커 잠금) 전용 다이얼로그
+import {
+  PaymentMethodChangeDialog,
+  isRedpayAnchor,
+  type PaymentRowForMethodChange,
+  type PaymentMethodChangeDonePayload,
+} from '@/components/PaymentMethodChangeDialog';
 // T-20260515-foot-KENBO-API-NATIVE: 건보공단 수진자 자격조회 Native 패널
 // T-20260724-foot-NHIS-MANUAL-CAPTURE: API 자동조회 pivot → 포털 딥링크 + 인라인 캡처
 import { useNhisLookup } from '@/hooks/useNhisLookup';
@@ -176,6 +194,11 @@ interface Payment {
   // T-20260515-foot-RECEIPT-TAX-SPLIT AC-6: 현금영수증 필드 (DB 마이그레이션 전 null)
   cash_receipt_issued?: boolean | null;
   cash_receipt_type?: 'income_deduction' | 'expense_proof' | null;
+  // T-20260730-foot-SUSU-PAYMETHOD-CHANGE: RedPay-앵커 판정용(카드 물리승인+대사확정 = method 변경 잠금).
+  //   select('*') 로 이미 fetch 됨 — 타입만 노출. clinic_id/check_in_id 는 감사 레코드 컨텍스트.
+  clinic_id?: string | null;
+  external_trxid?: string | null;
+  reconciled_at?: string | null;
 }
 
 interface PackagePayment {
@@ -653,6 +676,36 @@ function computeRemainingFromSessionRows(
       total_remaining: Math.max(0, totalAvailable - totalUsed),
     };
   });
+}
+
+// T-20260808-foot-CHARTEDIT-SESSIONTYPE-PRICE-RELINK:
+//   session_type → packages 단가 컬럼 스냅샷 매핑.
+//   fn_fill_session_unit_price() 트리거(20260605120000, BEFORE INSERT)·SalesStaffTab.currentUnitPrice()
+//   와 반드시 동일한 SSOT 매핑 — package_sessions.unit_price(차감기준 매출 스냅샷)의 근거값이므로
+//   매핑이 어긋나면 차감 매출·치료사별 집계가 드리프트한다.
+//   대응 단가 컬럼이 없는 타입(preconditioning 등)은 0(무상 사전처치 = 차감수가 0).
+type PkgUnitPrices = {
+  heated_unit_price?: number | null;
+  unheated_unit_price?: number | null;
+  iv_unit_price?: number | null;
+  podologe_unit_price?: number | null;
+  trial_unit_price?: number | null;
+  reborn_unit_price?: number | null;
+};
+function sessionTypeUnitPrice(pkg: PkgUnitPrices | null | undefined, sessionType: string): number {
+  if (!pkg) return 0;
+  switch (sessionType) {
+    case 'heated_laser':   return pkg.heated_unit_price ?? 0;
+    case 'unheated_laser': return pkg.unheated_unit_price ?? 0;
+    case 'iv':             return pkg.iv_unit_price ?? 0;
+    case 'podologue':
+    case 'podologe':       return pkg.podologe_unit_price ?? 0;
+    // AC2: 체험권은 trial_unit_price(단건 매출) 스냅샷 — 선수금차감(laser) 대상 아님
+    //      (TRIAL-REVENUE-ZERO A안 · PaymentMiniWindow.isTrialService 정합).
+    case 'trial':          return pkg.trial_unit_price ?? 0;
+    case 'reborn':         return pkg.reborn_unit_price ?? 0;
+    default:               return 0; // preconditioning 등 무상
+  }
 }
 
 // T-20260506-foot-CHART-MINI-HOMEPAGE: 고객 스토리지 이미지 업로드 컴포넌트 (역할별)
@@ -2824,7 +2877,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260801-foot-DOCISSUE-TODAY-PREVVISIT-PREFILL-BUG: 모달 진입 mode — '당일 서류 발행'(true)이면
   //   DocumentPrintPanel 이 이전 발행분 재출력 인터셉트/프리필 없이 빈 신규 발행으로 진입. '서류 재출력'(false)=STAGE2 유지.
   const [docReissueNewMode, setDocReissueNewMode] = useState(false);
-  const [prescriptions, setPrescriptions] = useState<PrescriptionRow[]>([]);
+  const [prescriptions, setPrescriptions] = useState<RxIssuanceRow[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
   // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
@@ -3112,6 +3165,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const [showAutoSaved, setShowAutoSaved] = useState(false);
   // T-20260514-foot-C2-PAYMENT-SYNC AC-3: 수납 이력 확장 행 상태
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
+  // T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 다이얼로그 대상 행
+  const [methodChangeTarget, setMethodChangeTarget] = useState<PaymentRowForMethodChange | null>(null);
   // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 + 수동 입력
   const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
   const [messageForm, setMessageForm] = useState<{
@@ -3354,11 +3409,20 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
 
       if (checkInIds.length > 0) {
         const [rxRes, consentRes] = await Promise.all([
+          // T-20260806-foot-RX-PERSIST-FORWARDFIX (AC2/VG1/VG3):
+          //   ★ canonical SSOT = form_submissions(처방전 = form_key 'rx_standard'). DA-20260806-foot-RX-PERSIST-SSOT.
+          //   [폐기] dead 'prescriptions' 테이블 조회 — INSERT 코드 전무(skeleton)라 항상 0건 → 처방 이력 미표시(실사고).
+          //     되살리기·write 신설 금지(dual-source drift 안티패턴). 발행 이력 = form_submissions 단일 원장.
+          //   VG1: form_templates!inner(form_key='rx_standard')로 처방전만 필터(소견서/KOH/진단서 혼입 0).
+          //   VG3: 발행 이력 축(form_submissions)만 소비 — 처방 기록 축(medical_charts.prescription_items) 조인 금지.
+          //   VG2: 투영은 mapRxIssuanceRows 화이트리스트(교부일·처방의료인·진단·교부번호·약품명) — RRN/풀전화/차트번호 미노출.
           supabase
-            .from('prescriptions')
-            .select('id, prescribed_by_name, diagnosis, prescribed_at, prescription_items(medication_name, dosage, duration_days)')
-            .in('check_in_id', checkInIds)
-            .order('prescribed_at', { ascending: false })
+            .from('form_submissions')
+            .select('id, printed_at, created_at, field_data, form_templates!inner(form_key)')
+            .eq('customer_id', customerId)
+            .eq('is_deleted', false)
+            .eq('form_templates.form_key', RX_ISSUANCE_FORM_KEY)
+            .order('printed_at', { ascending: false, nullsFirst: false })
             .limit(20),
           supabase
             .from('consent_forms')
@@ -3366,7 +3430,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             .in('check_in_id', checkInIds)
             .order('signed_at', { ascending: false }),
         ]);
-        setPrescriptions((rxRes.data ?? []) as PrescriptionRow[]);
+        setPrescriptions(mapRxIssuanceRows((rxRes.data ?? []) as RawFormSubmissionRow[]));
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
       }
 
@@ -3703,11 +3767,39 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 실패:', error.message);
         return 'error';
       }
-      if (!data || data.length === 0) return 'none'; // rows-affected=0(RLS/스코프) — 사일런트 성공 오인 차단
+      // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: rows-affected=0 은 '당일 open check_in 부재'('none')가
+      //   아니라 write 실패(RLS/스코프)다 — 명단행이 실재하는데 갱신이 조용히 튕긴 상태. 'none'(=미반영 안내)로
+      //   오분류하면 "오늘 열린 접수건 없음"이라는 사실과 다른 안내가 나가므로, 'error'(=반영 실패 안내)로 분리한다.
+      if (!data || data.length === 0) {
+        console.error('[DISTRIB-SYNC] 당일 내원 상담사 전파 0-row(RLS/스코프 사일런트 실패)');
+        return 'error';
+      }
       setLatestCheckIn((prev) => (prev && prev.id === ci.id ? { ...prev, consultant_id: staffId } : prev));
       return 'updated';
     },
     [customer, latestCheckIn],
+  );
+
+  // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN (Option A — 가시화, 최소):
+  //   2번 차트 담당자(assigned_staff_id) 저장 후 당일 open check_in 으로의 하향전파 결과를 스태프에게 노출한다.
+  //   기존 문제(latent divergence): latestCheckIn 이 stale(취소/완료/당일 아님/부재)이면 updateTodayOpenCheckInConsultant
+  //     가 'none' 을 반환하고 아무 안내 없이 종료 → 담당자 등록(assigned_staff_id)만 조용히 갱신되고 배정 명단엔
+  //     반영되지 않는데도 스태프는 "등록됐다"고 인지하는 silent no-op.
+  //   FIX: 저장은 그대로 유지하되(assigned_staff_id 무접점), 명단 미반영 사실을 숨기지 않고 안내로 노출한다.
+  //   ★membership 소스(check_ins only·open·today·NOT done/cancelled)는 by-design 확정 계약 — 반영 로직 무변경.
+  //     이 하드닝은 FE 안내만 추가(계약 무접점). 명단 반영 자체가 업무상 필요하면 그건 계약 변경(별도 DA 게이트).
+  //   ※ toast.info/success 는 wrapper 에서 묵음(@/lib/toast) — 스태프가 반드시 봐야 하는 안내이므로
+  //     묵음 제외 채널(warning/error)로 노출한다.
+  const syncChartOwnerToTodayRoster = useCallback(
+    async (staffId: string | null) => {
+      const result = await updateTodayOpenCheckInConsultant(staffId);
+      if (result === 'none') {
+        toast.warning('담당자는 저장됐지만, 오늘 열린 접수건이 없어 배정 명단에는 아직 반영되지 않았습니다. 접수 후 자동 반영됩니다.');
+      } else if (result === 'error') {
+        toast.error('담당자는 저장됐지만 배정 명단 반영에 실패했습니다. 화면을 새로고침해 주세요.');
+      }
+    },
+    [updateTodayOpenCheckInConsultant],
   );
 
   // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm 동기화 (접수 패널 stale + 가드 오탐 근본해결)
@@ -4207,6 +4299,22 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 자동 새로고침(배포감지 full-page reload) 대비 새로고침 가드 등록.
+  //   기존 발급가드(위)·60초 자동저장(아래)과 별개로, UpdateBanner/DashboardRefreshCountdown 의 reload 직전 collectDirty
+  //   훑기 대상에 2번차트를 편입한다. 저장 경로(handleInfoPanelSave) 보유 → flushable(자동 저장 후 새로고침).
+  //   저장 실패 시 throw → UpdateBanner 가 blocking 취급(reload 보류, 데이터 유실 0). 신규 write-path/스키마 0.
+  useUnsavedGuard(
+    'customer-chart-2',
+    () => isDirty,
+    {
+      flush: async () => {
+        const ok = await handleInfoPanelSaveRef.current();
+        if (!ok) throw new Error('고객차트 자동 저장 실패');
+      },
+      label: '고객차트',
+    },
+  );
+
   // T-20260511-foot-C21-SAVE-DIRTY-AUTOSAVE: isDirty=true 시 60초 자동저장 (현장 확정: 30→60초, 김주연 5/11 16:14)
   useEffect(() => {
     if (!isDirty) return;
@@ -4309,18 +4417,73 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
   };
 
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1/AC-2) — 코밴 결제/취소 후 패키지+결제/미수 재조회.
+  //   packages(remaining 포함) + package_payments 를 함께 갱신해 잔금(미수) 칩·결제이력이 즉시 반영되게 한다.
+  //   onCreated(구입 티켓 추가 다이얼로그) 및 AC-2([결제]) 승인 콜백 공용.
+  const reloadPackagesAndPayments = async () => {
+    const [pkgRes, payRes] = await Promise.all([
+      supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),
+      supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+    ]);
+    const pkgs = (pkgRes.data ?? []) as PackageWithRemaining[];
+    if (pkgs.length > 0) {
+      const pkgIds = pkgs.map((p) => p.id);
+      const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
+      const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
+      setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+    } else {
+      setPackages([]);
+    }
+    setPkgPayments((payRes.data ?? []) as PackagePayment[]);
+  };
+
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 수정 저장
+  // T-20260808-foot-CHARTEDIT-SESSIONTYPE-PRICE-RELINK:
+  //   [버그] 시술유형(session_type) 변경 시 차감 스냅샷 단가 package_sessions.unit_price 를 새 유형의
+  //     package.{type}_unit_price 로 재계산하지 않음. fn_fill_session_unit_price() 트리거는 BEFORE INSERT
+  //     에만 발화(UPDATE 무발화) → 유형만 바뀌고 unit_price(차감기준 매출 SSOT: SalesStaffTab
+  //     DEDUCT_AMOUNT_BASIS='snapshot' · mtmSales.ts · stats RPC)가 옛 단가로 잔존 →
+  //     차감 매출·치료사별 매출집계 왜곡(이정인 가열→체험권 정정 시 발현). 이 write-path 에서 교정.
+  //   AC1: 유형 변경 시 새 유형 단가(sessionTypeUnitPrice = 트리거/currentUnitPrice 동일 매핑)로 함께 UPDATE.
+  //   AC2: 새 유형=체험권(trial) → trial_unit_price(단건 매출) 스냅샷. 선수금차감(laser) 대상 아님
+  //        (TRIAL-REVENUE-ZERO A안 · PaymentMiniWindow 정합, 회귀 0).
+  //   AC3: 유형 미변경(날짜/담당자만) 저장은 unit_price 무접촉 — 기존 수기조정 스냅샷 파괴 금지.
+  //   AC4: forward-fix — 이 저장 시점 이후 정정만 반영. 과거 오정정 행 소급 backfill 없음.
+  //   ※ read-side 집계(SalesStaffTab)는 무접촉(field-soak 중) — 본 수정은 write-side(package_sessions)만.
   const saveEditSession = async () => {
     if (!editSessionDlg) return;
     if (!editSessionForm.therapistId) { toast.error('치료사를 선택해주세요.'); return; }
     setSavingEditSession(true);
+
+    const typeChanged = editSessionForm.sessionType !== editSessionDlg.session_type;
+    const patch: {
+      session_type: string;
+      session_date: string;
+      performed_by: string;
+      unit_price?: number;
+    } = {
+      session_type: editSessionForm.sessionType,
+      session_date: editSessionForm.sessionDate,
+      performed_by: editSessionForm.therapistId,
+    };
+    // AC1/AC2/AC3: 유형이 실제로 바뀐 경우에만 차감 스냅샷 단가를 새 유형 단가로 재계산.
+    if (typeChanged) {
+      let pkg: PkgUnitPrices | null | undefined = packages.find((p) => p.id === editSessionDlg.package_id);
+      // 상태에 대상 패키지 단가가 없을 때만 DB 폴백(0 단가 오기입 방지).
+      if (!pkg) {
+        const { data } = await supabase
+          .from('packages')
+          .select('heated_unit_price, unheated_unit_price, iv_unit_price, podologe_unit_price, trial_unit_price, reborn_unit_price')
+          .eq('id', editSessionDlg.package_id)
+          .maybeSingle();
+        pkg = (data ?? null) as PkgUnitPrices | null;
+      }
+      patch.unit_price = sessionTypeUnitPrice(pkg, editSessionForm.sessionType);
+    }
+
     const { error } = await supabase
       .from('package_sessions')
-      .update({
-        session_type: editSessionForm.sessionType,
-        session_date: editSessionForm.sessionDate,
-        performed_by: editSessionForm.therapistId,
-      })
+      .update(patch)
       .eq('id', editSessionDlg.id);
     setSavingEditSession(false);
     if (error) { toast.error(`수정 실패: ${error.message}`); return; }
@@ -5655,6 +5818,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //         → payments는 HISTORY로, slot_dwell은 CLINICAL로 이동.
   const CLINICAL_TABS = [
     { key: 'pen_chart',   label: '펜차트' },
+    // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: '펜차트(자동기록용)' 별도 탭 폐지 →
+    //   펜차트 새 차트 작성 양식 내부 초록박스(EditableAutoVisitLogBox)로 이동. (김주연 총괄 정정)
     { key: 'test_result', label: '검사결과' },
     { key: 'progress',    label: '경과내역' },
     { key: 'reservations', label: '예약내역' }, // AC-1: documents 대체
@@ -6336,7 +6501,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                         void (async () => {
                           const { error } = await saveCustomerField({ assigned_staff_id: v });
                           if (error) return; // 영구 저장 실패 시 전파 안 함(saveCustomerField가 toast 처리)
-                          await updateTodayOpenCheckInConsultant(v);
+                          // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 + 명단 미반영/실패 가시화(silent no-op 제거)
+                          await syncChartOwnerToTodayRoster(v);
                         })();
                       }}
                       disabled={savingField}
@@ -6776,25 +6942,22 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 <DocumentViewer customerId={customer.id} />
               </div>
 
-              {/* 처방전 */}
+              {/* 처방전 — T-20260806-foot-RX-PERSIST-FORWARDFIX: 발행 이력 축(form_submissions) 투영(교부일·처방의료인·진단·교부번호·약품명). */}
               {prescriptions.length > 0 && (
                 <div className="rounded-lg border bg-white p-3 text-xs space-y-2">
                   <div className="font-semibold text-muted-foreground">처방전</div>
                   {prescriptions.map((rx) => (
                     <div key={rx.id} className="rounded bg-muted/30 px-2 py-1.5">
                       <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                        <span>{formatDateDots(rx.prescribed_at)}</span>
-                        {rx.prescribed_by_name && <span>{rx.prescribed_by_name}</span>}
+                        <span>{rx.issued_at ? formatDateDots(rx.issued_at) : '-'}</span>
+                        {rx.prescriber_name && <span>{rx.prescriber_name}</span>}
                       </div>
+                      {rx.issue_no && <div className="text-muted-foreground mb-0.5">교부번호: {rx.issue_no}</div>}
                       {rx.diagnosis && <div className="font-medium mb-0.5">진단: {rx.diagnosis}</div>}
-                      {rx.prescription_items && rx.prescription_items.length > 0 && (
+                      {rx.medications.length > 0 && (
                         <div className="space-y-0.5 mt-1">
-                          {rx.prescription_items.map((item, idx) => (
-                            <div key={idx} className="text-muted-foreground">
-                              {item.medication_name}
-                              {item.dosage && ` · ${item.dosage}`}
-                              {item.duration_days && ` · ${item.duration_days}일`}
-                            </div>
+                          {rx.medications.map((name, idx) => (
+                            <div key={idx} className="text-muted-foreground">{name}</div>
                           ))}
                         </div>
                       )}
@@ -6877,6 +7040,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                           <th className="text-left px-2 py-1.5 font-medium border-b">구분</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">현금영수증</th>
                           <th className="text-left px-2 py-1.5 font-medium border-b">메모</th>
+                          {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 액션 */}
+                          <th className="text-right px-2 py-1.5 font-medium border-b">변경</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -6911,10 +7076,54 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                 )}
                               </td>
                               <td className="px-2 py-1.5 text-muted-foreground max-w-[100px] truncate">{p.memo ?? '-'}</td>
+                              {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 버튼.
+                                  · 결제(payment) 행에만 노출(환불행 제외). RedPay-앵커 행은 disable + 툴팁(DA A안 LOCK).
+                                  · 행 확장(expand) 클릭과 분리 위해 stopPropagation. */}
+                              <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                {p.payment_type === 'payment' ? (() => {
+                                  const anchored = isRedpayAnchor(p);
+                                  return (
+                                    <button
+                                      type="button"
+                                      data-testid={`btn-method-change-${p.id}`}
+                                      data-redpay-anchor={anchored ? 'true' : undefined}
+                                      disabled={anchored}
+                                      title={anchored
+                                        ? '카드 자동승인 건은 변경 불가 — 환불 후 재결제로 처리하세요'
+                                        : '결제수단 변경'}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (anchored) return;
+                                        setMethodChangeTarget({
+                                          id: p.id,
+                                          method: p.method,
+                                          installment: p.installment,
+                                          clinic_id: p.clinic_id ?? null,
+                                          check_in_id: p.check_in_id ?? null,
+                                          status: p.status ?? 'active',
+                                          external_trxid: p.external_trxid ?? null,
+                                          reconciled_at: p.reconciled_at ?? null,
+                                          cash_receipt_issued: p.cash_receipt_issued ?? null,
+                                        });
+                                      }}
+                                      className={cn(
+                                        'rounded px-1.5 py-0.5 text-[11px] transition',
+                                        anchored
+                                          ? 'text-gray-300 cursor-not-allowed'
+                                          : 'text-teal-600 hover:bg-teal-50',
+                                      )}
+                                    >
+                                      수단변경
+                                    </button>
+                                  );
+                                })() : (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
+                              </td>
                             </tr>
                             {expandedPaymentId === p.id && (
                               <tr>
-                                <td colSpan={6} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
+                                <td colSpan={7} className="px-3 pb-2 pt-1 bg-muted/5 border-b border-muted/20">
                                   <div className="text-[11px] font-semibold text-muted-foreground mb-1">수납 이력</div>
                                   <PaymentAuditLogsPanel paymentId={p.id} autoLoad />
                                 </td>
@@ -7615,6 +7824,21 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                   <div className="flex items-center justify-between gap-2">
                                     <span>진료비 <span className="opacity-70">(별도)</span>: <span className="font-semibold text-slate-700 tabular-nums">{formatAmount(fee)}</span></span>
                                     <span className="tabular-nums">잔금 {balanceChip(consultSt, consultDue)}</span>
+                                  </div>
+                                )}
+                                {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-2) — 티켓별 [결제] BETA.
+                                    미수(잔금)>0 인 티켓에만 노출(미수0=숨김). 기능플래그 ON PC 한정. 결제 시 그 티켓의
+                                    미수가 차감(package_payments 착지 + paid_amount 재계산). 카드선삽입·5백만·할부·재시도차단 자동계승. */}
+                                {isCbandPayEnabled() && isStaffUnlockRole(profile?.role) && pkgDue > 0 && (
+                                  <div className="pt-1" data-testid={`ac2-pay-ticket-${p.id}`}>
+                                    <CbandPayEntryButton
+                                      packageId={p.id}
+                                      clinicId={customer?.clinic_id ?? ''}
+                                      customerId={customerId ?? null}
+                                      defaultAmount={pkgDue}
+                                      label="결제"
+                                      onApproved={reloadPackagesAndPayments}
+                                    />
                                   </div>
                                 )}
                               </div>
@@ -8323,17 +8547,32 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     → 저장 후 상담내역 탭 [내용보기] 즉시 활성화 */}
               {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
                 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8: customerRrn = rrnFull (전체 표시, 마스킹 제거)
-                <PenChartTab
-                  customerId={customer.id}
-                  clinicId={customer.clinic_id}
-                  checkInId={latestCheckIn?.id}
-                  customerName={customer.name}
-                  customerPhone={customer.phone ?? undefined}
-                  customerBirthDate={customer.birth_date ?? undefined}
-                  customerChartNumber={customer.chart_number?.toString() ?? undefined}
-                  customerRrn={rrnFull ?? undefined}
-                  onFormSubmissionSaved={refreshSubmissionEntries}
-                />
+                <div className="space-y-3">
+                  <PenChartTab
+                    customerId={customer.id}
+                    clinicId={customer.clinic_id}
+                    checkInId={latestCheckIn?.id}
+                    customerName={customer.name}
+                    customerPhone={customer.phone ?? undefined}
+                    customerBirthDate={customer.birth_date ?? undefined}
+                    customerChartNumber={customer.chart_number?.toString() ?? undefined}
+                    customerRrn={rrnFull ?? undefined}
+                    onFormSubmissionSaved={refreshSubmissionEntries}
+                  />
+                  {/* T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형 초록박스 —
+                      별도 탭 폐지 후 새 차트 작성 양식(펜차트 탭) 내부 배치. 이미 로드된 packages·packageSessions 재사용(신규 쿼리 0).
+                      VG2 seed + form_submissions.field_data overlay(편집·저장·출력). */}
+                  <EditableAutoVisitLogBox
+                    packages={packages}
+                    packageSessions={packageSessions}
+                    clinicId={customer.clinic_id}
+                    customerId={customer.id}
+                    checkInId={latestCheckIn?.id}
+                    customerName={customer.name}
+                    customerChartNumber={customer.chart_number?.toString() ?? null}
+                    customerRrn={rrnFull ?? null}
+                  />
+                </div>
               )}
 
               {/* History: 환불내역 — T-20260522-foot-REFUND-HIST-TAB */}
@@ -8804,6 +9043,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
               customerId={customer.id}
               clinicId={customer.clinic_id}
               editable
+              /* T-20260806-foot-NHIS-LOOKUP-SOURCE-UNATTRIBUTED: 포털 딥링크 조회 개시 상태를 전달 →
+                 source 초안을 'hira_lookup' 으로 프리셋(강제 아님, 라디오 선택·기존값 우선). */
+              lookupInProgress={nhis.captureOpen}
               /* T-20260724-foot-NHIS-PARSER-REMOVE-MANUAL-ONLY: 파서 제안(suggested*) 프리필 경로 제거 —
                  데스크가 포털에서 확인 후 등급을 직접 선택·저장하는 수기 단일 경로만 유지. */
               onChanged={() => {
@@ -9144,7 +9386,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                       void (async () => {
                         const { error } = await saveCustomerField({ assigned_staff_id: v }); // AC-6 쌍방연동
                         if (error) return; // 영구 저장 실패 시 미전파(saveCustomerField가 toast 처리)
-                        await updateTodayOpenCheckInConsultant(v);
+                        // T-20260806-foot-CHARTOWNER-ROSTER-STALE-PROP-HARDEN: 하향전파 + 명단 미반영/실패 가시화(silent no-op 제거)
+                        await syncChartOwnerToTodayRoster(v);
                       })();
                     }}
                     className="w-full h-7 rounded border border-gray-300 px-1.5 text-[11px] focus:outline-none focus:border-sage-500 bg-white"
@@ -9934,17 +10177,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
           onOpenChange={setOpenPackagePurchase}
           onCreated={async () => {
             setOpenPackagePurchase(false);
-            // T-20260522-foot-PERF-TUNING OPT-4: packages + package_sessions 병렬 조회 → remaining 클라이언트 집계 (N RPC 제거)
-            const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });  // T-20260520-foot-PKG-SORT
-            const pkgs = (pkgRes.data ?? []) as Package[];
-            if (pkgs.length > 0) {
-              const pkgIds = pkgs.map((p) => p.id);
-              const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
-              const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
-              setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
-            } else {
-              setPackages([]);
-            }
+            // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: packages + package_payments 동시 갱신
+            //   (AC-1 [결제 및 티켓 생성] 성공 시 새 티켓의 미수0 이 즉시 반영되도록 pkgPayments 도 함께 리로드).
+            await reloadPackagesAndPayments();
           }}
         />
       )}
@@ -10184,6 +10419,24 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         </DialogContent>
       </Dialog>
 
+      {/* T-20260730-foot-SUSU-PAYMETHOD-CHANGE (요구 A): 결제수단 변경 다이얼로그.
+          onDone = 낙관적 업데이트(즉시 반영) + 서버 재조회(정합 확인, 일마감 집계는 payments.method 파생 자동 재반영). */}
+      <PaymentMethodChangeDialog
+        payment={methodChangeTarget}
+        onClose={() => setMethodChangeTarget(null)}
+        onDone={(updated: PaymentMethodChangeDonePayload) => {
+          setMethodChangeTarget(null);
+          setPayments((prev) =>
+            prev.map((p) =>
+              p.id === updated.id
+                ? { ...p, method: updated.method, installment: updated.installment ?? 0 }
+                : p,
+            ),
+          );
+          void refreshPayments();
+        }}
+      />
+
       {/* T-20260517-foot-C2-CONSULT-DOCS AC-R1: 합본1 — 개인정보 + 체크리스트 */}
       {showChecklistForm && (
         <ChecklistForm
@@ -10320,6 +10573,11 @@ function PackagePurchaseFromTemplateDialog({
   const [treatmentType, setTreatmentType] = useState<PackageTreatmentType | ''>('');
   const [referencePrice, setReferencePrice] = useState(0);
   const [refPriceTouched, setRefPriceTouched] = useState(false);
+  // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여(가)/비급여(비) 회차 split (packages 헤더 grain).
+  //   스태프 판매시 수동 입력. 미입력=null → packages.covered_sessions/noncovered_sessions NULL(미분류).
+  //   펜차트 '12회 (비11/가1)' 표시 leg 는 REWORK 편집형 폼에 별도 착지(본 티켓=데이터 leg).
+  const [coveredSessions, setCoveredSessions] = useState<number | null>(null);
+  const [noncoveredSessions, setNoncoveredSessions] = useState<number | null>(null);
 
   // T-20260715-foot-PKGTICKET-DLG-TAB-3GROUP: 상단 탭 = /packages 관리 3그룹.
   //   개별 패키지(12회권 등)는 나열하지 않고 그룹 내부 pill 로 선택 → 기존 선택 항목 누락 없음(AC-2).
@@ -10356,6 +10614,12 @@ function PackagePurchaseFromTemplateDialog({
   // T-20260522-foot-PKG-TRIAL: 체험권 포함
   // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 포함
   const totalSessions = heated + unheated + iv + precon + podologe + trial + reborn;
+
+  // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2 app-level self-test):
+  //   급여/비급여 회차는 "둘 다 입력" 시에만 합=총 회차여야 한다. 둘 중 하나라도 미입력=미분류(NULL 저장·통과).
+  //   순수 로직 = src/lib/insuranceSessionSplit.ts (DB partial CHECK 와 동형·spec 커버).
+  const insuranceSplitBothEntered = isInsuranceSplitBothEntered(coveredSessions, noncoveredSessions);
+  const insuranceSplitValid = isInsuranceSplitValid(coveredSessions, noncoveredSessions, totalSessions);
 
   // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM-REFPRICE-1SESSION 변경2 (DA-20260708-FOOT-PKGBUY-REFPRICE 승인산식):
   //   기준정가 = 시술유형별 마스터 정찰가(treatment_standard_prices) per-line 합 + 업그레이드 가산.
@@ -10523,14 +10787,11 @@ function PackagePurchaseFromTemplateDialog({
     if (!alreadyInGroup && inGroup.length > 0) applyTemplate(inGroup[0]);
   };
 
-  const submit = async () => {
-    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
-    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
-    // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
-    //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
-    setSubmitting(true);
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT — packages INSERT payload SSOT.
+  //   submit()([구입 티켓 생성]) 과 createPackageForPayment()([결제 및 티켓 생성] AC-1) 공용(중복 제거·정합 보장).
+  const buildPackageInsertPayload = () => {
     const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-    const { error } = await supabase.from('packages').insert({
+    return {
       clinic_id: clinicId,
       customer_id: customerId,
       package_name: packageName.trim(),
@@ -10562,19 +10823,51 @@ function PackagePurchaseFromTemplateDialog({
       // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷(미입력=null → 할인율 '-').
       treatment_type: treatmentType || null,
       reference_price: referencePrice > 0 ? referencePrice : null,
+      // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여/비급여 회차 split (nullable·미입력=NULL).
+      //   VG3 firewall: 매출 산식과 무접점(매출 급여/비급여 = service_charges only).
+      covered_sessions: coveredSessions,
+      noncovered_sessions: noncoveredSessions,
       paid_amount: 0,
       status: 'active',
       memo: memo.trim() || null,
-    });
+    };
+  };
+
+  const submit = async () => {
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
+    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2): 급여+비급여 회차 합=총 회차 자기검증.
+    if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return; }
+    // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
+    //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
+    setSubmitting(true);
+    const { error } = await supabase.from('packages').insert(buildPackageInsertPayload());
     setSubmitting(false);
     if (error) { toast.error(`생성 실패: ${error.message}`); return; }
     onCreated();
+  };
+
+  // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] 전송 직전 훅.
+  //   티켓(패키지)을 먼저 INSERT 하고 id 를 반환한다 → 승인 성공 시에만 그 패키지에 package_payments 결제행 + paid_amount=총액(미수0)
+  //   착지(recordCatPackagePayment). 검증/생성 실패 = null(전송 중단·과금 0). 정의적 FAIL 시 onSettle 이 이 패키지를 삭제(rollback·VG-2).
+  //   ★기존 [구입 티켓 생성](submit) 무삭제·무변경 — 결제 없이 티켓만 만드는 케이스 그대로 유지(reporter §2-2).
+  const createPackageForPayment = async (): Promise<string | null> => {
+    if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return null; }
+    if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return null; }
+    // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2): 급여+비급여 회차 합=총 회차 자기검증.
+    if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return null; }
+    const { data, error } = await supabase.from('packages').insert(buildPackageInsertPayload()).select('id');
+    // ★VG-4/W2 rows-affected assert: 0행+error=null(RLS/스코프)도 실패로 승격(추적 불가 상태로 과금 금지).
+    if (error || !data?.[0]?.id) { toast.error(`티켓 생성 실패: ${error?.message ?? '0행 반영(권한 확인)'}`); return null; }
+    return data[0].id as string;
   };
 
   // T-20260510-foot-PKG-ROUTE-UNIFY: 템플릿 추가 후 생성 (템플릿 저장 + 패키지 생성)
   const submitWithTemplate = async () => {
     if (!packageName.trim()) { toast.error('패키지명을 입력하세요'); return; }
     if (totalSessions === 0) { toast.error('최소 1회 이상 구성하세요'); return; }
+    // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2 (VG2): 급여+비급여 회차 합=총 회차 자기검증.
+    if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return; }
     // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
     setSubmitting(true);
     // 1) 템플릿 저장
@@ -10611,6 +10904,9 @@ function PackagePurchaseFromTemplateDialog({
       // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷.
       treatment_type: treatmentType || null,
       reference_price: referencePrice > 0 ? referencePrice : null,
+      // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여/비급여 회차 split (nullable·미입력=NULL).
+      covered_sessions: coveredSessions,
+      noncovered_sessions: noncoveredSessions,
       status: 'active', memo: memo.trim() || null,
     });
     setSubmitting(false);
@@ -11096,6 +11392,58 @@ function PackagePurchaseFromTemplateDialog({
           </div>
 
 
+          {/* T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여(가)/비급여(비) 회차 split (선택 입력).
+              packages 헤더 grain 수동 입력 → 펜차트 '12회 (비11/가1)' 표시(표시 leg=REWORK 별도).
+              둘 다 입력 시 합=총 회차 자기검증(VG2). 미입력=미분류(NULL 저장). */}
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-2 space-y-2" data-testid="pkg-insurance-split">
+            <div className="text-xs font-semibold text-indigo-800">
+              급여/비급여 회차 <span className="font-normal text-indigo-500">(선택 · 펜차트 표시용)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">급여(가) 회차</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={coveredSessions ?? ''}
+                  onChange={(e) => setCoveredSessions(e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="미분류"
+                  data-testid="pkg-covered-sessions"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-base tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">비급여(비) 회차</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={noncoveredSessions ?? ''}
+                  onChange={(e) => setNoncoveredSessions(e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="미분류"
+                  data-testid="pkg-noncovered-sessions"
+                  className="w-full h-9 rounded-md border border-gray-200 px-3 text-base tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="text-xs" data-testid="pkg-insurance-split-hint">
+              {insuranceSplitBothEntered ? (
+                insuranceSplitValid ? (
+                  <span className="text-indigo-700">
+                    펜차트 표시: <span className="font-semibold tabular-nums">{formatInsuranceSplit(coveredSessions, noncoveredSessions, totalSessions)}</span>
+                  </span>
+                ) : (
+                  <span className="font-medium text-red-600">
+                    급여({coveredSessions})+비급여({noncoveredSessions}) = {(coveredSessions ?? 0) + (noncoveredSessions ?? 0)}회 ≠ 총 {totalSessions}회 — 합을 맞춰야 저장됩니다.
+                  </span>
+                )
+              ) : (
+                <span className="text-gray-400">미입력 시 급여/비급여 구분 없이 저장됩니다(펜차트 회차 분해 표시 생략).</span>
+              )}
+            </div>
+          </div>
+
           {/* 메모 */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-500">메모</label>
@@ -11119,20 +11467,50 @@ function PackagePurchaseFromTemplateDialog({
             취소
           </button>
           <button
-            disabled={submitting || totalSessions === 0}
+            disabled={submitting || totalSessions === 0 || !insuranceSplitValid}
             onClick={submitWithTemplate}
             className="h-8 rounded border border-sage-300 bg-sage-50 px-3 text-xs font-medium text-sage-700 hover:bg-sage-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '템플릿 추가 후 생성'}
           </button>
           <button
-            disabled={submitting || totalSessions === 0}
+            disabled={submitting || totalSessions === 0 || !insuranceSplitValid}
             onClick={submit}
             className="h-8 rounded bg-neutral-800 px-3 text-xs font-medium text-white hover:bg-neutral-900 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? '저장 중…' : '구입 티켓 생성'}
           </button>
         </div>
+
+        {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] BETA.
+            기존 3버튼([취소]/[템플릿추가후생성]/[구입 티켓 생성]) 무삭제·옆(아래)에 추가. 기능플래그 ON PC 에서만 노출.
+            흐름: 패키지 총액 자동 전송 → 카드 승인 → 승인 성공 시에만 티켓 생성 + 결제행 + 미수0(ATOMIC).
+            승인 실패(과금 미발생) → 생성한 티켓 삭제(rollback). 확인필요/예외(불확실) → 티켓 보존(단말 조회 후 처리).
+            -14 카드선삽입 안내·8324·5백만 경고·할부·응답유실 재시도차단 = CbandPayEntryButton CAT 스택 자동계승(reporter §7). */}
+        {isCbandPayEnabled() && totalSessions > 0 && (
+          <div className="mt-2 border-t border-dashed border-emerald-200 pt-2" data-testid="ac1-pay-and-create-ticket">
+            <CbandPayEntryButton
+              clinicId={clinicId}
+              customerId={customerId}
+              defaultAmount={grandTotal}
+              lockAmount
+              label="결제 및 티켓 생성"
+              beforeApprove={createPackageForPayment}
+              onSettle={async (r: PaymentFlowResult | null, pkgId: string | null) => {
+                // ★VG-2 atomic: 승인=닫기+리로드 / 정의적 FAIL(과금 미발생 확정)=티켓 삭제 / 확인필요·예외=티켓 보존(AC-2 로 후결제).
+                if (r && !r.needsCheck && r.classification === 'APPROVED') { onCreated(); return; }
+                if (r && !r.needsCheck && r.classification === 'FAIL' && pkgId) {
+                  const { error } = await supabase.from('packages').delete().eq('id', pkgId);
+                  if (error) console.error(`[AC-1 rollback] 미결제 티켓 삭제 실패(id=${pkgId}):`, error.message);
+                }
+                // 확인필요(needsCheck)/예외(r=null) → 삭제하지 않음(과금 가능성 배제 못함). 미수 티켓으로 남겨 단말 조회 후 처리.
+              }}
+            />
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              카드 승인 후 티켓이 함께 생성됩니다. 승인 실패 시 티켓은 만들어지지 않습니다.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

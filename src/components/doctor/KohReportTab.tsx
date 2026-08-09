@@ -45,6 +45,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { todaySeoulISODate, seoulISODate } from '@/lib/format';
+// T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§4/§5): 세기·만나이 판정 = 나이 SSOT 위임(하드코딩 26 제거).
+import { parseBirthYMD, computeAgeFromBirth } from '@/lib/customerAge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, FlaskConical, ChevronLeft, ChevronRight, Search } from 'lucide-react';
@@ -108,58 +110,37 @@ export function formatBirthDate(birth: string | null | undefined): string {
 /**
  * 생년(만나이) 표시 — T-20260620-foot-KOHDASH-PATIENTCOL-NAILFMT (AC-6).
  *   진료대시보드 균검사지 명단의 '생년(만나이)' 컬럼. 생년월일 전체가 아니라 '생년 + (만 N세)'.
- *   예) '1990-03-15' + 오늘(2026-06-21) → '1990 (36세)'.
- *   만나이 = 오늘(KST, todayISO) 연도 − 생년, 단 올해 생일 미경과면 −1. 결측 '—'.
- *   10자리(YYYY-MM-DD) 정규 + 6자리(YYMMDD) 방어 파싱(formatBirthKo 세기 규칙 동일).
+ *   예) '1990-03-15' + 오늘(2026-06-21) → '1990 (36세)'. 만나이 = todayISO(KST) 기준. 결측 '—'.
+ *
+ * T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§4): 세기 하드코딩 26(→2027 시한폭탄) 제거. 세기·만나이는
+ *   나이 SSOT(customerAge.ts parseBirthYMD/computeAgeFromBirth)에 위임 — 자체 파싱 사본 삭제(§3/§9).
+ *   출력 포맷/결측 규약 무변경(무회귀). 기준연도 동적 세기라 27년생을 2027년으로 정확판정(AC-9).
  */
 export function formatBirthYearWithAge(
   birth: string | null | undefined,
   todayISO: string,
 ): string {
   if (!birth) return '—';
-  const s = String(birth).trim();
-  let by: number, bm: number, bd: number;
-  const m10 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m10) {
-    by = parseInt(m10[1], 10);
-    bm = parseInt(m10[2], 10);
-    bd = parseInt(m10[3], 10);
-  } else {
-    const m6 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
-    if (!m6) return s || '—';
-    const yy = parseInt(m6[1], 10);
-    by = parseInt((yy >= 0 && yy <= 26 ? '20' : '19') + m6[1], 10);
-    bm = parseInt(m6[2], 10);
-    bd = parseInt(m6[3], 10);
-  }
-  const tm = todayISO.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!tm) return String(by);
-  const ty = parseInt(tm[1], 10);
-  const tmo = parseInt(tm[2], 10);
-  const td = parseInt(tm[3], 10);
-  let age = ty - by;
-  if (tmo < bm || (tmo === bm && td < bd)) age -= 1;
-  if (age < 0) return String(by); // 미래 생년 등 방어 — 나이 음수면 생년만
-  return `${by} (${age}세)`;
+  const p = parseBirthYMD(birth, todayISO);
+  if (!p) return String(birth).trim() || '—';
+  const age = computeAgeFromBirth(birth, todayISO);
+  if (age == null) return String(p.year); // 이상치(미래 생년 등) → 생년만
+  return `${p.year} (${age}세)`;
 }
 
 /**
- * 결과지 표기용 생년월일 — 대표원장 양식 'YYYY년 MM월 DD일'.
- *   T-20260617-foot-KOHGEN-HTMLPORT (AC①): DB DATE(YYYY-MM-DD) 정규 경로 + 6자리(YYMMDD) 방어 파싱.
- *   6자리 세기 추정 = 00~26 → 20xx, 그 외 → 19xx(대표원장 HTML formatBirth 규칙 동일). 결측 ''.
+ * 결과지 표기용 생년월일 — 대표원장 양식 'YYYY년 MM월 DD일'. 결측 ''.
+ *   T-20260617-foot-KOHGEN-HTMLPORT (AC①): DB DATE(YYYY-MM-DD) + 6자리(YYMMDD) 방어 파싱.
+ *   T-20260720-foot-COPAY-AGE-DERIVED-AUTO (§4): 세기 하드코딩 26 제거 → 나이 SSOT(parseBirthYMD) 위임.
+ *     기준연도 동적 세기(하드코딩 연도 없음). 출력 포맷 무변경(무회귀).
  */
 export function formatBirthKo(birth: string | null | undefined): string {
   if (!birth) return '';
-  const s = String(birth).trim();
-  const m10 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m10) return `${m10[1]}년 ${m10[2]}월 ${m10[3]}일`;
-  const m6 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
-  if (m6) {
-    const yy = parseInt(m6[1], 10);
-    const prefix = yy >= 0 && yy <= 26 ? '20' : '19';
-    return `${prefix}${m6[1]}년 ${m6[2]}월 ${m6[3]}일`;
-  }
-  return s;
+  const p = parseBirthYMD(birth, todaySeoulISODate());
+  if (!p) return String(birth).trim();
+  const mm = String(p.month).padStart(2, '0');
+  const dd = String(p.day).padStart(2, '0');
+  return `${p.year}년 ${mm}월 ${dd}일`;
 }
 
 /** 검사일 표시(레거시, 날짜+시간) — created_at(UTC) → KST 'YYYY-MM-DD HH:mm'. */

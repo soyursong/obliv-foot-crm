@@ -116,4 +116,23 @@ else
   echo "⚠️  [pre-push] main_nonff_guard.sh 부재 — main non-FF 게이트 skip (fail-open, 워처 사후 감시)" >&2
 fi
 
+# ── ⑤ apply-runner gate 린트 — 신규 per-migration 러너 ungated 재생산 차단 ──
+#   T-20260801-meta-DBGATE-GUARD-XCRM-ROLLOUT (foot leg · requirement 3) — 신규 추가된
+#   scripts/apply_*.mjs 중 prod-write(`--apply`) 통로를 갖고 assertApplyGateForRunner
+#   미배선인 러너의 main 유입 차단(카피 소스가 ungated legacy 러너가 되지 않도록).
+#   기존 legacy 러너(range 밖)는 대상 아님. 로직 SSOT = scripts/check-apply-runner-gate.sh.
+#   탈출구: APPLY_RUNNER_GATE_BYPASS=1(사유 의무).
+RUNNER_GATE="$REPO_ROOT/scripts/check-apply-runner-gate.sh"
+if [ -f "$RUNNER_GATE" ]; then
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    [ "$local_sha" = "$Z40" ] && continue
+    if ! bash "$RUNNER_GATE" range "$remote_sha" "$local_sha"; then
+      rc=1
+    fi
+  done <<< "$PUSH_REFS"
+else
+  echo "⚠️  [pre-push] check-apply-runner-gate.sh 부재 — apply-runner gate 린트 skip (fail-open)" >&2
+fi
+
 exit "$rc"

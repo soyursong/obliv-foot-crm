@@ -125,7 +125,7 @@ import { promoteVisitTypeToReturning } from '@/lib/visitType';
 import { maybeAutoAssign, logRealAssignment } from '@/lib/autoAssign';
 // T-20260728-foot-INSUR-POPUP-REMOVE: 급여 진료기록 완료 하드차단(MEDLAW22-B-GATE) 해제 —
 //   Dashboard 완료 경로(드래그/우클릭)에서 evaluateMedicalRecordGate 하드차단 호출 제거(문원장 B안, 2026-07-28).
-import { elapsedMinutes, elapsedMMSS } from '@/lib/elapsed';
+import { elapsedMinutes, elapsedMMSS, remainingLabel } from '@/lib/elapsed';
 // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 미수 배지 (소스=footBilling outstanding SSOT 재사용)
 import { loadCustomerOutstanding, type CustomerOutstanding } from '@/lib/footBilling';
 // T-20260724-foot-DASHCARD-EXAMREQ-BADGE: 균/피 검사신청 뱃지 상태형(SSOT 재사용, 신규 정의 금지)
@@ -172,6 +172,9 @@ const ExamFlagMapCtx = createContext<Map<string, ExamFlagState>>(new Map());
 const TimerAlertCtx = createContext<Set<string>>(new Set());
 /** T-20260523-foot-LASER-TIMER AC-3 보강: 만료(0:00 이후) check_in_id 집합 → red 깜빡임 */
 const TimerExpiredCtx = createContext<Set<string>>(new Set());
+/** T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: check_in_id → 레이저 타이머 종료시각(Date).
+ *  카드 우측 하단 남은시간 카운트다운 소스. 기존 activeTimersMap(timer_records Realtime)을 그대로 재사용. */
+const ActiveTimerCtx = createContext<Map<string, Date>>(new Map());
 
 // ── 카드 고객 이름 우클릭/롱프레스 핸들러 컨텍스트 ────────────────────────────
 interface CardHandlers {
@@ -443,6 +446,33 @@ const SLOT_TYPE_KO: Record<string, string> = {
 //   내부 handleCardClick/handleCardContext가 useCallback 안정적이므로 동작 동일.
 // 효과: setDragging(card) 시 Dashboard 전체 re-render → 이 memo가 비(非)드래그 카드 생략
 //       → drag start 첫 프레임에서 카드 body 재실행 0회 → 체감 반응속도 개선.
+// T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 2번차트 2구역 레이저 타이머(timer_records.ends_at)
+//   남은시간 실시간 카운트다운. 자체 1초 setInterval(클라이언트 계산 → 서버폴링 0)로 tick.
+//   활성 타이머 보유 카드에서만 마운트되므로 전체 카드가 초당 re-render 되지 않음(경과 mm:ss는 기존 10s TickCtx 유지).
+//   데이터는 기존 activeTimersMap(ActiveTimerCtx)을 재사용 — 중복 위젯/중복 구독 신설 없음.
+const TimerCountdown = memo(function TimerCountdown({ endsAt }: { endsAt: Date }) {
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setNow((v) => v + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const remaining = endsAt.getTime() - Date.now();
+  const expired = remaining <= 0;
+  const warn = !expired && remaining <= 60000; // 1분 이하
+  return (
+    <span
+      data-testid="card-timer-countdown"
+      className={cn(
+        'tabular-nums font-mono font-semibold leading-none',
+        expired ? 'text-red-600' : warn ? 'text-amber-600' : 'text-blue-600',
+      )}
+      title="레이저 타이머 남은 시간"
+    >
+      {remainingLabel(endsAt)}
+    </span>
+  );
+});
+
 const DraggableCard = memo(function DraggableCard({
   checkIn,
   compact,
@@ -498,6 +528,9 @@ const DraggableCard = memo(function DraggableCard({
   const timerExpiredSet = useContext(TimerExpiredCtx);
   const isTimerWarn = timerAlertSet.has(checkIn.id);      // 1분 이하, amber
   const isTimerExpired = timerExpiredSet.has(checkIn.id); // 만료, red
+  // T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 활성 레이저 타이머 종료시각(기존 activeTimersMap 재사용)
+  const activeTimerMap = useContext(ActiveTimerCtx);
+  const timerEndsAt = activeTimerMap.get(checkIn.id) ?? null;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: checkIn.id,
     data: { checkIn },
@@ -732,6 +765,13 @@ const DraggableCard = memo(function DraggableCard({
               ALT
             </span>
           )}
+          {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 레이저 타이머 남은시간 카운트다운.
+              위치 SSOT=총괄 빨간박스 스샷(F0BP02NKTLZ) = 하단 배지행 우측 끝(패키지 태그 우측 빈칸). ml-auto로 우측 정렬. */}
+          {timerEndsAt && (
+            <span className="ml-auto pl-1 text-[10px]" data-testid="card-timer-countdown-row">
+              <TimerCountdown endsAt={timerEndsAt} />
+            </span>
+          )}
         </div>
       </div>
     );
@@ -921,6 +961,13 @@ const DraggableCard = memo(function DraggableCard({
             }}
           >
             ALT
+          </span>
+        )}
+        {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 레이저 타이머 남은시간 카운트다운(non-compact).
+            위치 SSOT=총괄 빨간박스 스샷(F0BP02NKTLZ) = 하단 배지행 우측 끝(패키지 태그 우측 빈칸). ml-auto로 우측 정렬. */}
+        {timerEndsAt && (
+          <span className="ml-auto pl-1 text-[9px]" data-testid="card-timer-countdown-row">
+            <TimerCountdown endsAt={timerEndsAt} />
           </span>
         )}
       </div>
@@ -7628,6 +7675,8 @@ export default function Dashboard() {
       {/* T-20260523-foot-LASER-TIMER AC-3 보강: amber(warn) + red(expire) 2단계 */}
       <TimerAlertCtx.Provider value={timerAlertSet}>
       <TimerExpiredCtx.Provider value={timerExpiredSet}>
+      {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 카드 우측 하단 남은시간 카운트다운 소스(기존 activeTimersMap 재사용) */}
+      <ActiveTimerCtx.Provider value={activeTimersMap}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
       {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 맵 주입 */}
@@ -7825,6 +7874,7 @@ export default function Dashboard() {
       </ResvPkgTypeMapCtx.Provider>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
+      </ActiveTimerCtx.Provider>
       </TimerExpiredCtx.Provider>
       </TimerAlertCtx.Provider>
       </ExamFlagMapCtx.Provider>

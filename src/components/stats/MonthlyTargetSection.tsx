@@ -30,6 +30,13 @@ interface Props {
   clinicId: string | null | undefined;
   /** 선택기간 시작일('YYYY-MM-DD'). 이 날짜가 속한 '달'을 목표/달성률 기준월로 삼음. */
   refISO: string;
+  /**
+   * T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item3, read-only 재사용):
+   *   일마감>총매출 탭에서 통계 대시보드 [이번달 목표매출] 뷰를 '동일하게' 재사용하되 [수정/등록] 버튼만 제거.
+   *   기본 false(통계 화면 = 기존 등록/수정 동작 불변). true 시 write-role 이어도 편집 진입 버튼 미노출(값·달성률만 열람).
+   *   ★단일 공유 컴포넌트 유지(소비처별 fork 금지) — 통계·일마감 양쪽이 같은 뷰/산식을 소비(쌍방향 연동 정책).
+   */
+  readOnly?: boolean;
 }
 
 /** 숫자만 남기고 콤마 등 제거 → 정수. 빈값/NaN = null. */
@@ -40,9 +47,10 @@ function parseAmount(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export default function MonthlyTargetSection({ clinicId, refISO }: Props) {
+export default function MonthlyTargetSection({ clinicId, refISO, readOnly = false }: Props) {
   const { profile } = useAuth();
-  const canWrite = TARGET_WRITE_ROLES.includes(profile?.role ?? '');
+  // T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: readOnly(일마감 총매출 재사용) 시 write-role 이어도 편집 버튼 미노출.
+  const canWrite = !readOnly && TARGET_WRITE_ROLES.includes(profile?.role ?? '');
   const scope = refISO ? monthScope(refISO) : null;
   const yearMonth = scope?.yearMonth ?? '';
 

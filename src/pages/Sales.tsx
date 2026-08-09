@@ -19,6 +19,7 @@
  */
 
 import { useState } from 'react';
+import { useTabParam } from '@/hooks/useTabParam';
 import {
   Tabs,
   TabsList,
@@ -65,7 +66,11 @@ type SalesTabValue = (typeof SALES_TABS)[number]['value'];
 
 export default function Sales() {
   const clinic = useClinic();
-  const [activeTab, setActiveTab] = useState<SalesTabValue>('daily');
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): 서브탭을 URL(?tab=)에 반영 → 새로고침 복원.
+  const [activeTab, setActiveTab] = useTabParam<SalesTabValue>({
+    valid: SALES_TABS.map((t) => t.value),
+    fallback: 'daily',
+  });
   const [filter, setFilter] = useState<SalesFilterState>(defaultSalesFilter());
   const [exporting, setExporting] = useState(false);
 

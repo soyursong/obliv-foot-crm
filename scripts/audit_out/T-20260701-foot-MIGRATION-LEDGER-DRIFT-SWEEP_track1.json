@@ -2679,23 +2679,6 @@
     ]
   },
   {
-    "file": "20260630200000_daily_room_status_staff_unlock_6menu_rls_additive.sql",
-    "version": "20260630200000",
-    "in_ledger": true,
-    "security": true,
-    "verdict": "APPLIED",
-    "present": 1,
-    "absent": 0,
-    "objects": [
-      {
-        "kind": "policy",
-        "name": "daily_room_status_staff_unlock_6menu",
-        "table": "daily_room_status",
-        "exists": true
-      }
-    ]
-  },
-  {
     "file": "20260630200000_notif_tmpl_write_staff_roles_align.sql",
     "version": "20260630200000",
     "in_ledger": true,
@@ -2715,6 +2698,23 @@
         "name": "notif_optout_write",
         "table": "notification_opt_outs",
         "exists": false
+      }
+    ]
+  },
+  {
+    "file": "20260630200001_daily_room_status_staff_unlock_6menu_rls_additive.sql",
+    "version": "20260630200001",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "policy",
+        "name": "daily_room_status_staff_unlock_6menu",
+        "table": "daily_room_status",
+        "exists": true
       }
     ]
   },
@@ -8077,5 +8077,376 @@
         "exists": false
       }
     ]
+  },
+  {
+    "file": "20260805110000_foot_check_in_services_softvoid.sql",
+    "version": "20260805110000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "check_in_services",
+        "name": "voided_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_in_services",
+        "name": "voided_reason",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_in_services",
+        "name": "voided_by",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260805120000_redpay_foot_registry_0805gap_reactivate.sql",
+    "version": "20260805120000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260805171000_foot_package_status_crossledger_trigger.sql",
+    "version": "20260805171000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "foot_recompute_package_status",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "foot_trg_recompute_package_status",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_payments_pkg_status_recompute",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_pkgpay_pkg_status_recompute",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260805171100_foot_refund_package_payment_delegate_status.sql",
+    "version": "20260805171100",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "refund_package_payment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260805171200_foot_record_planb_pkglink.sql",
+    "version": "20260805171200",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "record_planb_card_payment",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260805180000_foot_userprofiles_crossrow_rls_remediate.sql",
+    "version": "20260805180000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "user_profiles_self_guard",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "user_profiles_force_safe_insert",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260805190000_foot_saleslist_kimgyuri_ctb_backfill.sql",
+    "version": "20260805190000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260806150000_foot_closing_herald_totals_recompute_port.sql",
+    "version": "20260806150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "closing_source_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_insurance_split",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "closing_month_projection",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "enqueue_closing_confirmed",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260807120000_foot_cancel_sync_outbox_emit.dryrun.sql",
+    "version": "20260807120000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 3,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_cancel_sync_from_reservations",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "cancel_sync_outbox",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_enqueue_cancel_sync_from_reservations",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260807120000_foot_cancel_sync_outbox_emit.sql",
+    "version": "20260807120000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 7,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "enqueue_cancel_sync_from_reservations",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "alert_cancel_sync_dlq",
+        "exists": true
+      },
+      {
+        "kind": "function",
+        "name": "cancel_sync_drain",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "cancel_sync_outbox",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_cancel_sync_outbox_due",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "idx_cancel_sync_outbox_dlq_unalerted",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_enqueue_cancel_sync_from_reservations",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260807130000_foot_package_payments_cband_cat_canon.sql",
+    "version": "20260807130000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 2,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "package_payments",
+        "name": "external_approval_no",
+        "exists": true
+      },
+      {
+        "kind": "index",
+        "name": "ux_package_payments_payment_attempt_id",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260807140000_foot_laser_slot_fixedactive_carryover_neutralize.sql",
+    "version": "20260807140000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260807150000_foot_health_maintenance_balances_satellite.sql",
+    "version": "20260807150000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "tg_health_maintenance_balances_touch",
+        "exists": true
+      },
+      {
+        "kind": "table",
+        "name": "health_maintenance_balances",
+        "exists": true
+      },
+      {
+        "kind": "policy",
+        "name": "auth_all",
+        "table": "health_maintenance_balances",
+        "exists": true
+      },
+      {
+        "kind": "trigger",
+        "name": "trg_health_maintenance_balances_touch",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260807170000_foot_inflow_kiosk_selfcheckin_candidate.sql",
+    "version": "20260807170000",
+    "in_ledger": true,
+    "security": true,
+    "verdict": "APPLIED",
+    "present": 4,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "function",
+        "name": "fn_complete_prescreen_checklist",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "checklists",
+        "name": "storage_path",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "checklists",
+        "name": "started_at",
+        "exists": true
+      },
+      {
+        "kind": "column",
+        "table": "check_ins",
+        "name": "inflow_channel_self_reported",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260807180000_foot_reservations_is_trial_marker.sql",
+    "version": "20260807180000",
+    "in_ledger": true,
+    "security": false,
+    "verdict": "APPLIED",
+    "present": 1,
+    "absent": 0,
+    "objects": [
+      {
+        "kind": "column",
+        "table": "reservations",
+        "name": "is_trial",
+        "exists": true
+      }
+    ]
+  },
+  {
+    "file": "20260808200000_foot_doctpl_seed_brainves.sql",
+    "version": "20260808200000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
+  },
+  {
+    "file": "20260808210000_foot_doctpl_seed_dementia.sql",
+    "version": "20260808210000",
+    "in_ledger": false,
+    "security": false,
+    "verdict": "UNKNOWN",
+    "present": 0,
+    "absent": 0,
+    "objects": []
   }
 ]

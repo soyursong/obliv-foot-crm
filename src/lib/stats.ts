@@ -1,4 +1,8 @@
 import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
 
 /**
  * F12 통계 대시보드 RPC 호출 헬퍼.
@@ -210,6 +214,146 @@ export async function fetchConsultantPerf(
   } catch {
     return rows; // fail-open
   }
+}
+
+// ─── T-20260807-foot-RANKING-STAFFATTR-CONSULTANT-TO-STAFF ──────────────────────
+//   랭킹 탭(실장별 월매출) 귀속축을 consultant(check_ins.consultant_id 최근접 상담사) →
+//   customers.assigned_staff_id('2번차트 담당 실장' = 고객 카드 담당자)로 교체.
+//   canonical: '2번차트 담당자' = customers.assigned_staff_id
+//   (T-20260806-foot-SALESDOCTOR-COLUMN-REBUILD-4COL, 2026-08-06 17:30 김주연 총괄 확정).
+//
+//   ★ 왜 RPC(foot_stats_consultant) 를 안 고치고 FE 신규 집계인가 (db_change=false, path a):
+//     foot_stats_consultant(_admin) RPC 는 통계>매출탭 '상담실장 티켓팅 실적'(Stats.tsx ConsultantSection)
+//     과 공유된다. 그 surface 는 티켓팅 카운트·상담고객수 등 '상담한 사람(consultant)' 개념이 본질이라
+//     RPC body 의 귀속축을 staff 로 바꾸면 통계 매출탭이 회귀(축 혼재)한다. 따라서 RPC 는 무접촉하고,
+//     랭킹 탭 전용 FE 집계 helper 를 신설해 Assignments 랭킹 소비경로에서만 이 helper 로 교체한다.
+//     (SALESDOCTOR-4COL 선례 = 매출집계>담당실장별 탭도 동일하게 FE 에서 assigned_staff_id 집계, no-DDL.)
+//
+//   ★ 귀속 산식 = 매출집계>담당실장별(SalesDoctorTab)와 동일 축(AC-2):
+//     customers.assigned_staff_id 로 결제행(단건 payments + 패키지 package_payments)을 net 귀속.
+//     net = payment − refund (accounting_date 윈도우). 랭킹은 net(환불 차감 후) — AC-3 net/gross 무접촉.
+//     (누적매출 탭은 gross 이지만 그것은 net/gross 직교축이라 본 티켓 무대상 — 귀속 대상[WHO]만 일치.)
+//
+//   ★ 로스터/모수 정책 (AC-4):
+//     · 랭킹 = '재직 상담 실장' leaderboard(카드 부제 그대로) → roster = 재직 상담사(staff.role='consultant',
+//       active≠false). 배정비율(rankAssignmentRatios)·일일 배정 목표가 상담실장 대상이라 로스터 유지.
+//     · assigned_staff_id 가 상담실장이 아닌 스태프(코디네이터 '데스크' 등)이거나 NULL(미배정)인 매출은
+//       실장 랭킹 모수에서 제외(랭킹은 상담실장 순위표 — 미배정/비상담직 매출은 순위 대상 아님).
+//       prod 실측(2026-07): 미배정 net ≈ 563K / 292 결제고객 中 11명, 코디 귀속(데스크) 존재 → 랭킹서 제외.
+//       ※ 귀속 '축'은 매출집계와 동일(assigned_staff_id) — 로스터만 상담실장으로 좁힘(축 발산 아님, AC-2 충족).
+//     · 시뮬레이션(is_simulation=true) 고객 결제 제외 — 매출집계>담당실장별과 동일 방어필터(테스트 오염 차단).
+//
+//   ★ 반환형 = ConsultantRow(기존과 byte-호환) → 랭킹 machinery(정렬/변동표/배정비율) 무변경 재사용:
+//     · consultant_id = assigned_staff_id(=staff.id, 상담실장) · name = staff.name
+//     · total_amount  = 담당 고객 net 매출 합 · consulted_customer_count = 담당 결제고객 distinct 수
+//     · avg_amount    = round(total_amount / 담당 결제고객수) 또는 null(0명) — 객단가 열도 동일 staff 축.
+//     · ticketing_count/package_count = 0(랭킹 탭 미표시 컬럼 — 통계 매출탭 전용, 여기선 파생 안 함).
+//   READ-ONLY. 신규 컬럼/테이블/enum 0. db_change=false (autonomy §S2.4 데이터정책 게이트 비유발).
+export async function fetchConsultantPerfByAssignedStaff(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<ConsultantRow[]> {
+  // 1. 결제행: 단건(payments) + 패키지(package_payments). accounting_date 윈도우.
+  //    단건은 status='deleted' 제외(삭제 결제 미집계) — 매출집계>담당실장별과 동일.
+  const [{ data: payData, error: payErr }, { data: pkgData, error: pkgErr }] = await Promise.all([
+    supabase
+      .from('payments')
+      .select('amount, payment_type, customer_id')
+      .eq('clinic_id', clinicId)
+      .not('status', 'eq', 'deleted')
+      .gte('accounting_date', from)
+      .lte('accounting_date', to),
+    supabase
+      .from('package_payments')
+      .select('amount, payment_type, customer_id')
+      .eq('clinic_id', clinicId)
+      .gte('accounting_date', from)
+      .lte('accounting_date', to),
+  ]);
+  if (payErr) throw payErr;
+  if (pkgErr) throw pkgErr;
+
+  // 2. 시뮬레이션 고객 결제 제외(매출집계>담당실장별과 동일 방어필터). 워크인(customer_id NULL) 보존.
+  const simIds = await getSimulationCustomerIds(clinicId);
+  const singlePayments = excludeSimulationPaymentRows(
+    (payData ?? []) as { amount: number; payment_type: string | null; customer_id: string | null }[],
+    simIds,
+  );
+  const pkgPayments = excludeSimulationPaymentRows(
+    (pkgData ?? []) as { amount: number; payment_type: string | null; customer_id: string | null }[],
+    simIds,
+  );
+
+  // 3. 결제고객 → assigned_staff_id('2번차트 담당자'). customer_id NULL/미배정은 귀속 불가 → 랭킹 제외.
+  const custIds = [
+    ...new Set(
+      [
+        ...singlePayments.map((r) => r.customer_id),
+        ...pkgPayments.map((r) => r.customer_id),
+      ].filter(Boolean) as string[],
+    ),
+  ];
+  const custStaff = new Map<string, string>(); // customer_id → assigned_staff_id
+  for (let i = 0; i < custIds.length; i += 500) {
+    const chunk = custIds.slice(i, i + 500);
+    const { data: custs, error: custErr } = await supabase
+      .from('customers')
+      .select('id, assigned_staff_id')
+      .in('id', chunk);
+    if (custErr) throw custErr;
+    for (const c of (custs ?? []) as { id: string; assigned_staff_id: string | null }[]) {
+      if (c.assigned_staff_id) custStaff.set(c.id, c.assigned_staff_id);
+    }
+  }
+
+  // 4. 로스터 = 재직 상담사(role='consultant', active≠false). 랭킹은 '재직 상담 실장' leaderboard.
+  //    명시 active=false(퇴사)만 제외(active true/null=재직 유지, fetchConsultantPerf read-side 필터와 동일 규약).
+  const { data: staffRows, error: staffErr } = await supabase
+    .from('staff')
+    .select('id, name, role, active')
+    .eq('clinic_id', clinicId)
+    .eq('role', 'consultant');
+  if (staffErr) throw staffErr;
+  const rosterName = new Map<string, string>();
+  for (const s of (staffRows ?? []) as { id: string; name: string; active: boolean | null }[]) {
+    if (s.active === false) continue; // 명시 퇴사 제외
+    rosterName.set(s.id, s.name);
+  }
+
+  // 5. assigned_staff_id 로 net 귀속. 로스터(재직 상담실장)에 속한 staff 만 집계(비상담직/미배정 매출 제외).
+  const net = new Map<string, number>(); // staffId → net 매출
+  const custSet = new Map<string, Set<string>>(); // staffId → distinct 결제고객
+  const accrue = (customerId: string | null, amount: number) => {
+    if (!customerId) return; // 워크인(고객 미지정) → 귀속 불가, 랭킹 제외
+    const staffId = custStaff.get(customerId);
+    if (!staffId || !rosterName.has(staffId)) return; // 미배정 or 비상담실장 → 랭킹 제외
+    net.set(staffId, (net.get(staffId) ?? 0) + amount);
+    if (!custSet.has(staffId)) custSet.set(staffId, new Set());
+    custSet.get(staffId)!.add(customerId);
+  };
+  for (const p of singlePayments) {
+    accrue(p.customer_id, (p.payment_type === 'refund' ? -1 : 1) * (p.amount ?? 0));
+  }
+  for (const pp of pkgPayments) {
+    accrue(pp.customer_id, (pp.payment_type === 'refund' ? -1 : 1) * (pp.amount ?? 0));
+  }
+
+  // 6. ConsultantRow[] 로 shape (기존 랭킹 machinery 재사용). 매출귀속된 상담실장만 반환.
+  const rows: ConsultantRow[] = [];
+  for (const [staffId, total] of net.entries()) {
+    const custCount = custSet.get(staffId)?.size ?? 0;
+    rows.push({
+      consultant_id: staffId,
+      name: rosterName.get(staffId) ?? '—',
+      ticketing_count: 0,
+      package_count: 0,
+      avg_amount: custCount > 0 ? Math.round(total / custCount) : null,
+      total_amount: total,
+      consulted_customer_count: custCount,
+    });
+  }
+  return rows;
 }
 
 export async function fetchNoshowReturning(
@@ -621,6 +765,9 @@ export interface VisitRouteResvRow {
   reservation_date: string;      // yyyy-MM-dd (예약일)
   visit_route: string | null;    // 방문경로(예약경로). NULL/빈값 = 미입력
   status: string;
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2 (김주연 총괄): 체험단 전용 마커. true = 2번 유입경로 차트에서
+  //   방문경로와 별개로 [체험단] 카테고리로 분류(Stream B). canonical inflow_channel(§36 방화벽)와 직교 독립 축.
+  is_trial?: boolean | null;
 }
 
 export async function fetchVisitRouteStats(
@@ -631,17 +778,34 @@ export async function fetchVisitRouteStats(
   const PAGE_SIZE = 1000;
   const all: VisitRouteResvRow[] = [];
   let offset = 0;
+  // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: is_trial 컬럼 미반영 DB(마이그 적용 랙) 대비 graceful.
+  //   컬럼 부재(42703/PGRST) 감지 시 is_trial 제외 select 로 폴백 → [체험단] 0건이되 차트 자체는 정상 렌더.
+  let selectCols = 'id, reservation_date, visit_route, status, is_trial';
   for (let page = 0; page < 30; page++) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('reservations')
-      .select('id, reservation_date, visit_route, status')
+      .select(selectCols)
       .eq('clinic_id', clinicId)
       .eq('status', 'checked_in')                 // 방문 완료(체크인)만. 취소·노쇼 자동 제외.
       .gte('reservation_date', from)              // 시작일 당일 포함
       .lte('reservation_date', to)                // 종료일 당일 포함
       .range(offset, offset + PAGE_SIZE - 1);
+    if (error && selectCols.includes('is_trial') &&
+        (error.code === '42703' || error.code === 'PGRST204' || /is_trial/.test(error.message ?? ''))) {
+      selectCols = 'id, reservation_date, visit_route, status';
+      const retry = await supabase
+        .from('reservations')
+        .select(selectCols)
+        .eq('clinic_id', clinicId)
+        .eq('status', 'checked_in')
+        .gte('reservation_date', from)
+        .lte('reservation_date', to)
+        .range(offset, offset + PAGE_SIZE - 1);
+      data = retry.data;
+      error = retry.error;
+    }
     if (error) throw error;
-    const rows = (data ?? []) as VisitRouteResvRow[];
+    const rows = (data ?? []) as unknown as VisitRouteResvRow[];
     all.push(...rows);
     if (rows.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;

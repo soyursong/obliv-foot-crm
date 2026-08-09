@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useTabParam } from '@/hooks/useTabParam';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -36,7 +36,7 @@ import {
 
 import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '@/lib/status';
 // T-20260630-foot-STAFFCRUD-CODY-PERM: 근무자 CRUD 권한 게이트 + 권한상승 가드(원장 배정 차단) SSOT.
-import { canManageStaff, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
+import { canManageStaff, canManageRooms, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
 // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1: 신규 실장 표시명 '실장' suffix.
 import { withSiljangSuffix } from '@/lib/siljangSlack';
 
@@ -70,19 +70,16 @@ interface RoomAssignmentRow {
 // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더'(duty=원장 근무표) 탭은 최상위 [직원 근무 캘린더](/admin/handover)로 승격·흡수됨 → 여기서 제거(중복 노출 방지). 나머지 탭은 유지.
 // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경1: 'assignment'('배정 설정') 탭을 /admin/assignments 로 이동 →
 //   여기 화이트리스트에서 제거(직원·공간에는 더 이상 없음). 잔여 deep-link `?tab=assignment` 는 무효 → staff fallback.
-const VALID_INITIAL_TABS = new Set(['staff', 'rooms', 'clinic-info', 'registrars', 'settings']);
+const VALID_STAFF_TABS = ['staff', 'rooms', 'clinic-info', 'registrars', 'settings'] as const;
 
 export default function StaffPage() {
   const { profile } = useAuth();
   // T-20260619-foot-MUNJIEUN-ROLE-DIRECTOR B2①: +director(대표원장 직원관리 write parity). staff 테이블 RLS=is_admin_or_manager(director 포함)이라 RLS 영향 0. admin 비제거.
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director';
-  // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → duty).
-  const [searchParams] = useSearchParams();
-  const requestedTab = searchParams.get('tab');
-  // T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: 기본 탭 duty→staff (근무캘린더 탭 승격·흡수 제거). ?tab=duty 진입은 무효 → staff fallback.
-  const [tab, setTab] = useState(
-    requestedTab && VALID_INITIAL_TABS.has(requestedTab) ? requestedTab : 'staff',
-  );
+  // T-20260617-foot-CLINICINFO-DIRECTOR-TO-STAFFSPACE: URL ?tab= 으로 초기 탭 결정(미지정/무효 → staff).
+  // T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST (AC-2): useTabParam 으로 전환 — 기존엔 진입 시 ?tab= 을 '읽기'만 하고
+  //   탭 전환 시 되쓰지 않아 새로고침 시 사용자 전환분이 유실됐다. 이제 탭 전환도 URL(?tab=)에 반영 → 새로고침 복원.
+  const [tab, setTab] = useTabParam({ valid: VALID_STAFF_TABS, fallback: 'staff' });
 
   const { data: clinic, refetch: refetchClinic } = useQuery<Clinic | null>({
     queryKey: ['clinic'],
@@ -91,21 +88,14 @@ export default function StaffPage() {
   });
 
   return (
-    // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경3(1차안, 체감 미달): 외곽 여백(p-4→p-3)·
-    //   섹션 간격(space-y-4→3)만 축소 → 카드 내부 패딩·폰트(text-sm/base/xs)·행높이(h-8/py-1.5)·
-    //   아이콘·버튼 등 시각 질량 대부분 무변경이라 "크기 이전과 동일" 피드백.
-    // T-20260806-foot-STAFFSPACE-UISIZE-HALF-COMPACT (2차, 근본 재조정): piecemeal 여백 조정은 요소를
-    //   빠뜨려 체감이 안 난다는 근본원인을 확인 → /admin/staff 루트에만 스코프된 CSS `zoom`(균일 스케일)로
-    //   전체 요소(폰트·패딩·행높이·아이콘·버튼·카드)를 한 번에 ~0.7배(면적 ≈ 절반 밀도) 축소.
-    //   · 스코프 격리(AC-4): .staff-space-compact 클래스는 이 루트 div 1곳에만 부여 → 공용 ui/card·ui/button
-    //     기본값이나 전역 spacing/font 토큰을 건드리지 않아 타 화면 유출 0.
-    //   · 부모 컴팩트 클래스(p-3/space-y-3)와 이중 축소 아님(zoom은 렌더 배율 별개 축) → 레이아웃 붕괴 없음.
-    //   · Radix Dialog 는 body portal 렌더(이 subtree 밖) → 모달 입력 폼은 원배율 유지(가독·조작성 보존).
-    <div
-      className="staff-space-compact h-full overflow-auto space-y-3 p-3"
-      data-testid="staff-space-root"
-    >
-      <Tabs value={tab} onValueChange={setTab}>
+    // T-20260805-foot-STAFFSPACE-TAB-RELOC-PERM-COMPACT 변경3: 직원·공간 화면 컴팩트 재정비(1차안).
+    //   여백/패딩·정보밀도 위주 — 무리한 재배치 없이 외곽 여백(p-4→p-3)·섹션 간격(space-y-4→space-y-3) 축소.
+    //   field-soak 총괄 재확인(반복 시각조정) 전제. — 이 여백/밀도 재정비는 유지한다.
+    // T-20260806-foot-ASSIGNSET-UISIZE-HALF-STAFFSPACE-REVERT (retarget): 앞선 UISIZE-HALF(zoom 0.7)는 /admin/staff 화면
+    //   전체에 균일 스케일을 오적용 → 총괄 실제 의도(배정 설정 탭만 축소)와 불일치. 화면 전체 zoom 클래스를 제거해
+    //   원배율 복구하고, 축소는 AssignmentSettingsTab 컨테이너로 재타깃(.assign-settings-compact)한다.
+    <div className="h-full overflow-auto space-y-3 p-3" data-testid="staff-space-root">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as (typeof VALID_STAFF_TABS)[number])}>
         <TabsList>
           {/* T-20260620-foot-SIDEBAR-DUTYCAL-PROMOTE: '근무캘린더' 탭 제거 — 최상위 [직원 근무 캘린더]로 승격·흡수 */}
           <TabsTrigger value="staff">
@@ -580,6 +570,126 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   // T-20260523-foot-SPACE-DASH-AUTOSYNC AC-B1: 방 비활성화 토글 처리 중 맵
   const [togglingRoom, setTogglingRoom] = useState<string | null>(null);
 
+  // ── T-20260808-foot-SPACEASSIGN-SLOT-CREATE-EDIT-DASHSYNC ────────────────────
+  //   공간배정('직원·공간') 메뉴에서 슬롯(rooms) 신규 생성 + 구성수정 → 대시보드 자동 연동.
+  //   census 확정(planner MSG-20260809-012019-z88k 승인):
+  //   - #1 저장소=rooms. carry_over/is_active_default 컬럼 부재 → 영속 carry_over 개념 없음(회귀축 소멸).
+  //     신규 default=active=true, max_occupancy=동형 슬롯 복사(없으면 consultation=3/기타=1).
+  //   - #2 CREATE=Dashboard.handleAddSlot(rooms INSERT) 패턴 이식 / UPDATE=신규 leg(name·room_type·
+  //     sort_order·max_occupancy·active). "당일 활성 토글"은 daily_room_status 기존 기능(별개, 중복금지).
+  //   - #3 대시보드 read=Dashboard.fetchRooms 전건 select + realtime + 폴링 → 신규/수정 슬롯 자동노출(AC1 by-construction).
+  //   - #4 자동배정(ASSIGN-FULLSPEC)=autoAssign.ts 는 staff 로테이션 기반(room 레지스트리 없음) →
+  //     active=true rooms 는 room_assignments(room_name 키)로 자동 편입, 별도 등록 불요(build-verify PASS).
+  //   - #5 db_change=FALSE(신규 컬럼 0 + rooms_admin_all RLS=is_admin_or_manager 기존) → 무DDL·ADDITIVE-data-only.
+  //   AC5 권한: write=admin/manager/director(=is_admin_or_manager RLS 와 UI 이중방어). scope=생성+구성수정(삭제 제외).
+  const { profile } = useAuth();
+  const canRoomManage = canManageRooms(profile?.role);
+
+  type RoomTypeVal = Room['room_type'];
+  const ROOM_TYPE_SELECT: RoomTypeVal[] = ['treatment', 'laser', 'consultation', 'examination', 'heated_laser'];
+
+  // 관리 목록은 비활성 슬롯도 포함(활성 토글 복구 경로 확보) — 배정 그리드용 rooms(active=true) 와 분리해
+  //   handleSave payload 회귀 0(assignment 로직은 active rooms 만 참조 유지). canRoomManage 일 때만 로드.
+  const { data: manageRooms = [], refetch: refetchManageRooms } = useQuery<Room[]>({
+    queryKey: ['rooms_manage_all', clinic.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('clinic_id', clinic.id)
+        .order('room_type', { ascending: true })
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Room[];
+    },
+    enabled: canRoomManage,
+  });
+
+  // 슬롯 생성 다이얼로그 상태
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createType, setCreateType] = useState<RoomTypeVal>('treatment');
+  const [createSort, setCreateSort] = useState('999');
+  const [createBusy, setCreateBusy] = useState(false);
+
+  // 슬롯 구성수정 다이얼로그 상태
+  const [editRoom, setEditRoom] = useState<Room | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState<RoomTypeVal>('treatment');
+  const [editSort, setEditSort] = useState('0');
+  const [editMaxOcc, setEditMaxOcc] = useState('1');
+  const [editActive, setEditActive] = useState(true);
+  const [editBusy, setEditBusy] = useState(false);
+
+  /** 생성/수정 후 배정 그리드(active rooms) + 관리목록(all rooms) 동시 갱신. 대시보드는 자체 realtime/폴링으로 자동 반영. */
+  const invalidateRoomLists = () => {
+    qc.invalidateQueries({ queryKey: ['rooms', clinic.id] });
+    void refetchManageRooms();
+  };
+
+  // CREATE — Dashboard.handleAddSlot 패턴 재사용(rooms INSERT). active=true, max_occupancy 동형복사.
+  const handleCreateRoom = async () => {
+    const name = createName.trim();
+    if (!name) { toast.error('슬롯 명칭을 입력하세요'); return; }
+    setCreateBusy(true);
+    try {
+      const sibling = manageRooms.find((r) => r.room_type === createType && r.active);
+      const maxOcc = sibling?.max_occupancy ?? (createType === 'consultation' ? 3 : 1);
+      const parsedSort = Number.parseInt(createSort, 10);
+      const { error } = await supabase.from('rooms').insert({
+        clinic_id: clinic.id,
+        name,
+        room_type: createType,
+        active: true,
+        sort_order: Number.isFinite(parsedSort) ? parsedSort : 999,
+        max_occupancy: maxOcc,
+      });
+      if (error) { toast.error(`슬롯 추가 실패: ${error.message}`); return; }
+      invalidateRoomLists();
+      toast.success(`"${name}" 슬롯 추가 완료 — 대시보드에 반영됩니다`);
+      setCreateOpen(false);
+      setCreateName('');
+      setCreateSort('999');
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const openEditRoom = (room: Room) => {
+    setEditRoom(room);
+    setEditName(room.name);
+    setEditType(room.room_type);
+    setEditSort(String(room.sort_order));
+    setEditMaxOcc(String(room.max_occupancy));
+    setEditActive(room.active);
+  };
+
+  // UPDATE — 구성 수정(name/room_type/sort_order/max_occupancy/active). 대시보드 자동 반영.
+  //   active=false = 대시보드/배정에서 영속 숨김(=삭제 아님, 관리목록에서 재활성 가능). "당일 비활성"과 별개.
+  const handleUpdateRoom = async () => {
+    if (!editRoom) return;
+    const name = editName.trim();
+    if (!name) { toast.error('슬롯 명칭을 입력하세요'); return; }
+    setEditBusy(true);
+    try {
+      const parsedSort = Number.parseInt(editSort, 10);
+      const parsedMax = Number.parseInt(editMaxOcc, 10);
+      const { error } = await supabase.from('rooms').update({
+        name,
+        room_type: editType,
+        sort_order: Number.isFinite(parsedSort) ? parsedSort : editRoom.sort_order,
+        max_occupancy: Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : editRoom.max_occupancy,
+        active: editActive,
+      }).eq('id', editRoom.id);
+      if (error) { toast.error(`슬롯 수정 실패: ${error.message}`); return; }
+      invalidateRoomLists();
+      toast.success(`"${name}" 슬롯 수정 완료 — 대시보드에 반영됩니다`);
+      setEditRoom(null);
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
   const weekDays = useMemo(() => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), [weekStart]);
 
   const { data: rooms = [] } = useQuery<Room[]>({
@@ -954,6 +1064,60 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   return (
     // 변경3(컴팩트): 공간 배정 탭 섹션 간격 space-y-4→3, 카드 그리드 gap-4→3.
     <div className="space-y-3">
+      {/* T-20260808-foot-SPACEASSIGN-SLOT-CREATE-EDIT-DASHSYNC: 슬롯 구성 관리(생성+수정) —
+          admin/manager/director 만 노출(AC5 UI 은닉, rooms_admin_all RLS 이중방어). */}
+      {canRoomManage && (
+        <Card data-testid="slot-manage-card">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="flex items-center gap-1.5 text-sm">
+              <DoorOpen className="h-4 w-4 text-teal-600" /> 슬롯 구성 관리
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="slot-add-btn"
+              onClick={() => { setCreateName(''); setCreateType('treatment'); setCreateSort('999'); setCreateOpen(true); }}
+            >
+              <Plus className="mr-1 h-4 w-4" /> 슬롯 추가
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-2 text-xs text-muted-foreground">
+              여기서 슬롯을 새로 추가하거나 구성(명칭·유형·순서·정원·활성)을 수정하면 대시보드에 자동 반영됩니다. (슬롯 삭제는 제공하지 않습니다)
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {manageRooms.map((room) => (
+                <div
+                  key={room.id}
+                  data-testid={`slot-manage-row-${room.name}`}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${room.active ? 'bg-card' : 'bg-gray-50 opacity-70'}`}
+                >
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                    {ROOM_TYPE_LABEL[room.room_type]}
+                  </span>
+                  <span className={`flex-1 font-medium ${room.active ? '' : 'text-gray-400 line-through'}`}>{room.name}</span>
+                  {!room.active && <span className="text-xs text-gray-400">비활성</span>}
+                  <button
+                    type="button"
+                    data-testid={`slot-edit-${room.name}`}
+                    onClick={() => openEditRoom(room)}
+                    title={`${room.name} 구성 수정`}
+                    className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-teal-50 hover:text-teal-600"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {manageRooms.length === 0 && (
+                <p className="col-span-full py-3 text-center text-xs text-muted-foreground">
+                  등록된 슬롯이 없습니다. '슬롯 추가'로 만들어 주세요.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="flex items-end gap-2">
           {roomView === 'daily' ? (
@@ -1146,6 +1310,123 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
           </table>
         </div>
       )}
+
+      {/* T-20260808-foot-SPACEASSIGN-SLOT-CREATE-EDIT-DASHSYNC: 슬롯 추가 다이얼로그 */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>슬롯 추가</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>슬롯 명칭</Label>
+              <Input
+                data-testid="slot-create-name"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder="예: L8, C6, 상담실3"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>유형</Label>
+              <select
+                data-testid="slot-create-type"
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                value={createType}
+                onChange={(e) => setCreateType(e.target.value as RoomTypeVal)}
+              >
+                {ROOM_TYPE_SELECT.map((t) => (
+                  <option key={t} value={t}>{ROOM_TYPE_LABEL[t]}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label>정렬 순서</Label>
+              <Input
+                data-testid="slot-create-sort"
+                type="number"
+                value={createSort}
+                onChange={(e) => setCreateSort(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">숫자가 작을수록 앞에 표시됩니다. 정원은 같은 유형 슬롯에서 자동 복사됩니다.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createBusy}>취소</Button>
+            <Button data-testid="slot-create-save" onClick={handleCreateRoom} disabled={createBusy}>
+              {createBusy ? '추가 중…' : '추가'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* T-20260808-foot-SPACEASSIGN-SLOT-CREATE-EDIT-DASHSYNC: 슬롯 구성수정 다이얼로그 */}
+      <Dialog open={!!editRoom} onOpenChange={(o) => { if (!o) setEditRoom(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>슬롯 구성 수정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>슬롯 명칭</Label>
+              <Input
+                data-testid="slot-edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>유형</Label>
+              <select
+                data-testid="slot-edit-type"
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                value={editType}
+                onChange={(e) => setEditType(e.target.value as RoomTypeVal)}
+              >
+                {ROOM_TYPE_SELECT.map((t) => (
+                  <option key={t} value={t}>{ROOM_TYPE_LABEL[t]}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>정렬 순서</Label>
+                <Input
+                  data-testid="slot-edit-sort"
+                  type="number"
+                  value={editSort}
+                  onChange={(e) => setEditSort(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>정원</Label>
+                <Input
+                  data-testid="slot-edit-maxocc"
+                  type="number"
+                  min="1"
+                  value={editMaxOcc}
+                  onChange={(e) => setEditMaxOcc(e.target.value)}
+                />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid="slot-edit-active"
+                checked={editActive}
+                onChange={(e) => setEditActive(e.target.checked)}
+              />
+              활성 (해제 시 대시보드·배정에서 숨김 — 재활성은 이 목록에서 가능. '당일 비활성'과는 별개)
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditRoom(null)} disabled={editBusy}>취소</Button>
+            <Button data-testid="slot-edit-save" onClick={handleUpdateRoom} disabled={editBusy}>
+              {editBusy ? '저장 중…' : '저장'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

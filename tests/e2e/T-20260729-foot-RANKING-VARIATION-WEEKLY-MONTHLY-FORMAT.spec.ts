@@ -196,8 +196,9 @@ test.describe('T-20260729 [랭킹] 변동표 월간 추가 + 행 포맷 재편',
     expect(src).toContain('monthVariationRows');
     expect(src).toContain('prevMonthRevenue');
     expect(src).toContain('setPrevMonthRevenue');
-    // 전월매출은 기존 엔진(fetchConsultantPerf) READ 파생 — 전월 구간 인자로 호출(db_change=false 보증).
-    expect(src).toMatch(/fetchConsultantPerf\(clinicId, prevMonthStart, prevMonthEnd\)/);
+    // 전월매출은 랭킹 소스 엔진 READ 파생 — 전월 구간 인자로 호출(db_change=false 보증).
+    // T-20260807-foot-RANKING-STAFFATTR: 귀속축 = assigned_staff_id → fetchConsultantPerfByAssignedStaff 로 교체.
+    expect(src).toMatch(/fetchConsultantPerfByAssignedStaff\(clinicId, prevMonthStart, prevMonthEnd\)/);
 
     // 작업2 행 포맷 재편 — 헤더 라벨: 변동이 실장명 다음, 그 뒤 이번/당월 순위, 전주/전월 순위.
     expect(src).toContain('실장별 랭킹 변동 (주간)');
@@ -220,7 +221,7 @@ test.describe('T-20260729 [랭킹] 변동표 월간 추가 + 행 포맷 재편',
     expect(src).toContain("mainTab === 'ranking' && canViewRanking");
     // 주간 변동표 파생 로직 유지(월간 추가가 주간을 대체하지 않음).
     expect(src).toContain('const variationRows =');
-    expect(src).toMatch(/fetchConsultantPerf\(clinicId, prevWeekMon, prevWeekSun\)/);
-    expect(src).toMatch(/fetchConsultantPerf\(clinicId, thisWeekMon, rankingDate\)/);
+    expect(src).toMatch(/fetchConsultantPerfByAssignedStaff\(clinicId, prevWeekMon, prevWeekSun\)/);
+    expect(src).toMatch(/fetchConsultantPerfByAssignedStaff\(clinicId, thisWeekMon, rankingDate\)/);
   });
 });

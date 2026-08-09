@@ -49,6 +49,7 @@ regexes = [
   '''\.fill\(''',                            # playwright .fill(pw)
   '''\[AC[0-9-]''',                          # foot e2e 수용기준 로그 마커(console.log("[AC-3] ... PASS: ...")) — status 라벨 오탐 차단
   '''solapi_(secret|api[_-]?key)_[0-9a-f]{6,}''', # Vault 시크릿의 '이름'(포인터 식별자, 실 시크릿 값 아님) — *_vault_name 컬럼/픽스처 오탐 차단 (T-20260731-SENDGATE-DIAG)
+  '''\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b''', # 표준 UUID(레코드 식별자: staff_id/check_in_id/payment_id 등) — db-gate 진단 evidence JSON 의 record uuid 오탐 차단. 실 API키/토큰은 8-4-4-4-12 하이픈 구조를 갖지 않음 (T-20260808-HEO4717-2E8F7AA5-CIS-CREATE census)
 ]
 paths = [
   '''(^|/)node_modules/''',
