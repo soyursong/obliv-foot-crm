@@ -1,0 +1,340 @@
+{
+  "_meta": {
+    "ticket": "T-20260808-foot-HEO4717-2E8F7AA5-CIS-CREATE-KIMGYURI",
+    "mode": "READ-ONLY",
+    "prod_write": 0
+  },
+  "vg2_payment": {
+    "data": [
+      {
+        "id": "2e8f7aa5-3e83-4d4a-8900-ab1f0048694a",
+        "amount": 15000,
+        "status": "active",
+        "payment_type": "payment",
+        "created_at": "2026-07-28T03:00:00+00:00",
+        "accounting_date": "2026-08-06",
+        "check_in_id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+        "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "parent_payment_id": null
+      }
+    ]
+  },
+  "vg2_checkin": {
+    "data": [
+      {
+        "id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+        "checked_in_at": "2026-07-28T01:19:27.359343+00:00",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+        "therapist_id": "3a0c6774-2bd9-4018-bb38-ef6fab75d04b",
+        "technician_id": null,
+        "visit_type": "returning",
+        "status": "done"
+      }
+    ]
+  },
+  "vg2_service_ctb": {
+    "data": [
+      {
+        "id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "name": "Care Toe Band (CTB)",
+        "price": 15000,
+        "category": "기타",
+        "category_label": "풋화장품",
+        "active": true,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      }
+    ]
+  },
+  "vg1_cis_snapshot": {
+    "data": [
+      {
+        "id": "9d8646cc-0b0f-482d-9c60-9e58259d4429",
+        "service_id": "1a82c70a-07fe-4321-be44-8a206e3d1aa0",
+        "service_name": "재진-물리치료,주사 등 시술받은 경우",
+        "price": 4690,
+        "original_price": 4690,
+        "seller_staff_id": null,
+        "is_package_session": false,
+        "package_session_id": null,
+        "voided_at": null,
+        "created_at": "2026-07-28T01:46:21.791401+00:00"
+      },
+      {
+        "id": "846d30eb-f4a3-4c2e-b47a-30c1f5ae356b",
+        "service_id": "ee5f26d0-4ea4-4be5-98cf-c0fd4531c114",
+        "service_name": "비가열성 진균증 레이저 치료",
+        "price": 240000,
+        "original_price": 300000,
+        "seller_staff_id": null,
+        "is_package_session": false,
+        "package_session_id": null,
+        "voided_at": null,
+        "created_at": "2026-07-28T01:46:21.791401+00:00"
+      },
+      {
+        "id": "a3153149-38a4-4ce5-97a9-0e639b968ea0",
+        "service_id": "2fd9c05d-82dd-482d-9771-cd479da425b2",
+        "service_name": "손발톱백선",
+        "price": 0,
+        "original_price": 0,
+        "seller_staff_id": null,
+        "is_package_session": false,
+        "package_session_id": null,
+        "voided_at": null,
+        "created_at": "2026-07-28T01:46:21.791401+00:00"
+      },
+      {
+        "id": "90ec9771-7c08-4b7d-8720-3845994dd247",
+        "service_id": "853ede8a-cb21-4506-9e32-26756e224473",
+        "service_name": "발백선",
+        "price": 0,
+        "original_price": 0,
+        "seller_staff_id": null,
+        "is_package_session": false,
+        "package_session_id": null,
+        "voided_at": null,
+        "created_at": "2026-07-28T01:46:21.791401+00:00"
+      },
+      {
+        "id": "d9e11852-198d-48ab-93a2-5ea46a1517b3",
+        "service_id": "c812b085-2ce6-4aa7-af93-8e372f81a7ca",
+        "service_name": "(비급여) 바르토벤외용액 4mL(에피나코나졸)",
+        "price": 0,
+        "original_price": 0,
+        "seller_staff_id": null,
+        "is_package_session": false,
+        "package_session_id": null,
+        "voided_at": null,
+        "created_at": "2026-07-28T01:46:21.791401+00:00"
+      },
+      {
+        "id": "51149a84-de78-48e7-b43a-961251430c26",
+        "service_id": "f8cac105-dcb1-4dc6-813c-f842d69482c1",
+        "service_name": "터미졸크림(테르비나핀염산염)15g",
+        "price": 0,
+        "original_price": 0,
+        "seller_staff_id": null,
+        "is_package_session": false,
+        "package_session_id": null,
+        "voided_at": null,
+        "created_at": "2026-07-28T01:46:21.791401+00:00"
+      }
+    ]
+  },
+  "vg4e_ctb_cis_absent": {
+    "data": []
+  },
+  "vg4c_service_charges": {
+    "data": [
+      {
+        "id": "45f7fd4d-537c-4a16-894b-55133dadaa4d",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "check_in_id": "c33dfc76-cda5-48e6-9b34-277281b26626",
+        "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+        "service_id": "1a82c70a-07fe-4321-be44-8a206e3d1aa0",
+        "is_insurance_covered": true,
+        "hira_score": 49.09,
+        "hira_unit_value": 95.6,
+        "base_amount": 4693,
+        "insurance_covered_amount": 3293,
+        "copayment_amount": 1400,
+        "exempt_amount": 0,
+        "customer_grade_at_charge": "general",
+        "copayment_rate_at_charge": 0.3,
+        "calculated_at": "2026-07-28T10:37:57.984975+00:00",
+        "calculation_engine_version": "consult_writepath_v1",
+        "hira_unit_value_year": 2026,
+        "is_simulation": false
+      }
+    ]
+  },
+  "vg4b_payments_customer": {
+    "count": "1",
+    "status": 200
+  },
+  "_vdr_columns": [
+    "dt",
+    "clinic_id",
+    "single_revenue",
+    "package_revenue",
+    "net_revenue"
+  ],
+  "vg4a_v_daily_revenue_0728": {
+    "data": [
+      {
+        "dt": "2026-07-28",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "single_revenue": 8441360,
+        "package_revenue": -670000,
+        "net_revenue": 7771360
+      }
+    ],
+    "_dateCol": "dt"
+  },
+  "vg4d_cis_seller_kimgyuri": {
+    "data": [
+      {
+        "id": "76199926-9be6-44a5-a5dd-fa77bc6c2e33",
+        "check_in_id": "99fd2913-7e9e-436e-8d96-999b5fb8a25a",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "f30b5680-b292-431e-ab39-574e1a648bf5",
+        "check_in_id": "4dc831a5-fd9f-4a79-902b-4e2987e3bf1c",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "ce5e068b-ee9a-4f64-a57a-ca68f7475ea6",
+        "check_in_id": "8d6840eb-1ceb-484b-ad47-ff9d84c79680",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "251508c5-c59e-4f3d-a52c-f7065d4699e9",
+        "check_in_id": "d85638b5-53f1-4548-99be-858b7b34175f",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "95bccf00-7655-44d6-a0d7-660a5209b8a8",
+        "check_in_id": "df1d3279-bee9-436b-9cf8-2091c2b23729",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "bee88b6d-002c-4149-8c99-67d832b0e930",
+        "check_in_id": "cba142a6-918b-4c71-95df-1cb6b64b3ed5",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "77675de8-66cc-40a5-8a3a-2d8852ec97dd",
+        "check_in_id": "9b0259a2-809f-4afd-a519-e97f18b5ff97",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "81c754c8-8cd8-4477-83fd-30fcbfe9bc19",
+        "check_in_id": "39a3361f-7887-4d04-8032-ed041e8169da",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "f519496a-e90f-4961-bed6-087e882ee18d",
+        "check_in_id": "6cf773c3-a048-4813-8b26-65c96c26e8b9",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "f6293910-2ea6-4b8a-a316-23254f1b687f",
+        "check_in_id": "1b89fa9f-d2a3-42f2-94c6-28e9469de5f8",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "faec7bd9-0527-44ef-b523-69e5767dd7aa",
+        "check_in_id": "3e8db351-9427-49b2-b763-f798c75a6b69",
+        "service_id": "9a0bd8c0-9968-4f65-bd9d-e5dfa953663a",
+        "service_name": "우레아 10% 프로텍티브 크림 (125ml)",
+        "price": 55000
+      },
+      {
+        "id": "3a8ed9f3-f55f-4afd-a110-72c24eeab5e3",
+        "check_in_id": "c73f759b-1023-443d-892d-d59c155ba4f3",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "0a43a412-4292-4ecb-b989-19c8eae577ee",
+        "check_in_id": "9b1f3ad0-53f7-4b66-8711-48970b33f579",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "568738e1-acb5-4861-ae0a-8ad25fd46909",
+        "check_in_id": "7cde80dc-5946-4f8d-be4a-96c69c9ccc13",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "e93032ac-5992-4ae6-b786-4169420fff45",
+        "check_in_id": "18be5600-eccf-4652-abde-1539652bd669",
+        "service_id": "89095450-223f-4863-89a9-c7f32f62809d",
+        "service_name": "풋샴푸 (200ml)",
+        "price": 42000
+      },
+      {
+        "id": "19bf1523-577f-47e0-8704-e87d0b0d70d4",
+        "check_in_id": "bc1c1b6d-4af8-4bbd-b791-6aebf5230fb3",
+        "service_id": "e17ba3a3-4842-4097-87bc-0778a64d2755",
+        "service_name": "Care Toe Band (CTB)",
+        "price": 15000
+      },
+      {
+        "id": "884b4e8b-a493-4138-801a-cd472567723f",
+        "check_in_id": "fcc3d948-939b-4e3b-ad47-a60c39c8c21d",
+        "service_id": "89095450-223f-4863-89a9-c7f32f62809d",
+        "service_name": "풋샴푸 (200ml)",
+        "price": 42000
+      }
+    ]
+  },
+  "vg5_kimgyuri": {
+    "data": [
+      {
+        "id": "3a0c6774-2bd9-4018-bb38-ef6fab75d04b",
+        "name": "김규리",
+        "role": "therapist",
+        "active": true
+      },
+      {
+        "id": "d26717cb-2088-4cde-84d0-8fcd98367bbf",
+        "name": "김규리",
+        "role": "admin",
+        "active": true
+      }
+    ]
+  },
+  "_summary": {
+    "vg1_cis_rows": 6,
+    "vg1_cis_has_ctb": false,
+    "vg4e_ctb_absent": true,
+    "vg4c_service_charges_count": 1,
+    "vg4b_payments_15000_customer": "1",
+    "vg4a_single_revenue_0728": 8441360,
+    "vg4d_seller3a0c_cis_count": 17,
+    "vg4d_seller3a0c_cis_sum": 349000,
+    "vg4d_c33dfc76_present": false,
+    "vg5_kimgyuri_rows": [
+      {
+        "id": "3a0c6774-2bd9-4018-bb38-ef6fab75d04b",
+        "name": "김규리",
+        "role": "therapist",
+        "active": true
+      },
+      {
+        "id": "d26717cb-2088-4cde-84d0-8fcd98367bbf",
+        "name": "김규리",
+        "role": "admin",
+        "active": true
+      }
+    ]
+  }
+}
