@@ -5,8 +5,9 @@ import { format, parseISO } from 'date-fns';
 import { AlertTriangle, CalendarPlus, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Download, FileText, Loader2, Lock, MessageSquare, Minus, Package as PackageIcon, Pencil, Plus, Printer, RotateCcw, RotateCw, Save, Send, Stethoscope, Timer, Trash2, Upload, X } from 'lucide-react';
 // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 펜차트 탭 컴포넌트
 import { PenChartTab } from '@/components/PenChartTab';
-// T-20260808-foot-PENCHART-AUTORECORD-VISITLOG-2CHART: 펜차트(자동기록용) 방문일별 치료내역 자동 로그(READ-ONLY, 신규·별개 아티팩트)
-import { AutoVisitLogTab } from '@/components/AutoVisitLogTab';
+// T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형(수정·저장·출력) 초록박스.
+//   parent(T-20260808-...-2CHART, READ-ONLY 별도 탭) supersede — 별도 탭 폐지, 새 차트 작성 양식(펜차트 탭) 내부 배치.
+import { EditableAutoVisitLogBox } from '@/components/EditableAutoVisitLogBox';
 // T-20260730-foot-RRN-CLIPBOARD-COPY-NHIS: 주민번호 앞/뒷자리 클립보드 복사 버튼(공용)
 import { RrnCopyButtons } from '@/components/insurance/RrnCopyButtons';
 // T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
@@ -5817,8 +5818,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //         → payments는 HISTORY로, slot_dwell은 CLINICAL로 이동.
   const CLINICAL_TABS = [
     { key: 'pen_chart',   label: '펜차트' },
-    // T-20260808-foot-PENCHART-AUTORECORD-VISITLOG-2CHART: 손글씨 펜차트와 별개 신규 탭(자동 집계 로그, READ-ONLY)
-    { key: 'auto_visit_log', label: '펜차트(자동기록용)' },
+    // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: '펜차트(자동기록용)' 별도 탭 폐지 →
+    //   펜차트 새 차트 작성 양식 내부 초록박스(EditableAutoVisitLogBox)로 이동. (김주연 총괄 정정)
     { key: 'test_result', label: '검사결과' },
     { key: 'progress',    label: '경과내역' },
     { key: 'reservations', label: '예약내역' }, // AC-1: documents 대체
@@ -5842,7 +5843,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260601-foot-CHART-TAB-MUNJIN-DEDUP: 'checklist'(문진) 탭 진입점 제거에 맞춰 orphan 항목 정리.
   //   checklist 렌더 로직(L3972~)은 보존(OQ), chartTab은 더 이상 'checklist'에 도달하지 않음.
   // T-20260615 DWELLSWAP: 멤버십 변경 — clinical에 reservations·slot_dwell, history에 payments.
-  const IMPLEMENTED_CLINICAL = ['progress', 'reservations', 'slot_dwell', 'test_result', 'pen_chart', 'auto_visit_log', 'documents'];
+  const IMPLEMENTED_CLINICAL = ['progress', 'reservations', 'slot_dwell', 'test_result', 'pen_chart', 'documents'];
   const IMPLEMENTED_HISTORY  = ['consultations', 'packages', 'treatments', 'images', 'messages', 'refunds', 'payments'];
 
   const handleClinicalTab = (key: string) => { setChartTab(key); setChartTabGroup('clinical'); };
@@ -8546,24 +8547,32 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     → 저장 후 상담내역 탭 [내용보기] 즉시 활성화 */}
               {chartTabGroup === 'clinical' && chartTab === 'pen_chart' && (
                 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-8: customerRrn = rrnFull (전체 표시, 마스킹 제거)
-                <PenChartTab
-                  customerId={customer.id}
-                  clinicId={customer.clinic_id}
-                  checkInId={latestCheckIn?.id}
-                  customerName={customer.name}
-                  customerPhone={customer.phone ?? undefined}
-                  customerBirthDate={customer.birth_date ?? undefined}
-                  customerChartNumber={customer.chart_number?.toString() ?? undefined}
-                  customerRrn={rrnFull ?? undefined}
-                  onFormSubmissionSaved={refreshSubmissionEntries}
-                />
-              )}
-
-              {/* Clinical: 펜차트(자동기록용) — T-20260808-foot-PENCHART-AUTORECORD-VISITLOG-2CHART */}
-              {/* 방문일별 치료내역 자동 집계 로그(READ-ONLY). 이미 로드된 packages·packageSessions 재사용 — 신규 쿼리 0. */}
-              {/* interim: 패키지내용=총회차만. 급여/비급여 split은 phase2(INSURANCE-SPLIT-PHASE2). */}
-              {chartTabGroup === 'clinical' && chartTab === 'auto_visit_log' && (
-                <AutoVisitLogTab packages={packages} packageSessions={packageSessions} />
+                <div className="space-y-3">
+                  <PenChartTab
+                    customerId={customer.id}
+                    clinicId={customer.clinic_id}
+                    checkInId={latestCheckIn?.id}
+                    customerName={customer.name}
+                    customerPhone={customer.phone ?? undefined}
+                    customerBirthDate={customer.birth_date ?? undefined}
+                    customerChartNumber={customer.chart_number?.toString() ?? undefined}
+                    customerRrn={rrnFull ?? undefined}
+                    onFormSubmissionSaved={refreshSubmissionEntries}
+                  />
+                  {/* T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형 초록박스 —
+                      별도 탭 폐지 후 새 차트 작성 양식(펜차트 탭) 내부 배치. 이미 로드된 packages·packageSessions 재사용(신규 쿼리 0).
+                      VG2 seed + form_submissions.field_data overlay(편집·저장·출력). */}
+                  <EditableAutoVisitLogBox
+                    packages={packages}
+                    packageSessions={packageSessions}
+                    clinicId={customer.clinic_id}
+                    customerId={customer.id}
+                    checkInId={latestCheckIn?.id}
+                    customerName={customer.name}
+                    customerChartNumber={customer.chart_number?.toString() ?? null}
+                    customerRrn={rrnFull ?? null}
+                  />
+                </div>
               )}
 
               {/* History: 환불내역 — T-20260522-foot-REFUND-HIST-TAB */}
