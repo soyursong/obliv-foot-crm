@@ -2,8 +2,8 @@
  "ticket_id": "T-20260629-foot-GRADE-ENUM-INSERT-VALIDATE",
  "gate": "DB-GATE-GO",
  "issued_by": "supervisor",
- "issued_at": "2026-08-09T15:57:58.859Z",
- "expires_at": "2026-08-09T16:42:58.859Z",
+ "issued_at": "2026-08-09T16:14:23.751Z",
+ "expires_at": "2026-08-09T16:59:23.751Z",
  "prod_ref": "rxlomoozakkjesdqjtvd",
  "migration_sha256": "ad0832e3d93b603c52f8cccd79252b95e5ffa8159537f5f3d87b3398bd7155b6",
  "migration_files": [
@@ -17,7 +17,7 @@
   "20260806194200"
  ],
  "key_id": "supv-dbgate-2026a",
- "nonce": "4b6863d82d8f4965",
+ "nonce": "1c2ef8a4ccaa775f",
  "da_consult_reply": "DA-20260806-foot-GRADE-ENUM-2-2-2-FINALIZE (CONSULT-REPLY MSG-20260806-193530-najs, CONDITIONAL FINALIZE) — canonical CORE 5 확정, ADDITIVE(enum 9→11 + insert-guard trigger + manual backfill). gate.da_consult=resolved.",
  "ceo_gate": "N/A — 전량 ADDITIVE(enum_valueset_add + insert_guard_trigger + data_correction_backfill; DROP·타입변경 0) + DA GO = 대표 게이트 면제(autonomy §3.1).",
  "precheck": "deploy-precheck GO(2026-08-10 00:10, 신규 sha d4c3c9f2). C0 fresh/C1(2 std env)/C2 spec 실재(post-apply green)/C3 rollback×3 대칭/C4 DA-resolved ADDITIVE/C5 build OK/C10 PREFLIGHT PASS(judgment-time 재현: prod update_insurance_grade md5=06bb9201, prosrc vs 194000 diff=allowlist 2값 near_poor·veteran 뿐, executable drift 0, superset)/C12 참조 6컬럼 prod 실재/C13 ancestry superset(651c8892⊆d4c3c9f2)/C14 CI green(run 31319612132)/C16 FE-first 충족(CF live d4c3c9f2)/C17·C26 archive PK arbiter PASS/C23 SECDEF staff-facing REVOKE PUBLIC+GRANT authenticated·anon 부재/C24 sha-pin. C18·C21 GO-token 서명 직전 fresh 재확인 CLEAN(signals+MQ DA HOLD/RETRACT 0)."
