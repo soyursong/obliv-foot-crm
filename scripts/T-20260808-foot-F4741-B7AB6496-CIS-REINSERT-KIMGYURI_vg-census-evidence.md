@@ -54,7 +54,34 @@ reinsert 스크립트는 `check_in_services` INSERT 3행 + (필요 시) seller_s
 
 ---
 
+## §7 ADDENDUM 추가 VG READ-ONLY census (DA CONSULT-REPLY MSG-20260809-112911-vnjw)
+
+- **probe**: `scripts/T-20260808-foot-F4741-B7AB6496-CIS-REINSERT-KIMGYURI_vg_addendum_census.mjs` (SELECT-only, prod write 0; pg_catalog census = Management API `/database/query` 경유 dryrun_lib.q, information_schema/pg_trigger 조회만)
+- verdict 불변(조건부 GO). 추가 VG 4건 전건 PASS·재-CONSULT 트리거(§7-E #7~11) 미발동.
+
+### VG-add-1 (Q2-tail-1) service_charges 무접촉 = **PASS**
+- 화장품 3종 service `is_insurance_covered = false` 전건 (풋샴푸200ml/CTB/리페어핸드크림30ml) → PMW `snapshotCoveredServiceCharges`(PaymentMiniWindow.tsx L2442-2513)의 `filter(is_insurance_covered === true)` 에서 **구조적 제외** → 화장품 라인은 service_charges 행 생성 0.
+- 게다가 본 backfill = **직접 cis INSERT**(PMW 경로 미경유) → 앱 명세 스냅샷 경로 자체 미실행.
+- 부모 check_in `dec7e6c4` 현 service_charges = 6행(전부 기존 치료라인·`is_insurance_covered=false`·금액 0) → 화장품 reinsert 무접촉. insurance-split 축(급여/비급여/공단) 이동 0. **§7-E #7 미발동.**
+
+### VG-add-2 (Q2-tail-3, BLOCKING) outbox emit 결속 = **PASS (결속 없음)**
+- prod census: `check_in_services` 결속 트리거 = **0건**(pg_trigger, not tgisinternal) → AFTER INSERT emit/outbox/도파민 push 미결속.
+- 대조군 확인: 모든 outbox/역sync/sim 트리거는 **payments 결속**(`trg_enqueue_payment_sync_from_payments`=AFTER INSERT ON payments, `trg_payments_sim_stamp_insert`, `trg_payments_pkg_status_recompute` 등). 코드 census 정합: `payment_sync_outbox`=`AFTER INSERT ON payments WHEN payment`(20260730200000), `dopamine_callback_outbox`=예약/내원 lifecycle 축.
+- reinsert = **cis INSERT only·payments 무접촉**(VG4) → 하류 phantom "신규 판매" emit·spurious 알림·cross-CRM fan-out **불발생**. **emit-suppress 경로 불요**(결속 부재). POSTCHECK 에 outbox 신규0/도파민 push0 는 확인차 유지. **§7-E #8 미발동.**
+
+### VG-add-3 (Q3) seller_staff_id 컬럼 실재 = **PASS**
+- prod census: `check_in_services.seller_staff_id` = **실재**(uuid, nullable, FK→staff(id) ON DELETE RESTRICT, 20260725120000). 귀속 착지 = 이 정본 컬럼. 대체 컬럼 임의사용/신규 attribution 컬럼 신설 불요. **§7-E #9 미발동.** (착지값=김규리 실 staff UUID는 VG5 attestation 후 확정.)
+
+### VG-add-4 (Q4) evidentiary tier = **Tier 2** (Tier1 부재)
+- prod census: cis archive/audit/history/soft-delete 저장 테이블 = **0건** → **Tier1(before-image verbatim) 물리 부재**.
+- `voided_at` soft-void 컬럼은 실재하나 **08-05 신설**(20260805110000) → 08-03 hard delete-all wipe 이전 소멸행의 before-image 아님(무효).
+- ⟹ **Tier 2 확정**: 라인 identity/단가/수량 = payment-line 지문 + KIMBB-REMOVE 확정 3품목·금액 + 산술폐합 Σ(42,000+15,000+16,000)=73,000==b7ab6496.amount(VG3). DA §7-C acceptable floor 충족(창작 아님).
+- **seller_staff_id 는 payment-line 파생 불가** → floor = Tier1(부재) OR 현장 attestation → **attestation-only**(= VG5 human_pending 정합). **§7-E #10·#11 미발동**(필수값 전건 소싱가능·폐합 성립).
+
+---
+
 ## 종합
-- **VG1/VG2/VG3 = PASS.** VG4 = dry-run 실증 대기(설계 제약 확정). **VG5 = seller 김규리 동명이인 attestation BLOCKER** (before-image 부재).
-- 다음: (1) DA verbatim 재송(Q2-tail+Q3~Q5, 특히 Q4 evidentiary floor / Q5 machine gate) → DA §ADDENDUM. (2) 김주연 총괄 seller attestation(어느 김규리). (3) 두 게이트 해소 후 freeze-set(명시 VALUES: check_in dec7e6c4 + 3 service_id + 확정 seller) → supervisor DB-GATE dry-run → apply.
-- **apply/파괴 write 미착수** (Q-gate Q2·false-signal 회피). deploy-ready 미마킹.
+- **VG1/VG2/VG3 = PASS.** **VG-add-1/2/3/4 = PASS**(추가 census, verdict 불변·재-CONSULT 미발동). VG4(payments write 0) = supervisor DB-GATE dry-run POSTCHECK 실증 대기(설계 제약 확정). **VG5 = seller 김규리 동명이인 attestation BLOCKER**(before-image 부재·payment-line 파생불가 → attestation-only, 김주연 총괄 human_pending).
+- DA §7 ADDENDUM(MSG-20260809-112911-vnjw) 수신·census 완결 → **DA-측 재-CONSULT 트리거 전건 미발동, verdict 조건부 GO 불변**. 잔여 = **오직 VG5 seller attestation 1건**(김주연 총괄, thread 1785492540.190029 / C0ATE5P6JTH).
+- 다음: (1) [primary gate] 김주연 총괄 per-row seller attestation(therapist 3a0c6774 / admin d26717cb 中) → (2) freeze-set(명시 VALUES: check_in `dec7e6c4` + 3 service_id + Tier2 지문 + 확정 seller UUID·per-value provenance tier 기재) → (3) [comp settled 시] 박민지 comp-transparency → (4) supervisor DB-GATE No-Persistence dry-run + POSTCHECK(§2 불변식 + outbox 신규0·도파민 push0·payments rows-affected 0) + GO-token → (5) prod apply(guard chokepoint) → applied_at 기입 → deployed.
+- **apply/파괴 write 미착수** (Q-gate Q2·false-signal 회피). deploy-ready 미마킹(attestation·dry-run 미완).
