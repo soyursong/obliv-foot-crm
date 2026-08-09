@@ -66,6 +66,7 @@ import {
   filterRxRowsByMedications,
   filterRxRowsByDateRange,
   dedupeRxIssuanceRows,
+  sortRxRowsByIssuedDateDesc,
   splitRepresentativeMedications,
   type RxIssuancePatientRow,
   type RawFormSubmissionWithCustomerRow,
@@ -200,11 +201,15 @@ export default function RxHistorySection() {
   const medications = useMemo(() => collectDistinctMedications(allRows), [allRows]);
   const drugOptions = useMemo(() => medications.map((m) => ({ value: m, label: m })), [medications]);
 
-  // 파이프라인: 기간 필터(AC-1) → 실처방 dedup(AC-2) → 약품 필터(AC-4, 선택 시).
+  // 파이프라인: 기간 필터(AC-1) → 실처방 dedup(AC-2) → 약품 필터(AC-4, 선택 시)
+  //   → 처방일자(교부일) 내림차순 안정 정렬(T-20260809-RXHIST-PATIENTLIST-DATESORT AC-1).
+  //   dedup 은 Map 삽입순(printed_at 축)이라 화면 '일자' 컬럼(issued_at)과 어긋날 수 있어 마지막에 명시 재정렬.
   const rows = useMemo(() => {
     const byDate = filterRxRowsByDateRange(allRows, range.from, range.to);
     const deduped = dedupeRxIssuanceRows(byDate);
-    return selectedMeds.length > 0 ? filterRxRowsByMedications(deduped, selectedMeds) : deduped;
+    const filtered =
+      selectedMeds.length > 0 ? filterRxRowsByMedications(deduped, selectedMeds) : deduped;
+    return sortRxRowsByIssuedDateDesc(filtered);
   }, [allRows, range.from, range.to, selectedMeds]);
 
   const hasSelection = selectedMeds.length > 0;

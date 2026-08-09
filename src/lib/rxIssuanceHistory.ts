@@ -273,6 +273,32 @@ export function dedupeRxIssuanceRows(
 }
 
 /**
+ * T-20260809-foot-RXHIST-PATIENTLIST-DATESORT (AC-1·확정) — 처방이력 환자목록 처방일자 내림차순(최신순) 정렬.
+ *
+ * ★ 정렬 키 = rxIssuedDateKey(issued_at) = 화면 '일자' 컬럼과 동일한 교부일 날짜 파트(YYYY-MM-DD).
+ *   (조회 쿼리 .order 는 printed_at 축이고 dedup 은 Map 삽입순 → 화면 표시 축[issued_at]과 불일치할 수 있어
+ *    최종 표시 배열을 issued_at 날짜 기준으로 명시 재정렬한다.)
+ * ★ AC-2 동일 처방일자 2차 정렬 = 기존 순서 보존: 같은 날짜는 comparator 0 반환 →
+ *   Array.prototype.sort 안정성(ES2019+ 보장)으로 입력(기존 dedup·printed_at) 순서 그대로 유지.
+ *   새 2차 정렬 기준을 임의 도입하지 않는다.
+ * ★ AC-3 read-side 파생 전용 — 필터/집계/컬럼 무변경, DB 무접촉(db_change=false). 행 누락·중복 0(slice 후 in-place sort).
+ *   날짜 파싱 불가(issued_at=null) 행은 최신순 목록 맨 뒤로 밀어 표시(엣지 케이스 안전).
+ */
+export function sortRxRowsByIssuedDateDesc<T extends Pick<RxIssuanceRow, 'issued_at'>>(
+  rows: T[] | null | undefined,
+): T[] {
+  if (!rows || rows.length === 0) return [];
+  return rows.slice().sort((a, b) => {
+    const da = rxIssuedDateKey(a.issued_at);
+    const db = rxIssuedDateKey(b.issued_at);
+    if (da === db) return 0; // 동일 일자(또는 둘 다 파싱불가) → 안정 정렬로 기존 순서 보존(AC-2)
+    if (da === null) return 1; // 파싱 불가 = 맨 뒤
+    if (db === null) return -1;
+    return da < db ? 1 : -1; // 내림차순(최신 먼저)
+  });
+}
+
+/**
  * AC-4 대표+기타 분리 — 선택된 약품(대표) vs 같은 처방에 함께 나간 그 외 약품(기타).
  *   representative = 행의 약품 중 선택집합에 든 것(선택 순 유지 위해 selected 순서 우선).
  *   others        = 행의 약품 중 선택집합에 들지 않은 나머지(원 순서 유지).
