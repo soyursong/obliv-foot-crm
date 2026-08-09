@@ -1,0 +1,596 @@
+{
+  "ticket": "T-20260810-foot-ARCHE-PORPHAN-CORRECTION",
+  "mode": "dry-run",
+  "generated_ref": "rxlomoozakkjesdqjtvd",
+  "da_ssot": "agents/docs/da_replies/da_decision_foot_arche_porphan_correction_spec_20260810.md",
+  "q5_forward_seal": "H1 (seal) — evidence/T-20260810-foot-ARCHE-PORPHAN-CORRECTION_forensic_seal_result.md",
+  "freeze_recheck": {
+    "live": 62,
+    "frozen": 62,
+    "novel": 0,
+    "vanished": 0
+  },
+  "partition": {
+    "A_resolvable": 28,
+    "B_ambiguous": 0,
+    "B_absent": 34
+  },
+  "invariant_before": {
+    "porphan": 62,
+    "healthy": 49,
+    "flag_true_total": 111,
+    "sum_price_flagged": 27950000,
+    "sum_origprice_flagged": 34200000
+  },
+  "invariant_expected_after": {
+    "porphan": 34,
+    "healthy": 77,
+    "flag_true_total": 111,
+    "sum_price_flagged": 27950000,
+    "sum_origprice_flagged": 34200000
+  },
+  "af_caveat_rows": [
+    {
+      "cis_pk": "89443cb7-00c3-45f3-afbd-835f674cb831",
+      "service_name": "비가열레이저 - AF",
+      "pick_ps_id": "2a508619-6342-4854-8e9d-94c6916428f3",
+      "note": "AF 신규명 매핑근거 약함 → 현장/명세 per-row 확인 권고"
+    },
+    {
+      "cis_pk": "ae8fcdb3-2fc8-49d4-8d18-a6ba37ff9a10",
+      "service_name": "비가열레이저 - AF",
+      "pick_ps_id": "060bc5cf-dd57-44e5-b994-8c53f20128f5",
+      "note": "AF 신규명 매핑근거 약함 → 현장/명세 per-row 확인 권고"
+    }
+  ],
+  "leg_a_plan": [
+    {
+      "cis_pk": "144d1c1d-5be2-4a8a-b4ca-1e7799bfdef7",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "4f85924b-07c5-4586-a783-68cdae6ce5f2",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "331ccb53-f84d-4fee-b72f-b9d80c749e17",
+      "price": 250000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "1616ed7c-208f-42e0-8681-3e42b52cf3ee",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "349c410a-c67d-45bd-8df6-84a7e0650f86",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "419c57a9-281c-4d41-8f6f-9ec88acffcf2",
+      "price": 180000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "17509664-422b-4a96-9b4a-306247b08133",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "d5eda8c0-903e-4f83-8a0c-86b9017f8a80",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "8b7b9c72-e4ae-469f-bbcb-5449cb61d1cf",
+      "price": 250000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "2554fc9d-f466-4d61-9e6a-49f7a21b7107",
+      "service_name": "가열성 진균증 레이저 치료",
+      "mapped_session_type": "heated_laser",
+      "customer_id": "05ac6233-a8e4-41c3-bdaf-fe028bb84dbd",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "74c5c33b-4565-4f7d-82df-a4fedc7e9baa",
+      "price": 350000,
+      "original_price": 350000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "26eced41-63cb-469d-ba10-0cd41ae55be5",
+      "service_name": "포돌로게(내성발톱 치료의료기기)",
+      "mapped_session_type": "podologue",
+      "customer_id": "13defcc3-dcaf-417f-b8ae-724f971b2bd3",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "31d6a23d-4955-48d6-b292-e715f9edbea5",
+      "price": 250000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "40c9f75f-b040-4bb8-b557-8a8387e82f2d",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "65aedf39-f8ac-41ae-812f-166b12e0aabd",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "580f0ff1-bfb7-4208-a6c3-4130b100ca73",
+      "price": 240000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "4299825e-34e2-4528-a832-cbf18ec96ca3",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "a07a3079-69ba-415a-a0f8-61e8d0921168",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "df558316-ca64-4e45-bd75-71dc5deaf50b",
+      "price": 240000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "4a739550-4ed3-4211-bd9e-8f04a1aa60b2",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "fab31584-0b68-4134-b330-68f923fd1481",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "5f8cfd72-ca52-4129-bbd6-a465cf9fd455",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "57d33389-242c-4bbd-8b73-03ae431c9c15",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "b3c8c3ed-a51b-4c23-821c-e31122410c44",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "1e07f08a-cfc4-4695-a89c-b30b61aa7a52",
+      "price": 240000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "65f933b1-ba6c-499c-9414-e11ebafab706",
+      "service_name": "가열성 진균증 레이저 치료",
+      "mapped_session_type": "heated_laser",
+      "customer_id": "227b168b-3830-45e2-ba4c-e2a1fc28bf58",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "17a34686-25dd-4ee9-b651-268e10a0f5a1",
+      "price": 320000,
+      "original_price": 350000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "7501b833-564c-43e8-a6a0-f83bc5963ad9",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "5659dad8-c486-465f-a842-a0f41dbd478c",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "fe04b8b2-1bef-40b6-b90a-72e367239f55",
+      "price": 180000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "750b1ff5-ece7-41c8-99f0-db4f4f5fa54d",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "0c416188-b681-4cfc-84a9-80ef48732979",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "066cb842-5697-4ab6-ba94-a789545fcd4e",
+      "price": 250000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "7fd08361-2d77-4806-b217-a6694158f226",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "4e051559-a7bf-4eee-9819-d626a26b6220",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "5ecd4d2f-b163-4296-811b-b6d03813b59a",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "82f8c4c2-5d60-4f4e-bc27-4cc3a1589cef",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "0fc0752c-7ccd-4a71-85ec-b7e4e5f20527",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "f80f4965-0ef5-43bf-b401-777090f62aa6",
+      "price": 240000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "89443cb7-00c3-45f3-afbd-835f674cb831",
+      "service_name": "비가열레이저 - AF",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "f07ba56a-b1d6-4a38-aa50-375cd8b01e48",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "2a508619-6342-4854-8e9d-94c6916428f3",
+      "price": 300000,
+      "original_price": 300000,
+      "af_caveat": true
+    },
+    {
+      "cis_pk": "9cc2cf34-7e24-4d0e-86d9-4bf36911e4b9",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "f98676b2-2bbe-4050-ac5b-803c41e28e55",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "3a993e33-93b9-43f0-8818-9dce9142b3c6",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "a01387a5-2235-4c4f-9509-23eb590cd09a",
+      "service_name": "가열성 진균증 레이저 치료",
+      "mapped_session_type": "heated_laser",
+      "customer_id": "92ff144c-502a-4017-b915-c5919738cd34",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "598c1ba2-7f98-4a37-8368-aca22e1119df",
+      "price": 250000,
+      "original_price": 350000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "a2aecc90-1f0f-43d5-bc37-d12cd3698ade",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "229796b9-0180-47c3-a96d-0818ebbe91a3",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "44231e29-9f56-47d7-bffe-2ab06d982e6b",
+      "price": 240000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "a91e44d6-6a47-4296-be40-e0073cd4e230",
+      "service_name": "가열성 진균증 레이저 치료",
+      "mapped_session_type": "heated_laser",
+      "customer_id": "bee5ff01-81c9-440f-8c5b-932c9e732e52",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "683f37bc-95ce-4f88-8001-973522d06199",
+      "price": 350000,
+      "original_price": 350000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "ae8fcdb3-2fc8-49d4-8d18-a6ba37ff9a10",
+      "service_name": "비가열레이저 - AF",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "09f81b06-80e4-454b-9172-fc82d6b6c274",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "060bc5cf-dd57-44e5-b994-8c53f20128f5",
+      "price": 300000,
+      "original_price": 300000,
+      "af_caveat": true
+    },
+    {
+      "cis_pk": "b0425810-070a-4261-b1d1-17c228ecca97",
+      "service_name": "가열성 진균증 레이저 치료",
+      "mapped_session_type": "heated_laser",
+      "customer_id": "722ff7ed-7513-44dd-b22e-878686335a07",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "7b301f95-2e07-47e1-9a5e-8a57479796dc",
+      "price": 280000,
+      "original_price": 350000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "c88e80c2-4789-4a2d-886e-ac1f87cfc327",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "4e051559-a7bf-4eee-9819-d626a26b6220",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "462531ec-3a39-4375-a515-2da4e704d278",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "cf6a393b-b2df-4879-8306-1997a5dd652d",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "6412fbf7-8a53-4d49-af7a-491e1d731b4c",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "517e2e7e-f20c-49cd-8cc4-8ed1c9e992c6",
+      "price": 240000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "e34098c4-65ef-41b0-8848-83d1d9ad4d08",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "4692ee76-bbad-4fa3-9358-ff2bd975d3e2",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "28c7db80-7329-477b-a384-c87235a688a3",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "e83e5b38-cb7b-447e-8485-7f39e6e16984",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "e4abf027-9e67-4af8-962b-502d80ad5ca1",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "70219404-057d-4eae-b27b-19f4079f7eb6",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "eb1d0547-c1b5-4576-9cb3-8cdaf79c7630",
+      "service_name": "가열성 진균증 레이저 치료",
+      "mapped_session_type": "heated_laser",
+      "customer_id": "cbd71b52-6be8-432b-984e-1ee7599a4b0f",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "c7eb81c5-f52f-49b3-a5d0-270bdf35748e",
+      "price": 350000,
+      "original_price": 350000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "fab971a7-2160-4691-91aa-500ad2253bef",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "8b6df3a7-8b65-4022-b3f8-f116a4569788",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "f6533e4c-311d-492d-bbfd-787f28732fe0",
+      "price": 200000,
+      "original_price": 300000,
+      "af_caveat": false
+    },
+    {
+      "cis_pk": "fcda8bce-60de-422f-b133-7823250e1a17",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "mapped_session_type": "unheated_laser",
+      "customer_id": "6190621e-fa51-4a20-9f9a-1128787ba492",
+      "ps_status": "used",
+      "package_session_id_before": null,
+      "package_session_id_after": "e72d239d-6ddd-4dee-a1c8-100479cf1827",
+      "price": 260000,
+      "original_price": 300000,
+      "af_caveat": false
+    }
+  ],
+  "b_absent_routing": [
+    {
+      "cis_pk": "0e8f84c8-29b9-4d8f-96b2-7bf8fb076eb6",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "142521aa-5fb2-42db-ac9e-0145b0db6454",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "351d34c5-2dd9-4583-bfb3-8e27025777a6",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "18ea0df8-03f3-42a8-978a-1c6be3457935",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "196c54db-17c2-48b0-8818-ed2d0a844518",
+      "service_name": "가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "1a14c169-f53b-434b-85b0-5272df93b117",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "e72022d0-7cf5-4f42-b5e3-b5162005b454",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "261d6aad-8cb2-4767-8170-dcc288e28c09",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "9200573f-bf1c-4dab-8c69-f87e1f53a2c6",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "333132e9-3970-443f-9573-99f79556c179",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "1c61bad2-ad49-4e7d-92ae-2d132aae95cb",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "40fbd98b-439e-433d-8c1e-31eb164c7c30",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "d7faae9b-8e0b-421a-b68b-483ede6834a3",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "5c2f69b0-4dc7-4d28-9167-980fccd3dcb8",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "5d55c4da-9033-48b2-b277-7bc81af5a1ad",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "6d54c7b0-a0e6-4ed0-8f33-84e377bd76d1",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "78975d00-9d31-4ac3-848c-0f77c6f0d735",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "72d97156-5a80-4ca4-ac5d-cacb9ac40b8d",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "ca8975d4-b79c-4704-b142-3742692ce787",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "745ddfeb-1814-4c3f-bf33-4f736aac0212",
+      "service_name": "포돌로게(내성발톱 치료의료기기)",
+      "customer_id": "02594dfa-9428-4405-b640-95ab50ad5e5d",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "74ac3114-65c7-44fe-95cc-0064103c6b32",
+      "service_name": "포돌로게(내성발톱 치료의료기기)",
+      "customer_id": "8020be04-6285-4107-b08e-bac4cb9751bc",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "76b533ad-2218-4871-829a-302a701456c5",
+      "service_name": "가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "78a9c656-5278-4724-a7f1-09d64db62ec6",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "1c61bad2-ad49-4e7d-92ae-2d132aae95cb",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "8282bb19-5038-48d4-a4a4-580bc1f6e195",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "4151cc2b-2a81-4f91-8219-f5716f6ecbf0",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "8cdbb847-1c03-480f-bdfa-98ea98c28423",
+      "service_name": "포돌로게(내성발톱 치료의료기기)",
+      "customer_id": "c59a2600-af70-4a11-937c-86fde9721c41",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "8fea9012-a0e6-4b99-b2e8-ee4099d0ce19",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "9e0bb3ee-6ff1-48f5-93a2-65fdeb85079a",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "a0cbc4ef-bf11-4cc9-af4a-e123ad117598",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "a629e0dc-1f30-403f-8814-80258a074038",
+      "service_name": "포돌로게(내성발톱 치료의료기기)",
+      "customer_id": "21a82994-b231-4bcc-94ff-dd9e6c3a4951",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "aad454d5-7104-452b-9267-efeb051c6d07",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "afa1997d-b048-4d59-947c-b93f25320507",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "b4959728-a6f4-4803-89d9-7a3d77508f64",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "bdc08d55-5d36-40f9-9e45-43f1dd155ad4",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "d2b849b3-cb3d-4d4e-88f0-1e5b5d393d7a",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "c06fbe1d-4340-4150-bcd5-b40a9d4c57d2",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "80df7a6b-077d-46db-b9db-31591f3977a4",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "c3125286-638b-4463-859b-34ecaf4ee79f",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "c074025b-cd27-443c-93a9-151d6d4214d4",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "df4310f7-3872-4243-963d-0097100d5bbe",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "e28dffa5-2262-4825-acc2-df2c26b56eaf",
+      "service_name": "가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "e8b692bb-17ca-4e29-ac61-7f1b55482a25",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "ea0bb2ec-11a4-4cb8-af5e-4db2eb7ee1a7",
+      "service_name": "포돌로게(내성발톱 치료의료기기)",
+      "customer_id": "1c61bad2-ad49-4e7d-92ae-2d132aae95cb",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "ecd6cb45-64f9-4cfe-8e7c-42b22aea3bc3",
+      "service_name": "가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    },
+    {
+      "cis_pk": "fa4e86d0-b951-4eb4-a298-9f405d730539",
+      "service_name": "비가열성 진균증 레이저 치료",
+      "customer_id": "83ab4fe1-0bbc-4dfc-ab3b-f01378144707",
+      "disposition": "NO-AUTO-LINK · 현장확정 라우팅 (다수 테스트/더미고객 void 후보). 본 스크립트 손대지 않음."
+    }
+  ],
+  "rollback_sql": "UPDATE check_in_services SET package_session_id = NULL\n  WHERE id IN ('144d1c1d-5be2-4a8a-b4ca-1e7799bfdef7','1616ed7c-208f-42e0-8681-3e42b52cf3ee','17509664-422b-4a96-9b4a-306247b08133','2554fc9d-f466-4d61-9e6a-49f7a21b7107','26eced41-63cb-469d-ba10-0cd41ae55be5','40c9f75f-b040-4bb8-b557-8a8387e82f2d','4299825e-34e2-4528-a832-cbf18ec96ca3','4a739550-4ed3-4211-bd9e-8f04a1aa60b2','57d33389-242c-4bbd-8b73-03ae431c9c15','65f933b1-ba6c-499c-9414-e11ebafab706','7501b833-564c-43e8-a6a0-f83bc5963ad9','750b1ff5-ece7-41c8-99f0-db4f4f5fa54d','7fd08361-2d77-4806-b217-a6694158f226','82f8c4c2-5d60-4f4e-bc27-4cc3a1589cef','89443cb7-00c3-45f3-afbd-835f674cb831','9cc2cf34-7e24-4d0e-86d9-4bf36911e4b9','a01387a5-2235-4c4f-9509-23eb590cd09a','a2aecc90-1f0f-43d5-bc37-d12cd3698ade','a91e44d6-6a47-4296-be40-e0073cd4e230','ae8fcdb3-2fc8-49d4-8d18-a6ba37ff9a10','b0425810-070a-4261-b1d1-17c228ecca97','c88e80c2-4789-4a2d-886e-ac1f87cfc327','cf6a393b-b2df-4879-8306-1997a5dd652d','e34098c4-65ef-41b0-8848-83d1d9ad4d08','e83e5b38-cb7b-447e-8485-7f39e6e16984','eb1d0547-c1b5-4576-9cb3-8cdaf79c7630','fab971a7-2160-4691-91aa-500ad2253bef','fcda8bce-60de-422f-b133-7823250e1a17')\n    AND package_session_id IN ('331ccb53-f84d-4fee-b72f-b9d80c749e17','419c57a9-281c-4d41-8f6f-9ec88acffcf2','8b7b9c72-e4ae-469f-bbcb-5449cb61d1cf','74c5c33b-4565-4f7d-82df-a4fedc7e9baa','31d6a23d-4955-48d6-b292-e715f9edbea5','580f0ff1-bfb7-4208-a6c3-4130b100ca73','df558316-ca64-4e45-bd75-71dc5deaf50b','5f8cfd72-ca52-4129-bbd6-a465cf9fd455','1e07f08a-cfc4-4695-a89c-b30b61aa7a52','17a34686-25dd-4ee9-b651-268e10a0f5a1','fe04b8b2-1bef-40b6-b90a-72e367239f55','066cb842-5697-4ab6-ba94-a789545fcd4e','5ecd4d2f-b163-4296-811b-b6d03813b59a','f80f4965-0ef5-43bf-b401-777090f62aa6','2a508619-6342-4854-8e9d-94c6916428f3','3a993e33-93b9-43f0-8818-9dce9142b3c6','598c1ba2-7f98-4a37-8368-aca22e1119df','44231e29-9f56-47d7-bffe-2ab06d982e6b','683f37bc-95ce-4f88-8001-973522d06199','060bc5cf-dd57-44e5-b994-8c53f20128f5','7b301f95-2e07-47e1-9a5e-8a57479796dc','462531ec-3a39-4375-a515-2da4e704d278','517e2e7e-f20c-49cd-8cc4-8ed1c9e992c6','28c7db80-7329-477b-a384-c87235a688a3','70219404-057d-4eae-b27b-19f4079f7eb6','c7eb81c5-f52f-49b3-a5d0-270bdf35748e','f6533e4c-311d-492d-bbfd-787f28732fe0','e72d239d-6ddd-4dee-a1c8-100479cf1827');",
+  "apply_sql_preview": [
+    "UPDATE check_in_services SET package_session_id='331ccb53-f84d-4fee-b72f-b9d80c749e17' WHERE id='144d1c1d-5be2-4a8a-b4ca-1e7799bfdef7' AND is_package_session=true AND package_session_id IS NULL; -- +25 more",
+    "UPDATE check_in_services SET package_session_id='419c57a9-281c-4d41-8f6f-9ec88acffcf2' WHERE id='1616ed7c-208f-42e0-8681-3e42b52cf3ee' AND is_package_session=true AND package_session_id IS NULL; -- +25 more",
+    "UPDATE check_in_services SET package_session_id='8b7b9c72-e4ae-469f-bbcb-5449cb61d1cf' WHERE id='17509664-422b-4a96-9b4a-306247b08133' AND is_package_session=true AND package_session_id IS NULL; -- +25 more"
+  ]
+}
