@@ -6,10 +6,14 @@
  * 구현: 기존 동의서(외국인 비급여)와 동일 방식(HTML 템플릿 + form_templates seed). 순수 ADDITIVE.
  *   - 날짜(issue_date)=오늘 자동 / 성명(patient_name)=대상 환자 자동 / 서명=수기(빈칸, 인쇄 후 손서명)
  *   - 문안 = 셀프접수 라이브 동의문 authoritative source verbatim (dev 창작 금지)
- *   - scope(uem5-fold): 셀프접수 필수 동의 전건 백업 = 필수 3종 + 선택 1종 (4블록)
- *       [1] 개인정보 수집·이용(필수) [2] 민감정보(건강·진료정보, 개보법 §23, 필수)
- *       [3] 건강보험 자격조회(필수) [4] 예약 안내 문자(SMS) 수신(선택)
+ *   - scope(uem5-fold + AC-6): 셀프접수 필수 동의 전건 백업 = 필수 4종 + 선택 1종 (5블록)
+ *       [1] 개인정보 수집·이용(필수) [2] 고유식별정보 수집·이용(별도 필수, 개보법 §24)
+ *       [3] 민감정보(건강·진료정보, 개보법 §23, 필수) [4] 건강보험 자격조회(필수)
+ *       [5] 예약 안내 문자(SMS) 수신(선택)
  *   - '동의서' 그룹으로 서류 목록 노출
+ *
+ * FIX(2026-08-09, AC-5 NO-GO→FIX): AC-6 고유식별정보 블록 추가(개보법 §24 별도 필수, 문안=
+ *   ConsentFormDialog UNIQUE_ID verbatim 재사용) + AC-7 레이아웃 간격 확대(CSS). db_change=false.
  *
  * AC1: 서류 발행 화면 동의서 섹션에 개인정보 수집·이용 동의서가 신규 노출된다.
  *      → DOCLIST_ORDER_10 화이트리스트 등록 + groupDocList '동의서' 그룹 귀속 + FORM_META/FALLBACK 정합.
@@ -106,8 +110,8 @@ test.describe('T-20260808 PENCHART-PRIVACY-CONSENT-FORM — 개인정보 수집�
     await expect(page.getByText("O'Brien-李 (외국인)")).toBeVisible();
   });
 
-  // ── AC3: 셀프접수 라이브 동의문 확정본 verbatim 전량 렌더 (필수 3종 + 선택 1종) ──
-  test('AC3 — 제목 + 필수 3종 + 선택 1종 동의 블록 verbatim 렌더', async ({ page }) => {
+  // ── AC3+AC6: 셀프접수 라이브 동의문 확정본 verbatim 전량 렌더 (필수 4종 + 선택 1종) ──
+  test('AC3+AC6 — 제목 + 필수 4종(고유식별정보 포함) + 선택 1종 동의 블록 verbatim 렌더', async ({ page }) => {
     const html = getHtmlTemplate(FORM_KEY)!;
     await page.setContent(bindHtmlTemplate(html, { issue_date: '2026-08-09', patient_name: '홍길동' }));
 
@@ -119,30 +123,41 @@ test.describe('T-20260808 PENCHART-PRIVACY-CONSENT-FORM — 개인정보 수집�
     await expect(page.getByText('진료를 위한 정보 수집')).toBeVisible();
     await expect(page.getByText(/개인정보 수집·이용에 동의합니다 \(필수\)/)).toBeVisible();
 
-    // [2] 민감정보(건강·진료정보) (필수, 개보법 §23) — consentSensitiveItems verbatim
+    // [2] AC-6 고유식별정보 수집·이용 (별도 필수, 개보법 §24) — ConsentFormDialog UNIQUE_ID verbatim
+    await expect(page.getByText('주민등록번호, 외국인등록번호, 여권번호')).toBeVisible();
+    await expect(page.getByText('의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인')).toBeVisible();
+    await expect(page.getByText('의료법에 따른 진료기록 보존기간 (10년)')).toBeVisible();
+    await expect(page.getByText(/개인정보보호법 §24/)).toBeVisible();
+    await expect(page.getByText(/고유식별정보 수집·이용에 동의합니다 \(별도 필수\)/)).toBeVisible();
+    // 개인정보 수집·이용과 분리된 동의함/동의하지 않음 별도 선택란
+    await expect(page.getByText(/□ 동의함/)).toBeVisible();
+    await expect(page.getByText(/□ 동의하지 않음/)).toBeVisible();
+
+    // [3] 민감정보(건강·진료정보) (필수, 개보법 §23) — consentSensitiveItems verbatim
     await expect(page.getByText('건강정보, 진료기록, 상병명, 처방내역 등 민감 의료정보')).toBeVisible();
     await expect(page.getByText('발건강 케어 및 시술 서비스 제공, 진료 이력 관리')).toBeVisible();
     await expect(page.getByText(/민감정보\(건강·진료정보\) 수집·이용에 동의합니다 \(필수\)/)).toBeVisible();
     await expect(page.getByText(/개인정보보호법 §23/)).toBeVisible();
 
-    // [3] 건강보험 자격조회 (필수) — insuranceConsentNote verbatim
+    // [4] 건강보험 자격조회 (필수) — insuranceConsentNote verbatim
     await expect(page.getByText('성함, 주민등록번호, 건강보험 자격정보')).toBeVisible();
     await expect(page.getByText('진료비 산정 및 청구, 보험 급여 적정성 확인')).toBeVisible();
     await expect(page.getByText(/건강보험 자격조회에 동의합니다 \(필수\)/)).toBeVisible();
 
-    // [4] 예약 안내 문자(SMS) 수신 (선택) — smsOptIn / smsOptInNote verbatim
+    // [5] 예약 안내 문자(SMS) 수신 (선택) — smsOptIn / smsOptInNote verbatim
     await expect(page.getByText(/예약 안내 문자 수신에 동의합니다 \(선택\)/)).toBeVisible();
     await expect(page.getByText(/미동의 시 예약 안내 문자, 홈케어 방법 등 자동 발송 대상에서 제외될 수 있습니다/)).toBeVisible();
 
-    // 공통 보유기간 문구는 필수 3종에 각 1회 = 총 3회 렌더 (strict-mode 다중매치 → count 검증)
+    // 공통 보유기간 문구는 (고유식별 제외) 필수 3종에 각 1회 = 총 3회 렌더
     await expect(page.getByText('관련 법령에 따른 보관 기간 동안 보유')).toHaveCount(3);
 
-    // 항목 라벨 (블록마다 반복 → count 검증)
-    await expect(page.getByText('수집항목', { exact: true })).toHaveCount(3);
-    await expect(page.getByText('수집목적', { exact: true })).toHaveCount(3);
-    await expect(page.getByText('보유기간', { exact: true })).toHaveCount(3);
+    // 항목 라벨 (pcf-note 테이블 블록 = 4개: 개인정보/고유식별/민감정보/건강보험)
+    await expect(page.getByText('수집항목', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('수집목적', { exact: true })).toHaveCount(3); // 고유식별은 '이용목적'
+    await expect(page.getByText('이용목적', { exact: true })).toHaveCount(1); // AC-6 고유식별 블록
+    await expect(page.getByText('보유기간', { exact: true })).toHaveCount(4);
 
-    // 확인 문구(4블록 통합본)
+    // 확인 문구(통합본)
     await expect(page.getByText(/본인은 위 각 항목의 수집·이용 목적 및 항목·보유기간을 충분히 이해/)).toBeVisible();
   });
 

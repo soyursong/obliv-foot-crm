@@ -2672,16 +2672,18 @@ ${COMMON_STYLE}
 const PRIVACY_CONSENT_FORM_HTML = `
 ${COMMON_STYLE}
 <style>
-  .pcf-block { margin-top: 8px; }
-  .pcf-block-head { font-size: 10pt; font-weight: bold; margin-bottom: 3px; }
+  /* T-20260808 AC-7: 블록/줄 간격 확대 — 과밀(다닥다닥) 해소, 가독성 우선 */
+  .pcf-block { margin-top: 18px; }
+  .pcf-block-head { font-size: 10pt; font-weight: bold; margin-bottom: 6px; }
   .pcf-note { border: 1px solid #000; }
-  .pcf-note td { padding: 5px 9px; font-size: 9.3pt; vertical-align: top; line-height: 1.4; }
+  .pcf-note td { padding: 8px 11px; font-size: 9.3pt; vertical-align: top; line-height: 1.65; }
   .pcf-note .pcf-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 20%; white-space: nowrap; }
-  .pcf-consent-line { border: 1px solid #000; border-top: none; padding: 6px 10px; font-size: 9.8pt; font-weight: bold; }
-  .pcf-sms-note { border: 1px solid #000; border-top: none; padding: 6px 10px; font-size: 8.7pt; color: #333; }
-  .pcf-sms-choice { font-weight: normal; margin-left: 10px; }
-  .pcf-sign-tbl { margin-top: 14px; table-layout: fixed; }
-  .pcf-sign-tbl td { height: 30px; }
+  .pcf-consent-line { border: 1px solid #000; border-top: none; padding: 9px 12px; font-size: 9.8pt; font-weight: bold; line-height: 1.5; }
+  .pcf-consent-choice { font-weight: normal; margin-left: 14px; }
+  .pcf-sms-note { border: 1px solid #000; border-top: none; padding: 9px 12px; font-size: 8.7pt; color: #333; line-height: 1.5; }
+  .pcf-sms-choice { font-weight: normal; margin-left: 14px; }
+  .pcf-sign-tbl { margin-top: 22px; table-layout: fixed; }
+  .pcf-sign-tbl td { height: 40px; }
   .pcf-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
   .pcf-sig-cell { width: 28%; }
 </style>
@@ -2692,7 +2694,7 @@ ${COMMON_STYLE}
     <div style="flex:1;"></div>
   </div>
   <div class="subtitle" style="font-size:9.5pt; margin-bottom:2px;">Consent to Collection &amp; Use of Personal Information</div>
-  <div class="subtitle" style="font-size:8.7pt; color:#444; margin-bottom:8px;">※ 셀프접수(태블릿) 오류 시 종이 백업용 — 아래 필수 동의(3종) 및 선택 동의(1종)를 확인 후 서명해 주세요.</div>
+  <div class="subtitle" style="font-size:8.7pt; color:#444; margin-bottom:12px;">※ 셀프접수(태블릿) 오류 시 종이 백업용 — 아래 필수 동의(4종) 및 선택 동의(1종)를 확인 후 서명해 주세요.</div>
 
   <!-- [1] 개인정보 수집·이용 동의 (필수) — SelfCheckIn.tsx privacyConsentLabel / privacyConsentNote -->
   <div class="pcf-block">
@@ -2707,9 +2709,22 @@ ${COMMON_STYLE}
     <div class="pcf-consent-line">□ 개인정보 수집·이용에 동의합니다 (필수)</div>
   </div>
 
-  <!-- [2] 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개보법 §23) — consentSensitiveLabel / consentSensitiveItems -->
+  <!-- [2] 고유식별정보 수집·이용 동의 (별도 필수, 개보법 §24) — T-20260809-CONSENT-...-ADD-LAYOUT ConsentFormDialog UNIQUE_ID 문안 verbatim 재사용 (dev 창작 아님) -->
   <div class="pcf-block">
-    <div class="pcf-block-head">2. 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개인정보보호법 §23)</div>
+    <div class="pcf-block-head">2. 고유식별정보 수집·이용 동의 (별도 필수, 개인정보보호법 §24)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>주민등록번호, 외국인등록번호, 여권번호</td></tr>
+        <tr><td class="pcf-label">이용목적</td><td>의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>의료법에 따른 진료기록 보존기간 (10년)</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">고유식별정보 수집·이용에 동의합니다 (별도 필수)<span class="pcf-consent-choice">□ 동의함    □ 동의하지 않음</span></div>
+  </div>
+
+  <!-- [3] 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개보법 §23) — consentSensitiveLabel / consentSensitiveItems -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">3. 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개인정보보호법 §23)</div>
     <table class="pcf-note">
       <tbody>
         <tr><td class="pcf-label">수집항목</td><td>건강정보, 진료기록, 상병명, 처방내역 등 민감 의료정보</td></tr>
@@ -2720,9 +2735,9 @@ ${COMMON_STYLE}
     <div class="pcf-consent-line">□ 민감정보(건강·진료정보) 수집·이용에 동의합니다 (필수)</div>
   </div>
 
-  <!-- [3] 건강보험 자격조회 동의 (필수) — insuranceConsentLabel / insuranceConsentNote -->
+  <!-- [4] 건강보험 자격조회 동의 (필수) — insuranceConsentLabel / insuranceConsentNote -->
   <div class="pcf-block">
-    <div class="pcf-block-head">3. 건강보험 자격조회 동의 (필수)</div>
+    <div class="pcf-block-head">4. 건강보험 자격조회 동의 (필수)</div>
     <table class="pcf-note">
       <tbody>
         <tr><td class="pcf-label">수집항목</td><td>성함, 주민등록번호, 건강보험 자격정보</td></tr>
@@ -2733,9 +2748,9 @@ ${COMMON_STYLE}
     <div class="pcf-consent-line">□ 건강보험 자격조회에 동의합니다 (필수)</div>
   </div>
 
-  <!-- [4] 예약 안내 문자(SMS) 수신 동의 (선택) — smsOptIn / smsOptInNote -->
+  <!-- [5] 예약 안내 문자(SMS) 수신 동의 (선택) — smsOptIn / smsOptInNote -->
   <div class="pcf-block">
-    <div class="pcf-block-head">4. 예약 안내 문자(SMS) 수신 동의 (선택)</div>
+    <div class="pcf-block-head">5. 예약 안내 문자(SMS) 수신 동의 (선택)</div>
     <div class="pcf-consent-line">예약 안내 문자 수신에 동의합니다 (선택)<span class="pcf-sms-choice">□ 동의    □ 미동의</span></div>
     <div class="pcf-sms-note">미동의 시 예약 안내 문자, 홈케어 방법 등 자동 발송 대상에서 제외될 수 있습니다.</div>
   </div>

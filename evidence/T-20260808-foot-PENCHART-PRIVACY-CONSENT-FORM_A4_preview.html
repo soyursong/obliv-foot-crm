@@ -1,0 +1,218 @@
+<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:0} body{margin:0;background:#fff}</style></head><body>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    .form-wrap {
+      font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', NanumGothic, sans-serif;
+      font-size: 10pt;
+      color: #000;
+      background: #fff;
+      padding: 8mm 10mm;
+      width: 190mm;
+      min-height: 267mm;
+      /* T-20260611-foot-DOC-FORM-TITLE-CENTER-6: 기본 form-wrap(190mm) margin auto 미적용으로
+         page 중앙 대비 제목 ~10mm 좌측 이탈. 좌우 auto 중앙정렬 추가 → 진단서·진료확인서·통원확인서·
+         소견서·진료비납입증명서·의무기록사본발급신청서·소견서v2·보험청구서 일괄 중앙정렬.
+         의뢰서(REFERRAL_LETTER_HTML)는 인라인 margin:12mm auto가 본 규칙을 override → 회귀 없음. */
+      margin: 0 auto;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td, th {
+      border: 1px solid #000;
+      padding: 3px 5px;
+      vertical-align: middle;
+      font-size: 9pt;
+    }
+    th { background: #f0f0f0; font-weight: bold; text-align: center; }
+    .title {
+      text-align: center;
+      font-size: 19pt;
+      font-weight: bold;
+      letter-spacing: 10px;
+      padding: 6px 0 4px;
+    }
+    .subtitle { text-align: center; font-size: 9pt; margin-bottom: 4px; }
+    .section { margin-top: 4px; }
+    .stamp-box {
+      border: 1px solid #000;
+      width: 72px; min-height: 54px;
+      display: inline-flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 8pt; text-align: center;
+      padding: 4px;
+    }
+    .legal-text {
+      font-size: 9pt;
+      border: 1px solid #000;
+      padding: 5px 8px;
+      margin-top: 4px;
+      background: #fff;
+    }
+    .confirm-text {
+      font-size: 11pt;
+      font-weight: bold;
+      text-align: center;
+      padding: 8px 0;
+      border: 1px solid #000;
+      margin-top: 4px;
+    }
+    .row-flex { display: flex; align-items: stretch; }
+    .label-cell {
+      border: 1px solid #000;
+      padding: 3px 6px;
+      background: #f8f8f8;
+      white-space: nowrap;
+      font-size: 9pt;
+      display: flex; align-items: center;
+    }
+    .value-cell {
+      border: 1px solid #000;
+      padding: 3px 6px;
+      flex: 1;
+      font-size: 9pt;
+      min-height: 22px;
+    }
+    .diag-type-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      border: 1px solid #000;
+      padding: 4px 8px;
+      margin-top: -1px;
+    }
+    .diag-type-item { display: flex; align-items: center; gap: 4px; font-size: 9pt; }
+    .circle { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #000; }
+    .circle-filled { background: #111; }
+    .large-area { min-height: 60px; }
+    /* T-20260515-foot-FORM-ONELINE-RX: 라벨 셀 한줄 정렬 — background:#f8f8f8 셀 전체 적용 */
+    td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; text-align: center; }
+    /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 출력물 중앙·여백 배치 전면 재검토(표현 레이어만 — 구조/데이터/발행로직 불변).
+       증상(현장 박장군님): 출력해보니 전체적으로 중앙배치 안 됨 — 위·좌측 쏠림 + 아래 공간 과다.
+       근본원인: 직전 CENTER-ALIGN 은 form-wrap 을 margin:12mm auto 로 .page(210mm) 안에서 CSS상 중앙
+                 정렬했으나, 인쇄창 .page 가 A4 전폭(210mm) full-bleed + @page margin:0 이라 실제 프린트
+                 엔진이 인쇄가능영역(기본여백 적용 시 ~190mm)을 초과 → shrink-to-fit 으로 페이지 전체를
+                 좌상단 앵커로 축소 → 좌·상단 쏠림 + 하단 빈 띠가 잔존(헤드리스 하니스는 @page 여백/축소를
+                 물리 시뮬 못 해 이 갭을 놓침).
+       수정: 중앙배치를 CSS margin 이 아니라 "프린트 엔진의 @page 물리 여백"이 직접 수행하도록 모델 전환.
+             인쇄창(openBatchPrintWindow)·raw 경로(printOpinionDoc)가 @page margin:12mm 10mm 를 소유 →
+             콘텐츠박스(A4-여백 = 190×273mm)가 엔진에 의해 물리적으로 중앙 배치(좌우 10mm·상하 12mm 대칭,
+             축소 없음). form-wrap 은 콘텐츠박스를 채우므로 자체 page 여백을 갖지 않는다(margin:0 auto — auto 는
+             박스가 미세하게 넓을 때의 좌우 중앙 belt). min-height:273mm(=297-24) 유지 → 단일 페이지·넘침/잘림 없음.
+             @page 는 인쇄창 래퍼가 소유 → 템플릿에서 선언하지 않음(중복·landscape 충돌 방지). */
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 인쇄창 @page 상단여백 12mm→30mm 하향에 맞춰
+         콘텐츠박스 높이 273mm→255mm(=297-30-12)로 축소.
+         T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-6): 상단 30mm→23mm(2줄↑) 재조정에 맞춰
+         콘텐츠박스 255mm→262mm(=297-23-12)로 확대 → 하단 12mm 클립가드 유지·단일 페이지·넘침/잘림 없음. */
+      .form-wrap { width: 190mm; min-height: 262mm; padding: 6mm 8mm; margin: 0 auto; }
+      td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; text-align: center; }
+    }
+  </style>
+
+<style>
+  /* T-20260808 AC-7: 블록/줄 간격 확대 — 과밀(다닥다닥) 해소, 가독성 우선 */
+  .pcf-block { margin-top: 18px; }
+  .pcf-block-head { font-size: 10pt; font-weight: bold; margin-bottom: 6px; }
+  .pcf-note { border: 1px solid #000; }
+  .pcf-note td { padding: 8px 11px; font-size: 9.3pt; vertical-align: top; line-height: 1.65; }
+  .pcf-note .pcf-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 20%; white-space: nowrap; }
+  .pcf-consent-line { border: 1px solid #000; border-top: none; padding: 9px 12px; font-size: 9.8pt; font-weight: bold; line-height: 1.5; }
+  .pcf-consent-choice { font-weight: normal; margin-left: 14px; }
+  .pcf-sms-note { border: 1px solid #000; border-top: none; padding: 9px 12px; font-size: 8.7pt; color: #333; line-height: 1.5; }
+  .pcf-sms-choice { font-weight: normal; margin-left: 14px; }
+  .pcf-sign-tbl { margin-top: 22px; table-layout: fixed; }
+  .pcf-sign-tbl td { height: 40px; }
+  .pcf-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
+  .pcf-sig-cell { width: 28%; }
+</style>
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">개인정보 수집·이용 동의서</div>
+    <div style="flex:1;"></div>
+  </div>
+  <div class="subtitle" style="font-size:9.5pt; margin-bottom:2px;">Consent to Collection &amp; Use of Personal Information</div>
+  <div class="subtitle" style="font-size:8.7pt; color:#444; margin-bottom:12px;">※ 셀프접수(태블릿) 오류 시 종이 백업용 — 아래 필수 동의(4종) 및 선택 동의(1종)를 확인 후 서명해 주세요.</div>
+
+  <!-- [1] 개인정보 수집·이용 동의 (필수) — SelfCheckIn.tsx privacyConsentLabel / privacyConsentNote -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">1. 개인정보 수집·이용 동의 (필수)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>성함, 주민등록번호, 연락처, 주소 등 기본 정보</td></tr>
+        <tr><td class="pcf-label">수집목적</td><td>진료를 위한 정보 수집</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>관련 법령에 따른 보관 기간 동안 보유</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">□ 개인정보 수집·이용에 동의합니다 (필수)</div>
+  </div>
+
+  <!-- [2] 고유식별정보 수집·이용 동의 (별도 필수, 개보법 §24) — T-20260809-CONSENT-...-ADD-LAYOUT ConsentFormDialog UNIQUE_ID 문안 verbatim 재사용 (dev 창작 아님) -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">2. 고유식별정보 수집·이용 동의 (별도 필수, 개인정보보호법 §24)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>주민등록번호, 외국인등록번호, 여권번호</td></tr>
+        <tr><td class="pcf-label">이용목적</td><td>의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>의료법에 따른 진료기록 보존기간 (10년)</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">고유식별정보 수집·이용에 동의합니다 (별도 필수)<span class="pcf-consent-choice">□ 동의함    □ 동의하지 않음</span></div>
+  </div>
+
+  <!-- [3] 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개보법 §23) — consentSensitiveLabel / consentSensitiveItems -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">3. 민감정보(건강·진료정보) 수집·이용 동의 (필수, 개인정보보호법 §23)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>건강정보, 진료기록, 상병명, 처방내역 등 민감 의료정보</td></tr>
+        <tr><td class="pcf-label">수집목적</td><td>발건강 케어 및 시술 서비스 제공, 진료 이력 관리</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>관련 법령에 따른 보관 기간 동안 보유</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">□ 민감정보(건강·진료정보) 수집·이용에 동의합니다 (필수)</div>
+  </div>
+
+  <!-- [4] 건강보험 자격조회 동의 (필수) — insuranceConsentLabel / insuranceConsentNote -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">4. 건강보험 자격조회 동의 (필수)</div>
+    <table class="pcf-note">
+      <tbody>
+        <tr><td class="pcf-label">수집항목</td><td>성함, 주민등록번호, 건강보험 자격정보</td></tr>
+        <tr><td class="pcf-label">수집목적</td><td>진료비 산정 및 청구, 보험 급여 적정성 확인</td></tr>
+        <tr><td class="pcf-label">보유기간</td><td>관련 법령에 따른 보관 기간 동안 보유</td></tr>
+      </tbody>
+    </table>
+    <div class="pcf-consent-line">□ 건강보험 자격조회에 동의합니다 (필수)</div>
+  </div>
+
+  <!-- [5] 예약 안내 문자(SMS) 수신 동의 (선택) — smsOptIn / smsOptInNote -->
+  <div class="pcf-block">
+    <div class="pcf-block-head">5. 예약 안내 문자(SMS) 수신 동의 (선택)</div>
+    <div class="pcf-consent-line">예약 안내 문자 수신에 동의합니다 (선택)<span class="pcf-sms-choice">□ 동의    □ 미동의</span></div>
+    <div class="pcf-sms-note">미동의 시 예약 안내 문자, 홈케어 방법 등 자동 발송 대상에서 제외될 수 있습니다.</div>
+  </div>
+
+  <div class="confirm-text" style="margin-top:10px; font-size:10pt;">
+    본인은 위 각 항목의 수집·이용 목적 및 항목·보유기간을 충분히 이해하였으며, 각 동의 항목에 대하여 위와 같이 동의합니다.
+  </div>
+
+  <table class="pcf-sign-tbl">
+    <tbody>
+      <tr>
+        <td class="pcf-sign-label">날짜</td>
+        <td>2026-08-09</td>
+        <td class="pcf-sign-label">성명</td>
+        <td>홍길동</td>
+      </tr>
+      <tr>
+        <td class="pcf-sign-label">서명</td>
+        <td class="pcf-sig-cell"></td>
+        <td class="pcf-sign-label">기관</td>
+        <td>종로 오블리브 풋케어</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+</body></html>
