@@ -181,11 +181,26 @@ report_detached() {
       echo "RESULT: OK"
       return 0
     fi
+    # ERROR = the runner started but could not launch/monitor the build. This is
+    # an INFRA/harness fault, distinct from a genuine build FAIL and never a
+    # silent NONE (T-20260809-meta-QABUILD-SETSID-NOHUP-DETACH). Surface it
+    # loudly with the log tail so the swallow that hid it can never recur.
+    case "$r" in
+      ERROR*)
+        echo "RESULT: ERROR ($r)" >&2
+        echo "---- last 30 lines of $LOG_FILE ----" >&2
+        tail -30 "$LOG_FILE" 2>/dev/null >&2 || true
+        return 4
+        ;;
+    esac
     echo "RESULT: FAIL ($r)" >&2
     echo "---- last 30 lines of $LOG_FILE ----" >&2
     tail -30 "$LOG_FILE" 2>/dev/null >&2 || true
     return "${r#FAIL:}"
   fi
+  # A launch failure is caught eagerly in --bg mode (see LAUNCH_ERR below) and
+  # reported as RESULT: ERROR. Reaching NONE here means no detached build was
+  # ever started (e.g. a bare --status with no prior --bg) — the only honest NONE.
   if build_running; then
     echo "RESULT: RUNNING (detached pid $(cat "$PID_FILE")) — re-run: bash scripts/build.sh --status"
     return 0
@@ -230,11 +245,50 @@ if [ "$MODE" = "bg" ]; then
     mkdir -p "$STATE_DIR"
     rm -f "$RESULT_FILE" "$PID_FILE"
     : > "$LOG_FILE"
-    # Launch fully detached: _build_runner.py calls os.setsid() so it leaves
-    # build.sh's process group and survives the supervisor's foreground kill.
-    nohup python3 "$SCRIPT_DIR/_build_runner.py" \
-      "$TIMEOUT_SECS" "$LOG_FILE" "$RESULT_FILE" "$PID_FILE" >/dev/null 2>&1 &
+    LAUNCH_ERR="$STATE_DIR/build.launch.err"
+    : > "$LAUNCH_ERR"
+    # Launch fully detached. _build_runner.py calls os.setsid() → it becomes a
+    # session leader with no controlling terminal (SIGHUP-immune) and leaves
+    # build.sh's process group, surviving the supervisor's foreground kill.
+    #
+    # NO `nohup` (T-20260809-meta-QABUILD-SETSID-NOHUP-DETACH): setsid already
+    # provides the SIGHUP immunity nohup is for, and wrapping the runner in nohup
+    # on a non-controlling-terminal host (macstudio launchd/Background session)
+    # fails with "nohup: can't detach from console: Inappropriate ioctl for
+    # device". Previously that error was swallowed by `>/dev/null 2>&1`, the
+    # runner never started, and a HEALTHY build silently reported RESULT: NONE —
+    # blinding the fleet-wide deploy-ready build-evidence gate. We now (a) drop
+    # nohup and (b) capture the launcher's stderr to $LAUNCH_ERR instead of
+    # discarding it, so a launch failure surfaces as RESULT: ERROR, never NONE.
+    python3 "$SCRIPT_DIR/_build_runner.py" \
+      "$TIMEOUT_SECS" "$LOG_FILE" "$RESULT_FILE" "$PID_FILE" >/dev/null 2>"$LAUNCH_ERR" &
+    RUNNER_PID=$!
     disown 2>/dev/null || true
+
+    # Launch-failure detection (AC-2, no-silent-failure invariant). The runner
+    # writes PID_FILE within its first ~1s (right after Popen, before the
+    # multi-second build). If the launcher process dies BEFORE producing a
+    # PID_FILE or RESULT_FILE, the launch/exec itself failed — surface its
+    # captured stderr as RESULT: ERROR (never NONE, which reads as "no build was
+    # ever run") and stop early instead of blocking the full foreground deadline.
+    launch_wait=0
+    while [ "$launch_wait" -lt 15 ]; do   # 15 × 0.2s = 3s startup window
+      { [ -f "$PID_FILE" ] || [ -f "$RESULT_FILE" ]; } && break
+      if ! kill -0 "$RUNNER_PID" 2>/dev/null; then
+        # Runner exited before recording a pid/verdict → launch failure.
+        if [ ! -f "$RESULT_FILE" ]; then
+          echo "RESULT: ERROR (detached launch failed — runner exited before start)" >&2
+          if [ -s "$LAUNCH_ERR" ]; then
+            echo "---- launch stderr ----" >&2
+            cat "$LAUNCH_ERR" >&2
+          fi
+          exit 4
+        fi
+        break
+      fi
+      sleep 0.2
+      launch_wait=$(( launch_wait + 1 ))
+    done
     echo "[build.sh] started detached build (timeout ${TIMEOUT_SECS}s, foreground deadline ${DEADLINE}s)"
   fi
   poll_detached
