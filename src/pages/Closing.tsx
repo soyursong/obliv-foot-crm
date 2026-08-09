@@ -24,7 +24,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { isStaffUnlockRole, canEditConfirmedClosing } from '@/lib/permissions';
+import { isStaffUnlockRole, canEditConfirmedClosing, hasOpsAuthority } from '@/lib/permissions';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
@@ -60,7 +60,9 @@ import { PaymentSusuDetailModal } from '@/components/closing/PaymentSusuDetailMo
 // T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 화면의 '일자별 매출 비교(당월 vs 전월)' 데이터/컴포넌트를
 //   일마감 신규 탭으로 재사용(신규 산식 창작 금지·기존 SSOT 그대로 소비). staffBreakdown(실장 개인성과)은 미노출.
 import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSection';
-import { fetchMonthlyComparison, type MonthlyComparison } from '@/lib/mtmSales';
+// T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: 통계>MTM매출 [이번달 목표매출]·[실장별 일별매출] 뷰 재사용(신규 산식 창작 0).
+import MonthlyTargetSection from '@/components/stats/MonthlyTargetSection';
+import { fetchMonthlyComparison, fetchStaffDailyBreakdown, type MonthlyComparison, type StaffDailyBreakdown } from '@/lib/mtmSales';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -330,6 +332,13 @@ export default function Closing() {
   const [confirmedEditMode, setConfirmedEditMode] = useState(false);
   // T-20260525-foot-ROLE-PERM-CUSTOM AC-4 → 6MENU ②: 환불 처리도 동일 6역할 set(기존 admin/manager/consultant/coordinator/therapist 포함, +director).
   const canRefund = isAdminOrManager;
+  // ── T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item5, 접근권한 축소) ──
+  //   '총 매출' 탭 = 매출 surface → cross_crm §12-3 EXCL-3 표준상 has_ops_authority 게이트 대상(T-20260619 RBAC).
+  //   reporter(김주연 총괄) 요건 '관리자 필수 + 일반직원 중 상담실장만' = has_ops_authority(admin/manager role-implied
+  //   + flag 부여된 실장급) 게이트로 정렬(planner GO_WARN 기본해석). 선행 DAYCLOSE-REVENUE-COMPARE-TAB '전직원 열람'을
+  //   authorized supersede(동일 reporter=ops 권위)해 좁힘.
+  //   ★lock-out-safe: DB 역배정 전(전원 admin)엔 admin escape 로 inert(전원 통과) — 역배정 시점에 비로소 실효.
+  const canViewTotalRevenue = hasOpsAuthority(profile);
 
   // T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY (부모 T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST AC-2 자식):
   //   [RC] 주탭(summary/payments/compare)은 구 URL hash(#payments/#compare) 기반, 서브탭(paySubTab)은 useState 만
@@ -369,6 +378,15 @@ export default function Closing() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item5, NAV-BOUNCE parity) ──
+  //   총매출 탭 트리거는 canViewTotalRevenue 시에만 노출하지만, 직접 URL(?tab=compare) 딥링크로 진입할 수 있어
+  //   권한 없는 계정이 compare 탭에 착지하면 요약 탭으로 바운스(탭 숨김 + 직접접근 차단 둘 다 = NAV-BOUNCE 패리티).
+  //   lock-out-safe: 전원 admin 환경에선 canViewTotalRevenue=true 라 바운스 없음(inert).
+  useEffect(() => {
+    if (tab === 'compare' && !canViewTotalRevenue) setTab('summary');
+  }, [tab, canViewTotalRevenue, setTab]);
+
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
   const [actualCash, setActualCash] = useState(0);
@@ -815,8 +833,18 @@ export default function Closing() {
   const compareMonth = date.slice(0, 7); // yyyy-MM
   const { data: monthlyCompare = null, isLoading: compareLoading } = useQuery<MonthlyComparison | null>({
     queryKey: ['closing-monthly-compare', clinic?.id, compareMonth],
-    enabled: !!clinic && tab === 'compare',
+    enabled: !!clinic && tab === 'compare' && canViewTotalRevenue,
     queryFn: () => fetchMonthlyComparison(clinic!.id, `${compareMonth}-01`),
+  });
+
+  // ── T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item2·item3): 실장별 일별 매출 데이터 ──
+  //   통계>MTM매출 대시보드 [실장별 일별매출] 뷰와 '동일 소스'(fetchStaffDailyBreakdown/mtmSales.ts SSOT)를 그대로
+  //   재사용 — 신규 산식/쿼리 창작 0. MonthlyComparisonSection(공유 렌더러)에 staffBreakdown 으로 주입해 통계 화면과
+  //   같은 표를 3번 항목으로 노출. 총매출 열람권(canViewTotalRevenue)자에게만 fetch. 월 단위 캐시(compareMonth).
+  const { data: staffDaily = null, isLoading: staffDailyLoading } = useQuery<StaffDailyBreakdown | null>({
+    queryKey: ['closing-staff-daily', clinic?.id, compareMonth],
+    enabled: !!clinic && tab === 'compare' && canViewTotalRevenue,
+    queryFn: () => fetchStaffDailyBreakdown(clinic!.id, `${compareMonth}-01`),
   });
 
   // ── 기존 마감 데이터로 폼 초기화 ────────────────────────────
@@ -1714,10 +1742,14 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           <TabsTrigger value="payments" className="flex-1 sm:flex-none">
             결제내역 <Badge variant="secondary" className="ml-1.5">{enrichedRows.length}</Badge>
           </TabsTrigger>
-          {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 '일자별 매출 비교(당월 vs 전월)' 재노출 탭(전직원 열람). */}
-          <TabsTrigger value="compare" className="flex-1 sm:flex-none">
-            총 매출
-          </TabsTrigger>
+          {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계 '일자별 매출 비교(당월 vs 전월)' 재노출 탭.
+              T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN (item5): '총 매출' = 매출 surface →
+              canViewTotalRevenue(has_ops_authority) 열람권자에게만 트리거 노출(전직원 열람 supersede). */}
+          {canViewTotalRevenue && (
+            <TabsTrigger value="compare" className="flex-1 sm:flex-none">
+              총 매출
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ════════════════════════ 탭 1: 총 합계 ════════════════════════ */}
@@ -2704,17 +2736,22 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
           </Tabs>
         </TabsContent>
 
-        {/* ════════════════════════ 탭 3: 매출 비교 ════════════════════════ */}
-        {/* T-20260808-foot-DAYCLOSE-REVENUE-COMPARE-TAB: 통계>MTM매출 02섹션 '일자별 매출 비교(당월 vs 전월)'
-            데이터/컴포넌트를 그대로 재사용(신규 산식 없음·통계 화면과 값 동일). 전직원 열람 가능.
-            staffBreakdown=null + showStaffBreakdown={false} → 실장 개인성과(카드 #2)는 노출하지 않음(AC-3 경계). */}
+        {/* ════════════════════════ 탭 3: 총 매출 ════════════════════════ */}
+        {/* T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: '총 매출' 탭 = 통계>MTM매출 대시보드 뷰 3항목 재배치.
+            신규 산식/쿼리 창작 0 — 3항목 모두 통계 대시보드 기존 컴포넌트/뷰를 그대로 소비(쌍방향 연동 정책).
+            순서: 1)이번달 목표매출(read-only) 2)전월대비 매출추이(2단 15일) 3)실장별 일별매출.
+            item5 접근권한: canViewTotalRevenue(has_ops_authority) 게이트 — 트리거 숨김 + NAV-BOUNCE(위 useEffect). */}
         <TabsContent value="compare" className="space-y-4">
-          {/* T-20260809-foot-STATS-EXTRA-DESC-BOX-REMOVE: 요청 안 한 teal 안내 박스 제거(표·값 무접촉). */}
+          {/* 1. 이번달 목표 매출 — 통계 대시보드 [이번달 목표매출] 뷰 재사용, [수정] 버튼만 제거(read-only). */}
+          <MonthlyTargetSection clinicId={clinic?.id} refISO={date} readOnly />
+          {/* 2. 전월 대비 매출 추이(2단 15일) + 3. 실장별 일별 매출 — 통계 공유 렌더러(MonthlyComparisonSection).
+              staffBreakdown 주입 + showStaffBreakdown=true → 통계 대시보드 [실장별 일별매출]과 동일 뷰를 3번 항목으로 노출.
+              (item5로 매출 surface 열람권 게이트가 적용됐으므로 실장 개인성과 노출 경계 충족.) */}
           <MonthlyComparisonSection
             data={monthlyCompare}
-            staffBreakdown={null}
-            loading={compareLoading}
-            showStaffBreakdown={false}
+            staffBreakdown={staffDaily}
+            loading={compareLoading || staffDailyLoading}
+            showStaffBreakdown={true}
           />
         </TabsContent>
       </Tabs>
