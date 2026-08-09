@@ -576,11 +576,20 @@ async function persistSubmissionsAndResolveIssueNo(params: {
     // T-20260806-PMWSAVE-PRESURCHARGE: 처방전 저장본도 동일 빌더 경유(surcharge/paid 토큰은 rx_standard 에서 no-op →
     //   값 불변, 3-site 코드 정합만 확보). 교부번호(rxIssueNo)·연번호(rxVisitNo) 주입은 종전과 동일.
     const rxFieldData = buildFieldData('rx_standard', rxIssueNo, rxVisitNo);
-    const { error: updErr } = await supabase
+    // T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC1): 구조화 rx_items leaf 를 담은 처방전
+    //   field_data 의 authoritative persist. Cross-CRM Write Rows-Affected 검증 표준 — RLS 거부/스코프 불일치 시
+    //   supabase 는 0-row(+error=null)를 반환하므로 error 만으로는 silent write-failure 를 못 잡는다.
+    //   .select('id') 로 실제 반영 행수를 확인해 0-row 를 명시 경보(구조화 leaf 유실 방지).
+    const { data: rxUpd, error: updErr } = await supabase
       .from('form_submissions')
       .update({ field_data: rxFieldData })
-      .eq('id', rxRowId);
-    if (updErr) toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+      .eq('id', rxRowId)
+      .select('id');
+    if (updErr) {
+      toast.error(`교부번호 표시 갱신 실패(번호는 발번됨): ${updErr.message}`);
+    } else if (!rxUpd || rxUpd.length === 0) {
+      toast.error('처방전 저장 확인 실패(반영된 행 없음) — 수량·교부번호가 저장되지 않았을 수 있습니다. 다시 시도해 주세요.');
+    }
   }
   return { rxIssueNo, visitNoByTemplateId };
 }
@@ -626,19 +635,31 @@ function buildCodeEnrichedValues(
   // T-20260517-foot-RX-DOSAGE-DYNAMIC: per-item 독립값, 미입력 시 1/1/7 fallback
   if (formKey === 'rx_standard') {
     const rxItems = codeItems.filter((i) => (i.service.category_label ?? '') === '처방약');
-    values.rx_items_html = buildRxItemsHtml(rxItems.map((i) => ({
-      name: i.service.name,
-      // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량 전파 → qty>1 시 '약품명 ×N' 표기(처방전·처방이력).
-      qty: i.qty,
+    // ── T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC1/AC2/AC3) ──
+    //   구조화 rx_items leaf 를 단일 in-memory SSOT 로 먼저 조립한 뒤 (a) buildRxItemsHtml 입력(표시) 과
+    //   (b) field_data.rx_items(persist) 양쪽에 동일 객체를 사용 → display=persist 동일 SSOT.
+    //   canonical 수량 키 = total_qty(AC3, bare count/quantity/qty 금지).
+    const rxItemsLeaf = rxItems.map((i) => ({
       // T-20260718-foot-RXPRINT-DRUGCODE-PREFIX: 서비스관리 등록 약 코드(services.service_code) 앞 표기.
-      code: i.service.service_code,
+      code: i.service.service_code ?? null,
+      name: i.service.name,
+      // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD → RECONCILE(AC3): 처방약 수량 canonical=total_qty.
+      //   total_qty>1 시 '약품명 ×N' 표기(처방전·처방이력). SelectedItem.qty(하한 1) 를 canonical 키로 승격.
+      total_qty: i.qty,
       unit_dose: rxItemDosages?.[i.service.id]?.unit_dose || '1',
       daily_freq: rxItemDosages?.[i.service.id]?.daily_freq || '1',
       // T-20260721-foot-RXPRINT-TOTALDAYS-BLANK (총괄 김주연 최종): 세 칸 전부 기본 '1' + 수기 수정 가능.
       //   결제미니창 경로(buildCodeEnrichedValues)와 DocumentPrintPanel 경로는 평행 — 반드시 동시 유지(한쪽만 '' 두면 재오픈).
       //   구 T-20260718 LOGIC-LOCK(빈칸이 정답) 해제. 자동 산출 바인딩 아님 — 리터럴 '1' + editable. 구 '7' 폴백 부활 금지.
       total_days: rxItemDosages?.[i.service.id]?.total_days || '1',
-    })));
+    }));
+    // (a) 표시: buildRxItemsHtml 이 구조화 leaf 의 total_qty 를 읽어 ×N 렌더(AC2).
+    values.rx_items_html = buildRxItemsHtml(rxItemsLeaf);
+    // (b) persist: 구조화 rx_items leaf 를 field_data 에 ADDITIVE 저장(AC1) — 수량이 rx_items_html 문자열에만
+    //   착지(단독착지·DA HARD REJECT 패턴)하지 않도록 canonical total_qty 를 구조화 배열로 병행 persist.
+    //   ⚠ field_data 는 JSONB — 중첩 배열 저장 가능(스키마 변경 0, db_change=false). rx_items_html 은 그대로 유지(ADDITIVE).
+    //   bindHtmlTemplate 은 {{key}} placeholder 만 치환하며 {{rx_items}} placeholder 는 없으므로 렌더 무영향.
+    (values as Record<string, unknown>).rx_items = rxItemsLeaf;
     // T-20260601-foot-DOC-PRINT-8FIX AC-3②: 사용기간 기본 3일 통일 (총투약일수 연동 제거)
     if (!values.usage_days) values.usage_days = '3';
     // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST 경로B): 교부번호 = 발행 시점 채번·persist된 확정 문자열(8+N자리) 주입.

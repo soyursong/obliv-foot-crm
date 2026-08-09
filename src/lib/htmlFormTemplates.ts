@@ -3060,8 +3060,13 @@ export function buildRxItemsHtml(
     //   있으면 약품명 앞에 '코드 | ' prefix 표기, 없으면(NULL/공백) 코드 없이 약품명만(AC3 fallback).
     //   T-20260718-foot-RXPRINT-FORMAT-ADJUST (항목2): 구분자 대괄호 '[코드]' → 파이프 '코드 |'.
     code?: string | null;
-    // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: 처방약 수량. qty>1 일 때만 약품명 뒤 ' ×N' 표기.
-    //   미전달(undefined)/1 이면 접미 없음 → 기존 호출부(DocumentPrintPanel 등) 하위호환 유지(AC4).
+    // T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC3): 처방약 수량 canonical 키 = total_qty.
+    //   구조화 leaf(form_submissions.field_data.rx_items[])와 동일 키로 통일 → display=persist 동일 SSOT(AC2).
+    //   total_qty>1 일 때만 약품명 뒤 ' ×N' 표기. 미전달/1 이면 접미 없음.
+    total_qty?: number;
+    // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD (deprecated · AC4 하위호환 폴백): 구 bare `qty` 키.
+    //   신규 경로는 total_qty 사용. total_qty 미전달 시에만 qty 로 폴백(기존 호출부·구 저장본 무회귀).
+    //   ⚠ bare count/quantity 키는 금지(AC3) — canonical=total_qty, legacy fallback=qty 만 허용.
     qty?: number;
     unit_dose?: string;
     daily_freq?: string;
@@ -3079,8 +3084,11 @@ export function buildRxItemsHtml(
       const base = (item.code ?? '').trim()
         ? `${(item.code ?? '').trim()} | ${item.name}`
         : item.name;
-      // T-20260807-foot-PAYMINI-RX-QTY-INPUT-FIELD: qty>1 시 '바르토벤 ×2' 형태 접미. 처방전 인쇄·처방이력 공통.
-      return typeof item.qty === 'number' && item.qty > 1 ? `${base} ×${item.qty}` : base;
+      // T-20260809-foot-PAYMINI-RX-QTY-STRUCTURED-LEAF-RECONCILE (AC2/AC3/AC4):
+      //   canonical=total_qty(구조화 leaf 키) 우선, 미전달 시 legacy qty 폴백(구 호출부·구 저장본 무회귀).
+      //   qty>1 시 '바르토벤 ×2' 형태 접미. 처방전 인쇄·처방이력 공통 SSOT.
+      const effectiveQty = typeof item.total_qty === 'number' ? item.total_qty : item.qty;
+      return typeof effectiveQty === 'number' && effectiveQty > 1 ? `${base} ×${effectiveQty}` : base;
     })(),
     unit_dose: item.unit_dose ?? '',
     daily_freq: item.daily_freq ?? '',
