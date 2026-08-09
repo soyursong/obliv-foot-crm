@@ -147,9 +147,30 @@ export default function MonthlyComparisonSection({
                 <DailyCompareHalf points={data.points.filter((p) => p.day >= 16)} />
               </div>
 
-              {/* 합계(당월 전체 = 좌+우 합) — 2단 분할과 무관하게 1회만 표시, 값 불변(AC-3). */}
+              {/*
+                합계(당월 전체 = 좌+우 합) — 2단 분할과 무관하게 1회만 표시, 값 불변(AC-3).
+                T-20260809-foot-SALESCOMPARE-TOTAL-LABEL-SYNC (AC-1):
+                  합계는 위 반쪽 표(1~15/16~말일)와 물리적으로 떨어진 별도 <table> 라 위쪽 머리글(당월/전월/증감)이
+                  닿지 않아 "어느 게 당월/전월인지" 모호 → 합계 표에 자체 <thead> 머리글을 붙여 합계만 봐도 즉시 구분.
+                  컬럼 순서·값·증감 산식은 위 반쪽 표와 동일(당월 → 전월 → 증감), 값 무접촉(AC-3).
+                ★ AC-2 연동 불변식: 이 컴포넌트는 통계(Stats.tsx)·일마감(Closing.tsx)이 함께 소비하는 단일
+                  공유 렌더러다. 라벨/레이아웃은 여기 1곳에서만 수정한다 — 소비처별 분기(한쪽에만 머리글 부여 등)
+                  절대 금지. 여기를 고치면 통계·일마감 양쪽이 동일하게 반영된다.
+              */}
               <div className="overflow-auto rounded-lg border bg-background text-xs">
                 <table className="w-full border-collapse">
+                  <thead className="bg-muted/70">
+                    <tr data-testid="mtm-compare-total-head">
+                      {['구분', '당월', '전월', '증감(당월−전월)'].map((h) => (
+                        <th
+                          key={h}
+                          className="whitespace-nowrap border-b px-3 py-2 text-right font-medium text-muted-foreground first:text-left"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
                   <tbody>
                     <tr className="bg-muted/40 font-semibold">
                       <td className="px-3 py-2">합계</td>
