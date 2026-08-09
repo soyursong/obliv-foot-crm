@@ -96,3 +96,11 @@
 #   실환자 재식별 0. NAME='[PMW-KEEPOPEN-TEST] 수납대기' + before/afterAll cleanup(phone 기준) 즉시 정리.
 #   provenance: tests/e2e/T-20260727-foot-PMW-SETTLE-KEEPMINIWINDOW-OPEN.spec.ts. 리뷰 게이트: dev-foot 자가확인, supervisor QA.
 \+?821099998827
+
+# ── T-20260810-foot-ARCHE-PORPHAN-CORRECTION GO-token runner sha256 오탐 (2026-08-10) ──
+#   DB-GATE GO-token content-binding = 러너 스크립트 sha256
+#   02554b3168bd07062a9ff38241223194649b1c0190942801b1529f23ed4753fe.
+#   그 hex 슬라이스 '0190942801' 이 019-prefix phone 으로 오탐됨(암호학적 해시·실환자 phone 아님).
+#   등장: db-gate/..._GO.token.json / db-gate/..._dbgate.md / scripts/issue_go_token_porphan_T-20260810.mjs.
+#   리뷰 게이트: supervisor DB-GATE QA(본인).
+0190942801

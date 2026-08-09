@@ -1,0 +1,17 @@
+{
+ "ticket_id": "T-20260810-foot-ARCHE-PORPHAN-CORRECTION",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-09T17:42:31.941Z",
+ "expires_at": "2026-08-09T18:27:31.941Z",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "02554b3168bd07062a9ff38241223194649b1c0190942801b1529f23ed4753fe",
+ "runner_file": "scripts/T-20260810-foot-ARCHE-PORPHAN-CORRECTION_apply.mjs",
+ "lane": "data-correction-mjs-runner",
+ "change_class": "DATA-CORRECTION (FK fill-on-NULL · DDL 0 · 매출축 무접촉 · reversible)",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "a2980e4f16baada3",
+ "da_consult_reply": "MSG-20260810-015024-v8dg (DA-20260810-foot-ARCHE-PORPHAN-CORRECTION-SPEC · verdict=조건부 GO · db_change=false · fork-parity from scalp2). signals L85 corroborated. ⚠ SSOT doc da_decision_foot_arche_porphan_correction_spec_20260810.md 파일 미작성(citation-gap, DA 백필 통지) — 판정 자체는 MQ+signals+ticket changelog 3중 실재.",
+ "ceo_gate": "N/A — DDL 0 · db_change=false · 62 freeze 한정 reversible FK backfill · DA GO → 대표 게이트 면제(autonomy §3.1).",
+ "precheck": "DB-GATE PASS(2026-08-10, supervisor). deploy-precheck: C0 fresh(no prior NO-GO) · C2 db_only exempt VALID(deploy commit f1215b6e = scripts/+evidence/ only, no src/) · C3 rollback_sql 동봉(before-image 기반 package_session_id→NULL) · C11/C12 N/A(DDL 0·data UPDATE만) · C18/C21 CLEAN(signals+MQ 대상 DA HOLD/RETRACT 0) · C28 N/A(check_in_services FK·staff role/active/owner 무접촉) · C29 N/A(웹번들 무). dry-run 독립 재현 PASS: freeze live 62==frozen 62 · novel=0(Q5 seal 정합) · A_resolvable 28 / B_ambiguous 0 / B_absent 34 = census 일치. plan 무결성: pick_ps_id 28 distinct(double-claim 0) · after==null 0 · before!=null 0(preserve-on-NULL 준수). 매출축 불변: package_session_id(FK) 만 write · Σprice 27,950,000 / Σorigprice 34,200,000 / flag_true 111 불변. B-absent 34 무접촉(현장확정 void 라우팅·본 apply 미포함). AF-2 per-row 확인 완료: 비가열레이저-AF 2건(89443cb7/ae8fcdb3) 모두 동일 check_in_id+customer 상 유일 unclaimed status=used ps 로 결선 · 매핑오류 시 downside=non-match(mis-link 아님) · reversible. apply 대상=A-resolvable 28(POSTCHECK rows==28 · P-orphan 62→34 · healthy 49→77). 러너 HARD-GATE=GO-token+sig+--i-have-go-token."
+}

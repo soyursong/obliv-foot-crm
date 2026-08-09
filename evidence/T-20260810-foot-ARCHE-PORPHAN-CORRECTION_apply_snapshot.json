@@ -1,6 +1,6 @@
 {
   "ticket": "T-20260810-foot-ARCHE-PORPHAN-CORRECTION",
-  "mode": "dry-run",
+  "mode": "apply-done",
   "generated_ref": "rxlomoozakkjesdqjtvd",
   "da_ssot": "agents/docs/da_replies/da_decision_foot_arche_porphan_correction_spec_20260810.md",
   "q5_forward_seal": "H1 (seal) — evidence/T-20260810-foot-ARCHE-PORPHAN-CORRECTION_forensic_seal_result.md",
@@ -592,5 +592,14 @@
     "UPDATE check_in_services SET package_session_id='331ccb53-f84d-4fee-b72f-b9d80c749e17' WHERE id='144d1c1d-5be2-4a8a-b4ca-1e7799bfdef7' AND is_package_session=true AND package_session_id IS NULL; -- +25 more",
     "UPDATE check_in_services SET package_session_id='419c57a9-281c-4d41-8f6f-9ec88acffcf2' WHERE id='1616ed7c-208f-42e0-8681-3e42b52cf3ee' AND is_package_session=true AND package_session_id IS NULL; -- +25 more",
     "UPDATE check_in_services SET package_session_id='8b7b9c72-e4ae-469f-bbcb-5449cb61d1cf' WHERE id='17509664-422b-4a96-9b4a-306247b08133' AND is_package_session=true AND package_session_id IS NULL; -- +25 more"
-  ]
+  ],
+  "rows_affected": 28,
+  "invariant_after": {
+    "porphan": 34,
+    "healthy": 77,
+    "flag_true_total": 111,
+    "sum_price_flagged": 27950000,
+    "sum_origprice_flagged": 34200000
+  },
+  "postcheck_pass": true
 }
