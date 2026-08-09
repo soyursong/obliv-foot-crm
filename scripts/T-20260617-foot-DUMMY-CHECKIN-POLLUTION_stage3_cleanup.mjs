@@ -16,7 +16,7 @@
  *   AND checked_in_at::date(KST) = 2026-06-17
  *
  * 안전장치:
- *   1) 후보 재조회 → 개수 검증(예상 30, 35 초과 시 ABORT)
+ *   1) 후보 재조회 → 개수 검증(정확히 30 아니면 ABORT — supervisor GO 조건#1 uaxa: 무음 하향 진행 금지, 편차 시 STOP+재게이트)
  *   2) reservation_id 연결 행이 한 건이라도 잡히면 ABORT(현장 체크인 보호)
  *   3) 실환자 가드: 삭제 대상 이름에 윤민희/김진화/이시형(실체험단) 포함 시 ABORT
  *   4) check_ins 자식 FK 행(비-CASCADE) 존재 시 ABORT(요청 전 재게이트)
@@ -101,9 +101,17 @@ async function main() {
   const ids = (cand ?? []).map((c) => c.id);
   console.log(`check_ins 후보 ${ids.length}건`);
 
-  // 2) 개수 sanity
-  if (ids.length === 0) { console.log('대상 0건 — 종료(이미 정리됨?).'); return; }
-  if (ids.length > 35) throw new Error(`ABORT: 후보 ${ids.length}건 > 35 예상초과. 키 재검토 필요.`);
+  // 2) 개수 sanity — supervisor GO 조건#1(MSG-20260810-070658-uaxa): fresh COUNT==30 정확 assert.
+  //    54일 staleness 방어. 정확히 30이 아니면(0·27~29·31+ 등 어떤 편차든) 무음 하향 진행 금지 →
+  //    STOP + supervisor/planner 보고 후 재게이트. freeze셋 재검증 abort.
+  const EXPECTED = 30;
+  if (ids.length !== EXPECTED) {
+    throw new Error(
+      `ABORT(조건#1): fresh COUNT=${ids.length} != 예상 ${EXPECTED}. ` +
+      `54일 out-of-band 변동 신호 — 무음 진행 금지. STOP + supervisor/planner 보고 후 재게이트.`
+    );
+  }
+  console.log(`✅ 조건#1 통과: fresh COUNT=${ids.length} == ${EXPECTED} (exact assert).`);
 
   // 2-b) reservation_id 연결 행 방어
   const linked = (cand ?? []).filter((c) => c.reservation_id);
