@@ -63,6 +63,32 @@ export async function searchServiceRxDrugs(query: string): Promise<ServiceRxDrug
   }));
 }
 
+/**
+ * T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER (AC-1) —
+ *   치료테이블>처방이력 약 드롭다운 옵션의 '처방약 마스터 교차검증' 축.
+ *   services category_label='처방약' 전건(코드+약품명)을 clinic 범위로 조회.
+ *
+ *   ⚠️ active 무필터(과거 처방됐으나 현재 비활성화된 약이 옵션에서 오제외되는 것 방지 — AC-6 정상약 누락 최소화).
+ *      searchServiceRxDrugs(처방세트 빌더용)은 active=true 로 '선택 가능 약'만 보이나, 본 함수는
+ *      '과거 발행이력의 처방약 여부 판정'용이므로 비활성 약도 처방약으로 인정한다.
+ *   ⚠️ read-only 1건 — 발행이력 축(form_submissions)과 직교(VG3). prescriptions/prescription_items 무접촉(AC-3).
+ */
+export async function fetchRxDrugMaster(clinicId: string): Promise<ServiceRxDrug[]> {
+  if (!clinicId) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('services')
+    .select('id,name,service_code')
+    .eq('clinic_id', clinicId)
+    .eq('category_label', '처방약');
+  if (error) throw error;
+  return ((data ?? []) as { id: string; name: string; service_code: string | null }[]).map((r) => ({
+    id: `${r.id}`,
+    name: r.name,
+    service_code: r.service_code ?? null,
+  }));
+}
+
 export interface PrescribableDrug {
   id: string;
   name_ko: string;

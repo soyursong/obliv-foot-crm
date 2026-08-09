@@ -149,6 +149,99 @@ export function collectDistinctMedications(
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER — 약 드롭다운 옵션 처방약 마스터 교차검증
+//   (planner Option A GO, MSG-20260809-104632-hiim)
+//
+// ★ 문제(AC-2 조사·재정의): 드롭다운 옵션 소스 = collectDistinctMedications(발행이력 파싱)이므로 옵션은
+//   전부 발행이력 ≥1건 → 원 AC-1('0건 제외')은 no-op. 실제 오염 = 비처방약 라인 혼입
+//   (진찰료 'AA154 | 초진진찰료-의원'·검사 'D620300HZ | 일반진균검사-KOH도말' 등이 rx_items_html 스냅샷에
+//    섞여 약 드롭다운을 오염, 스크린샷 F0BP36UHB7E 입증).
+//
+// ★ 필터 지점(AC-1 재정의): 파싱토큰의 코드(prefix) '또는' 약품명이 services(category_label='처방약') 마스터에
+//   존재하는 항목만 노출. 진찰료·검사·상병코드 등 비처방약 라인은 자동 제외. 코드/약품명 양축 매칭(AC-6 (a)).
+//
+// ★ 축 직교(AC-3·VG3): services(약 마스터 축) ⊥ form_submissions(발행 이력 축). services read-only 조회 1건은
+//   prescriptions/prescription_items(dead skeleton) 무접촉 → AC-3 금지대상 아님. dual-source 발행이력 신설 아님.
+//
+// ★ 토큰 형식(buildRxItemsHtml 결합): '[코드 | ]약품명[ ×N]'. 코드=파이프 앞, 약품명=파이프 뒤(없으면 전체),
+//   ' ×N'(수량 접미)는 매칭 전 제거.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 처방약 마스터 1건(services category_label='처방약' 투영). 교차검증 축(AC-1). */
+export interface RxDrugMasterEntry {
+  service_code?: string | null;
+  name?: string | null;
+}
+
+/** 처방약 마스터 정규화 매칭 인덱스(코드 집합 + 약품명 집합). 소문자·trim 정규화. */
+export interface RxDrugMasterIndex {
+  codes: Set<string>;
+  names: Set<string>;
+}
+
+/** 매칭 정규화 — trim + 소문자(코드 대소문자·공백 편차 흡수). 빈 값은 ''. */
+function normMatchKey(v: unknown): string {
+  return v == null ? '' : String(v).trim().toLowerCase();
+}
+
+/** services(category_label='처방약') 행들 → 코드/약품명 매칭 인덱스(AC-1 교차검증 준비). */
+export function buildRxDrugMasterIndex(
+  entries: RxDrugMasterEntry[] | null | undefined,
+): RxDrugMasterIndex {
+  const codes = new Set<string>();
+  const names = new Set<string>();
+  for (const e of entries ?? []) {
+    const c = normMatchKey(e.service_code);
+    if (c) codes.add(c);
+    const n = normMatchKey(e.name);
+    if (n) names.add(n);
+  }
+  return { codes, names };
+}
+
+/**
+ * 의약품 표시 토큰('[코드 | ]약품명[ ×N]') → { code, name } 파싱(교차검증 키 추출).
+ *   - 수량 접미 ' ×N'(buildRxItemsHtml qty>1 표기) 제거 후 파싱.
+ *   - 파이프('|') 있으면 앞=코드, 뒤=약품명. 없으면 코드 null, 전체=약품명(자유텍스트 약).
+ */
+export function parseMedicationToken(token: string): { code: string | null; name: string } {
+  const noQty = token.replace(/\s*×\s*\d+\s*$/u, '').trim();
+  const pipeIdx = noQty.indexOf('|');
+  if (pipeIdx >= 0) {
+    return {
+      code: noQty.slice(0, pipeIdx).trim() || null,
+      name: noQty.slice(pipeIdx + 1).trim(),
+    };
+  }
+  return { code: null, name: noQty };
+}
+
+/**
+ * AC-1 약 드롭다운 옵션 처방약 마스터 교차검증 — 코드 '또는' 약품명이 마스터에 있는 옵션만 통과.
+ *   AC-6 (a) 양축 매칭(하나라도 매칭 시 노출) — 코드 없는 자유텍스트 정상약 누락 최소화.
+ *   AC-6 (b) 제외된 토큰 목록을 함께 반환 → deploy-ready evidence / supervisor·field-soak 육안검증.
+ *
+ * @param medications collectDistinctMedications 산출 옵션 목록(정렬 보존)
+ * @param index       buildRxDrugMasterIndex(services category_label='처방약') 산출
+ * @returns { kept, excluded } — kept=처방약 매칭 옵션, excluded=제외된(비처방약 추정) 옵션
+ */
+export function filterMedicationsByRxMaster(
+  medications: readonly string[] | null | undefined,
+  index: RxDrugMasterIndex,
+): { kept: string[]; excluded: string[] } {
+  const kept: string[] = [];
+  const excluded: string[] = [];
+  for (const med of medications ?? []) {
+    const { code, name } = parseMedicationToken(med);
+    const codeHit = !!code && index.codes.has(code.toLowerCase());
+    const nameHit = !!name && index.names.has(name.toLowerCase());
+    if (codeHit || nameHit) kept.push(med);
+    else excluded.push(med);
+  }
+  return { kept, excluded };
+}
+
 /** 특정 약품명을 처방(발행)받은 행만 필터. 정확 일치(약명 전체) 기준. (단일 선택 = 복수 선택의 1-원소 특수형) */
 export function filterRxRowsByMedication<T extends Pick<RxIssuanceRow, 'medications'>>(
   rows: T[] | null | undefined,

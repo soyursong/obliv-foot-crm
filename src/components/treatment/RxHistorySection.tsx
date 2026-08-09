@@ -28,7 +28,7 @@
 //
 // write 범위: 숨김(soft-delete) UPDATE 1종만(deleted_at/by). hard-DELETE 0 / DDL 0 / 원장(payments·service_charges) 무접촉.
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
   Loader2,
@@ -68,9 +68,12 @@ import {
   dedupeRxIssuanceRows,
   sortRxRowsByIssuedDateDesc,
   splitRepresentativeMedications,
+  buildRxDrugMasterIndex,
+  filterMedicationsByRxMaster,
   type RxIssuancePatientRow,
   type RawFormSubmissionWithCustomerRow,
 } from '@/lib/rxIssuanceHistory';
+import { fetchRxDrugMaster, type ServiceRxDrug } from '@/lib/prescribableDrugs';
 import { downloadRxHistoryExcel, rxHistoryExportFilename } from '@/lib/rxHistoryExport';
 
 /** 발행 이력 조회 상한(전체 발행 494건 규모 — DA-20260806 기준). read-only 목록 조회. */
@@ -100,6 +103,19 @@ function useRxIssuanceHistory(clinicId: string | undefined) {
       return mapRxIssuancePatientRows((data ?? []) as unknown as RawFormSubmissionWithCustomerRow[]);
     },
     refetchInterval: 60_000,
+  });
+}
+
+/**
+ * T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER (AC-1) — 처방약 마스터(교차검증 축) 로드.
+ *   services(category_label='처방약') 전건. read-only 1건(발행이력 축과 직교·AC-3 무저촉).
+ */
+function useRxDrugMaster(clinicId: string | undefined) {
+  return useQuery<ServiceRxDrug[]>({
+    queryKey: ['rx_drug_master', clinicId],
+    enabled: !!clinicId,
+    queryFn: () => fetchRxDrugMaster(clinicId as string),
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -147,6 +163,8 @@ export default function RxHistorySection() {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
   const { data: allRows = [], isLoading, isError } = useRxIssuanceHistory(clinic?.id);
+  // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: 처방약 마스터(드롭다운 옵션 교차검증 축, AC-1).
+  const { data: rxDrugMaster } = useRxDrugMaster(clinic?.id);
   // AC-3: 성함/차트번호 클릭 → 2번차트 팝업(공통 훅, openChart 게이트웨이 재사용).
   const openChartNo = useChartNoPopup();
 
@@ -199,7 +217,30 @@ export default function RxHistorySection() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const medications = useMemo(() => collectDistinctMedications(allRows), [allRows]);
-  const drugOptions = useMemo(() => medications.map((m) => ({ value: m, label: m })), [medications]);
+
+  // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER (AC-1): 약 드롭다운 옵션을 처방약 마스터와
+  //   교차검증(코드/약품명 양축) → 비처방약 라인(진찰료·검사·상병) 제외. 결과목록/dedup/필터는 무회귀(AC-4).
+  //   ★ fail-open 가드: 마스터 미로드/0건이면 전체 옵션 노출(대량 오제외 방지, AC-6). 로드 후에만 필터 적용.
+  const { kept: keptMeds, excluded: excludedMeds } = useMemo(() => {
+    if (!rxDrugMaster || rxDrugMaster.length === 0) {
+      return { kept: medications, excluded: [] as string[] };
+    }
+    const index = buildRxDrugMasterIndex(rxDrugMaster);
+    return filterMedicationsByRxMaster(medications, index);
+  }, [medications, rxDrugMaster]);
+
+  // AC-6 (b): 처방약 마스터 미매칭으로 제외된 토큰을 dev-side 로그로 수집 →
+  //   deploy-ready evidence + supervisor QA/field-soak '정상 약 오제외 없는지' 육안검증 근거.
+  useEffect(() => {
+    if (excludedMeds.length > 0) {
+      console.info(
+        `[RXHIST-DRUGLIST-FILTER] 처방약 마스터(services category_label='처방약') 미매칭으로 드롭다운에서 제외된 토큰 ${excludedMeds.length}건:`,
+        excludedMeds,
+      );
+    }
+  }, [excludedMeds]);
+
+  const drugOptions = useMemo(() => keptMeds.map((m) => ({ value: m, label: m })), [keptMeds]);
 
   // 파이프라인: 기간 필터(AC-1) → 실처방 dedup(AC-2) → 약품 필터(AC-4, 선택 시)
   //   → 처방일자(교부일) 내림차순 안정 정렬(T-20260809-RXHIST-PATIENTLIST-DATESORT AC-1).

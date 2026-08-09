@@ -187,6 +187,12 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: 처방이력 약 드롭다운 옵션을 처방약 마스터
+        //   (services category_label='처방약')와 코드/약품명 양축 교차검증 → 비처방약 라인(진찰료 AA154·검사
+        //   D620300HZ) 제외(Option A). parseMedicationToken/buildRxDrugMasterIndex/filterMedicationsByRxMaster
+        //   순수함수 단언 + fail-open 가드 + 결과행 필터 무회귀(AC-4). auth/DB/server 불요·결정론(read-side, db_change=false).
+        //   진짜 UI 관측 + 제외토큰 육안검증(AC-6) = supervisor field-soak.
+        '**/T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER.spec.ts',
         // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 신규 양식.
         //   HTML 템플릿(getHtmlTemplate/bindHtmlTemplate) 렌더 + 서류목록 배선(FORM_META/DOCLIST_ORDER_10/
         //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. auth/DB/server 불요·결정론.
@@ -690,6 +696,10 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: unit 전용(토큰 파서/마스터 인덱스/교차검증
+        //   순수 함수 + fail-open 가드). 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)
+        //   유입 차단. unit 에서만 실행(브라우저 스모크는 로그인 실패 시 graceful skip).
+        '**/T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER.spec.ts',
         // T-20260808-foot-RXHIST-HIDE-SOFTDELETE: unit 전용(dedup member_ids 순수 함수 + 소스 정적 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260808-foot-RXHIST-HIDE-SOFTDELETE.spec.ts',
