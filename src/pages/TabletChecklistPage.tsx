@@ -103,6 +103,15 @@ const PRIVACY_TEXT = [
   '4. 동의를 거부할 권리가 있으나, 거부 시 시술이 제한될 수 있습니다.',
 ];
 
+// 고유식별정보 수집 동의 (필수) — 개보법 §24 별도 필수 동의
+// T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT
+const UNIQUE_ID_TEXT = [
+  '1. 수집 항목: 주민등록번호, 외국인등록번호, 여권번호',
+  '2. 이용 목적: 의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인',
+  '3. 보유 기간: 의료법에 따른 진료기록 보존기간 (10년)',
+  '4. 고유식별정보는 관련 법령에 근거하여 수집되며, 동의를 거부할 경우 본인확인 및 건강보험 적용이 제한될 수 있습니다.',
+];
+
 const MARKETING_TEXT = [
   '1. 수집 항목: 성함, 연락처',
   '2. 수집 목적: 마케팅 정보 발송 (이벤트·신규 시술 안내)',
@@ -134,6 +143,8 @@ interface ChecklistData {
   family_history: string;         // 가족력
   // 개인정보 동의
   agree_privacy: boolean;
+  // 고유식별정보 수집 동의 (필수) — 개보법 §24
+  agree_unique_id: boolean;
   agree_marketing: boolean;
   // 유입 경로
   referral_source: string;
@@ -156,6 +167,7 @@ const initialData = (): ChecklistData => ({
   prior_conditions: '',
   family_history: '',
   agree_privacy: false,
+  agree_unique_id: false,
   agree_marketing: false,
   referral_source: '',
 });
@@ -354,6 +366,10 @@ export default function TabletChecklistPage() {
     if (!checkInId || !info) return;
     if (!data.agree_privacy) {
       alert('개인정보 수집·이용에 동의해주세요 (필수)');
+      return;
+    }
+    if (!data.agree_unique_id) {
+      alert('고유식별정보 수집·이용에 동의해주세요 (필수)');
       return;
     }
     if (sigRef.current?.isEmpty()) {
@@ -588,7 +604,7 @@ export default function TabletChecklistPage() {
           {/* 개인정보 동의 */}
           <section className="space-y-4 rounded-2xl p-5" style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
             <SectionHeader num={1} title="개인정보 수집·이용 동의 (필수)" />
-            <div className="space-y-1 text-sm leading-relaxed" style={{ color: C.mutedText }}>
+            <div className="space-y-2 text-sm leading-relaxed" style={{ color: C.mutedText }}>
               {PRIVACY_TEXT.map((line, i) => <p key={i}>{line}</p>)}
             </div>
             <label className="flex items-center gap-3 cursor-pointer pt-1">
@@ -604,10 +620,29 @@ export default function TabletChecklistPage() {
             </label>
           </section>
 
+          {/* 고유식별정보 수집 동의 (필수) — 개보법 §24 / T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT */}
+          <section className="space-y-4 rounded-2xl p-5" style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
+            <SectionHeader num={2} title="고유식별정보 수집·이용 동의 (필수)" />
+            <div className="space-y-2 text-sm leading-relaxed" style={{ color: C.mutedText }}>
+              {UNIQUE_ID_TEXT.map((line, i) => <p key={i}>{line}</p>)}
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={d.agree_unique_id}
+                onChange={(e) => set('agree_unique_id', e.target.checked)}
+                className="h-6 w-6 rounded border-gray-300 accent-teal-600"
+              />
+              <span className="text-base font-medium" style={{ color: C.dark }}>
+                위 내용을 확인하였으며 고유식별정보 수집·이용에 동의합니다.
+              </span>
+            </label>
+          </section>
+
           {/* 마케팅 동의 */}
           <section className="space-y-4 rounded-2xl p-5" style={{ backgroundColor: 'white', border: `1.5px solid #E5E7EB` }}>
             <h3 className="text-base font-semibold" style={{ color: C.mutedText }}>마케팅 정보 수신 동의 (선택)</h3>
-            <div className="space-y-1 text-sm leading-relaxed" style={{ color: C.mutedText }}>
+            <div className="space-y-2 text-sm leading-relaxed" style={{ color: C.mutedText }}>
               {MARKETING_TEXT.map((line, i) => <p key={i}>{line}</p>)}
             </div>
             <label className="flex items-center gap-3 cursor-pointer pt-1">
@@ -624,7 +659,7 @@ export default function TabletChecklistPage() {
           {/* 서명 */}
           <section className="space-y-4 rounded-2xl p-5" style={{ backgroundColor: 'white', border: `1.5px solid ${C.border}` }}>
             <div className="flex items-center justify-between">
-              <SectionHeader num={2} title="서명 *" />
+              <SectionHeader num={3} title="서명 *" />
               <button
                 type="button"
                 onClick={() => { sigRef.current?.clear(); setSigEmpty(true); }}
@@ -652,11 +687,17 @@ export default function TabletChecklistPage() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!d.agree_privacy || sigEmpty}
+            disabled={!d.agree_privacy || !d.agree_unique_id || sigEmpty}
             className="w-full rounded-2xl py-5 text-xl font-bold text-white transition active:scale-[0.99] disabled:opacity-40"
-            style={{ backgroundColor: (!d.agree_privacy || sigEmpty) ? C.mutedText : C.primary }}
+            style={{ backgroundColor: (!d.agree_privacy || !d.agree_unique_id || sigEmpty) ? C.mutedText : C.primary }}
           >
-            {!d.agree_privacy ? '개인정보 동의 필요' : sigEmpty ? '서명이 필요합니다' : '✓ 작성 완료'}
+            {!d.agree_privacy
+              ? '개인정보 동의 필요'
+              : !d.agree_unique_id
+                ? '고유식별정보 동의 필요'
+                : sigEmpty
+                  ? '서명이 필요합니다'
+                  : '✓ 작성 완료'}
           </button>
         </main>
       </div>

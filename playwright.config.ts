@@ -198,6 +198,12 @@ export default defineConfig({
         //   순수함수 단언 + fail-open 가드 + 결과행 필터 무회귀(AC-4). auth/DB/server 불요·결정론(read-side, db_change=false).
         //   진짜 UI 관측 + 제외토큰 육안검증(AC-6) = supervisor field-soak.
         '**/T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER.spec.ts',
+        // T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT: 고유식별정보 수집 동의(필수) 신규 추가 2곳
+        //   (셀프접수 TabletChecklistPage agree_unique_id 섹션+필수게이트 / 팬차트 ConsentFormDialog unique_id
+        //   FormType) + 동의 텍스트 줄간격 완화. consent_forms.form_type CHECK 5값 확장(da_consult_ref
+        //   DA-20260809-foot-CONSENT-UNIQUEID-FORMTYPE, db_change=true+MIG-GATE). 정적 소스/계약 가드
+        //   (auth/DB/server 불요·결정론). 실 UI(태블릿 셀프접수+팬차트 동의서)+persist = supervisor field-soak.
+        '**/T-20260809-foot-CONSENT-SELFCHECKIN-CONTENT-ADD-LAYOUT.spec.ts',
         // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서 신규 양식.
         //   HTML 템플릿(getHtmlTemplate/bindHtmlTemplate) 렌더 + 서류목록 배선(FORM_META/DOCLIST_ORDER_10/
         //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. auth/DB/server 불요·결정론.
