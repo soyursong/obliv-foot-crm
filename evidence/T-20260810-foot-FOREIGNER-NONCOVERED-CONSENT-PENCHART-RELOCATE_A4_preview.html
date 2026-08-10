@@ -1,0 +1,192 @@
+<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:0} body{margin:0;background:#fff}</style></head><body>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    .form-wrap {
+      font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', NanumGothic, sans-serif;
+      font-size: 10pt;
+      color: #000;
+      background: #fff;
+      padding: 8mm 10mm;
+      width: 190mm;
+      min-height: 267mm;
+      /* T-20260611-foot-DOC-FORM-TITLE-CENTER-6: 기본 form-wrap(190mm) margin auto 미적용으로
+         page 중앙 대비 제목 ~10mm 좌측 이탈. 좌우 auto 중앙정렬 추가 → 진단서·진료확인서·통원확인서·
+         소견서·진료비납입증명서·의무기록사본발급신청서·소견서v2·보험청구서 일괄 중앙정렬.
+         의뢰서(REFERRAL_LETTER_HTML)는 인라인 margin:12mm auto가 본 규칙을 override → 회귀 없음. */
+      margin: 0 auto;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td, th {
+      border: 1px solid #000;
+      padding: 3px 5px;
+      vertical-align: middle;
+      font-size: 9pt;
+    }
+    th { background: #f0f0f0; font-weight: bold; text-align: center; }
+    .title {
+      text-align: center;
+      font-size: 19pt;
+      font-weight: bold;
+      letter-spacing: 10px;
+      padding: 6px 0 4px;
+    }
+    .subtitle { text-align: center; font-size: 9pt; margin-bottom: 4px; }
+    .section { margin-top: 4px; }
+    .stamp-box {
+      border: 1px solid #000;
+      width: 72px; min-height: 54px;
+      display: inline-flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 8pt; text-align: center;
+      padding: 4px;
+    }
+    .legal-text {
+      font-size: 9pt;
+      border: 1px solid #000;
+      padding: 5px 8px;
+      margin-top: 4px;
+      background: #fff;
+    }
+    .confirm-text {
+      font-size: 11pt;
+      font-weight: bold;
+      text-align: center;
+      padding: 8px 0;
+      border: 1px solid #000;
+      margin-top: 4px;
+    }
+    .row-flex { display: flex; align-items: stretch; }
+    .label-cell {
+      border: 1px solid #000;
+      padding: 3px 6px;
+      background: #f8f8f8;
+      white-space: nowrap;
+      font-size: 9pt;
+      display: flex; align-items: center;
+    }
+    .value-cell {
+      border: 1px solid #000;
+      padding: 3px 6px;
+      flex: 1;
+      font-size: 9pt;
+      min-height: 22px;
+    }
+    .diag-type-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      border: 1px solid #000;
+      padding: 4px 8px;
+      margin-top: -1px;
+    }
+    .diag-type-item { display: flex; align-items: center; gap: 4px; font-size: 9pt; }
+    .circle { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #000; }
+    .circle-filled { background: #111; }
+    .large-area { min-height: 60px; }
+    /* T-20260515-foot-FORM-ONELINE-RX: 라벨 셀 한줄 정렬 — background:#f8f8f8 셀 전체 적용 */
+    td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; text-align: center; }
+    /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 출력물 중앙·여백 배치 전면 재검토(표현 레이어만 — 구조/데이터/발행로직 불변).
+       증상(현장 박장군님): 출력해보니 전체적으로 중앙배치 안 됨 — 위·좌측 쏠림 + 아래 공간 과다.
+       근본원인: 직전 CENTER-ALIGN 은 form-wrap 을 margin:12mm auto 로 .page(210mm) 안에서 CSS상 중앙
+                 정렬했으나, 인쇄창 .page 가 A4 전폭(210mm) full-bleed + @page margin:0 이라 실제 프린트
+                 엔진이 인쇄가능영역(기본여백 적용 시 ~190mm)을 초과 → shrink-to-fit 으로 페이지 전체를
+                 좌상단 앵커로 축소 → 좌·상단 쏠림 + 하단 빈 띠가 잔존(헤드리스 하니스는 @page 여백/축소를
+                 물리 시뮬 못 해 이 갭을 놓침).
+       수정: 중앙배치를 CSS margin 이 아니라 "프린트 엔진의 @page 물리 여백"이 직접 수행하도록 모델 전환.
+             인쇄창(openBatchPrintWindow)·raw 경로(printOpinionDoc)가 @page margin:12mm 10mm 를 소유 →
+             콘텐츠박스(A4-여백 = 190×273mm)가 엔진에 의해 물리적으로 중앙 배치(좌우 10mm·상하 12mm 대칭,
+             축소 없음). form-wrap 은 콘텐츠박스를 채우므로 자체 page 여백을 갖지 않는다(margin:0 auto — auto 는
+             박스가 미세하게 넓을 때의 좌우 중앙 belt). min-height:273mm(=297-24) 유지 → 단일 페이지·넘침/잘림 없음.
+             @page 는 인쇄창 래퍼가 소유 → 템플릿에서 선언하지 않음(중복·landscape 충돌 방지). */
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-5): 인쇄창 @page 상단여백 12mm→30mm 하향에 맞춰
+         콘텐츠박스 높이 273mm→255mm(=297-30-12)로 축소.
+         T-20260629-foot-DOCPRINT-CENTER-ALIGN(REOPEN/AC-6): 상단 30mm→23mm(2줄↑) 재조정에 맞춰
+         콘텐츠박스 255mm→262mm(=297-23-12)로 확대 → 하단 12mm 클립가드 유지·단일 페이지·넘침/잘림 없음. */
+      .form-wrap { width: 190mm; min-height: 262mm; padding: 6mm 8mm; margin: 0 auto; }
+      td[style*="background:#f8f8f8"] { white-space: nowrap; font-size: 8.5pt; text-align: center; }
+    }
+  </style>
+
+<style>
+  .fnc-clause { border: 1px solid #000; margin-top: 4px; padding: 6px 9px; }
+  .fnc-clause-head { font-size: 10pt; font-weight: bold; margin-bottom: 3px; }
+  .fnc-ko { font-size: 9.5pt; line-height: 1.5; }
+  .fnc-en { font-size: 8.5pt; line-height: 1.45; color: #333; margin-top: 2px; }
+  .fnc-ko li, .fnc-en li { margin-left: 16px; }
+  .fnc-sign-tbl { margin-top: 14px; table-layout: fixed; }
+  .fnc-sign-tbl td { height: 30px; }
+  .fnc-sign-label { background: #f0f0f0; font-weight: bold; text-align: center; width: 22%; }
+  .fnc-sig-cell { width: 28%; }
+</style>
+<div class="form-wrap">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1px;">
+    <div style="flex:1"></div>
+    <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">외국인 비급여 진료 동의서</div>
+    <div style="flex:1;"></div>
+  </div>
+  <div class="subtitle" style="font-size:10pt; margin-bottom:6px;">Agreement on Non-Covered Medical Treatment &amp; Fees</div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">1. 비급여 진료 안내 / Non-Covered Medical Care</div>
+    <div class="fnc-ko">한국 건강보험이 적용되지 않는 외국인 환자는 전액 비급여 진료가 적용됨을 안내드립니다.</div>
+    <div class="fnc-en">As a foreign patient not covered by Korean National Health Insurance, all medical treatment is provided on a fully non-covered (out-of-pocket) basis.</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">2. 진료 및 서비스 비용 / Medical &amp; Service Fees</div>
+    <div class="fnc-ko">본치료비 및 장치·재료비 외에 의사 진찰료 및 관리사 서비스 비용이 별도로 부과됨에 동의합니다.</div>
+    <div class="fnc-en">I agree that, in addition to the treatment fee and device/material costs, a separate physician consultation fee and practitioner service fee will be charged.</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">3. 포도로게(교정기) 관련 안내 / Podology (Orthotic Device) Terms</div>
+    <ul class="fnc-ko">
+      <li>장치 장착 후 출국 시, 사후 관리(재조정·추가 시술)가 제한될 수 있습니다.</li>
+      <li>귀국 후 추가 처치가 필요한 경우 그 비용은 환자 본인이 부담합니다.</li>
+      <li>교정 결과는 개인의 발 상태에 따라 차이가 있을 수 있습니다.</li>
+    </ul>
+    <ul class="fnc-en">
+      <li>If you leave Korea after the device is fitted, follow-up care (readjustment / additional procedures) may be limited.</li>
+      <li>Any additional treatment required after returning to your home country shall be borne by the patient.</li>
+      <li>Correction results may vary depending on each individual's foot condition.</li>
+    </ul>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">4. 원내 정책 및 책임 범위 / Clinic Policy &amp; Scope of Responsibility</div>
+    <div class="fnc-ko">본원은 의료 서비스만을 제공하며, 비의료적 개인 요청(택시 호출, 출입국 관련 서명 등)에는 응할 의무가 없습니다.</div>
+    <div class="fnc-en">The clinic provides medical services only and is under no obligation to fulfill non-medical personal requests (e.g., calling a taxi, signing immigration-related documents).</div>
+  </div>
+
+  <div class="fnc-clause">
+    <div class="fnc-clause-head">5. 수납 및 환불 정책 / Payment &amp; Refund Policy</div>
+    <div class="fnc-ko">상담 및 시술 후 발생한 진료비의 납부에 동의하며, 이미 완료된 서비스에 대해서는 환불이 불가함을 확인합니다.</div>
+    <div class="fnc-en">I agree to pay the fees incurred after consultation and treatment, and I acknowledge that services already rendered are non-refundable.</div>
+  </div>
+
+  <div class="confirm-text" style="margin-top:8px; font-size:10pt;">
+    본인은 위 내용을 충분히 이해하였으며 이에 동의합니다.<br>
+    <span style="font-weight:normal; font-size:8.5pt;">I have fully read and understood the above and hereby agree to its terms.</span>
+  </div>
+
+  <table class="fnc-sign-tbl">
+    <tbody>
+      <tr>
+        <td class="fnc-sign-label">날짜 / Date</td>
+        <td>2026. 8. 10.</td>
+        <td class="fnc-sign-label">성명 / Name</td>
+        <td>홍길동</td>
+      </tr>
+      <tr>
+        <td class="fnc-sign-label">서명 / Signature</td>
+        <td class="fnc-sig-cell"></td>
+        <td class="fnc-sign-label">기관 / Clinic</td>
+        <td>종로 오블리브 풋케어</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+</body></html>

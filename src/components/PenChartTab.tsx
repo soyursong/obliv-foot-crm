@@ -80,6 +80,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatDateTimeDots } from '@/lib/format';
+// T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: 외국인 비급여 진료 동의서 HTML 서식
+//   (verbatim 재사용) 을 펜차트 배경으로 래스터화하기 위한 템플릿 getter + 바인딩.
+import { getHtmlTemplate, bindHtmlTemplate } from '@/lib/htmlFormTemplates';
 import {
   BookOpen, ClipboardList, Download, Eraser, Highlighter, Pencil, Plus, RotateCcw,
   Save, Trash2, Type, X, ChevronLeft, FileText, Undo2, TextCursorInput, Paintbrush,
@@ -165,6 +168,19 @@ export const BUILTIN_REFUND_CONSENT: Template = {
   template_path: '/forms/refund_consent.png',
   template_format: 'pdf_overlay',
   form_key: 'refund_consent',
+};
+
+// T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE (SPEC-CORRECTION/MOVE):
+//   외국인 비급여 진료 동의서 — canonical 위치 = 펜차트 양식 탭(A4 손서명·2-layer 합성 저장).
+//   PNG 배경(refund_consent 식) 대신 HTML 서식(FOREIGNER_NONCOVERED_CONSENT_HTML)을 런타임 래스터화해
+//   배경으로 사용(template_format='html_render'). 코드-드리븐 builtin — 서식 노출에 DB seed 행 불요(db_change=false).
+//   template_path='' — 배경은 htmlRenderBgUrl(html2canvas data URL)로 주입(initBgCanvas 분기).
+export const BUILTIN_FOREIGNER_CONSENT: Template = {
+  id: 'builtin-foreigner-noncovered-consent',
+  name_ko: '외국인 비급여 진료 동의서',
+  template_path: '',
+  template_format: 'html_render',
+  form_key: 'foreigner_noncovered_consent',
 };
 
 // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0:
@@ -501,6 +517,10 @@ const isRefundConsentKey = (k: string) => k === 'refund_consent';
 /** T-20260522-foot-PENCHART-HIRES-FORM: 개인정보+체크리스트 양식 (배경 PNG 있음, 서명 불필요) */
 const isPersonalChecklistKey = (k: string) => k.startsWith('personal_checklist_');
 
+/** T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: HTML 서식을 런타임 래스터화해 배경으로
+ *  쓰는 양식(PNG 배경 대신 html2canvas data URL). 현재 대상: 외국인 비급여 진료 동의서. */
+const isHtmlRenderFormKey = (k: string) => k === 'foreigner_noncovered_consent';
+
 /**
  * T-20260731-foot-PENCHART-PHOTO-ATTACH: 저장 파일명 prefix(양식 종류 판별).
  *   handleDrawSave(저장 파일명 발번)와 stem-pre-binding(작성창 진입 시 선발번) 양쪽이
@@ -511,6 +531,8 @@ const filePrefixForFormKey = (formKey?: string): string => {
   if (formKey && isHealthQFormKey(formKey)) return `hq_${formKey === 'health_questionnaire_senior' ? 'sr_' : ''}`;
   if (formKey && isRefundConsentKey(formKey)) return 'rc_';
   if (formKey && isPersonalChecklistKey(formKey)) return `pc_${formKey === 'personal_checklist_senior' ? 'sr_' : ''}`;
+  // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: 외국인 비급여 진료 동의서 저장 파일 prefix.
+  if (formKey && isHtmlRenderFormKey(formKey)) return 'fnc_';
   return '';
 };
 
@@ -946,6 +968,10 @@ export function PenChartTab({
   /** T-20260520-foot-PENCHART-REFUND-FORM: 환불/비급여 동의서 템플릿 */
   const [refundConsentTemplate, setRefundConsentTemplate] = useState<Template | null>(null);
   const [templateImgUrl, setTemplateImgUrl] = useState<string | null>(null);
+  // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: HTML 서식(외국인 비급여 진료 동의서)을
+  //   html2canvas 로 A4 이미지(data URL)로 래스터화한 결과 — 펜차트 bgCanvas 배경으로 사용(손서명 위에 합성).
+  //   FOREIGNER_NONCOVERED_CONSENT_HTML(verbatim) + 날짜(오늘)·성명(환자) 바인딩 후 render. 신규작성 시만 채움.
+  const [htmlRenderBgUrl, setHtmlRenderBgUrl] = useState<string | null>(null);
   // T-20260528-foot-PENCHART-NEWWIN: popupMode=true 시 list 건너뛰고 select 에서 시작
   const [mode, setMode] = useState<TabMode>(popupMode ? 'select' : 'list');
   /** draw 모드에서 현재 활성 양식 (pen_chart | health_questionnaire_* | refund_consent) */
@@ -1235,6 +1261,59 @@ export function PenChartTab({
       autofillDataRef.current = null;
     }
   }, [activeDrawTemplate, customerName, customerBirthDate, customerChartNumber, customerRrn]);
+
+  // ── T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE ──────
+  //   외국인 비급여 진료 동의서(HTML 서식)를 A4 이미지(data URL)로 래스터화해 펜차트 bgCanvas 배경으로 준비.
+  //   - 문안 = FOREIGNER_NONCOVERED_CONSENT_HTML(verbatim, getHtmlTemplate) + 날짜(오늘)·성명(환자) 바인딩(AC2/AC3).
+  //   - 신규작성(!editingChart) & 활성 양식이 html-render 대상일 때만 render. 그 외엔 null(다른 양식 무영향).
+  //   - 수정(editingChart) 재진입은 저장본 합성 PNG(editingChart.url)를 bg 로 쓰므로 render 스킵(중복 방지).
+  //   - data URL(same-origin) → bgCanvas CORS-taint 없음 → 저장(toDataURL) 안전(AC5 2-layer 합성).
+  //   - 오프스크린 A4(794×1123) 컨테이너 render 후 즉시 제거 → 전역 스타일 오염 최소화(KohResultDialog 패턴 준용).
+  useEffect(() => {
+    let cancelled = false;
+    const fk = activeDrawTemplate?.form_key ?? '';
+    if (!activeDrawTemplate || !isHtmlRenderFormKey(fk) || editingChart) {
+      setHtmlRenderBgUrl(null);
+      return;
+    }
+    (async () => {
+      let host: HTMLDivElement | null = null;
+      try {
+        const tplHtml = getHtmlTemplate(fk);
+        if (!tplHtml) { console.error('[PenChartTab] html-render 템플릿 없음:', fk); return; }
+        const bound = bindHtmlTemplate(tplHtml, {
+          issue_date: new Date().toLocaleDateString('ko-KR'),
+          patient_name: customerName ?? '',
+        });
+        // 오프스크린 A4 컨테이너(논리 794×1123, 흰 배경) — form-wrap(190mm≈718px)이 margin auto 로 중앙정렬.
+        host = document.createElement('div');
+        host.setAttribute('data-fnc-render', '1');
+        host.style.cssText =
+          'position:fixed; left:-99999px; top:0; width:794px; min-height:1123px; background:#ffffff; z-index:-1; overflow:hidden;';
+        host.innerHTML = bound;
+        document.body.appendChild(host);
+        const { default: html2canvas } = await import('html2canvas');
+        const rendered = await html2canvas(host, {
+          scale: DRAW_DPR,          // 물리 1588×2246 (A4 192DPI) — bgCanvas 물리 해상도와 1:1 정합
+          backgroundColor: '#ffffff',
+          width: 794,
+          height: 1123,             // 단일 A4(폼 실측 1009px < 1123px → 넘침/멀티페이지 불요, self-preview 검증)
+          windowWidth: 794,
+          logging: false,
+          useCORS: true,
+        });
+        const dataUrl = rendered.toDataURL('image/png');
+        if (!cancelled) setHtmlRenderBgUrl(dataUrl);
+      } catch (e) {
+        console.error('[PenChartTab] 외국인 비급여 동의서 HTML 래스터화 실패:', e);
+        if (!cancelled) setHtmlRenderBgUrl(null);
+      } finally {
+        if (host && host.parentNode) host.parentNode.removeChild(host);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDrawTemplate, customerName, editingChart]);
 
   // ── 저장된 차트 목록 로드 ────────────────────────────────────────────
   const loadSavedCharts = useCallback(async () => {
@@ -1682,6 +1761,10 @@ export function PenChartTab({
       isPersonalChecklistKey(activeDrawTemplate.form_key)
     )) {
       bgUrl = activeDrawTemplate.template_path ?? null;
+    } else if (activeDrawTemplate && isHtmlRenderFormKey(activeDrawTemplate.form_key)) {
+      // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: HTML 서식 래스터화 결과(data URL)를 배경으로.
+      //   아직 render 미완이면 null → 흰 배경 유지, 준비되면 htmlRenderBgUrl dep 변경으로 재초기화되어 그려짐.
+      bgUrl = htmlRenderBgUrl;
     } else {
       bgUrl = templateImgUrl;
     }
@@ -1899,7 +1982,9 @@ export function PenChartTab({
       };
       img.src = bgUrl;
     }
-  }, [templateImgUrl, activeDrawTemplate, editingChart]);
+    // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: htmlRenderBgUrl 준비 완료 시 재초기화되어
+    //   외국인 동의서 배경이 그려지도록 dep 추가(다른 양식은 htmlRenderBgUrl=null 로 무영향).
+  }, [templateImgUrl, activeDrawTemplate, editingChart, htmlRenderBgUrl]);
 
   // ── T-20260806-foot-PENCHART-ERASER-LAYER-ISOLATE: 원본 빈 양식 오프스크린 렌더 ──
   //   수정(edit) 모드에서만 필요. bg(=저장본 합성본)와 별개로, '원본 빈 양식 템플릿'을 물리 치수 오프스크린에
@@ -3659,6 +3744,27 @@ export function PenChartTab({
                 </span>
               </button>
             )}
+
+            {/* T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-RELOCATE:
+                외국인 비급여 진료 동의서 — 서류 발행 화면(오배치)에서 펜차트 양식 탭으로 재배치.
+                코드-드리븐 builtin(BUILTIN_FOREIGNER_CONSENT, template_format='html_render') → DB seed 불요.
+                선택 시 activeDrawTemplate=foreigner_noncovered_consent → HTML 서식(5조항 국·영문)을
+                html2canvas 로 A4 배경 래스터화(useEffect) 후 손서명 2-layer 합성. 날짜=오늘·성명=환자 자동. */}
+            <button
+              onClick={() => handleSelectTemplate(BUILTIN_FOREIGNER_CONSENT)}
+              className="flex items-center gap-3 rounded-lg border-2 border-neutral-200 bg-neutral-50 p-4 text-left hover:border-neutral-400 hover:bg-neutral-100 transition"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-200">
+                <FileText className="h-5 w-5 text-neutral-700" />
+              </div>
+              <div>
+                <div className="font-semibold text-neutral-800 text-sm">외국인 비급여 진료 동의서</div>
+                <div className="text-xs text-neutral-600 mt-0.5">Agreement on Non-Covered Medical Treatment &amp; Fees (5조항 국·영문)</div>
+              </div>
+              <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
+                A4 손서명
+              </span>
+            </button>
           </div>
         </div>
         </div>

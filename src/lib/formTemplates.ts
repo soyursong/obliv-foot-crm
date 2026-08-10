@@ -782,7 +782,12 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
     requires_signature: false,
     // 동의서 = 데스크/코디·매니저 등 접수/상담 접점 직군 발행. (의료 게이트 서류 아님)
     required_role: 'admin|manager|coordinator|therapist',
-    active: true,
+    // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE (SPEC-CORRECTION/MOVE):
+    //   외국인 비급여 진료 동의서의 canonical 위치 = 펜차트 양식 탭(PenChartTab, A4 손서명·2-layer 합성 저장).
+    //   서류 발행 화면(DocumentPrintPanel)에서는 비활성 de-list — active=false(reversible, hard-DELETE 지양).
+    //   DOCLIST_ORDER_10 화이트리스트/DOC_CATEGORY_CONSENT_KEYS 에서도 제거(둘 다 정합, AC4).
+    //   운영 DB seed row 는 마이그(20260810..._active_false)로 동형 active=false.
+    active: false,
     sort_order: 120,
   },
   // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서 (종이 백업용).
@@ -1210,9 +1215,10 @@ export const DOCLIST_ORDER_10: ReadonlyArray<string> = [
   // T-20260728-foot-DOCFORM-FIRSTVISIT-MGMTRECORD: 초진 관리기록지(신규). 제증명이 아닌 내부 관리기록 →
   //   '관리기록' 그룹(DOC_CATEGORY_MGMTRECORD_KEYS)으로 별도 귀속. 진열은 기존 11종 뒤(맨 아래).
   'first_visit_mgmt_record', // 12. 초진 관리기록지
-  // T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM: 외국인 비급여 진료 동의서(신규). 제증명/관리기록이 아닌
-  //   동의서 → '동의서' 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 별도 귀속. 진열은 맨 아래.
-  'foreigner_noncovered_consent', // 13. 외국인 비급여 진료 동의서
+  // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE (SPEC-CORRECTION/MOVE):
+  //   외국인 비급여 진료 동의서(foreigner_noncovered_consent)는 canonical 위치를 펜차트 양식 탭(PenChartTab)으로
+  //   이전 → 서류 발행 화면 목록에서 de-list(화이트리스트에서 제거). FALLBACK active=false + DB seed active=false 병행.
+  //   (구 T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM 이 서류 발행 화면에 올린 것은 오배치 → 본 티켓으로 정정.)
   // T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM: 개인정보 수집·이용 동의서(신규). 셀프접수 오류 종이 백업 →
   //   '동의서' 그룹(DOC_CATEGORY_CONSENT_KEYS)으로 귀속. 진열은 맨 아래.
   'privacy_consent_form', // 14. 개인정보 수집·이용 동의서
@@ -1309,7 +1315,8 @@ export const DOC_CATEGORY_MGMTRECORD_KEYS: ReadonlyArray<string> = [
  * 향후 동의서 계열 서류 유입 시 여기에 추가.
  */
 export const DOC_CATEGORY_CONSENT_KEYS: ReadonlyArray<string> = [
-  'foreigner_noncovered_consent', // 외국인 비급여 진료 동의서
+  // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: 외국인 비급여 진료 동의서는
+  //   펜차트 양식 탭으로 이전(서류 발행 화면 de-list) → '동의서' 그룹 멤버십에서 제거.
   'privacy_consent_form',         // 개인정보 수집·이용 동의서 (T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM)
 ];
 
