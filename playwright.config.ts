@@ -190,6 +190,14 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: 진찰료 30% 가산 service_charges 영속(Option B) FE call-site 재배선.
+        //   수납 grain(computeConsultationSurchargeBase + surchargeRate)이 서버 RPC 모델(calc_copayment=copayFromBase
+        //   미러, base×(1+rate) grade-keyed)과 divergence 0 임을 순수함수로 실증(AC-1/AC-3/AC-4) + 회귀(rate=0 byte-identical)
+        //   + PMW p_surcharge_rate 재배선/reconcile source-level 가드. auth/DB/server 불요·결정론. 실 RPC write = supervisor field-soak.
+        '**/T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB.spec.ts',
+        // T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER: 결함③ p_surcharge_rate 회귀가드(PHASEB 개정본 = polarity flip,
+        //   재배선 존재 + kind-gate + reconcile 이중가산0 source-level 고정). 원 소유=archived 티켓, PHASEB coordinate 개정.
+        '**/T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER.spec.ts',
         // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: packages 헤더 급여/비급여 회차 split.
         //   isInsuranceSplitValid/isInsuranceSplitBothEntered/formatInsuranceSplit 순수함수 단언
         //   (VG2 자기검증 = DB partial CHECK 동형 · 펜차트 '12회 (비11/가1)' 표시 포맷).
