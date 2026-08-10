@@ -37,6 +37,17 @@ description = "Database connection URI with embedded plaintext password (use env
 regex = '''(?i)postgres(ql)?://[^\s:'"@/]+:[^\s'"@/${}]{3,}@'''
 keywords = ["postgres://", "postgresql://"]
 
+# --- Supabase Personal Access Token (PAT) 전용 룰 ---
+# T-20260810-meta-PAT-SECRETSCAN-COVERAGE-HARDEN (부모 T-20260810-meta-ACCOUNTWIDE-PAT-STORAGE-LEAKSCAN-VERIFY AC-2)
+# gitleaks 8.30.1 default 룰셋에 Supabase PAT(sbp_…) 전용 룰 부재 실증 → keyword 비인접 bare-paste
+# (로그/티켓에 토큰 문자열만 붙여넣기) 미탐 갭. account-wide PAT 1개 = 전 Supabase 프로젝트 권한 →
+# 단일 유출 폭발반경 = 전 프로젝트. keyword 를 토큰 prefix 'sbp_' 자체로 두어 bare paste 도 탐지.
+[[rules]]
+id = "supabase-personal-access-token"
+description = "Supabase Personal Access Token (sbp_...)"
+regex = '''\bsbp_[A-Za-z0-9]{40}\b'''
+keywords = ["sbp_"]
+
 [allowlist]
 description = "env 주입·플레이스홀더·필드명·타입속성은 허용"
 regexes = [
