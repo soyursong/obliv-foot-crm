@@ -3251,6 +3251,19 @@ function QuickReservationDialog({
       return;
     }
 
+    // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 빠른 예약 추가도 유입경로 canonical 상속.
+    //   연결고객(customerId)이 있으면 그 최초유입(customers.first_inflow_channel)을 예약행에 승계(재입력 없음).
+    //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
+    //   forward-only·first-write-wins. 미연결/미각인 고객은 null(무해 — 신규 코드 생성 안 함).
+    let inheritedInflowQuick: string | null = null;
+    if (customerId) {
+      const { data: qc } = await supabase
+        .from('customers')
+        .select('first_inflow_channel')
+        .eq('id', customerId)
+        .maybeSingle();
+      inheritedInflowQuick = (qc as { first_inflow_channel?: string | null } | null)?.first_inflow_channel ?? null;
+    }
     const { error } = await supabase.from('reservations').insert({
       clinic_id: clinicId,
       customer_id: customerId ?? null,
@@ -3261,6 +3274,7 @@ function QuickReservationDialog({
       visit_type: form.visit_type,
       booking_memo: form.booking_memo.trim() || null, // T-20260504-foot-MEMO-RESTRUCTURE
       status: 'confirmed',
+      inflow_channel: inheritedInflowQuick,
       created_by: createdBy,
       // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 대시보드 즉석 예약생성 = 수기 → manual.
       created_via: RESERVATION_CREATED_VIA.MANUAL,
