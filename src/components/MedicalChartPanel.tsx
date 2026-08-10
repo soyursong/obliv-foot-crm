@@ -4077,41 +4077,13 @@ export default function MedicalChartPanel({
                     })()}
                   </div>
 
-                  {/* T-20260611-foot-MEDCHART-2COL-LABEL-CLEANUP AC-3 row3: 치료사차트(좌) | 치료메모(우) 2단 grid.
-                      TREATMEMO-CHART-MERGE(치료메모를 치료사차트 하단에 통합)를 본 티켓이 좌우 2단으로 재분리.
-                      AC-1: '읽기전용' 텍스트/배지 미표시(라벨만). AC-2: '치료메모' 태그형 버튼(배지) 아닌 일반 라벨.
-                      읽기전용 동작(formTx readOnly/disabled, treatMemos 뷰어) 무변경 — 배치만 좌우 2단.
-                      좁은 폭(<sm)은 1단 자연 collapse. */}
-                  <div className="flex flex-col sm:flex-row gap-3" data-testid="chart-tx-treatmemo-row">
-                  {/* 치료사차트 (좌) — 읽기전용 동작 유지, 시각 라벨만 '치료사차트'.
-                      T-20260614-foot-MEDREC-LAYOUT-4REFINE AC-2 (문지은 대표원장): 너비를 아래 임상경과·
-                      의료진전용메모 행과 동일 비율(좌 flex-[4] : 우 flex-[1])로 정렬 — 기존 1:1 균등에서
-                      치료사차트(좌·넓게)/치료메모(우·좁게)로 통일(아래 NOTES 2단과 컬럼 경계 일치). */}
-                  {/* T-20260615-foot-MEDCHART-MEMO-WIDTH-25P (문지은 대표원장): 우측 치료메모 컬럼을 현재 대비
-                      25% 확대 — converged grid 비율(좌 flex-[4]:우 flex-[1]=80:20) 기준 위에서 좌측을 flex-[3]로
-                      낮춰 우측 메모 컬럼을 20%→25%(=+25%)로 상향. 우 flex-[1] 토큰은 무변경. */}
-                  <div className="sm:flex-[3] min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <label className="text-xs font-semibold text-muted-foreground">치료사차트</label>
-                    </div>
-                    {/* T-20260612-foot-MEDREC-DATE-DIAG-UI-REFINE ⑨: 뷰어 모드라 내용 유무를 미리 앎 —
-                        치료사차트 내용 없으면 compact(rows 2 / min-h 제거), 있으면 기존 높이 유지. */}
-                    <Textarea
-                      value={formTx}
-                      readOnly
-                      disabled
-                      placeholder="치료사 기록"
-                      rows={formTx ? 7 : 2}
-                      className={`text-sm resize-none bg-gray-50 text-gray-500 cursor-not-allowed placeholder:text-gray-300 disabled:opacity-100 ${formTx ? 'min-h-[8rem]' : 'min-h-0'}`}
-                      data-testid="medical-chart-treatment"
-                    />
-                  </div>
-
-                  {/* 치료메모 (우) — AC-3 row3 우측 컬럼. 일반 라벨(태그/배지 아님, AC-2).
-                      치료메모 이력 항목(내용·작성자·일시) 읽기전용 뷰어 — 표시·데이터 경로 무변경.
-                      T-20260614-foot-MEDREC-LAYOUT-4REFINE AC-2: 우측 컬럼 너비를 아래 의료진전용메모와
-                      동일(flex-[1])로 정렬. */}
-                  <div className="sm:flex-[1] min-w-0">
+                  {/* T-20260615-foot-MEDCHART-THERAPIST-MEMO-DEDUP (김주연 총괄 채널 authority):
+                      치료사차트(treatment_record) 좌측 빈 표시열 제거 — 활성 입력(write) 경로 부재 확인 후 무손실 제거.
+                      근거: Textarea readOnly+disabled+onChange 없음 → 입력 불가. formTx는 로드값(L1179)/리셋(L1190)에서만
+                      설정, 저장(L1585)은 로드값 round-trip 보존일 뿐 신규 write 아님. → treatment_record 활성 입력경로 0.
+                      formTx state/load/save round-trip은 treatment_record DB값 무손실 보존 위해 유지(렌더만 제거).
+                      치료메모(customer_treatment_memos)만 full-width 승격 — 기존 2단(flex-[3]:flex-[1]) MEMO-WIDTH-25P 비율 분기 제거. */}
+                  <div className="w-full min-w-0" data-testid="chart-tx-treatmemo-row">
                     <div className="flex items-center gap-2 mb-1">
                       <label className="text-xs font-semibold text-muted-foreground">치료메모</label>
                     </div>
@@ -4201,8 +4173,7 @@ export default function MedicalChartPanel({
                       </div>
                     )}
                   </div>
-                  {/* /치료사차트·치료메모 2단 wrapper (AC-3 row3) */}
-                  </div>
+                  {/* /치료메모 full-width (T-20260615-foot-MEDCHART-THERAPIST-MEMO-DEDUP: 치료사차트 빈 표시열 제거) */}
 
                   {/* T-20260609-foot-MEDCHART-NOTES-2COL AC-1: 임상경과(좌·너비4) · 진료메모(우·너비1)
                       좌우 4:1 동시 노출(탭전환 X). 비원장은 진료메모 미표시 → 임상경과가 전폭. */}
