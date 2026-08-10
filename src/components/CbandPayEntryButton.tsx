@@ -51,7 +51,7 @@ import {
 import { shouldWarnOverLimit, OVER_LIMIT_WARN_MESSAGE } from '@/lib/cband/seatLimitPolicy';
 import {
   isCbandPayEnabled, approve, precheckConcurrentPayment,
-  type PaymentFlowResult, type ConcurrencyDecision,
+  type PaymentFlowResult, type ConcurrencyDecision, type PkgPayTarget,
 } from '@/lib/cband/paymentFlow';
 import { supabaseAttemptStore } from '@/lib/cband/supabaseAttemptStore';
 import { probeTerminal, cancelProbe, type ProbeResult } from '@/lib/cband/catClient';
@@ -140,6 +140,15 @@ interface Props {
    *   (c)확인필요/예외=티켓 보존(단말 조회 후 처리)로 분기한다. 미전달 = no-op(카드 탭·AC-2 회귀 0).
    */
   onSettle?: (result: PaymentFlowResult | null, packageId: string | null) => void | Promise<void>;
+  /**
+   * ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 다건 미수 일괄(aggregate) 결제 모드.
+   *   비어있지 않으면: (a) 결제 금액 = Σ target.amount(총 미수, 편집 잠금) (b) 결제 Dialog 에 미수 내역(breakdown) 표시(=confirm)
+   *   (c) 승인 시 단일 CAT 승인 1건을 target 별 package_payments 행으로 원자 분개(recordCatPackageSplitPayment).
+   *   각 target = { packageId, amount(그 패키지 잔금), label(표시명) }. write 는 {packageId, amount}만 사용(label=UI 전용).
+   *   ★AC-5(잠정·확장용이): 결제 대상 산출은 부모가 이 배열로 파라미터화(향후 '이번 패키지만'·'금액 직접입력'은 배열 교체만).
+   *   packageId/beforeApprove 와 상호배타(aggregate 모드에서는 미전달). undefined/[] = 기존 단일 경로(회귀 0).
+   */
+  paymentTargets?: (PkgPayTarget & { label: string })[] | null;
 }
 
 /**
@@ -301,13 +310,20 @@ function CbandTerminalConfigInline({ onSaved }: { onSaved: () => void }) {
 // ★AC-6: 'concurrency' = 버튼순간 서버 재확인이 진행중/완료/단말사용중을 감지해 분기 안내를 노출하는 상태.
 type UiState = 'idle' | 'sending' | 'approved' | 'failed' | 'attention' | 'concurrency' | 'overlimit_confirm';
 
-export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved, label, lockAmount = false, beforeApprove, onSettle }: Props) {
+export default function CbandPayEntryButton({ checkInId, clinicId, customerId, disabled = false, disabledReason, defaultAmount, packageId, onApproved, label, lockAmount = false, beforeApprove, onSettle, paymentTargets }: Props) {
   // ★T-20260807-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: 라벨 오버라이드(미전달=기존 문구, 회귀 0).
   const entryLabel = label ?? '카드 단말 결제(코밴)';
+  // ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4): aggregate(다건 미수 일괄) 모드 판정 + 총액.
+  const aggTargets = (paymentTargets ?? []).filter((t) => t.packageId && t.amount > 0);
+  const aggMode = aggTargets.length > 0;
+  const aggTotal = aggTargets.reduce((s, t) => s + t.amount, 0);
   // ★T-20260804-foot-CBAND-PAYMODAL-AMOUNT-AUTOFILL: 미납잔액 default value(팝업 open/reset 시 금액칸 초기값).
   //   >0 일 때만 자동입력, ≤0/미전달 → 빈칸(수동입력) 유지. resolveCbandDefaultAmount = 쉼표없는 raw 정수문자열
   //   (AmountInput 이 표시 포맷 담당). 결제·payments write 로직 무접촉(초기값만).
-  const defaultAmountStr = resolveCbandDefaultAmount(defaultAmount);
+  // ★aggregate 모드: 금액=총 미수(aggTotal) + 편집 잠금 강제. 그 외=기존 동작(defaultAmount / lockAmount prop).
+  const effectiveDefaultAmount = aggMode ? aggTotal : defaultAmount;
+  const effectiveLockAmount = aggMode || lockAmount;
+  const defaultAmountStr = resolveCbandDefaultAmount(effectiveDefaultAmount);
   // ★U3: probe 결과 3분기 (null=탐지중 / 'ok' / 'awaiting' / 'blocked').
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [open, setOpen] = useState(false);
@@ -450,6 +466,9 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
           amount: amountNum, clinicId, customerId, checkInId: checkInId ?? null,
           // ★PKG-PAY-EXPAND(AC-1): 비-null → package_payments 착지(payments 아님). 카드 탭(미전달)=payments 회귀 0.
           packageId: effectivePackageId,
+          // ★CONSULTROOM-PAY-BTN-BESIDE(AC-2/AC-4): aggregate 모드 → 단일 승인을 target 별 package_payments 로 원자 분개.
+          //   write 는 {packageId, amount}만 사용(label=UI 전용). 비-aggregate 시 null(회귀 0).
+          paymentTargets: aggMode ? aggTargets.map((t) => ({ packageId: t.packageId, amount: t.amount })) : null,
           // ★HALBU 가변 전송 — 실효 개월(5만원↓/일시불=0 → HALBU "00", 회귀 무영향). formatHalbu 가 "02"~"12" 조립.
           installmentMonths: effectiveInstallment,
         },
@@ -624,20 +643,40 @@ export default function CbandPayEntryButton({ checkInId, clinicId, customerId, d
             <div className="space-y-4 py-2">
               {/* ★② 코밴 결제 Dialog 안 단말기 설정(TID/COM) — 저장여부 무관 항상 표시 */}
               <CbandTerminalConfigInline onSaved={onTerminalSaved} />
+              {/* ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-4) — aggregate 결제 미수 내역(=confirm).
+                  이 Dialog 자체가 '결제 前 확인창' 역할: 어떤 미수 건들이 합쳐져 charge 되는지 표시하고, 승인 시 그 건들이 정확히 차감된다.
+                  표시 내역(aggTargets) = 실제 분개 대상(paymentTargets)과 동일 배열 → 표시=차감 1:1 정합. */}
+              {aggMode && (
+                <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3" data-testid="cband-agg-breakdown">
+                  <div className="text-sm font-medium text-emerald-900">결제할 미수 내역 ({aggTargets.length}건)</div>
+                  <div className="space-y-1">
+                    {aggTargets.map((t) => (
+                      <div key={t.packageId} className="flex items-center justify-between gap-2 text-sm text-emerald-900" data-testid={`cband-agg-item-${t.packageId}`}>
+                        <span className="flex-1 truncate">{t.label}</span>
+                        <span className="shrink-0 tabular-nums font-medium">{formatAmount(t.amount)}원</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-emerald-200 pt-1.5 text-sm font-bold text-emerald-900">
+                    <span>합계</span>
+                    <span className="tabular-nums" data-testid="cband-agg-total">{formatAmount(aggTotal)}원</span>
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">결제 금액</label>
                 <AmountInput
                   value={amount}
                   onChange={setAmount}
-                  disabled={ui === 'sending' || lockAmount}
+                  disabled={ui === 'sending' || effectiveLockAmount}
                   className="h-14 text-2xl text-right"
                   data-testid="cband-amount-input"
                   inputMode="numeric"
                   placeholder="0"
                 />
-                {lockAmount && amountNum > 0 && (
+                {effectiveLockAmount && amountNum > 0 && (
                   <p className="text-right text-[11px] text-muted-foreground" data-testid="cband-amount-locked-hint">
-                    패키지 총액으로 결제합니다
+                    {aggMode ? '기존 미수 총액으로 결제합니다' : '패키지 총액으로 결제합니다'}
                   </p>
                 )}
                 {amountNum > 0 && (

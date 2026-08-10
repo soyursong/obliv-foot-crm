@@ -115,6 +115,50 @@ export function computeOutstanding(
   return Math.round((totalAmount ?? 0) - (netPaid ?? 0));
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE (AC-2/AC-4/AC-5) —
+ * '구입 티켓 추가' 모달 [결제] 버튼(환자 기존 미수 총액 일괄 결제)의 결제 대상 산출.
+ *
+ * 환자의 open 패키지(취소/환불 제외) 中 패키지 잔금(fee_kind='package')>0 인 것만 target 으로 집계한다.
+ * per-package 잔금 = deployed AC-2 티켓행 [결제]와 **동일 산식**(computeOutstanding∘effectiveNetPaid, footBilling SSOT)
+ *   → 모달 [결제]의 confirm 내역·실차감 대상이 티켓행 [결제]와 1:1 정합(WARN #3: 표시=실차감·부분/중복차감 방지).
+ * §4-A: 진료비 미수(consultation)는 별도 축이므로 제외(패키지 잔금만 일괄).
+ * ★AC-5(잠정·확장용이): 결제 대상 산출을 이 함수 하나로 **파라미터화** —
+ *   향후 '이번 패키지 금액만'·'금액 직접입력'은 이 함수 대체(또는 결과 배열 교체)만으로 저비용 확장.
+ * ⚠ write 미접촉: label 은 UI 표시 전용(package_payments 착지는 {packageId, amount}만 사용).
+ * ─────────────────────────────────────────────────────────────────────────── */
+export interface OutstandingPayTarget {
+  packageId: string;
+  amount: number;   // 그 패키지 잔금(>0 만 포함)
+  label: string;    // UI 표시명(write 미사용)
+}
+
+export function computeOutstandingPayTargets(
+  packages:
+    | Array<{
+        id: string;
+        status?: string | null;
+        total_amount?: number | null;
+        total_sessions?: number | null;
+        paid_amount?: number | null;
+        transferred_from?: string | null;
+        package_name?: string | null;
+      }>
+    | null
+    | undefined,
+  payments: Array<PackagePaymentRow & { package_id?: string | null }> | null | undefined,
+): OutstandingPayTarget[] {
+  const pays = payments ?? [];
+  return (packages ?? [])
+    .filter((p) => p.status !== 'cancelled' && p.status !== 'refunded')
+    .map((p) => {
+      const rows = pays.filter((pay) => pay.package_id === p.id);
+      const due = computeOutstanding(p.total_amount, effectiveNetPaid(p, rows));
+      return { packageId: p.id, amount: due, label: p.package_name || '패키지' };
+    })
+    .filter((t) => t.amount > 0);
+}
+
 /** 잔금 상태: >0 미수(due) / <0 과수(over) / 0 완납(paid). */
 export function balanceStatus(outstanding: number): BalanceStatus {
   if (outstanding > 0) return 'due';

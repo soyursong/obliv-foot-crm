@@ -59,6 +59,17 @@ export type AttemptStatus =
   | 'failed'     // 명확한 실패(과금 미발생)
   | 'attention'; // ★확인 필요(불확실 — 자동 재시도 금지)
 
+/**
+ * ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 다건 미수 일괄 결제 착지 대상 1건.
+ *   '구입 티켓 추가' 모달 [결제] 버튼 = 환자 open 미수(패키지 잔금) 전체를 단일 CAT 승인으로 charge 하고,
+ *   그 승인 1건(authNo/attemptId)을 여러 package_payments 행(패키지별 잔금)으로 원자 분개(split)한다.
+ *   각 target = { 대상 패키지, 그 패키지에 착지시킬 금액(=그 패키지 잔금) }. Σ target.amount = 단말 승인 총액.
+ */
+export interface PkgPayTarget {
+  packageId: string;
+  amount: number;
+}
+
 export interface AttemptRecord {
   msgTrace: string;
   tranType: TranType;
@@ -75,6 +86,13 @@ export interface AttemptRecord {
    *   null/undefined = 기존 check_in 수납 경로(payments 착지, 무변경).
    */
   packageId?: string | null;
+  /**
+   * ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 다건 미수 일괄 분개 대상(비어있지 않으면 aggregate 모드).
+   *   set(길이>0) 이면 recordCardPayment 은 단일 packageId 착지 대신 target 별 package_payments 행을 **한 statement 로 원자 INSERT**한다.
+   *   신규 컬럼/테이블 없음(기존 package_payments 재사용, DA-20260806 landing 모델 계승) → db_change=false·ADDITIVE.
+   *   packageId 와 상호배타(aggregate 모드에서는 packageId=null). undefined/[] = 기존 경로(회귀 0).
+   */
+  paymentTargets?: PkgPayTarget[] | null;
   /** 취소 시 원거래 AUTHNO(승인 시 null). */
   originalAuthNo: string | null;
   /**
@@ -424,6 +442,11 @@ export interface PaymentFlowInput {
    *   approve/cancel 헬퍼가 그대로 전달(Omit 대상 아님). recordCardPayment 이 이 값으로 착지 테이블을 분기한다.
    */
   packageId?: string | null;
+  /**
+   * ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 다건 미수 일괄 분개 대상.
+   *   비어있지 않으면 aggregate 모드(단일 승인 → target 별 package_payments 원자 분개). approve/cancel 헬퍼가 그대로 전달.
+   */
+  paymentTargets?: PkgPayTarget[] | null;
   /** 취소(0430) 시 원거래 승인번호. */
   originalAuthNo?: string;
   originalAuthDate?: string;
@@ -501,6 +524,7 @@ export async function runPaymentFlow(
     customerId: input.customerId,
     checkInId: input.checkInId,
     packageId: input.packageId ?? null,  // ★PKG-PAY-EXPAND: 비-null → recordCardPayment 이 package_payments 로 착지
+    paymentTargets: input.paymentTargets ?? null,  // ★CONSULTROOM-PAY-BTN-BESIDE(AC-2/AC-4): 비어있지 않으면 aggregate 분개 모드
     originalAuthNo: input.originalAuthNo ?? null,
     installmentMonths: input.installmentMonths ?? null,  // ★payments.installment(int) 착지 — spec ②③ 요청 개월수 canonical
     isSimulation: isSimulationAmount(input.amount),  // ★C6 테스트금액(1001~1006) 격리

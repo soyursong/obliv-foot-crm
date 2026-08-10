@@ -75,7 +75,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 import { shouldLinkCheckInPackage } from '@/lib/checkInPackageLink';
 import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
-import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel } from '@/lib/footBilling';
+import { isSinglePaymentByCount, netPaidFromPayments, computeOutstanding, effectiveNetPaid, balanceStatus, balanceStatusLabel, computeOutstandingPayTargets } from '@/lib/footBilling';
 // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT — 상담실 회차권 판매 화면 코밴 CAT 결제(AC-1/AC-2).
 import CbandPayEntryButton from '@/components/CbandPayEntryButton';
 import { isCbandPayEnabled, type PaymentFlowResult } from '@/lib/cband/paymentFlow';
@@ -10181,6 +10181,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             //   (AC-1 [결제 및 티켓 생성] 성공 시 새 티켓의 미수0 이 즉시 반영되도록 pkgPayments 도 함께 리로드).
             await reloadPackagesAndPayments();
           }}
+          // ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 모달 [결제] 버튼(환자 기존 미수 총액 일괄 결제)용.
+          //   기존 패키지/결제내역을 내려 모달 내부에서 미수 breakdown 계산. 결제 후 onOutstandingPaid 로 리로드(모달 유지 → 이어서 티켓 생성 가능).
+          existingPackages={packages}
+          existingPackagePayments={pkgPayments}
+          onOutstandingPaid={reloadPackagesAndPayments}
         />
       )}
 
@@ -10520,12 +10525,19 @@ function PackagePurchaseFromTemplateDialog({
   clinicId,
   onOpenChange,
   onCreated,
+  existingPackages = [],
+  existingPackagePayments = [],
+  onOutstandingPaid,
 }: {
   open: boolean;
   customerId: string;
   clinicId: string;
   onOpenChange: (o: boolean) => void;
   onCreated: () => void;
+  // ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — [결제] 버튼(환자 기존 미수 총액 일괄) 계산·리로드용.
+  existingPackages?: PackageWithRemaining[];
+  existingPackagePayments?: PackagePayment[];
+  onOutstandingPaid?: () => void;
 }) {
   const [templates, setTemplates] = useState<PackageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | 'custom'>('custom');
@@ -10599,6 +10611,20 @@ function PackagePurchaseFromTemplateDialog({
   );
   const upgradeSurcharge = (heatedUpgrade ? 50000 : 0) + (unheatedUpgrade ? 40000 : 0);
   const grandTotal = priceOverride ? manualTotal : computedTotal + upgradeSurcharge;
+
+  // ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-3/AC-4/AC-5) — 모달 [결제] 버튼용 미수 breakdown.
+  //   대상 산출 = computeOutstandingPayTargets(footBilling SSOT) 단일 파라미터화 지점.
+  //   deployed AC-2(티켓 목록 [결제])와 동일 산식(effectiveNetPaid→computeOutstanding)으로 open(취소/환불 제외) 패키지 中 미수>0 만 집계
+  //   → confirm 내역·실차감 대상이 티켓행 [결제]와 1:1 정합. §4-A: 진료비 미수는 별도 축 제외(패키지 잔금만 일괄).
+  //   ★AC-5(잠정·확장용이): 향후 '이번 패키지만'/'금액 직접입력'은 이 함수 대체(또는 결과 배열 교체)만으로 저비용 확장.
+  const { profile: buyDlgProfile } = useAuth();
+  const outstandingTargets = useMemo(
+    () => computeOutstandingPayTargets(existingPackages, existingPackagePayments),
+    [existingPackages, existingPackagePayments],
+  );
+  const outstandingTotal = outstandingTargets.reduce((s, t) => s + t.amount, 0);
+  // 모달 [결제] 버튼 노출 게이트 = AC-2 티켓행 [결제]와 동일(기능플래그 ON + staff-unlock 권한). 미수0 은 아래에서 비활성+툴팁.
+  const showPayOutstanding = isCbandPayEnabled() && isStaffUnlockRole(buyDlgProfile?.role);
   // T-20260716-foot-BUYTICKET-OFFICIAL-PKG-COMPOSITION-LOCK: 공식(팜플릿 등록) 패키지 구성(회차) 잠금.
   //   공식 패키지 판별 = 템플릿에서 로드된 상태(selectedTemplateId !== 'custom'). 별도 DB 플래그 불필요.
   //   회차(_sessions·precon) 입력은 readonly/disabled 고정(값 없는 0 항목 포함) → 구성 변경 원천 차단.
@@ -11482,33 +11508,70 @@ function PackagePurchaseFromTemplateDialog({
           </button>
         </div>
 
-        {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] BETA.
-            기존 3버튼([취소]/[템플릿추가후생성]/[구입 티켓 생성]) 무삭제·옆(아래)에 추가. 기능플래그 ON PC 에서만 노출.
-            흐름: 패키지 총액 자동 전송 → 카드 승인 → 승인 성공 시에만 티켓 생성 + 결제행 + 미수0(ATOMIC).
-            승인 실패(과금 미발생) → 생성한 티켓 삭제(rollback). 확인필요/예외(불확실) → 티켓 보존(단말 조회 후 처리).
-            -14 카드선삽입 안내·8324·5백만 경고·할부·응답유실 재시도차단 = CbandPayEntryButton CAT 스택 자동계승(reporter §7). */}
-        {isCbandPayEnabled() && totalSessions > 0 && (
+        {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] BETA
+            + ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-1~4) — 그 왼쪽에 [결제] BETA(환자 기존 미수 총액 일괄).
+            [결제](왼쪽) = 환자 open 미수(패키지 잔금) 전체를 단일 CAT 승인으로 charge → target 별 원자 분개(티켓 미생성).
+            [결제 및 티켓 생성](오른쪽) = 이번 패키지 금액 결제 + 티켓 생성(ATOMIC). 두 버튼은 서로 다른 금액.
+            기존 3버튼([취소]/[템플릿추가후생성]/[구입 티켓 생성]) 무삭제. -14 카드선삽입·8324·5백만·할부·응답유실 재시도차단 = CbandPayEntryButton CAT 스택 자동계승. */}
+        {isCbandPayEnabled() && (showPayOutstanding || totalSessions > 0) && (
           <div className="mt-2 border-t border-dashed border-emerald-200 pt-2" data-testid="ac1-pay-and-create-ticket">
-            <CbandPayEntryButton
-              clinicId={clinicId}
-              customerId={customerId}
-              defaultAmount={grandTotal}
-              lockAmount
-              label="결제 및 티켓 생성"
-              beforeApprove={createPackageForPayment}
-              onSettle={async (r: PaymentFlowResult | null, pkgId: string | null) => {
-                // ★VG-2 atomic: 승인=닫기+리로드 / 정의적 FAIL(과금 미발생 확정)=티켓 삭제 / 확인필요·예외=티켓 보존(AC-2 로 후결제).
-                if (r && !r.needsCheck && r.classification === 'APPROVED') { onCreated(); return; }
-                if (r && !r.needsCheck && r.classification === 'FAIL' && pkgId) {
-                  const { error } = await supabase.from('packages').delete().eq('id', pkgId);
-                  if (error) console.error(`[AC-1 rollback] 미결제 티켓 삭제 실패(id=${pkgId}):`, error.message);
-                }
-                // 확인필요(needsCheck)/예외(r=null) → 삭제하지 않음(과금 가능성 배제 못함). 미수 티켓으로 남겨 단말 조회 후 처리.
-              }}
-            />
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-              카드 승인 후 티켓이 함께 생성됩니다. 승인 실패 시 티켓은 만들어지지 않습니다.
-            </p>
+            <div className="flex items-start gap-2">
+              {/* ★AC-1 배치: [결제](왼쪽/좌측). AC-2 의미론: 환자 기존 미수 총액(다건 합계) 결제. AC-3: 미수>0 활성+금액 / 미수=0 비활성+툴팁. */}
+              {showPayOutstanding && (
+                <div className="flex-1" data-testid="modal-pay-outstanding">
+                  {outstandingTotal > 0 ? (
+                    <CbandPayEntryButton
+                      clinicId={clinicId}
+                      customerId={customerId}
+                      label={`미수 ${formatAmount(outstandingTotal)}원 결제`}
+                      paymentTargets={outstandingTargets}
+                      // ★결제 후 모달 유지 + 리로드(props 갱신 → breakdown 재계산 → 완납 시 버튼 자동 비활성). 티켓 생성 흐름과 독립.
+                      onApproved={onOutstandingPaid}
+                    />
+                  ) : (
+                    // ★AC-3: 미수=0 → 비활성 + hover 툴팁 '결제할 미수가 없습니다'.
+                    <span className="block w-full" title="결제할 미수가 없습니다" data-testid="modal-pay-outstanding-disabled-wrap">
+                      <button
+                        type="button"
+                        disabled
+                        data-testid="btn-modal-pay-outstanding-disabled"
+                        className="flex w-full items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm font-medium text-gray-400 cursor-not-allowed"
+                      >
+                        결제
+                        <span className="ml-1 rounded-sm bg-gray-200 px-1 py-px text-[10px] font-bold uppercase leading-none tracking-wide text-gray-500">BETA</span>
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* ★AC-1 배치: [결제 및 티켓 생성](오른쪽). 기존 로직 무손상. */}
+              {totalSessions > 0 && (
+                <div className="flex-1">
+                  <CbandPayEntryButton
+                    clinicId={clinicId}
+                    customerId={customerId}
+                    defaultAmount={grandTotal}
+                    lockAmount
+                    label="결제 및 티켓 생성"
+                    beforeApprove={createPackageForPayment}
+                    onSettle={async (r: PaymentFlowResult | null, pkgId: string | null) => {
+                      // ★VG-2 atomic: 승인=닫기+리로드 / 정의적 FAIL(과금 미발생 확정)=티켓 삭제 / 확인필요·예외=티켓 보존(AC-2 로 후결제).
+                      if (r && !r.needsCheck && r.classification === 'APPROVED') { onCreated(); return; }
+                      if (r && !r.needsCheck && r.classification === 'FAIL' && pkgId) {
+                        const { error } = await supabase.from('packages').delete().eq('id', pkgId);
+                        if (error) console.error(`[AC-1 rollback] 미결제 티켓 삭제 실패(id=${pkgId}):`, error.message);
+                      }
+                      // 확인필요(needsCheck)/예외(r=null) → 삭제하지 않음(과금 가능성 배제 못함). 미수 티켓으로 남겨 단말 조회 후 처리.
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            {totalSessions > 0 && (
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                카드 승인 후 티켓이 함께 생성됩니다. 승인 실패 시 티켓은 만들어지지 않습니다.
+              </p>
+            )}
           </div>
         )}
       </div>

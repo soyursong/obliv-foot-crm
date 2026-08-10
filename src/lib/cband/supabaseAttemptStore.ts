@@ -225,6 +225,95 @@ async function recordCatPackagePayment(
   if (updErr) console.error(`패키지 paid_amount 착지 실패(package_id=${rec.packageId}):`, updErr.message);
 }
 
+/**
+ * ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 다건 미수 일괄(aggregate) 분개 착지.
+ *   '구입 티켓 추가' 모달 [결제] 버튼 = 환자 open 미수(패키지 잔금) 전체를 **단일 CAT 승인**(authNo/attemptId 1건)으로 charge 하고,
+ *   그 승인을 target 별 package_payments 행(패키지별 잔금)으로 **한 statement 원자 INSERT** 한다.
+ *   ── 정확성 불변식(WARN #3: 부분승인·중복차감·경합 방지) ──────────────────────────────
+ *   ① 원자성: supabase .insert([rows]) 는 단일 INSERT statement → 전건 반영 또는 전건 롤백(부분차감 0).
+ *   ② 멱등(중복 승인콜백): payment_attempt_id partial UNIQUE 앵커를 **첫 행에만** 부여(2행+는 NULL).
+ *      중복 콜백 재-INSERT 시 첫 행이 23505 → 배열 INSERT 전건 원자 롤백 → isUniqueViolation 멱등 skip(이중차감 차단).
+ *   ③ 1:1 정합: target = confirm 에 표시한 미수 내역과 동일 집합(FE 가 동일 배열로 계산·전달). 표시=차감 대상 일치.
+ *   ★신규 스키마 없음: 기존 package_payments(external_approval_no/external_tid/payment_attempt_id nullable,
+ *     DA-20260806-LANDING-MODEL) 재사용 · 다행이 authNo(external_approval_no) 공유로 자연 링크 → db_change=false·ADDITIVE.
+ *   ★paid_amount 재계산은 패키지별(Σ signed) — 기존 recordCatPackagePayment 규약 그대로(단일소스 불변, RPC/site 무접촉).
+ *   ※ aggregate 취소(refund)는 본 버튼 범위 밖(승인 전용) — isCancel 이면 memo 만 구분해 방어적으로 처리.
+ */
+async function recordCatPackageSplitPayment(
+  rec: AttemptRecord & { authNo: string; attemptId: string },
+  isCancel: boolean,
+): Promise<void> {
+  const targets = (rec.paymentTargets ?? []).filter((t) => t.packageId && t.amount > 0);
+  if (targets.length === 0) {
+    // 대상 없음(전부 미수0/누락) — 승인은 이미 발생(과금)했을 수 있으므로 조용히 성립시키지 않고 로깅만(감사).
+    console.error(`[AC-2 aggregate] 분개 대상 0건(authNo=${rec.authNo}) — package_payments 미기록.`);
+    return;
+  }
+  const installment = rec.installmentMonths && rec.installmentMonths > 1 ? rec.installmentMonths : 0;
+  // ★② 멱등 앵커: 첫 행에만 payment_attempt_id(partial UNIQUE). 2행+는 null(partial index 는 null 무시 → 상호 무충돌).
+  const rows = targets.map((t, i) => ({
+    clinic_id: rec.clinicId,
+    package_id: t.packageId,
+    customer_id: rec.customerId,
+    amount: t.amount,
+    method: 'card',
+    installment,
+    payment_type: isCancel ? 'refund' : 'payment',
+    fee_kind: 'package',                    // ★잔금 산식(footBilling) 소비 축 — 패키지 잔금 결제 명시(§4-A: 진료비 미수와 분리).
+    external_approval_no: rec.authNo,       // ★AUTHNO — 다행 자연 링크(같은 승인 1건 = 같은 authNo) + 취소 매칭 앵커.
+    external_tid: rec.tid,                  // ★TID(VG-5 RedPay 도달 축).
+    payment_attempt_id: i === 0 ? rec.attemptId : null, // ★멱등 앵커(첫 행). 재-INSERT 시 23505 → 원자 롤백 → 멱등 skip.
+    is_simulation: rec.isSimulation,        // ★C6 테스트금액 격리(트리거 test-고객 승격과 병존).
+    memo: isCancel ? '코밴 단말 결제취소(패키지 미수 일괄)' : '코밴 단말 카드결제(패키지 미수 일괄)',
+  }));
+  const { data, error } = await supabase
+    .from('package_payments')
+    .insert(rows)
+    .select('id');
+  if (error) {
+    // ★② 멱등: 첫 행 payment_attempt_id partial UNIQUE 위반(23505) = 중복 승인콜백 → 배열 INSERT 전건 원자 롤백 → 멱등 no-op.
+    if (isUniqueViolation(error)) {
+      console.warn(`[AC-2 aggregate] 미수 일괄 수납 기록 멱등 skip(중복 승인콜백, attempt=${rec.attemptId}): ${error.message}`);
+      return;
+    }
+    throw new Error(`패키지 미수 일괄 수납 기록 실패: ${error.message}`);
+  }
+  const rowIds = (data ?? []).map((r) => r.id as string);
+  if (rowIds.length !== rows.length) {
+    // 부분 반영/0행 = RLS 거부·스코프 불일치(INV-W5). 원자 INSERT 이므로 통상 전건/0건이나, 방어적으로 불일치를 승격.
+    throw new Error(`패키지 미수 일괄 수납 기록 실패: 반영행 불일치(기대 ${rows.length}, 실제 ${rowIds.length} — 권한/스코프 확인 필요).`);
+  }
+  // ★BINDING#3 매출일자 앵커 = 승인일자(TRANDATE) → accounting_date(일괄 UPDATE, best-effort). 실패는 수납 성립을 되돌리지 않음(로그만).
+  const acctDate = yymmddToISODate(rec.approvalDate);
+  if (acctDate) {
+    const { error: acctErr } = await supabase
+      .from('package_payments')
+      .update({ accounting_date: acctDate })
+      .in('id', rowIds);
+    if (acctErr) console.error(`[AC-2 aggregate] 매출일자(accounting_date) 착지 실패(authNo=${rec.authNo}):`, acctErr.message);
+  }
+  // ★VG-0/VG-2: 착지 패키지별 paid_amount = Σ signed package_payments 재계산(단일 경로 규약 그대로). best-effort(로그만).
+  for (const t of targets) {
+    const { data: sum, error: sumErr } = await supabase
+      .from('package_payments')
+      .select('amount, payment_type')
+      .eq('package_id', t.packageId);
+    if (sumErr) {
+      console.error(`[AC-2 aggregate] paid_amount 재계산 조회 실패(package_id=${t.packageId}):`, sumErr.message);
+      continue;
+    }
+    const total = (sum ?? []).reduce(
+      (acc, r) => acc + (r.payment_type === 'refund' ? -(r.amount as number) : (r.amount as number)),
+      0,
+    );
+    const { error: updErr } = await supabase
+      .from('packages')
+      .update({ paid_amount: total })
+      .eq('id', t.packageId);
+    if (updErr) console.error(`[AC-2 aggregate] paid_amount 착지 실패(package_id=${t.packageId}):`, updErr.message);
+  }
+}
+
 export const supabaseAttemptStore: AttemptStore = {
   async insertAttempt(rec: AttemptRecord): Promise<{ id: string }> {
     // ★insert-first: 송신 전 저장. UNIQUE(clinic_id,msg_trace) 위반(중복) 시 error → 상위가 송신 중단(멱등 L1).
@@ -302,6 +391,14 @@ export const supabaseAttemptStore: AttemptStore = {
 
   async recordCardPayment(rec: AttemptRecord & { authNo: string; attemptId: string }): Promise<void> {
     const isCancel = rec.tranType === TRANTYPE_CANCEL;
+    // ★T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE(AC-2/AC-4) — 다건 미수 일괄(aggregate) 분개 착지.
+    //   rec.paymentTargets 비어있지 않으면(=aggregate 모드) 단일 승인(authNo/attemptId)을 target 별
+    //   package_payments 행으로 **한 statement 원자 INSERT** 한다(부분차감 0·1:1 정합). 신규 스키마 없음(기존 테이블 재사용).
+    //   packageId 단일 경로보다 우선(상호배타 — aggregate 모드는 packageId=null 로 진입). payments 경로는 무영향(회귀 0).
+    if (rec.paymentTargets && rec.paymentTargets.length > 0) {
+      await recordCatPackageSplitPayment(rec, isCancel);
+      return;
+    }
     // ★T-20260806-foot-PLANA-PKG-PAY-EXPAND(AC-1/AC-3/AC-4) — 패키지 CAT 결제 착지 분기.
     //   rec.packageId 비-null = 패키지 탭 결제/취소 → payments 가 아니라 **package_payments 행**으로 착지한다
     //   (DA-20260806-...-LANDING-MODEL(b) · VG-1 double-count firewall: payments 중복 revenue행 금지·매출 이중계상 방지).

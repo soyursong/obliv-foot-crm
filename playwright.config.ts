@@ -691,6 +691,10 @@ export default defineConfig({
         //   + AC-1/AC-2 packageId 착지 전파. 순수 함수/판별자 단언. auth/server/page 불요, 결정론. unit 전용.
         //   화면 배치·실 단말 승인·paid_amount 정합 = field-soak(갤탭)/browser-verify.
         '**/T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT.spec.ts',
+        // T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE: '구입 티켓 추가' 모달 [결제] BETA(환자 기존 미수 총액 일괄).
+        //   AC-2/4/5 computeOutstandingPayTargets(미수 집계·1:1 정합) + AC-3 버튼표시(미수>0/=0) + aggregate 라우팅(approve→paymentTargets 전파·Σ==charge).
+        //   순수 함수/집계 단언. auth/server/page 불요, 결정론. unit 전용. 배치·실단말·confirm dialog = field-soak(갤탭)/browser-verify.
+        '**/T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE.spec.ts',
         // T-20260808-foot-RXHIST-HIDE-SOFTDELETE: 처방이력 개별 건 숨김(soft-delete). 순수 함수(dedup member_ids)
         //   + 소스 정적 가드(숨기기 버튼/확인 다이얼로그/deleted_at·by UPDATE/rowcheck/is_deleted 필터/role 무게이트).
         //   auth/DB/server/page 불요·결정론. 실 UI+데이터경로 = supervisor 갤탭 field-soak.
@@ -735,6 +739,9 @@ export default defineConfig({
         // T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT: unit 전용(판별자/짝맞춤/classify 순수 단언) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT.spec.ts',
+        // T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE: unit 전용(미수 집계/버튼표시/aggregate 라우팅 순수 단언) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260810-foot-CONSULTROOM-PLANA-PAY-BTN-BESIDE-CREATE.spec.ts',
         // T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME: unit 전용 정적 소스 가드+순수 함수 →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260729-foot-OPINIONDOC-PRINT-ADMINOVERRIDE-DOCTORNAME.spec.ts',
