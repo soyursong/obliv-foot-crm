@@ -111,3 +111,7 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 
 # git worktrees (isolation dirs — never track)
 _wt-*
+
+# UBASE 2acct 임시 자격증명 (평문 금지, git 미추적)
+_artifacts/UBASE-2ACCT-credentials.SECURE.local.txt
+*.SECURE.local.txt
