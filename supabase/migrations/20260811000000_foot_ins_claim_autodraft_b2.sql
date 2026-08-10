@@ -12,8 +12,9 @@
 --      ★ 금액 = service_charges VERBATIM 재사용, 재산출 절대 없음 (revenue_insurance_split_spec §2-2 SSOT).
 --        base/copayment/covered 를 service_charges 컬럼에서 그대로 합산·복사. calc_copayment 재호출 없음.
 --      ★ append-only 재저장으로 인한 중복 service_charges 는 (service_id) 별 latest(calculated_at) 로 dedup.
---   2) trg_service_charges_autodraft — service_charges AFTER INSERT(급여행만) → 빌더 호출.
---      = 수납확정/모든 service_charges 쓰기 경로에서 claim draft "동시 생성". 단일 생성자 = 수동/자동 이중생성 방지.
+--   2) trg_service_charges_autodraft — service_charges INSERT/UPDATE/DELETE(급여행 관여) → 빌더 호출.
+--      = 수납확정/모든 service_charges 쓰기 경로에서 claim draft "동시 생성/갱신". 단일 생성자 = 수동/자동 이중생성 방지.
+--      ★H6 (silent stale 금지): 금액 in-place UPDATE·항목 DELETE 도 draft 를 재빌드해 stale 을 막는다.
 --   3) fn_rollup_insurance_claim_drafts(clinic, from, to) — 기적재분(트리거 이전 service_charges) 백필 배치.
 --      마일스톤(8월 진료분 → 9월 초 청구 사이클)용. 멱등 → 반복 실행 안전.
 --
@@ -70,9 +71,22 @@ BEGIN
     ORDER BY sc.service_id, sc.calculated_at DESC NULLS LAST
   ) d;
 
-  -- 급여 charge 가 없으면 빈 청구를 만들지 않는다 (기존 draft 도 손대지 않음)
+  -- 급여 charge 가 없으면: 새 청구는 만들지 않는다. 단, 기존 draft 가 있으면
+  --   (급여행이 UPDATE/DELETE 로 전부 사라진 경우) stale 방지 위해 비운다(H6 refresh).
   IF v_covered_count = 0 THEN
-    RETURN NULL;
+    SELECT id INTO v_claim_id
+    FROM public.insurance_claims
+    WHERE check_in_id = p_check_in_id AND claim_status = 'draft'
+    ORDER BY created_at ASC
+    LIMIT 1;
+    IF v_claim_id IS NOT NULL THEN
+      DELETE FROM public.claim_items WHERE claim_id = v_claim_id;
+      UPDATE public.insurance_claims
+      SET total_base = 0, total_copayment = 0, total_covered = 0,
+          calculation_engine_version = 'autodraft_from_charges_v1'
+      WHERE id = v_claim_id;
+    END IF;
+    RETURN v_claim_id;  -- 기존 draft 없으면 NULL (빈 청구 생성 안 함)
   END IF;
 
   -- clinic/customer/visit_date 는 check_in 앵커 (charge 폴백)
@@ -122,7 +136,9 @@ BEGIN
     (claim_id, service_id, hira_code, hira_score, quantity,
      base_amount, copayment_amount, covered_amount)
   SELECT v_claim_id, d.service_id, s.hira_code, d.hira_score, 1,
-         d.base_amount, d.copayment_amount, d.insurance_covered_amount
+         d.base_amount, d.copayment_amount, COALESCE(d.insurance_covered_amount, 0)
+         -- COALESCE = claim_items.covered_amount(NOT NULL DEFAULT 0) 제약 방어 + §2-2-4 보수(미확정=0) 정합.
+         --   재산출 아님(verbatim). NULL covered 로 트리거가 payments 경로를 롤백하는 것을 방지.
   FROM (
     SELECT DISTINCT ON (sc.service_id)
            sc.service_id, sc.base_amount, sc.copayment_amount,
@@ -152,9 +168,30 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_check_in uuid;
+  v_relevant boolean;
 BEGIN
-  IF NEW.is_insurance_covered = TRUE AND NEW.check_in_id IS NOT NULL THEN
-    PERFORM public.fn_build_insurance_claim_draft(NEW.check_in_id);
+  -- 영향받은 check_in: INSERT/UPDATE=NEW, DELETE=OLD.
+  -- ★H6 (silent stale 금지): service_charges 는 in-place UPDATE(DocumentPrintPanel.handleSaveEditItem
+  --   금액수정) · DELETE(handleDeleteItem 항목삭제) 경로가 존재한다. AFTER INSERT 만으로는 그 변경이
+  --   기존 draft 에 반영되지 않아 stale 이 된다 → INSERT/UPDATE/DELETE 모두에서 해당 check_in 을 재빌드.
+  IF TG_OP = 'DELETE' THEN
+    v_check_in := OLD.check_in_id;
+    v_relevant := COALESCE(OLD.is_insurance_covered, FALSE);
+  ELSE
+    v_check_in := COALESCE(NEW.check_in_id, OLD.check_in_id);
+    v_relevant := COALESCE(NEW.is_insurance_covered, FALSE) OR COALESCE(OLD.is_insurance_covered, FALSE);
+  END IF;
+
+  IF v_check_in IS NOT NULL AND v_relevant THEN
+    -- ★best-effort: autodraft(다운스트림 staging) 실패가 service_charges 쓰기(수납 핵심경로)를
+    --   절대 롤백하지 않는다(티켓 리스크#3 — 수납 무영향). 실패는 WARNING 으로 남긴다(silent 아님).
+    BEGIN
+      PERFORM public.fn_build_insurance_claim_draft(v_check_in);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'ins_claim autodraft build failed (check_in=%, op=%): %', v_check_in, TG_OP, SQLERRM;
+    END;
   END IF;
   RETURN NULL;  -- AFTER 트리거 반환값 무시
 END;
@@ -162,7 +199,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_service_charges_autodraft ON public.service_charges;
 CREATE TRIGGER trg_service_charges_autodraft
-  AFTER INSERT ON public.service_charges
+  AFTER INSERT OR UPDATE OR DELETE ON public.service_charges
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_service_charges_autodraft();
 

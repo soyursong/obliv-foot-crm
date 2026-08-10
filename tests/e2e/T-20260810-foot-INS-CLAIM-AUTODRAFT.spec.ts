@@ -11,6 +11,8 @@
  *   AC3  hira_code NULL 서비스도 claim_item 으로 남는다 (missing_code 표식 · silent drop 없음)
  *   AC4  같은 check_in 에 covered charge 추가 재삽입 → draft claim 여전히 1건 (멱등 · 이중생성 없음)
  *   AC5  비급여(is_insurance_covered=false) service_charges 는 claim 을 만들지 않는다
+ *   AC6  (H6 · silent stale 금지) 급여행 in-place UPDATE(금액수정) → draft 재빌드(반영), DELETE(항목삭제)
+ *        → draft 비워짐(stale 잔존 없음). 트리거가 INSERT 뿐 아니라 UPDATE/DELETE 에서도 발화한다.
  *
  * 실행 전제: 마이그레이션 20260811000000_foot_ins_claim_autodraft_b2 가 대상 DB 에 적용돼야 한다
  *   (apply_before_go — supervisor DB-GATE GO-token 이후). 미적용 시 fn 부재를 프로브해 test.skip.
@@ -161,6 +163,48 @@ test.describe('T-20260810-foot-INS-CLAIM-AUTODRAFT', () => {
       await sb.from('service_charges').delete().eq('check_in_id', checkIn.id as string);
       await sb.from('check_ins').delete().eq('id', checkIn.id as string);
       await sb.from('services').delete().in('id', created.serviceIds);
+      await sb.from('customers').delete().eq('id', customer.id as string);
+    }
+  });
+
+  test('AC6 (H6): 급여행 UPDATE/DELETE → draft 재빌드 (silent stale 금지)', async () => {
+    test.skip(!SUPA_URL || !SERVICE_KEY, 'DB env 미설정');
+    const sb = createClient(SUPA_URL, SERVICE_KEY, { auth: { persistSession: false } });
+    test.skip(!(await migrationApplied(sb)), '마이그 미적용 (GO-token 대기)');
+
+    const customer = await seedCustomer(sb, 'h6');
+    const checkIn = await seedCheckIn(sb, customer.id as string, customer.name as string, customer.phone as string);
+    const svc = await seedService(sb, { hira_code: 'AA254', hira_score: 139.85, suffix: 'h6' });
+
+    try {
+      // 급여 charge 1건 INSERT → draft 생성
+      await insertCharge(sb, { checkInId: checkIn.id as string, customerId: customer.id as string, serviceId: svc.id as string, covered: true, base: 10000, coveredAmt: 7000, copay: 3000, hira_score: 139.85 });
+      const { data: sc } = await sb.from('service_charges').select('id').eq('check_in_id', checkIn.id as string).limit(1);
+      const scId = sc![0].id as string;
+
+      // ── AC6-a: in-place UPDATE(금액수정) → draft 총액이 새 값으로 재빌드(stale 아님) ──
+      await sb.from('service_charges').update({ base_amount: 20000, copayment_amount: 6000 }).eq('id', scId);
+      const { data: afterUpd } = await sb.from('insurance_claims')
+        .select('id, total_base, total_copayment').eq('check_in_id', checkIn.id as string).eq('claim_status', 'draft');
+      expect(afterUpd, 'AC6-a draft 1건 유지').toHaveLength(1);
+      expect(Number(afterUpd![0].total_base), 'AC6-a UPDATE 반영 (stale 아님)').toBe(20000);
+      expect(Number(afterUpd![0].total_copayment), 'AC6-a UPDATE 반영').toBe(6000);
+
+      // ── AC6-b: 급여행 DELETE → draft 비워짐(총액 0 · 항목 0), stale 잔존 없음 ──
+      await sb.from('service_charges').delete().eq('id', scId);
+      const { data: afterDel } = await sb.from('insurance_claims')
+        .select('id, total_base, total_covered').eq('check_in_id', checkIn.id as string).eq('claim_status', 'draft');
+      expect(afterDel, 'AC6-b draft row 유지(archive)').toHaveLength(1);
+      expect(Number(afterDel![0].total_covered), 'AC6-b covered 0 으로 refresh (stale 아님)').toBe(0);
+      const { data: itemsDel } = await sb.from('claim_items').select('id').eq('claim_id', afterDel![0].id as string);
+      expect(itemsDel, 'AC6-b claim_items 전량 제거').toHaveLength(0);
+    } finally {
+      const { data: cl } = await sb.from('insurance_claims').select('id').eq('check_in_id', checkIn.id as string);
+      for (const c of cl ?? []) await sb.from('claim_items').delete().eq('claim_id', c.id as string);
+      await sb.from('insurance_claims').delete().eq('check_in_id', checkIn.id as string);
+      await sb.from('service_charges').delete().eq('check_in_id', checkIn.id as string);
+      await sb.from('check_ins').delete().eq('id', checkIn.id as string);
+      await sb.from('services').delete().eq('id', svc.id as string);
       await sb.from('customers').delete().eq('id', customer.id as string);
     }
   });
