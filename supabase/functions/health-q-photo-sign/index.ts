@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
   if (files.length > MAX_FILES) return json({ ok: false, error: 'too_many', detail: `max ${MAX_FILES}` }, 400);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const serviceKey  = Deno.env.get('CRM_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEYS') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
