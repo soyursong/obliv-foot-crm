@@ -1,7 +1,15 @@
 // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK
-// 펜차트(자동기록용) — 방문일별 치료내역 자동집계 로그의 수정·저장·출력 가능 편집형(초록박스).
+// 펜차트(자동기록용) — 방문일별 치료내역 자동집계 로그의 수정·저장·출력 가능 편집형.
 //
-// parent(T-20260808-...-2CHART, READ-ONLY 별도 탭) supersede: 별도 탭 폐지 → 새 차트 작성 양식(펜차트 탭) 내부 초록박스로 이동.
+// parent(T-20260808-...-2CHART, READ-ONLY 별도 탭) supersede: 별도 탭 폐지 → 새 차트 작성 양식(펜차트 탭) 내부로 이동.
+//
+// T-20260810-foot-PENCHART-AUTORECORD-BASE-TEMPLATE-SHELL (김주연 총괄 정정, 렌더 후속 fix):
+//   현상 = emerald 계열 강조 박스(굵은 테두리·초록 배경)로 떠 '별도 standalone form' 처럼 [펜차트양식]과 이질.
+//   기대 = 기존 [펜차트양식] 기본 틀(neutral white-card: rounded-lg border bg-white)을 그대로 재사용 +
+//          그 틀 안에 방문일별 치료내용만 채워져 쌓임. 별도 새 양식/화면 분리 렌더 금지.
+//   AC-5 선판정 = (a) FE-only 렌더 정정. db_change=false. 저장 바인딩(form_key overlay) 무변경 → DA CONSULT 불요.
+//   손글씨 펜차트 캔버스(PenChartTab) 무접촉 — 오버레이(표시축) vs 손글씨 입력 레이어 분리 유지.
+//   표준 차트헤더(성명·성별·차트번호·주민번호 마스킹) = print HTML(buildAutoVisitLogPrintHtml)과 동일 identity·VG4 마스킹 계승.
 //
 // 저장방식(DA-REPLY GO MSG-20260809-094535-db57): form_submissions.field_data JSONB 재사용.
 //   template_id=NULL + field_data.form_key='penchart_auto_visit_log' (blood_reception_daily 등 내부 상태 레코드 동일 패턴).
@@ -27,6 +35,7 @@ import {
   seedEditableRows,
   resolveEffectiveRows,
   buildAutoVisitLogPrintHtml,
+  maskRrnForPrint,
   type AutoVisitLogPackage,
   type AutoVisitLogSession,
   type EditableVisitLogRow,
@@ -196,34 +205,41 @@ export function EditableAutoVisitLogBox({
     win.document.close();
   };
 
+  // 표준 차트헤더(성명·성별·차트번호·주민번호 마스킹) — [펜차트양식] identity 계승. VG4: raw RRN 미노출(마스킹 렌더).
+  const genderLabel = deriveGenderFromRRN(customerRrn);
+  const maskedRrn = maskRrnForPrint(customerRrn);
+
   // AC-4: 1회권 이상 패키지 + 치료 진행 환자만 대상. 비대상 → 안내(에러 없음).
+  // [펜차트양식] 기본 틀(neutral white-card) 재사용 — 별도 emerald '양식' chrome 제거.
   if (!eligible) {
     return (
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-xs" data-testid="penchart-auto-visit-log-box">
-        <div className="flex items-center gap-1.5 font-bold text-emerald-800 mb-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+      <div className="rounded-lg border bg-white p-3 text-xs" data-testid="penchart-auto-visit-log-box">
+        <div className="flex items-center gap-1.5 font-bold text-neutral-800 mb-2">
+          <span className="h-2 w-2 rounded-full bg-neutral-500" />
           펜차트(자동기록용)
         </div>
-        <div className="py-5 text-center text-muted-foreground border border-dashed border-emerald-200 rounded" data-testid="penchart-auto-visit-log-not-eligible">
+        <div className="py-5 text-center text-muted-foreground border border-dashed rounded" data-testid="penchart-auto-visit-log-not-eligible">
           1회권 이상 패키지 생성 후 치료 진행 환자만 자동 기록 대상입니다.
         </div>
       </div>
     );
   }
 
+  // AC-1~3: [펜차트양식] 기본 틀(neutral white-card) 그대로 재사용 → 그 틀 안에 방문일별 치료내용만 채워져 쌓임.
+  //   별도 emerald '양식' chrome 제거(별도 새 양식/화면 분리 렌더 부재). 손글씨 캔버스 무접촉.
   return (
-    <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50/50 p-3 text-xs" data-testid="penchart-auto-visit-log-box">
+    <div className="rounded-lg border bg-white p-3 text-xs" data-testid="penchart-auto-visit-log-box">
       <div className="flex items-center justify-between mb-2">
-        <span className="flex items-center gap-1.5 font-bold text-emerald-800">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="flex items-center gap-1.5 font-bold text-neutral-800">
+          <span className="h-2 w-2 rounded-full bg-neutral-500" />
           펜차트(자동기록용)
-          <span className="ml-1 text-[10px] font-normal text-emerald-600">방문일별 치료내역 · 수정·저장·출력 가능</span>
+          <span className="ml-1 text-[10px] font-normal text-muted-foreground">방문일별 치료내역 · 수정·저장·출력 가능</span>
         </span>
         <div className="flex items-center gap-1.5">
           <Button
             size="sm"
             variant="outline"
-            className="h-7 text-[11px] px-2.5 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+            className="h-7 text-[11px] px-2.5"
             onClick={addRow}
             data-testid="penchart-auto-visit-log-addrow"
           >
@@ -232,7 +248,7 @@ export function EditableAutoVisitLogBox({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 text-[11px] px-2.5 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+            className="h-7 text-[11px] px-2.5"
             onClick={handlePrint}
             data-testid="penchart-auto-visit-log-print"
           >
@@ -240,7 +256,7 @@ export function EditableAutoVisitLogBox({
           </Button>
           <Button
             size="sm"
-            className="h-7 text-[11px] px-3 bg-emerald-600 hover:bg-emerald-700"
+            className="h-7 text-[11px] px-3 bg-[#666666] hover:bg-[#757575]"
             onClick={handleSave}
             disabled={saving || !dirty}
             data-testid="penchart-auto-visit-log-save"
@@ -251,16 +267,26 @@ export function EditableAutoVisitLogBox({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded border border-emerald-200 bg-white">
+      {/* 표준 차트헤더 — [펜차트양식] identity 계승(성명·성별·차트번호·주민번호 마스킹). VG4: raw RRN 미노출. */}
+      <div
+        className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-b pb-2 text-[11px] text-neutral-700"
+        data-testid="penchart-auto-visit-log-header"
+      >
+        <span>성명: <b className="text-neutral-900">{customerName}</b>{genderLabel ? <span className="text-muted-foreground"> ({genderLabel})</span> : null}</span>
+        {customerChartNumber ? <span>차트번호: {customerChartNumber}</span> : null}
+        <span>주민등록번호: {maskedRrn}</span>
+      </div>
+
+      <div className="overflow-x-auto rounded border bg-white">
         <table className="w-full border-collapse" data-testid="penchart-auto-visit-log-table">
           <thead>
-            <tr className="bg-emerald-100/60 text-emerald-900">
-              <th className="text-left px-2 py-1.5 font-medium border-b border-emerald-200 whitespace-nowrap">일자</th>
-              <th className="text-left px-2 py-1.5 font-medium border-b border-emerald-200 whitespace-nowrap">패키지내용</th>
-              <th className="text-left px-2 py-1.5 font-medium border-b border-emerald-200 whitespace-nowrap">금일 치료 횟수</th>
-              <th className="text-left px-2 py-1.5 font-medium border-b border-emerald-200 whitespace-nowrap">차감치료사</th>
-              <th className="text-left px-2 py-1.5 font-medium border-b border-emerald-200 whitespace-nowrap">비고(급여/비급여)</th>
-              <th className="px-1 py-1.5 border-b border-emerald-200 w-8" />
+            <tr className="bg-neutral-100 text-neutral-800">
+              <th className="text-left px-2 py-1.5 font-medium border-b whitespace-nowrap">일자</th>
+              <th className="text-left px-2 py-1.5 font-medium border-b whitespace-nowrap">패키지내용</th>
+              <th className="text-left px-2 py-1.5 font-medium border-b whitespace-nowrap">금일 치료 횟수</th>
+              <th className="text-left px-2 py-1.5 font-medium border-b whitespace-nowrap">차감치료사</th>
+              <th className="text-left px-2 py-1.5 font-medium border-b whitespace-nowrap">비고(급여/비급여)</th>
+              <th className="px-1 py-1.5 border-b w-8" />
             </tr>
           </thead>
           <tbody>
@@ -272,7 +298,7 @@ export function EditableAutoVisitLogBox({
               </tr>
             ) : (
               rows.map((r, idx) => (
-                <tr key={r.key} className="border-b border-emerald-100" data-testid="penchart-auto-visit-log-row">
+                <tr key={r.key} className="border-b" data-testid="penchart-auto-visit-log-row">
                   <td className="px-1 py-1"><CellInput value={r.date} onChange={(v) => updateCell(idx, 'date', v)} /></td>
                   <td className="px-1 py-1"><CellInput value={r.packageContent} onChange={(v) => updateCell(idx, 'packageContent', v)} /></td>
                   <td className="px-1 py-1"><CellInput value={r.todayCount} onChange={(v) => updateCell(idx, 'todayCount', v)} /></td>
@@ -318,7 +344,7 @@ function CellInput({
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full min-w-[64px] rounded border border-transparent bg-transparent px-1.5 py-1 text-xs hover:border-emerald-200 focus:border-emerald-400 focus:bg-white focus:outline-none"
+      className="w-full min-w-[64px] rounded border border-transparent bg-transparent px-1.5 py-1 text-xs hover:border-neutral-200 focus:border-neutral-400 focus:bg-white focus:outline-none"
     />
   );
 }

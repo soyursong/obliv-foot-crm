@@ -171,9 +171,11 @@ test.describe('소스 가드', () => {
     expect(penBlock.slice(0, 2000)).toContain('<PenChartTab');
   });
 
-  test('AC-2: 초록박스 포맷 (emerald) + 라벨', () => {
+  // AC-2(포맷) SUPERSEDED by T-20260810-foot-PENCHART-AUTORECORD-BASE-TEMPLATE-SHELL:
+  //   김주연 총괄 정정 = emerald '별도양식' chrome → [펜차트양식] 기본 틀(neutral white-card) 재프레임.
+  //   라벨은 유지, emerald 단정은 폐기(신 base-frame spec 이 권위).
+  test('AC-2: 라벨 유지 (포맷은 후속 티켓이 base-frame 으로 supersede)', () => {
     expect(BOX).toContain('펜차트(자동기록용)');
-    expect(BOX).toMatch(/border-emerald|bg-emerald/);
   });
 
   test('AC-3: 수정·저장·출력 UI (save/print/addrow testid)', () => {
