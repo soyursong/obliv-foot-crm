@@ -2753,6 +2753,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             staffBreakdown={staffDaily}
             loading={compareLoading || staffDailyLoading}
             showStaffBreakdown={true}
+            /* T-20260810-foot-DAYCLOSE-MOMTREND-TITLE-REMOVE: 마감일 '총 매출' 탭에서만 섹션 제목 라벨 숨김
+               (통계 화면 Stats.tsx 는 prop 미전달 → 제목 유지, AC-3 회귀 가드). */
+            hideTitle={true}
           />
         </TabsContent>
       </Tabs>

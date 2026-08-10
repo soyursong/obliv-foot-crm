@@ -32,6 +32,13 @@ interface Props {
    *   노출하고, 실장 개인성과(원래 /admin/sales=admin/manager/director 전용)는 staff 에게 새로 노출하지 않는다.
    */
   showStaffBreakdown?: boolean;
+  /**
+   * T-20260810-foot-DAYCLOSE-MOMTREND-TITLE-REMOVE:
+   *   섹션 제목('2. 전월 대비 매출 추이') 표시 여부. 기본 false(통계 화면 = 종전대로 제목 노출, 회귀 금지).
+   *   일마감 '총 매출' 탭에서만 true — 김주연 총괄 요청으로 이 탭에서만 제목 라벨을 숨긴다(하위 표는 유지).
+   *   공유 컴포넌트이므로 통계 화면(Stats.tsx)에는 이 prop 미전달 → 제목 계속 표시(AC-3 회귀 가드).
+   */
+  hideTitle?: boolean;
 }
 
 /**
@@ -112,10 +119,13 @@ export default function MonthlyComparisonSection({
   staffBreakdown,
   loading,
   showStaffBreakdown = true,
+  hideTitle = false,
 }: Props) {
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-sm font-semibold text-muted-foreground">2. 전월 대비 매출 추이</h2>
+      {!hideTitle && (
+        <h2 className="text-sm font-semibold text-muted-foreground">2. 전월 대비 매출 추이</h2>
+      )}
 
       <Card>
         <CardHeader className="pb-2">
