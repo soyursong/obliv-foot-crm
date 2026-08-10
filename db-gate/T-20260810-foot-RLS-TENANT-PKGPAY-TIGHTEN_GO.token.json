@@ -1,0 +1,17 @@
+{
+ "ticket_id": "T-20260810-foot-RLS-TENANT-PKGPAY-TIGHTEN",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-10T04:41:07.362Z",
+ "expires_at": "2026-08-10T10:41:07.362Z",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "1474d5ee5bdd00e39c3a488bc8388b1d915e29d889b3be4d4fd9a0b89998f870",
+ "migration_file": "supabase/migrations/20260810200000_foot_rls_tenant_pkgpay_tighten.sql",
+ "lane": "migration-sql-file",
+ "change_class": "exposure-REDUCING ADDITIVE — CREATE POLICY x1 (RESTRICTIVE tenant-isolation) · permissive DROP 0 (6종 존치) · 데이터 mutation 0 · 컬럼/타입/enum/테이블 0 · reversible=DROP 1줄",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "8458c68e36d74bd8",
+ "da_consult_reply": "DA CONSULT-REPLY MSG-20260810-125800-uohg verdict=조건부 GO (canonical 술어 clinic_id=current_user_clinic_id() USING+WITH CHECK CONFIRM · availability census H3/H4/H5 HARD). SSOT=agents/docs/da_replies/da_decision_foot_rls_tenant_pkgpay_tighten_20260810.md. 신규티켓/fold 금지(부모 T-20260629 B4 track). §8 2.8 HOLD/RETRACT CLEAR(signals+MQ+fresh frontmatter).",
+ "ceo_gate": "N/A — §3.1 CEO 파괴게이트 면제(exposure-REDUCING ADDITIVE: CREATE POLICY only · permissive DROP 0 · 데이터 mutation 0 · cross-product 계약 변경 0). ⚠ DDL 존재(CREATE POLICY)→DDL-0 carve 아님→본 GO-token 물리 선행이 apply 전제(AC-3·C20).",
+ "precheck": "DB-GATE PASS(2026-08-10, supervisor). 독립 prod DDL-diff(verdict-time 실측, Management API): ①package_payments 실재+relrowsecurity=true(RESTRICTIVE 전제 충족) ②current_user_clinic_id() resolver 실재(0-arg) ③target policy package_payments_tenant_isolation 부재(멱등 safe)+permissive 정확 6종(admin_all/approved_read/consult_insert/read/staff_unlock_6menu/write, 전부 TO authenticated) ④clinic_id 컬럼 실재(uuid nullable) ⑤H3 verdict-time 재실측 total=169·NULL=0·distinct_clinics=1(dev census drift 0→PREFLIGHT H3 게이트 통과·백필 불요·own-clinic lockout 위험0). 술어=byte-identical canonical clinic_id=current_user_clinic_id() USING+WITH CHECK 양측·AS RESTRICTIVE FOR ALL TO authenticated. up.sql PREFLIGHT(대상실재+RLS ENABLE+H3 NULL0 재확인+resolver 실재+멱등abort)+VERIFY(RESTRICTIVE/authenticated/ALL+USING&CHECK canonical+permissive>=6 ADDITIVE) 내장. dry-run PASS(무영속 post-probe). rollback pair(DROP 1줄) 동봉. deploy-precheck matrix: C0 N/A(no prior NO-GO)·C2 db_only exempt VALID(commit e4cb68c6 src/ diff 0)·C3 rollback 대칭 동봉·C4 policy-only no contract touch·C11 prod-realness PREFLIGHT+실측·C12 ref-col clinic_id prod-present·C18/C21 HOLD/RETRACT CLEAR(fresh re-read: status=deploy-ready·block_reason 부재·deploy_hold 부재). C1/C5 N/A(FE 0)·C10/C19/C23 N/A(CREATE FUNCTION 0)·C13/C24/C25/C26/C27/C28/C29/C30/C31 N/A(db_only, no bundle/push/apk/onconflict/EF/staff-identity/codeploy). apply=dev-foot 책임(C20 apply_before_go 준수: apply_ts>=issued_at & <=expires_at, go_token_path/go_issued_at/apply_ts evidence 3필드 기록 의무). apply-후 QA1~5 coherence(cross-clinic 0-row/own-clinic read+write 지속/NULL0/own INSERT WITH CHECK 성공/cross-clinic principal deny)=supervisor 사후검증."
+}
