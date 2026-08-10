@@ -690,6 +690,95 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
     }
   };
 
+  // ── T-20260810-foot-SPACEASSIGN-SLOT-REMOVE-DASHSYNC ─────────────────────────
+  //   슬롯 '제거(삭제)' capability. 부모(생성+구성수정)가 scope-out 한 삭제 leg.
+  //   AC-0 census 확정(READ-ONLY):
+  //   - rooms.id 를 참조하는 FK = 0건. 모든 슬롯 참조는 '방 이름(자연키)' 기반:
+  //       room_assignments.room_name(배정 이력) / check_ins.<type>_room(이용 이력) /
+  //       check_in_room_logs.assigned_room / status_transitions.room_id.
+  //     → hard-DELETE 는 DB CASCADE 를 유발하지 않으나, 이력이 사라진 방 이름을 계속
+  //       가리켜 silent orphan/dangling 이 됨(자연키라 FK 제약 부재 = ticket 핵심 경고).
+  //   - 기존 Dashboard.handleDeleteSlot(L6122)=무조건 hard-DELETE(당일 점유만 체크) →
+  //     이력 참조를 검사하지 않음 = 결함. 무비판 복사 금지(ticket AC-0 #0). 여기선 census-게이트 적용.
+  //   semantic(AC-3, Orphan-Row Archive-First Cleanup + FK Integrity Guard SOP 준용):
+  //   - 참조 이력 0 슬롯: 안전 hard-DELETE(rooms 행 물리 제거 → 목록/대시보드에서 사라짐).
+  //   - 참조 이력 ≥1 슬롯: archive = soft-deactivate(active=false) — 이력 순소실 0,
+  //       대시보드/배정에서 즉시 빠짐, 관리목록에서 재활성 가능('비활성 토글'과 결과는 같으나
+  //       진입점=명시적 '제거' 요청, 이력 보호를 위한 의도적 강등).
+  //   db_change=FALSE 유지: 신규 컬럼 0(active 플래그가 archive 매개), 신규 RLS 0
+  //     (rooms_admin_all FOR ALL is_admin_or_manager 가 write 를 이미 role-gate).
+  //   대시보드 반영(AC-2)=Dashboard.fetchRooms 의 realtime/폴링으로 by-construction.
+  const ROOM_CI_FIELD: Record<string, string | null> = {
+    treatment: 'treatment_room',
+    laser: 'laser_room',
+    consultation: 'consultation_room',
+    examination: 'examination_room',
+    heated_laser: null, // 대시보드 매핑 제거된 타입(T-20260614) — check_ins 방 필드 없음
+  };
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  /** 슬롯 제거. census(참조 이력) → 0건이면 hard-DELETE, ≥1건이면 archive(active=false). */
+  const handleRemoveRoom = async (room: Room) => {
+    // 1) 참조 이력 census — room_name 자연키 기반(배정 + 이용).
+    let refCount = 0;
+    try {
+      const { count: assignCount, error: aErr } = await supabase
+        .from('room_assignments')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinic.id)
+        .eq('room_name', room.name);
+      if (aErr) throw aErr;
+      refCount += assignCount ?? 0;
+      const ciField = ROOM_CI_FIELD[room.room_type];
+      if (ciField) {
+        const { count: ciCount, error: cErr } = await supabase
+          .from('check_ins')
+          .select('id', { count: 'exact', head: true })
+          .eq('clinic_id', clinic.id)
+          .eq(ciField, room.name);
+        if (cErr) throw cErr;
+        refCount += ciCount ?? 0;
+      }
+    } catch (e) {
+      toast.error(`제거 전 이력 확인 실패: ${(e as Error).message}`);
+      return;
+    }
+
+    // 2) semantic 분기 + 확인 다이얼로그(총괄 요청).
+    if (refCount > 0) {
+      if (!window.confirm(
+        `"${room.name}" 슬롯에는 배정·이용 이력이 ${refCount}건 있습니다.\n` +
+        `이력 보존을 위해 완전 삭제 대신 '보관(비활성)'으로 처리됩니다.\n` +
+        `보관하면 대시보드·배정에서 즉시 빠지며, 필요 시 다시 활성화할 수 있습니다.\n` +
+        `계속하시겠습니까?`,
+      )) return;
+      setRemovingId(room.id);
+      try {
+        const { error } = await supabase.from('rooms').update({ active: false }).eq('id', room.id);
+        if (error) { toast.error(`슬롯 보관 실패: ${error.message}`); return; }
+        invalidateRoomLists();
+        toast.success(`"${room.name}" 슬롯 보관(비활성) 완료 — 대시보드에서 빠집니다`);
+      } finally {
+        setRemovingId(null);
+      }
+    } else {
+      if (!window.confirm(
+        `"${room.name}" 슬롯을 완전히 제거합니다.\n` +
+        `연결된 배정·이용 이력이 없어 안전하게 삭제되지만 되돌릴 수 없습니다.\n` +
+        `계속하시겠습니까?`,
+      )) return;
+      setRemovingId(room.id);
+      try {
+        const { error } = await supabase.from('rooms').delete().eq('id', room.id);
+        if (error) { toast.error(`슬롯 제거 실패: ${error.message}`); return; }
+        invalidateRoomLists();
+        toast.success(`"${room.name}" 슬롯 제거 완료 — 대시보드에서 빠집니다`);
+      } finally {
+        setRemovingId(null);
+      }
+    }
+  };
+
   const weekDays = useMemo(() => Array.from({ length: 6 }).map((_, i) => addDays(weekStart, i)), [weekStart]);
 
   const { data: rooms = [] } = useQuery<Room[]>({
@@ -1083,7 +1172,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
           </CardHeader>
           <CardContent>
             <p className="mb-2 text-xs text-muted-foreground">
-              여기서 슬롯을 새로 추가하거나 구성(명칭·유형·순서·정원·활성)을 수정하면 대시보드에 자동 반영됩니다. (슬롯 삭제는 제공하지 않습니다)
+              여기서 슬롯을 새로 추가하거나 구성(명칭·유형·순서·정원·활성)을 수정하면 대시보드에 자동 반영됩니다. 슬롯을 제거하면 대시보드에서 빠집니다(배정·이용 이력이 있는 슬롯은 이력 보존을 위해 '보관(비활성)' 처리).
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {manageRooms.map((room) => (
@@ -1105,6 +1194,17 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
                     className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-teal-50 hover:text-teal-600"
                   >
                     <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  {/* T-20260810-foot-SPACEASSIGN-SLOT-REMOVE-DASHSYNC: 슬롯 제거(참조 이력 0=hard-DELETE / ≥1=archive) */}
+                  <button
+                    type="button"
+                    data-testid={`slot-remove-${room.name}`}
+                    onClick={() => handleRemoveRoom(room)}
+                    disabled={removingId === room.id}
+                    title={`${room.name} 제거`}
+                    className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ))}
