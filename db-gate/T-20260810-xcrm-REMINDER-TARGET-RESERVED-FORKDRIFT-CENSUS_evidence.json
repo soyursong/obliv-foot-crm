@@ -1,0 +1,58 @@
+{
+  "ticket": "T-20260810-xcrm-REMINDER-TARGET-RESERVED-FORKDRIFT-CENSUS",
+  "crm": "obliv-foot-crm",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "AC1": {
+    "fn_exists": true,
+    "overloads": 1,
+    "definitions": [
+      {
+        "args": "p_event_type text, p_dry_run boolean",
+        "md5": "b9405ed49319428d43bf33a6932eb182",
+        "status_predicates_code_only": [
+          "= 'confirmed'"
+        ],
+        "predicate_mentions_reserved": false,
+        "predicate_mentions_confirmed": true,
+        "def_len": 2777
+      }
+    ],
+    "confirmed_only": true
+  },
+  "AC2": {
+    "status_distribution": [
+      {
+        "status": "checked_in",
+        "cnt": 863
+      },
+      {
+        "status": "confirmed",
+        "cnt": 583
+      },
+      {
+        "status": "cancelled",
+        "cnt": 290
+      },
+      {
+        "status": "no_show",
+        "cnt": 252
+      }
+    ],
+    "total_reservations": 1988,
+    "reserved_count": 0,
+    "reserved_present": false,
+    "status_check_constraints": [
+      {
+        "conname": "reservations_status_check",
+        "def": "CHECK ((status = ANY (ARRAY['confirmed'::text, 'reserved'::text, 'checked_in'::text, 'cancelled'::text, 'done'::text, 'no_show'::text])))"
+      }
+    ],
+    "check_allows_reserved": true
+  },
+  "AC3": {
+    "ac1_confirmed_only": true,
+    "ac2_reserved_gt0": false,
+    "verdict": "coherent-absence",
+    "rationale": "무해: AC-2 reserved 착지 인입 0건(발현조건 부재)"
+  }
+}
