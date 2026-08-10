@@ -1,6 +1,6 @@
 -- ─────────────────────────────────────────────────────────────────────────
 -- T-20260810-foot-REALTIME-PUB-GAP-FIX — Realtime publication M-gap + F-gap remediation
---   change-class = ADDITIVE (가역 down 동봉: 20260810190000_foot_realtime_pub_gap_fix.rollback.sql)
+--   change-class = ADDITIVE (가역 down 동봉: 20260810240000_foot_realtime_pub_gap_fix.rollback.sql)
 --   블랭킷 ADD/FULL 금지 — 테이블별 소비 근거로 개별 판정.
 --
 --   ★ 정본 스코프 = DA CONSULT-REPLY (DA-20260810-foot-REALTIME-PUB-GAP-PERTABLE-MATRIX,

@@ -3,7 +3,7 @@
 --   정본 스코프 = DA-20260810-foot-REALTIME-PUB-GAP-PERTABLE-MATRIX (ALTER PUB ADD 11 · FULL flip 5).
 --   무영속 검증 = plpgsql DO 블록 안에서 forward(publication ADD ×11 + REPLICA IDENTITY FULL ×5 +
 --     DEFAULT ×9) 실행 후 in-txn 관측 → RAISE EXCEPTION 으로 전체 롤백(DO 블록 트랜잭션 abort) → 영속 0.
---   INV-1(txn-control strip): forward 파일(20260810190000_foot_realtime_pub_gap_fix.sql)에 top-level
+--   INV-1(txn-control strip): forward 파일(20260810240000_foot_realtime_pub_gap_fix.sql)에 top-level
 --     BEGIN;/COMMIT; 부재 → 조기 COMMIT sentinel-bypass 원천 부재.
 --   INV-3(post-probe): 롤백 후 prod 에 11개 M-gap 이 여전히 pub 비-멤버 + FULL-대상 5개가 여전히
 --     REPLICA IDENTITY 'd'(default)임을 fresh 쿼리로 실측(러너가 수행).
@@ -14,7 +14,7 @@
 --   B. 적용 중(in-txn): FULL 대상 5개(check_ins·reservations·room_assignments·closing_manual_payments·
 --      duty_roster) relreplident='f'.
 --   C. RAISE EXCEPTION 롤백 후(post-probe): 위 전부 원상(멤버 0 신규 · relreplident='d') — 비영속 실증.
---   D. schema_migrations 원장에 20260810190000 부재(미적용 상태 유지).
+--   D. schema_migrations 원장에 20260810240000 부재(미적용 상태 유지).
 
 DO $$
 DECLARE
