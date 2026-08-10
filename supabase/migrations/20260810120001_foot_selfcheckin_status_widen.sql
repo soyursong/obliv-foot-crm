@@ -22,9 +22,14 @@
 -- 유일 델타: 두 함수의 WHERE status 필터 1줄씩. 그 외 시그니처·반환형·권한(anon/authenticated
 --   EXECUTE)·SECURITY DEFINER·owner·search_path·마스킹 산식·정렬 전부 불변(function-diff = status 절만).
 -- 멱등: CREATE OR REPLACE + GRANT 재부여 (반환 signature 동일 → ACL 보존).
--- 가역: rollback = 직전 prosrc(status='confirmed') 복원. 20260810120000_..._widen.rollback.sql
+-- 가역: rollback = 직전 prosrc(status='confirmed') 복원. 20260810120001_..._widen.rollback.sql
 -- 게이트: db_change=true, e2e_spec_exempt_reason=db_only. DA CONSULT-REPLY GO 후 → supervisor
 --   DDL-diff(function-diff) + DB-GATE GO-token 물리선행 → prod apply (apply_before_go 금지).
+-- renumber(MIG-SCOPE-RECHECK §13.1.C, 2026-08-10): version slot 20260810120000 → 20260810120001.
+--   SAME-REPO(obliv-foot-crm) 동일 slot 을 T-20260802-foot-CREATEDBY-NOTNULL-DISCRIMINATOR-PILOT
+--   STEP7(classa_rebackfill_step7)이 점유 → schema_migrations ON CONFLICT DO NOTHING silent-skip
+--   원장무결성 hazard 회피 위해 SELFCHECKIN-WIDEN 단일파일 distinct slot 으로 bump. apply 순서·GO-token
+--   물리선행 불변(renumber = 파일-side 정정, no prod apply). 선례 T-20260802-foot-DAYCLOSE-VERSION-COLLISION-RENUMBER.
 
 BEGIN;
 
