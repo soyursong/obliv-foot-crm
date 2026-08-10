@@ -102,6 +102,9 @@ const REDPAY_DRY_RUN            = (Deno.env.get("REDPAY_DRY_RUN") ?? "true") ===
 const REDPAY_ALERT_CHANNEL      = Deno.env.get("REDPAY_ALERT_CHANNEL") ?? "";
 const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
+// dual-accept rotation (T-20260810-foot-VAULT-ROTATION-INTERNAL-CRON A안): old∨new 동시수용.
+// *_NEXT 는 rotation swap 전까지 미설정(빈값)=현행 동작 무변경. swap 후 old·new 병존 무중단.
+const INTERNAL_CRON_SECRET_NEXT = Deno.env.get("INTERNAL_CRON_SECRET_NEXT") ?? "";
 // ── RedPay 엔드포인트: 전체경로 단일 SSOT(_shared/redpay-config.ts) + payments.php 탈락 가드 ──
 //   [이은상 팀장 T-20260708→T-20260710] 유지보수성: base URL·endpoint·resolve 로직을
 //     _shared/redpay-config.ts 한 곳에서 관리. 경로 변경은 그 REDPAY_ENDPOINT 또는
@@ -306,7 +309,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // ── 인증 ────────────────────────────────────────────────────────────────
   const cronHeader = req.headers.get("x-internal-cron");
   const authHeader = req.headers.get("authorization");
-  const isInternalCron = INTERNAL_CRON_SECRET !== "" && cronHeader === INTERNAL_CRON_SECRET;
+  const isInternalCron = (INTERNAL_CRON_SECRET !== "" && cronHeader === INTERNAL_CRON_SECRET)
+    || (INTERNAL_CRON_SECRET_NEXT !== "" && cronHeader === INTERNAL_CRON_SECRET_NEXT);
   const isServiceRole  = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
 
   if (!isInternalCron && !isServiceRole) {

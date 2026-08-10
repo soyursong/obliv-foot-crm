@@ -58,6 +58,9 @@ import {
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
+// dual-accept rotation (T-20260810-foot-VAULT-ROTATION-INTERNAL-CRON A안): old∨new 동시수용.
+// *_NEXT 는 rotation swap 전까지 미설정(빈값)=현행 동작 무변경. swap 후 old·new 병존 무중단.
+const INTERNAL_CRON_SECRET_NEXT = Deno.env.get("INTERNAL_CRON_SECRET_NEXT") ?? "";
 
 // ── T-20260730-foot-REDPAY-PLANB-GOLIVE-0805-SCHEDULE-LOCK — auto-create(경로A) 활성 게이트 ──
 //   AC-5(BLOCKING): auto-create(feed→payment INSERT)는 CAT-origin absorb-guard 없이 활성 금지.
@@ -291,7 +294,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // ── 인증 — X-Internal-Cron(pg_cron) 또는 service_role bearer(redpay-reconcile 동형) ──
   const cronHeader = req.headers.get("x-internal-cron");
   const authHeader = req.headers.get("authorization");
-  const isInternalCron = INTERNAL_CRON_SECRET !== "" && cronHeader === INTERNAL_CRON_SECRET;
+  const isInternalCron = (INTERNAL_CRON_SECRET !== "" && cronHeader === INTERNAL_CRON_SECRET)
+    || (INTERNAL_CRON_SECRET_NEXT !== "" && cronHeader === INTERNAL_CRON_SECRET_NEXT);
   const isServiceRole  = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
   if (!isInternalCron && !isServiceRole) {
     return json(401, { ok: false, error: "unauthorized" });

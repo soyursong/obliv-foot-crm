@@ -24,6 +24,9 @@ const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // worker 인증용 (pg_net 헤더 X-Internal-Cron 과 일치) = vault internal_cron_secret.
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// dual-accept rotation (T-20260810-foot-VAULT-ROTATION-INTERNAL-CRON A안): old∨new 동시수용.
+// *_NEXT 는 rotation swap 전까지 미설정(빈값)=현행 동작 무변경. swap 후 old·new 병존 무중단.
+const CRON_SECRET_NEXT = Deno.env.get("CRON_SECRET_NEXT") ?? "";
 // 재시도 소진 임계 — worker backoff(1·2·4·8·16·32·60min)와 동일. 소진 시 DLQ 종결.
 const MAX_ATTEMPTS = 7;
 
@@ -52,9 +55,10 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 내부 호출 인증 (cron_secret) ────────────────────────────────
-  if (CRON_SECRET) {
+  const _cronAccepted = [CRON_SECRET, CRON_SECRET_NEXT].filter((s) => s !== "");
+  if (_cronAccepted.length > 0) {
     const got = req.headers.get("X-Internal-Cron") ?? "";
-    if (got !== CRON_SECRET) {
+    if (!_cronAccepted.includes(got)) {
       return json({ ok: false, reason: "unauthorized" }, 401);
     }
   }

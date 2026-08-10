@@ -40,6 +40,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // worker 인증용 (net.http_post 헤더 X-Internal-Cron 과 일치). dopamine-dispatch 컨벤션.
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// dual-accept rotation (T-20260810-foot-VAULT-ROTATION-INTERNAL-CRON A안): old∨new 동시수용.
+// *_NEXT 는 rotation swap 전까지 미설정(빈값)=현행 동작 무변경. swap 후 old·new 병존 무중단.
+const CRON_SECRET_NEXT = Deno.env.get("CRON_SECRET_NEXT") ?? "";
 // 시트 문서 ID + 허용 gid (duty-sheet-read EF 와 동일 env 컨벤션).
 const SHEET_ID =
   Deno.env.get("DUTY_SHEET_ID") ?? "1Ch4BhCZ1RPWKELedyWo6x60twjva3E0vXfHsiz_tRfo";
@@ -299,9 +302,10 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ ok: false, error: "POST only" }, 405);
 
   // 내부 호출 인증(cron_secret) — dopamine-dispatch 동일.
-  if (CRON_SECRET) {
+  const _cronAccepted = [CRON_SECRET, CRON_SECRET_NEXT].filter((s) => s !== "");
+  if (_cronAccepted.length > 0) {
     const got = req.headers.get("X-Internal-Cron") ?? "";
-    if (got !== CRON_SECRET) return json({ ok: false, error: "unauthorized" }, 401);
+    if (!_cronAccepted.includes(got)) return json({ ok: false, error: "unauthorized" }, 401);
   }
 
   let daysBack = 1;

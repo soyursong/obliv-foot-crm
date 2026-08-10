@@ -52,6 +52,9 @@ const CALLBACK_SECRET = FOOT_CALLBACK_SECRET || DOPAMINE_CALLBACK_SECRET;
 //   FIX-REQUEST D2: 풋 컨벤션 secret 명 INTERNAL_CRON_SECRET (redpay-reconcile·send-notification 동일).
 //   worker 는 vault internal_cron_secret 를 X-Internal-Cron 으로 보내므로 값이 일치해야 함.
 const CRON_SECRET = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
+// dual-accept rotation (T-20260810-foot-VAULT-ROTATION-INTERNAL-CRON A안): old∨new 동시수용.
+// *_NEXT 는 rotation swap 전까지 미설정(빈값)=현행 동작 무변경. swap 후 old·new 병존 무중단.
+const CRON_SECRET_NEXT = Deno.env.get("INTERNAL_CRON_SECRET_NEXT") ?? "";
 // 재시도 소진 임계 — 마이그레이션 backoff(1·2·4·8·16·32·60)와 동일
 const MAX_ATTEMPTS = 7;
 
@@ -80,9 +83,10 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 내부 호출 인증 (cron_secret) ─────────────────────────────
-  if (CRON_SECRET) {
+  const _cronAccepted = [CRON_SECRET, CRON_SECRET_NEXT].filter((s) => s !== "");
+  if (_cronAccepted.length > 0) {
     const got = req.headers.get("X-Internal-Cron") ?? "";
-    if (got !== CRON_SECRET) {
+    if (!_cronAccepted.includes(got)) {
       return json({ ok: false, reason: "unauthorized" }, 401);
     }
   }
