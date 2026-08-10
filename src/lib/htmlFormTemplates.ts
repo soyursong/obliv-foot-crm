@@ -2693,8 +2693,7 @@ ${COMMON_STYLE}
     <div class="title" style="flex:none; padding:0 20px; letter-spacing:4px;">개인정보 수집·이용 동의서</div>
     <div style="flex:1;"></div>
   </div>
-  <div class="subtitle" style="font-size:9.5pt; margin-bottom:2px;">Consent to Collection &amp; Use of Personal Information</div>
-  <div class="subtitle" style="font-size:8.7pt; color:#444; margin-bottom:12px;">※ 셀프접수(태블릿) 오류 시 종이 백업용 — 아래 필수 동의(4종) 및 선택 동의(1종)를 확인 후 서명해 주세요.</div>
+  <div class="subtitle" style="font-size:9.5pt; margin-bottom:12px;">Consent to Collection &amp; Use of Personal Information</div>
 
   <!-- [1] 개인정보 수집·이용 동의 (필수) — SelfCheckIn.tsx privacyConsentLabel / privacyConsentNote -->
   <div class="pcf-block">
