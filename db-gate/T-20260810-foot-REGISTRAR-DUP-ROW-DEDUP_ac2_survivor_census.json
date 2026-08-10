@@ -1,0 +1,478 @@
+{
+  "ts_note": "READ-ONLY census, WRITE0/DDL0/DML0",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "pair": {
+    "강다연": [
+      "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+      "0ff81a68-9696-4a3a-b7ce-38973e37ee36"
+    ],
+    "이진석": [
+      "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+      "884b4571-fbfb-4aa7-871c-f555dc296956"
+    ]
+  },
+  "results": {
+    "A0_staff_schema": {
+      "label": "staff 컬럼 스키마",
+      "ok": true,
+      "rows": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "clinic_id",
+          "data_type": "uuid",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "name",
+          "data_type": "text",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "role",
+          "data_type": "text",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "active",
+          "data_type": "boolean",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "uuid",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "assign_sort_order",
+          "data_type": "integer",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "auto_assign_enabled",
+          "data_type": "boolean",
+          "is_nullable": "NO"
+        },
+        {
+          "column_name": "slack_user_id",
+          "data_type": "text",
+          "is_nullable": "YES"
+        },
+        {
+          "column_name": "phone",
+          "data_type": "text",
+          "is_nullable": "YES"
+        }
+      ]
+    },
+    "A0b_inbound_fk": {
+      "label": "public.staff 를 참조하는 전 FK (confrelid=staff)",
+      "ok": true,
+      "rows": [
+        {
+          "conname": "assignment_actions_to_staff_id_fkey",
+          "child_table": "assignment_actions",
+          "child_cols": "to_staff_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "assignment_actions_from_staff_id_fkey",
+          "child_table": "assignment_actions",
+          "child_cols": "from_staff_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "attendance_audit_staff_id_fkey",
+          "child_table": "attendance_audit",
+          "child_cols": "staff_id",
+          "on_delete": "a"
+        },
+        {
+          "conname": "attendance_device_staff_id_fkey",
+          "child_table": "attendance_device",
+          "child_cols": "staff_id",
+          "on_delete": "c"
+        },
+        {
+          "conname": "attendance_otp_staff_id_fkey",
+          "child_table": "attendance_otp",
+          "child_cols": "staff_id",
+          "on_delete": "c"
+        },
+        {
+          "conname": "attendance_punch_staff_id_fkey",
+          "child_table": "attendance_punch",
+          "child_cols": "staff_id",
+          "on_delete": "c"
+        },
+        {
+          "conname": "check_in_services_seller_staff_id_fkey",
+          "child_table": "check_in_services",
+          "child_cols": "seller_staff_id",
+          "on_delete": "r"
+        },
+        {
+          "conname": "check_ins_assigned_counselor_id_fkey",
+          "child_table": "check_ins",
+          "child_cols": "assigned_counselor_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "check_ins_consultant_id_fkey",
+          "child_table": "check_ins",
+          "child_cols": "consultant_id",
+          "on_delete": "a"
+        },
+        {
+          "conname": "check_ins_therapist_id_fkey",
+          "child_table": "check_ins",
+          "child_cols": "therapist_id",
+          "on_delete": "a"
+        },
+        {
+          "conname": "check_ins_technician_id_fkey",
+          "child_table": "check_ins",
+          "child_cols": "technician_id",
+          "on_delete": "a"
+        },
+        {
+          "conname": "clinic_doctors_staff_id_fkey",
+          "child_table": "clinic_doctors",
+          "child_cols": "staff_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "clinic_events_created_by_fkey",
+          "child_table": "clinic_events",
+          "child_cols": "created_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "customers_assigned_staff_id_fkey",
+          "child_table": "customers",
+          "child_cols": "assigned_staff_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "customers_assigned_consultant_id_fkey",
+          "child_table": "customers",
+          "child_cols": "assigned_consultant_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "customers_designated_therapist_id_fkey",
+          "child_table": "customers",
+          "child_cols": "designated_therapist_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "daily_room_status_disabled_by_fkey",
+          "child_table": "daily_room_status",
+          "child_cols": "disabled_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "duty_roster_doctor_id_fkey",
+          "child_table": "duty_roster",
+          "child_cols": "doctor_id",
+          "on_delete": "c"
+        },
+        {
+          "conname": "form_submissions_issued_by_fkey",
+          "child_table": "form_submissions",
+          "child_cols": "issued_by",
+          "on_delete": "a"
+        },
+        {
+          "conname": "health_maintenance_balances_verified_by_fkey",
+          "child_table": "health_maintenance_balances",
+          "child_cols": "verified_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "health_q_tokens_created_by_fkey",
+          "child_table": "health_q_tokens",
+          "child_cols": "created_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "insurance_documents_issued_by_fkey",
+          "child_table": "insurance_documents",
+          "child_cols": "issued_by",
+          "on_delete": "a"
+        },
+        {
+          "conname": "monthly_sales_targets_updated_by_fkey",
+          "child_table": "monthly_sales_targets",
+          "child_cols": "updated_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "notices_created_by_fkey",
+          "child_table": "notices",
+          "child_cols": "created_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "package_sessions_deleted_by_fkey",
+          "child_table": "package_sessions",
+          "child_cols": "deleted_by",
+          "on_delete": "a"
+        },
+        {
+          "conname": "package_sessions_performed_by_fkey",
+          "child_table": "package_sessions",
+          "child_cols": "performed_by",
+          "on_delete": "a"
+        },
+        {
+          "conname": "packages_consultant_id_fkey",
+          "child_table": "packages",
+          "child_cols": "consultant_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "prescriptions_prescribed_by_fkey",
+          "child_table": "prescriptions",
+          "child_cols": "prescribed_by",
+          "on_delete": "a"
+        },
+        {
+          "conname": "reservation_memo_history_created_by_fkey",
+          "child_table": "reservation_memo_history",
+          "child_cols": "created_by",
+          "on_delete": "n"
+        },
+        {
+          "conname": "reservation_registrars_staff_id_fkey",
+          "child_table": "reservation_registrars",
+          "child_cols": "staff_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "reservations_preferred_therapist_id_fkey",
+          "child_table": "reservations",
+          "child_cols": "preferred_therapist_id",
+          "on_delete": "n"
+        },
+        {
+          "conname": "room_assignments_staff_id_fkey",
+          "child_table": "room_assignments",
+          "child_cols": "staff_id",
+          "on_delete": "a"
+        },
+        {
+          "conname": "staff_attendance_staff_id_fkey",
+          "child_table": "staff_attendance",
+          "child_cols": "staff_id",
+          "on_delete": "c"
+        },
+        {
+          "conname": "staff_temp_off_staff_id_fkey",
+          "child_table": "staff_temp_off",
+          "child_cols": "staff_id",
+          "on_delete": "c"
+        },
+        {
+          "conname": "therapist_capabilities_staff_id_fkey",
+          "child_table": "therapist_capabilities",
+          "child_cols": "staff_id",
+          "on_delete": "c"
+        }
+      ]
+    },
+    "A1_records": {
+      "label": "4 dup staff 레코드 전체 컬럼",
+      "ok": true,
+      "rows": [
+        {
+          "id": "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "name": "강다연",
+          "role": "coordinator",
+          "active": true,
+          "created_at": "2026-08-08 11:12:36.442275+00",
+          "user_id": null,
+          "updated_at": "2026-08-08 11:12:36.442275+00",
+          "assign_sort_order": null,
+          "auto_assign_enabled": true,
+          "slack_user_id": null,
+          "phone": null
+        },
+        {
+          "id": "0ff81a68-9696-4a3a-b7ce-38973e37ee36",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "name": "강다연",
+          "role": "coordinator",
+          "active": true,
+          "created_at": "2026-08-10 02:15:21.690451+00",
+          "user_id": "08a68143-400d-4bc7-a2e1-c4c742b7c589",
+          "updated_at": "2026-08-10 02:15:21.690451+00",
+          "assign_sort_order": null,
+          "auto_assign_enabled": true,
+          "slack_user_id": null,
+          "phone": null
+        },
+        {
+          "id": "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "name": "이진석",
+          "role": "coordinator",
+          "active": true,
+          "created_at": "2026-08-08 11:12:52.942332+00",
+          "user_id": null,
+          "updated_at": "2026-08-08 11:12:52.942332+00",
+          "assign_sort_order": null,
+          "auto_assign_enabled": true,
+          "slack_user_id": null,
+          "phone": null
+        },
+        {
+          "id": "884b4571-fbfb-4aa7-871c-f555dc296956",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "name": "이진석",
+          "role": "coordinator",
+          "active": true,
+          "created_at": "2026-08-10 02:15:04.091499+00",
+          "user_id": "7a5c7012-a328-4670-86fe-4f34d582a325",
+          "updated_at": "2026-08-10 02:15:04.091499+00",
+          "assign_sort_order": null,
+          "auto_assign_enabled": true,
+          "slack_user_id": null,
+          "phone": null
+        }
+      ]
+    },
+    "A3a_registrar_edges": {
+      "label": "reservation_registrars staff_id 링크 계수",
+      "ok": true,
+      "rows": [
+        {
+          "staff_id": "884b4571-fbfb-4aa7-871c-f555dc296956",
+          "registrar_rows": 1,
+          "active_rows": 1
+        },
+        {
+          "staff_id": "0ff81a68-9696-4a3a-b7ce-38973e37ee36",
+          "registrar_rows": 1,
+          "active_rows": 1
+        }
+      ]
+    },
+    "A4_carve_recheck": {
+      "label": "8쌍 carve (cross-clinic seed) 재확인",
+      "ok": true,
+      "rows": [
+        {
+          "name": "김민경",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "김민경",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "김지혜",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "김지혜",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "김효신",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "김효신",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "문해민",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "문해민",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "박민석",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "박민석",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "이수빈",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "이수빈",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "장예지",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "장예지",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "진운선",
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        },
+        {
+          "name": "진운선",
+          "clinic_id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+          "staff_id": null,
+          "created_at": "2026-06-10 23:14:26.963388+00"
+        }
+      ]
+    }
+  }
+}
