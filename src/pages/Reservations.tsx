@@ -1453,6 +1453,11 @@ export default function Reservations() {
               memo: srcRow.memo,
               booking_memo: srcRow.booking_memo,
               status: 'confirmed',
+              // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 복사 생성도 유입경로 canonical 상속(원본행 값 승계).
+              //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉.
+              //   forward-only·first-write-wins(원본 이미 각인된 canonical 코드 그대로 복제, 재입력·매핑·치환 0).
+              //   원본 미각인(null)이면 null 승계 — 무해(신규 코드 생성 안 함).
+              inflow_channel: srcRow.inflow_channel ?? null,
               // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 복사 생성도 담당자=생성 계정.
               created_by: changedBy,
               // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 어드민 복사 생성 = 수기 → manual.

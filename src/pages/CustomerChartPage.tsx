@@ -151,6 +151,22 @@ interface NotificationLog {
 //   (영문 사유 문구 또는 source 프리픽스 + Solapi errorMessage). 서버 응답값은 불변,
 //   클라이언트 표시 시점에만 한글로 매핑한다(표시 전용 매핑 테이블).
 //   미정의 코드는 "발송 실패(원본코드)" fallback 으로 원본을 괄호 병기.
+/**
+ * T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 재진 예약생성 시 유입경로 canonical 상속 헬퍼.
+ *   고객 최초유입(customers.first_inflow_channel) 을 예약행 inflow_channel 로 승계(재입력 없음).
+ *   §36 방화벽: inflow 축만 read — referral_source/source_system/visit_route(legacy) 무접촉·매핑/치환 0.
+ *   forward-only·first-write-wins. 미각인(null) 고객은 null 반환(무해).
+ */
+async function fetchCustomerFirstInflow(customerId: string | null | undefined): Promise<string | null> {
+  if (!customerId) return null;
+  const { data } = await supabase
+    .from('customers')
+    .select('first_inflow_channel')
+    .eq('id', customerId)
+    .maybeSingle();
+  return (data as { first_inflow_channel?: string | null } | null)?.first_inflow_channel ?? null;
+}
+
 const NOTI_ERROR_KO_MAP: { match: RegExp; ko: string }[] = [
   { match: /messaging disabled/i,                 ko: '메시지 발송 기능 꺼짐' },
   { match: /no recipient phone|no recipient/i,    ko: '수신 번호 없음' },
@@ -4669,6 +4685,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       return;
     }
     setSavingResvMini(true);
+    // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 미니예약(재진 동선) 유입경로 canonical 상속.
+    //   재진 = 재입력 요구 없이 고객 최초유입(customers.first_inflow_channel) 상속(DA: 구환 미갱신·forward-only).
+    //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
+    const inheritedInflowMini = await fetchCustomerFirstInflow(customer.id);
     const { data: newResv, error } = await supabase.from('reservations').insert({
       customer_id: customer.id,
       clinic_id: customer.clinic_id,
@@ -4679,6 +4699,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       visit_type: 'returning',  // 재진으로 자동 생성
       booking_memo: resvMiniForm.memo || null,
       status: 'confirmed',
+      inflow_channel: inheritedInflowMini,
       created_by: profile?.id ?? null,
       // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 미니예약(재진 동선) = 어드민 수기 → manual.
       created_via: RESERVATION_CREATED_VIA.MANUAL,
@@ -5714,6 +5735,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const saveInlineResv = async (time: string) => {
     if (!customer || !inlineResvDate) return;
     setSavingInlineResv(true);
+    // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 인라인 슬롯예약(재진 동선) 유입경로 canonical 상속.
+    //   재진 = 고객 최초유입(customers.first_inflow_channel) 상속(재입력 없음·forward-only·first-write-wins).
+    //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
+    const inheritedInflowInline = await fetchCustomerFirstInflow(customer.id);
     const { data: newResv, error } = await supabase.from('reservations').insert({
       customer_id: customer.id,
       clinic_id: customer.clinic_id,
@@ -5724,6 +5749,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       visit_type: 'returning',
       booking_memo: inlineResvMemo.trim() || null,
       status: 'confirmed',
+      inflow_channel: inheritedInflowInline,
       created_by: profile?.id ?? null,
       // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 인라인 슬롯예약(재진 동선) = 어드민 수기 → manual.
       created_via: RESERVATION_CREATED_VIA.MANUAL,
