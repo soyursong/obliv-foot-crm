@@ -51,6 +51,7 @@ import {
   X,
   ZoomIn,
   Package,
+  Ticket,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -150,8 +151,20 @@ const ConsentMapCtx = createContext<Map<string, ConsentEntry>>(new Map());
 /** 체크인 ID → 체크리스트 완료 여부 맵 (T-20260430-foot-PRESCREEN-CHECKLIST) */
 const ChecklistDoneCtx = createContext<Set<string>>(new Set());
 
-/** 활성 패키지 보유 고객 customer_id 집합 (잔여>0) (T-20260522-foot-PKG-BOX-INDICATOR) */
+/** 활성 (비-체험권) 패키지 보유 고객 customer_id 집합 (잔여>0) (T-20260522-foot-PKG-BOX-INDICATOR)
+ *  T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 체험권(무좀체험권/내성체험권) 티켓은 이 집합에서 제외되고
+ *  아래 TrialHolderCtx 로 분리 → 고객박스 배지가 [패키지] 대신 [체험권] 으로 렌더된다. */
 const PkgHolderCtx = createContext<Set<string>>(new Set());
+
+/** T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 활성 체험권 티켓 보유 고객 customer_id 집합 (잔여>0).
+ *  체험권 = packages.package_name 이 canonical 체험권 티켓명(무좀체험권/내성체험권)과 정확일치.
+ *  대시보드 census(prod 실측 563건): treatment_type 은 무좀체험권↔비가열/체험권/null 로 혼재해 판별 불가 →
+ *  package_name 정확일치가 유일 canonical 축. 부분문자열 매칭('체험' 등)은 직원체험/체험단/체험권 오탐 위험 → 금지. */
+const TrialHolderCtx = createContext<Set<string>>(new Set());
+
+/** T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: [체험권] 배지로 relabel 대상인 canonical 티켓명(정확일치, trim 후).
+ *  현장(김주연 총괄) 요청 대상 = 무좀체험권 / 내성체험권 2종만. 그 외 체험 계열(체험단·직원체험·체험권 단독 등)은 [패키지] 유지. */
+const TRIAL_TICKET_NAMES = new Set(['무좀체험권', '내성체험권']);
 
 /** 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 고객 customer_id 집합 (T-20260623-foot-PKGBOX-PODOLOGE-BADGE) */
 const PodologeHolderCtx = createContext<Set<string>>(new Set());
@@ -511,6 +524,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260522-foot-PKG-BOX-INDICATOR: 활성 패키지 보유 여부
   const pkgHolderSet = useContext(PkgHolderCtx);
   const hasPkg = !!(checkIn.customer_id && pkgHolderSet.has(checkIn.customer_id));
+  // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 활성 체험권 티켓(무좀/내성체험권) 보유 여부
+  const trialHolderSet = useContext(TrialHolderCtx);
+  const hasTrial = !!(checkIn.customer_id && trialHolderSet.has(checkIn.customer_id));
   // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 여부
   const podologeHolderSet = useContext(PodologeHolderCtx);
   const hasPodologe = !!(checkIn.customer_id && podologeHolderSet.has(checkIn.customer_id));
@@ -742,6 +758,17 @@ const DraggableCard = memo(function DraggableCard({
               패키지
             </span>
           )}
+          {/* T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 체험권 티켓(무좀/내성체험권) → [체험권] 배지.
+              색상=amber(주황) — [패키지] 보라(violet)와 명확히 구분(AC-5 비보라 필수). */}
+          {hasTrial && (
+            <span
+              data-testid="trial-holder-badge"
+              className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-700 text-[9px] px-0.5 py-px rounded font-medium"
+            >
+              <Ticket className="h-2 w-2" />
+              체험권
+            </span>
+          )}
           {/* T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 포돌로게 회차 보유 식별 배지 */}
           {hasPodologe && (
             <span
@@ -938,6 +965,17 @@ const DraggableCard = memo(function DraggableCard({
           >
             <Package className="h-2 w-2" />
             패키지
+          </span>
+        )}
+        {/* T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 체험권 티켓(무좀/내성체험권) → [체험권] 배지.
+            색상=amber(주황) — [패키지] 보라(violet)와 명확히 구분(AC-5 비보라 필수). */}
+        {hasTrial && (
+          <span
+            data-testid="trial-holder-badge"
+            className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-700 text-[9px] px-0.5 py-px rounded font-medium"
+          >
+            <Ticket className="h-2 w-2" />
+            체험권
           </span>
         )}
         {/* T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 포돌로게 회차 보유 식별 배지 */}
@@ -3539,8 +3577,10 @@ export default function Dashboard() {
   //   현재 status 가 done 에서 되돌려져도(상태 재전환) 집합에서 빠지지 않으므로 "완료 후 줄지 않는" 누적 카운트 보장.
   //   현재 byStatus['done'] 와 union 하여 최종 완료 카운트 산출(자정 KST 리셋 = dateStr 변경 시 재fetch).
   const [pkgMap, setPkgMap] = useState<Map<string, PackageLabel>>(new Map());
-  // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 패키지 보유 고객 ID 집합
+  // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0인 활성 (비-체험권) 패키지 보유 고객 ID 집합
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
+  // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 잔여>0인 활성 체험권 티켓(무좀/내성체험권) 보유 고객 ID 집합
+  const [trialHolderSet, setTrialHolderSet] = useState<Set<string>>(new Set());
   // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 고객 ID 집합
   const [podologeHolderSet, setPodologeHolderSet] = useState<Set<string>>(new Set());
   // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합
@@ -4526,7 +4566,7 @@ export default function Dashboard() {
       .select('id, customer_id, package_name, total_sessions, podologe_sessions')
       .eq('clinic_id', clinic.id)
       .eq('status', 'active');
-    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); setPodologeHolderSet(new Set()); return; }
+    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); setTrialHolderSet(new Set()); setPodologeHolderSet(new Set()); return; }
 
     const pkgIds = pkgs.map((p: { id: string }) => p.id);
     // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: 활성 패키지가 누적(클리닉당 수백건)되면
@@ -4547,8 +4587,10 @@ export default function Dashboard() {
     }
 
     const map = new Map<string, PackageLabel>();
-    // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0 고객 ID 집합 (배치 조인, 추가 DB 쿼리 없음)
+    // T-20260522-foot-PKG-BOX-INDICATOR: 잔여>0 (비-체험권) 패키지 보유 고객 ID 집합 (배치 조인, 추가 DB 쿼리 없음)
     const holderSet = new Set<string>();
+    // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 잔여>0 체험권 티켓(무좀/내성체험권) 보유 고객 ID 집합
+    const trialSet = new Set<string>();
     // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 고객 ID 집합 (추가 DB 쿼리 없음)
     const podologeSet = new Set<string>();
     for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number; podologe_sessions: number | null }[]) {
@@ -4556,11 +4598,18 @@ export default function Dashboard() {
       const remaining = Math.max(0, p.total_sessions - used);
       // T-20260617-foot-PKGBOX-USED-FORMAT: used 보존 → 회차 번호 표기(N=used+1)
       map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions, used });
-      if (remaining > 0) holderSet.add(p.customer_id);
+      // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: package_name 정확일치(trim)로 체험권 티켓 분기.
+      //   체험권 → trialSet([체험권] 배지), 그 외 → holderSet([패키지] 배지 유지). 잔여>0 만 대상(기존 배지 노출 조건 동일).
+      const isTrialTicket = TRIAL_TICKET_NAMES.has((p.package_name ?? '').trim());
+      if (remaining > 0) {
+        if (isTrialTicket) trialSet.add(p.customer_id);
+        else holderSet.add(p.customer_id);
+      }
       if ((p.podologe_sessions ?? 0) > 0) podologeSet.add(p.customer_id);
     }
     setPkgMap(map);
     setPkgHolderSet(holderSet);
+    setTrialHolderSet(trialSet);
     setPodologeHolderSet(podologeSet);
   }, [clinic]);
 
@@ -7667,6 +7716,7 @@ export default function Dashboard() {
       <CardHandlersCtx.Provider value={cardHandlersValue}>
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
+      <TrialHolderCtx.Provider value={trialHolderSet}>
       <PodologeHolderCtx.Provider value={podologeHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
       <OutstandingMapCtx.Provider value={outstandingMap}>
@@ -7881,6 +7931,7 @@ export default function Dashboard() {
       </OutstandingMapCtx.Provider>
       </AltHolderCtx.Provider>
       </PodologeHolderCtx.Provider>
+      </TrialHolderCtx.Provider>
       </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>
       </CardHandlersCtx.Provider>
