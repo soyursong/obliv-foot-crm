@@ -9,8 +9,8 @@
 -- 성격: 비파괴 UPDATE(active 플래그만). hard-DELETE 지양(reversible). 스키마 무변경(신규 컬럼/테이블/enum 0) → 파괴 0.
 --   발행 이력(form_submissions)은 별 테이블 무접촉. HTML 템플릿(HTML_TEMPLATE_MAP)·FORM_META 는 펜차트 렌더용으로 보존.
 -- 멱등: 이미 active=false 면 no-op(WHERE active). 재실행 안전.
--- 롤백: 20260810120000_..._active_false.rollback.sql (active=true 복원).
--- dry-run: 20260810120000_..._active_false.dryrun.sql (무영속 ROW_COUNT 계측).
+-- 롤백: 20260810210000_..._active_false.rollback.sql (active=true 복원).
+-- dry-run: 20260810210000_..._active_false.dryrun.sql (무영속 ROW_COUNT 계측).
 
 UPDATE form_templates
 SET active = false

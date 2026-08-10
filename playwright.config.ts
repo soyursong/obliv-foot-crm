@@ -214,6 +214,12 @@ export default defineConfig({
         //   groupDocList '동의서' 그룹/FALLBACK_TEMPLATES) 정적 가드. 문안 verbatim(authoritative source) 검증.
         //   auth/DB/server 불요·결정론. 실 UI+인쇄 관측 = supervisor field-soak(seed row 적용 후).
         '**/T-20260808-foot-PENCHART-PRIVACY-CONSENT-FORM.spec.ts',
+        // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-RELOCATE: 외국인 비급여 진료 동의서 펜차트 재배치.
+        //   [add leg] PenChartTab BUILTIN_FOREIGNER_CONSENT(html_render) 배경 서식 = HTML 템플릿 재사용
+        //   (getHtmlTemplate/bindHtmlTemplate, 5조항 국·영문 verbatim + 날짜/성명 자동 + 서명 빈칸).
+        //   [de-list leg] 서류 발행 화면 제거(DOCLIST_ORDER_10/DOC_CATEGORY_CONSENT_KEYS 제거·FALLBACK active=false).
+        //   auth/DB/server 불요·결정론. 실 UI(펜차트 A4 손서명 합성)+seed active=false apply = supervisor field-soak/DB-GATE.
+        '**/T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-RELOCATE.spec.ts',
         // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형(수정·저장·출력) 재작업.
         //   seed/overlay/eligibility/print-mask 순수함수(autoVisitLog) 단언 + CustomerChartPage/EditableAutoVisitLogBox
         //   정적 소스 가드(AC-1 별도탭 폐지·양식 내부 배치 / VG1 ledger write-back0 / VG3 rows-affected / VG4 RRN 미저장).

@@ -1,5 +1,5 @@
 -- DRY-RUN (No-Persistence) — T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE
---   20260810120000_..._active_false.sql 의 UPDATE 로직을 그대로 실행하되 COMMIT 대신 ROLLBACK.
+--   20260810210000_..._active_false.sql 의 UPDATE 로직을 그대로 실행하되 COMMIT 대신 ROLLBACK.
 --   would-UPDATE ROW_COUNT 를 실제로 계측·검증하되 영속시키지 않는다(migration_dryrun_no_persistence 준수).
 --   본 마이그는 up.sql 내부에 txn 제어문(COMMIT 등)이 없음 → sentinel bypass hazard 무해(strip 불요).
 --
