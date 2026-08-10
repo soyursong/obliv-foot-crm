@@ -1,0 +1,395 @@
+{
+  "mode": "READ-ONLY",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "at": "run-time",
+  "R1_staff_axes": [
+    {
+      "id": "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+      "name": "강다연",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": null,
+      "created_at": "2026-08-08 11:12:36.442275+00",
+      "auth_email": null,
+      "last_sign_in_at": null,
+      "email_confirmed_at": null
+    },
+    {
+      "id": "0ff81a68-9696-4a3a-b7ce-38973e37ee36",
+      "name": "강다연",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": "08a68143-400d-4bc7-a2e1-c4c742b7c589",
+      "created_at": "2026-08-10 02:15:21.690451+00",
+      "auth_email": "ekdusrkd1@naver.com",
+      "last_sign_in_at": "2026-08-10 03:03:26.680649+00",
+      "email_confirmed_at": "2026-08-10 02:32:10.064906+00"
+    },
+    {
+      "id": "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+      "name": "이진석",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": null,
+      "created_at": "2026-08-08 11:12:52.942332+00",
+      "auth_email": null,
+      "last_sign_in_at": null,
+      "email_confirmed_at": null
+    },
+    {
+      "id": "884b4571-fbfb-4aa7-871c-f555dc296956",
+      "name": "이진석",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": "7a5c7012-a328-4670-86fe-4f34d582a325",
+      "created_at": "2026-08-10 02:15:04.091499+00",
+      "auth_email": "naspos82@gmail.com",
+      "last_sign_in_at": null,
+      "email_confirmed_at": "2026-08-10 02:13:22.330729+00"
+    }
+  ],
+  "R2_attendance_pks": [
+    {
+      "attendance_id": "a9761249-fc3b-45b1-9a2a-1e3db3e65a07",
+      "staff_id": "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+      "full_row": {
+        "id": "a9761249-fc3b-45b1-9a2a-1e3db3e65a07",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "date": "2026-08-10",
+        "staff_id": "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+        "source": "google_sheet",
+        "status": "present",
+        "synced_at": "2026-08-10T12:15:01.615+00:00",
+        "created_at": "2026-08-10T01:45:01.674998+00:00",
+        "updated_at": "2026-08-10T12:15:01.615+00:00",
+        "scheduled_start_at": null,
+        "scheduled_end_at": null
+      }
+    },
+    {
+      "attendance_id": "f35160d7-8c7f-4337-bd79-a1ec3c288366",
+      "staff_id": "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+      "full_row": {
+        "id": "f35160d7-8c7f-4337-bd79-a1ec3c288366",
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+        "date": "2026-08-10",
+        "staff_id": "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+        "source": "google_sheet",
+        "status": "present",
+        "synced_at": "2026-08-10T12:15:01.615+00:00",
+        "created_at": "2026-08-10T01:45:01.674998+00:00",
+        "updated_at": "2026-08-10T12:15:01.615+00:00",
+        "scheduled_start_at": null,
+        "scheduled_end_at": null
+      }
+    }
+  ],
+  "R3_inbound_fks": [
+    {
+      "conname": "assignment_actions_from_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "assignment_actions",
+      "child_col": "from_staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "assignment_actions_to_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "assignment_actions",
+      "child_col": "to_staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "attendance_audit_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "attendance_audit",
+      "child_col": "staff_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "attendance_device_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "attendance_device",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "attendance_otp_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "attendance_otp",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "attendance_punch_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "attendance_punch",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "check_in_services_seller_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "check_in_services",
+      "child_col": "seller_staff_id",
+      "confdeltype": "r"
+    },
+    {
+      "conname": "check_ins_assigned_counselor_id_fkey",
+      "child_schema": "public",
+      "child_table": "check_ins",
+      "child_col": "assigned_counselor_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "check_ins_consultant_id_fkey",
+      "child_schema": "public",
+      "child_table": "check_ins",
+      "child_col": "consultant_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "check_ins_technician_id_fkey",
+      "child_schema": "public",
+      "child_table": "check_ins",
+      "child_col": "technician_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "check_ins_therapist_id_fkey",
+      "child_schema": "public",
+      "child_table": "check_ins",
+      "child_col": "therapist_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "clinic_doctors_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "clinic_doctors",
+      "child_col": "staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "clinic_events_created_by_fkey",
+      "child_schema": "public",
+      "child_table": "clinic_events",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "customers_assigned_consultant_id_fkey",
+      "child_schema": "public",
+      "child_table": "customers",
+      "child_col": "assigned_consultant_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "customers_assigned_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "customers",
+      "child_col": "assigned_staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "customers_designated_therapist_id_fkey",
+      "child_schema": "public",
+      "child_table": "customers",
+      "child_col": "designated_therapist_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "daily_room_status_disabled_by_fkey",
+      "child_schema": "public",
+      "child_table": "daily_room_status",
+      "child_col": "disabled_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "duty_roster_doctor_id_fkey",
+      "child_schema": "public",
+      "child_table": "duty_roster",
+      "child_col": "doctor_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "form_submissions_issued_by_fkey",
+      "child_schema": "public",
+      "child_table": "form_submissions",
+      "child_col": "issued_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "health_maintenance_balances_verified_by_fkey",
+      "child_schema": "public",
+      "child_table": "health_maintenance_balances",
+      "child_col": "verified_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "health_q_tokens_created_by_fkey",
+      "child_schema": "public",
+      "child_table": "health_q_tokens",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "insurance_documents_issued_by_fkey",
+      "child_schema": "public",
+      "child_table": "insurance_documents",
+      "child_col": "issued_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "monthly_sales_targets_updated_by_fkey",
+      "child_schema": "public",
+      "child_table": "monthly_sales_targets",
+      "child_col": "updated_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "notices_created_by_fkey",
+      "child_schema": "public",
+      "child_table": "notices",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "package_sessions_deleted_by_fkey",
+      "child_schema": "public",
+      "child_table": "package_sessions",
+      "child_col": "deleted_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "package_sessions_performed_by_fkey",
+      "child_schema": "public",
+      "child_table": "package_sessions",
+      "child_col": "performed_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "packages_consultant_id_fkey",
+      "child_schema": "public",
+      "child_table": "packages",
+      "child_col": "consultant_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "prescriptions_prescribed_by_fkey",
+      "child_schema": "public",
+      "child_table": "prescriptions",
+      "child_col": "prescribed_by",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "reservation_memo_history_created_by_fkey",
+      "child_schema": "public",
+      "child_table": "reservation_memo_history",
+      "child_col": "created_by",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "reservation_registrars_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "reservation_registrars",
+      "child_col": "staff_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "reservations_preferred_therapist_id_fkey",
+      "child_schema": "public",
+      "child_table": "reservations",
+      "child_col": "preferred_therapist_id",
+      "confdeltype": "n"
+    },
+    {
+      "conname": "room_assignments_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "room_assignments",
+      "child_col": "staff_id",
+      "confdeltype": "a"
+    },
+    {
+      "conname": "staff_attendance_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "staff_attendance",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "staff_temp_off_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "staff_temp_off",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    },
+    {
+      "conname": "therapist_capabilities_staff_id_fkey",
+      "child_schema": "public",
+      "child_table": "therapist_capabilities",
+      "child_col": "staff_id",
+      "confdeltype": "c"
+    }
+  ],
+  "R4_loser_refs_nonzero": [
+    {
+      "tbl": "public.staff_attendance",
+      "col": "staff_id",
+      "loser_refs": 2
+    }
+  ],
+  "R5_carve_8pairs": [
+    {
+      "name": "김민경",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "김지혜",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "김효신",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "문해민",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "박민석",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "이수빈",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "장예지",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    },
+    {
+      "name": "진운선",
+      "rows": 2,
+      "clinics": 2,
+      "null_staff_id": 2
+    }
+  ]
+}

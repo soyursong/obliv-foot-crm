@@ -1,0 +1,88 @@
+{
+  "ticket": "T-20260810-foot-REGISTRAR-DUP-ROW-DEDUP",
+  "purpose": "INV-8-c before_image (명시 uid only) — POST-VERIFY 대조 근거. apply 前 prod 상태 스냅샷.",
+  "captured_mode": "READ-ONLY (freeze_reverify.json 파생)",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "staff_before": [
+    {
+      "uid": "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+      "name": "강다연",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": null,
+      "auth_email": null,
+      "last_sign_in_at": null,
+      "class": "loser"
+    },
+    {
+      "uid": "0ff81a68-9696-4a3a-b7ce-38973e37ee36",
+      "name": "강다연",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": "08a68143-400d-4bc7-a2e1-c4c742b7c589",
+      "auth_email": "ekdusrkd1@naver.com",
+      "last_sign_in_at": "2026-08-10 03:03:26.680649+00",
+      "class": "survivor"
+    },
+    {
+      "uid": "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+      "name": "이진석",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": null,
+      "auth_email": null,
+      "last_sign_in_at": null,
+      "class": "loser"
+    },
+    {
+      "uid": "884b4571-fbfb-4aa7-871c-f555dc296956",
+      "name": "이진석",
+      "role": "coordinator",
+      "active": true,
+      "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+      "user_id": "7a5c7012-a328-4670-86fe-4f34d582a325",
+      "auth_email": "naspos82@gmail.com",
+      "last_sign_in_at": null,
+      "class": "survivor"
+    }
+  ],
+  "attendance_before": [
+    {
+      "attendance_id": "a9761249-fc3b-45b1-9a2a-1e3db3e65a07",
+      "orig_staff_id": "4bcf55a2-4472-48ac-86a1-fca4b576ac21"
+    },
+    {
+      "attendance_id": "f35160d7-8c7f-4337-bd79-a1ec3c288366",
+      "orig_staff_id": "9a429fb7-699b-4647-94da-c2ec1e61b3c9"
+    }
+  ],
+  "expected_after": {
+    "survivor_active": [
+      "0ff81a68-9696-4a3a-b7ce-38973e37ee36",
+      "884b4571-fbfb-4aa7-871c-f555dc296956"
+    ],
+    "loser_active_false": [
+      "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+      "9a429fb7-699b-4647-94da-c2ec1e61b3c9"
+    ],
+    "attendance_repointed": [
+      {
+        "attendance_id": "a9761249-fc3b-45b1-9a2a-1e3db3e65a07",
+        "from": "4bcf55a2-4472-48ac-86a1-fca4b576ac21",
+        "to": "0ff81a68-9696-4a3a-b7ce-38973e37ee36"
+      },
+      {
+        "attendance_id": "f35160d7-8c7f-4337-bd79-a1ec3c288366",
+        "from": "9a429fb7-699b-4647-94da-c2ec1e61b3c9",
+        "to": "884b4571-fbfb-4aa7-871c-f555dc296956"
+      }
+    ]
+  },
+  "human_confirm_gate": {
+    "강다연": "STRONG (권고)",
+    "이진석": "MODERATE — INV-8-b fail-closed 필수 (미로그인)"
+  }
+}

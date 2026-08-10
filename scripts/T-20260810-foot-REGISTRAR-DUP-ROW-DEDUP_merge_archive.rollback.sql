@@ -1,10 +1,11 @@
 -- ============================================================================
--- ROLLBACK — T-20260810-foot-REGISTRAR-DUP-ROW-DEDUP merge-before-archive
+-- ROLLBACK (FROZEN v2) — T-20260810-foot-REGISTRAR-DUP-ROW-DEDUP merge-before-archive
 -- soft-archive·re-point 가역 복원. hard-DELETE 없었으므로 데이터 순소실 0.
+-- PK-precise: up.sql freeze set 의 명시 attendance PK 로 한정 원복 (blanket UPDATE 금지).
 -- ============================================================================
 BEGIN;
 
--- 3'. loser soft-archive 복원 (active=true·라벨 제거·auto_assign 복원)
+-- 3'. loser soft-archive 복원 (active=true·라벨 제거·auto_assign 복원) — 멱등
 UPDATE public.staff
    SET active = true,
        auto_assign_enabled = true,
@@ -13,24 +14,21 @@ UPDATE public.staff
  WHERE id IN ('4bcf55a2-4472-48ac-86a1-fca4b576ac21',   -- 강다연 loser
               '9a429fb7-699b-4647-94da-c2ec1e61b3c9');   -- 이진석 loser
 
--- 1'. staff_attendance re-point 원복 (survivor → loser)
+-- 1'. staff_attendance re-point 원복 — PK-precise (up.sql 이 UPDATE 한 정확히 그 PK만)
+-- 강다연: attendance a9761249 → loser 4bcf55a2
 UPDATE public.staff_attendance
    SET staff_id = '4bcf55a2-4472-48ac-86a1-fca4b576ac21'
- WHERE staff_id = '0ff81a68-9696-4a3a-b7ce-38973e37ee36'
-   -- ⚠ survivor 원래 소유 attendance 와 구분 불가 위험 →
-   --    실 rollback 은 _before_image / mig 실행로그의 re-point 대상 PK 로 한정 UPDATE 할 것.
-   --    (여기 WHERE 는 개념 표기 — apply 시 re-pointed attendance PK 를 로그로 freeze 후 그 PK 만 원복)
-   AND false;  -- ★가드: PK-freeze 없이 blanket 원복 금지. 실 롤백은 로그 PK 기반.
+ WHERE id = 'a9761249-fc3b-45b1-9a2a-1e3db3e65a07'
+   AND staff_id = '0ff81a68-9696-4a3a-b7ce-38973e37ee36';   -- 가드: up.sql 적용본만 원복
 
--- 이진석 동일 (PK-freeze 기반 원복)
+-- 이진석: attendance f35160d7 → loser 9a429fb7
 UPDATE public.staff_attendance
    SET staff_id = '9a429fb7-699b-4647-94da-c2ec1e61b3c9'
- WHERE staff_id = '884b4571-fbfb-4aa7-871c-f555dc296956'
-   AND false;  -- ★가드: 상동
+ WHERE id = 'f35160d7-8c7f-4337-bd79-a1ec3c288366'
+   AND staff_id = '884b4571-fbfb-4aa7-871c-f555dc296956';
 
 COMMIT;
 
--- NOTE: staff_attendance re-point 원복은 survivor 가 원래 갖던 attendance 와
---   re-pointed attendance 를 구분해야 하므로, apply 단계에서 re-point 대상 PK 를
---   실행로그(before_image 확장)에 기록 → rollback 시 그 PK 집합만 loser 로 되돌린다.
+-- NOTE: attendance PK 를 up.sql 이 명시(a9761249·f35160d7)하므로 rollback 은 그 2 PK 만
+--   loser 로 되돌린다 — survivor 원소유 attendance 와 혼동 위험 0 (구 DRAFT 의 blanket 가드 제거).
 --   soft-archive 복원(§3')만으로도 근무캘린더 2중표시는 재현되나 데이터 무결.
