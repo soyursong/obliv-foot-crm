@@ -1,0 +1,15 @@
+[sub:rooms] SUBSCRIBED 
+[sub:duty] SUBSCRIBED 
+[sub] both channels SUBSCRIBED
+[write] same-value UPDATE fired on rooms + duty_roster
+
+===== AC-5 RESULT =====
+M-gap  rooms realtime event delivered : true (UPDATE)
+membership duty_roster event delivered: true (UPDATE)
+F-gap  duty_roster payload.old keys   : id,date,notes,clinic_id,doctor_id,created_at,roster_type
+F-gap  FULL old-row has clinic_id     : true
+=======================
+
+[sub:rooms] CLOSED 
+[sub:duty] CLOSED 
+AC-5 PASS
