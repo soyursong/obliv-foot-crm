@@ -1,0 +1,265 @@
+{
+  "ts": "2026-08-10T06:34:46.721Z",
+  "clinic": {
+    "id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "name": "오블리브의원 서울오리진점",
+    "slug": "jongno-foot"
+  },
+  "targets": [
+    {
+      "name": "게스트",
+      "email": "footcare@oblivseoul.kr",
+      "role": "therapist",
+      "job": "치료사",
+      "auth_exists": true,
+      "auth_count": 1,
+      "auth": [
+        {
+          "id": "3b7eaaa8-2d6a-4345-bdc0-275f49d426d1",
+          "email": "footcare@oblivseoul.kr",
+          "id_email_verified": true,
+          "email_confirmed_at": "2026-08-10T02:08:58.088969Z",
+          "created_at": "2026-08-10T02:08:58.083932Z",
+          "banned_until": null
+        }
+      ],
+      "profile": {
+        "id": "3b7eaaa8-2d6a-4345-bdc0-275f49d426d1",
+        "email": "footcare@oblivseoul.kr",
+        "name": "게스트",
+        "role": "therapist",
+        "approved": true,
+        "active": true,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      },
+      "staff": [
+        {
+          "id": "86e88f56-b4c3-4301-b572-93e6f473d206",
+          "name": "게스트",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "3b7eaaa8-2d6a-4345-bdc0-275f49d426d1"
+        }
+      ]
+    },
+    {
+      "name": "강다연",
+      "email": "ekdusrkd1@naver.com",
+      "role": "coordinator",
+      "job": "코디네이터",
+      "auth_exists": true,
+      "auth_count": 1,
+      "auth": [
+        {
+          "id": "08a68143-400d-4bc7-a2e1-c4c742b7c589",
+          "email": "ekdusrkd1@naver.com",
+          "id_email_verified": true,
+          "email_confirmed_at": "2026-08-10T02:32:10.064906Z",
+          "created_at": "2026-08-10T02:09:37.633963Z",
+          "last_sign_in_at": "2026-08-10T03:03:26.680649Z",
+          "banned_until": null
+        }
+      ],
+      "profile": {
+        "id": "08a68143-400d-4bc7-a2e1-c4c742b7c589",
+        "email": "ekdusrkd1@naver.com",
+        "name": "강다연",
+        "role": "coordinator",
+        "approved": true,
+        "active": true,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      },
+      "staff": [
+        {
+          "id": "0ff81a68-9696-4a3a-b7ce-38973e37ee36",
+          "name": "강다연",
+          "role": "coordinator",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "08a68143-400d-4bc7-a2e1-c4c742b7c589"
+        }
+      ]
+    },
+    {
+      "name": "이진석",
+      "email": "naspos82@gmail.com",
+      "role": "coordinator",
+      "job": "코디네이터",
+      "auth_exists": true,
+      "auth_count": 1,
+      "auth": [
+        {
+          "id": "7a5c7012-a328-4670-86fe-4f34d582a325",
+          "email": "naspos82@gmail.com",
+          "id_email_verified": true,
+          "email_confirmed_at": "2026-08-10T02:13:22.330729Z",
+          "created_at": "2026-08-10T02:13:22.321827Z",
+          "banned_until": null
+        }
+      ],
+      "profile": {
+        "id": "7a5c7012-a328-4670-86fe-4f34d582a325",
+        "email": "naspos82@gmail.com",
+        "name": "이진석",
+        "role": "coordinator",
+        "approved": true,
+        "active": true,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      },
+      "staff": [
+        {
+          "id": "884b4571-fbfb-4aa7-871c-f555dc296956",
+          "name": "이진석",
+          "role": "coordinator",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "7a5c7012-a328-4670-86fe-4f34d582a325"
+        }
+      ]
+    },
+    {
+      "name": "황수진",
+      "email": "hwang5679@gmail.com",
+      "role": "therapist",
+      "job": "치료사",
+      "auth_exists": true,
+      "auth_count": 1,
+      "auth": [
+        {
+          "id": "967443b8-5d43-45ee-97ad-2cdfbd0254e0",
+          "email": "hwang5679@gmail.com",
+          "id_email_verified": true,
+          "email_confirmed_at": "2026-08-10T02:13:32.500674Z",
+          "created_at": "2026-08-10T02:13:32.496555Z",
+          "last_sign_in_at": "2026-08-10T02:50:11.72302Z",
+          "banned_until": null
+        }
+      ],
+      "profile": {
+        "id": "967443b8-5d43-45ee-97ad-2cdfbd0254e0",
+        "email": "hwang5679@gmail.com",
+        "name": "황수진",
+        "role": "therapist",
+        "approved": true,
+        "active": true,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      },
+      "staff": [
+        {
+          "id": "f2167cdd-0786-4a82-b3f3-42b99d4fb327",
+          "name": "황수진",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "967443b8-5d43-45ee-97ad-2cdfbd0254e0"
+        }
+      ]
+    },
+    {
+      "name": "한예슬",
+      "email": "dptmf316@gmail.com",
+      "role": "therapist",
+      "job": "치료사",
+      "auth_exists": true,
+      "auth_count": 1,
+      "auth": [
+        {
+          "id": "ab6d1e3c-7244-496c-9240-98c6c9f03bb9",
+          "email": "dptmf316@gmail.com",
+          "id_email_verified": true,
+          "email_confirmed_at": "2026-08-10T02:13:32.783714Z",
+          "created_at": "2026-08-10T02:13:32.77906Z",
+          "last_sign_in_at": "2026-08-10T02:43:56.069112Z",
+          "banned_until": null
+        }
+      ],
+      "profile": {
+        "id": "ab6d1e3c-7244-496c-9240-98c6c9f03bb9",
+        "email": "dptmf316@gmail.com",
+        "name": "한예슬",
+        "role": "therapist",
+        "approved": true,
+        "active": true,
+        "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+      },
+      "staff": [
+        {
+          "id": "de581339-8f65-4b0e-86c1-da0a1e4ebf51",
+          "name": "한예슬",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "ab6d1e3c-7244-496c-9240-98c6c9f03bb9"
+        }
+      ]
+    }
+  ],
+  "dup_name_census": [
+    {
+      "name": "한예슬",
+      "staff_rows": [
+        {
+          "id": "de581339-8f65-4b0e-86c1-da0a1e4ebf51",
+          "name": "한예슬",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "ab6d1e3c-7244-496c-9240-98c6c9f03bb9"
+        },
+        {
+          "id": "9298edea-26a2-4aa2-8d10-457527b4167a",
+          "name": "한예슬",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": null
+        }
+      ],
+      "profile_rows": [
+        {
+          "id": "ab6d1e3c-7244-496c-9240-98c6c9f03bb9",
+          "email": "dptmf316@gmail.com",
+          "name": "한예슬",
+          "role": "therapist",
+          "approved": true,
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+        }
+      ]
+    },
+    {
+      "name": "황수진",
+      "staff_rows": [
+        {
+          "id": "f2167cdd-0786-4a82-b3f3-42b99d4fb327",
+          "name": "황수진",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": "967443b8-5d43-45ee-97ad-2cdfbd0254e0"
+        },
+        {
+          "id": "305a1282-5d3a-4d51-9045-2dee26b00d2d",
+          "name": "황수진",
+          "role": "therapist",
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+          "user_id": null
+        }
+      ],
+      "profile_rows": [
+        {
+          "id": "967443b8-5d43-45ee-97ad-2cdfbd0254e0",
+          "email": "hwang5679@gmail.com",
+          "name": "황수진",
+          "role": "therapist",
+          "approved": true,
+          "active": true,
+          "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8"
+        }
+      ]
+    }
+  ],
+  "all_staff_count": null
+}

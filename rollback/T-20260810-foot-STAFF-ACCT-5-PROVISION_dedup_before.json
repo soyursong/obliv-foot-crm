@@ -1,0 +1,18 @@
+[
+  {
+    "id": "9298edea-26a2-4aa2-8d10-457527b4167a",
+    "name": "한예슬",
+    "role": "therapist",
+    "active": true,
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "user_id": null
+  },
+  {
+    "id": "305a1282-5d3a-4d51-9045-2dee26b00d2d",
+    "name": "황수진",
+    "role": "therapist",
+    "active": true,
+    "clinic_id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "user_id": null
+  }
+]
