@@ -117,3 +117,35 @@ verify_jwt = false
 #   달리 게이트웨이 우회가 필요 없다. 명시적으로 true 를 박아 의도를 문서화(body pilot 동일 컨벤션).
 [functions.admin-register-staff]
 verify_jwt = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# T-20260810-foot-VAULT-ROTATION-INTERNAL-CRON (leg[a] dual-accept · supervisor FIX-REQUEST MSG-20260810-092917-amva):
+#   internal_cron_secret rotation 대상 7 EF 중 config.toml 블록이 누락돼 있던 3건을 명시화한다.
+#   supabase CLI(v2.109.1)는 [functions.*] 블록 부재 시 verify_jwt 기본값=true 로 배포 → prod 의도상태와
+#   드리프트(false→true 플립) 발생. 아래 3건을 SSOT(=배포 아티팩트=prod 의도상태)로 고정해 재-플립 landmine 제거.
+
+# dopamine-callback-dispatch: 도파민 콜백 dispatch cron. 인증=X-Internal-Cron(env INTERNAL_CRON_SECRET,
+#   dual-accept 시 INTERNAL_CRON_SECRET_NEXT 병존). 게이트웨이 JWT 불요. prod=false(v16). config 블록이
+#   없어 재배포 시 CLI 기본값 true 로 플립 → 게이트웨이 401 → dopamine 콜백 dispatch cron 장애(B1 P0회귀).
+#   → verify_jwt=false 명시(현 prod 보존). 인증은 EF 내부 X-Internal-Cron 시크릿 대조 단일 관문.
+[functions.dopamine-callback-dispatch]
+verify_jwt = false
+
+# send-notification: 메시징 발송 EF. pg_cron/scheduled dispatch 가 `Authorization: Bearer <anon_jwt>`
+#   (유효 프로젝트 JWT → 게이트웨이 verify_jwt=true 통과) + `X-Internal-Cron`(=internal_cron_secret) 을
+#   함께 실어 호출한다(migration 20260525030000 net.http_post). 게이트웨이는 Bearer anon 으로 통과하고,
+#   rotation 시크릿이 실리는 실인증축은 EF 내부 isCronCall(X-Internal-Cron==INTERNAL_CRON_SECRET[_NEXT])이다.
+#   따라서 dual-accept 는 게이트 설정과 무관하게 EF 내부에서 동작. prod=true(v33) 유지가 의도 —
+#   Bearer anon 이 항상 동반되므로 true 로 게이트웨이 JWT 방어층을 유지하는 편이 안전(false 로 낮출 필요 없음).
+#   → verify_jwt=true 명시(현 prod 보존·defense-in-depth·rotation 무영향).
+[functions.send-notification]
+verify_jwt = true
+
+# redpay-unreg-digest: ★abandoned EF — foot prod 미배포(supervisor 인벤토리 실측 Function not found).
+#   부모 T-20260803-foot-REDPAY-UNREG-LINE-ALARM-DAILY-DIGEST(status: deployed) B-1=옵션b 로 하루1회
+#   digest 를 macstudio 폴러 dispatchUnregDigest(≥09:00 KST)로 재배선, "EF secret 의존 완전 제거·EF 재배포
+#   불요·실발송 SSOT=macstudio 폴러" 확정 → 이 EF 는 live 소비경로 없음. 본 rotation 배치 deploy-set 에서
+#   **제외**(net-new 활성=폐기 경로 부활이므로 금지). config 블록은 SSOT 위생상 명시하되, 배포 여부는
+#   본 배치와 무관. 만에 하나 향후 정식 배포될 경우에도 인증=X-Internal-Cron 이므로 false 가 정본값.
+[functions.redpay-unreg-digest]
+verify_jwt = false
