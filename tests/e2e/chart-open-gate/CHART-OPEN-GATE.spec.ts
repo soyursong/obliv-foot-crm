@@ -152,6 +152,25 @@ async function gotoDashboard(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('dashboard-root')).toBeVisible({ timeout: 15000 });
 }
 
+// 과거날짜(어제) 로 "1일 뒤로" 이동 — 수동 네비(pin)라 자동 롤오버 영향 없음.
+async function navigatePrevDay(page: import('@playwright/test').Page) {
+  await page.getByTestId('dash-date-prev').click();
+  // 과거날짜 read-only 진입 확인(전일 fetch 트리거). 배너 미도달은 카드 waitFor 가 흡수.
+  await page
+    .getByText('과거 날짜 조회 중')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
+}
+
+// 카드 미render 시 fresh 재조회: reload → 대시보드 재진입(세션 storageState 유지) → 어제 재이동.
+// reload 로 과거날짜 초기 fetch 를 새로 돌려 seed commit/realtime-merge 레이스로 누락된 row 를 편입.
+async function renavigateToYesterday(page: import('@playwright/test').Page) {
+  await page.reload();
+  await expect(page.getByTestId('dashboard-root')).toBeVisible({ timeout: 15000 });
+  await navigatePrevDay(page);
+}
+
 // ── 자동 노쇼 가드 (G3/G4 결정성) ──────────────────────────────────────────────
 // 과거 confirmed 예약은 예약관리(Reservations.tsx) auto-noshow + realtime 으로
 // noshow 전환될 수 있다(라이브 prod 동시 클라이언트/리얼타임 트리거). noshow 예약은
@@ -175,6 +194,16 @@ async function clickPastCardOrSkipOnAutoNoshow(
   page: import('@playwright/test').Page,
   cardLocator: import('@playwright/test').Locator,
   resvId: string,
+  // 카드 부재 시 "fresh 재조회"(page reload → 과거날짜 재이동) 콜백.
+  // 왜 필요한가 (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE, run 31346287639 trace RCA):
+  //   G4 시드 row 는 커밋(status=confirmed)됐고 클라이언트도 realtime payload 로 수신했는데
+  //   box2 카드가 40s 예산 내내 미render 했다. 원인 = 과거날짜 초기 "1-shot 전일 fetch"가
+  //   seed commit / realtime-merge 와 레이스한 heavy 공유 prod day(초진 52·재진 7) 상황.
+  //   기존 재시도 루프는 DOM 을 재해석(relocate)만 하고 재fetch 를 안 해서, 초기 fetch 가
+  //   놓친 row 는 아무리 기다려도 타임라인에 편입되지 않았다(realtime insert 미merge).
+  //   → reload 후 과거날짜를 다시 조회하면 커밋된 row 가 확정 포함된 fresh full-day fetch 가
+  //     돈다. click→open 행위 검증(클릭+차트오픈)은 그대로라 진짜 회귀는 여전히 RED 로 트립.
+  renavigate?: () => Promise<void>,
 ): Promise<void> {
   // ── dnd-kit detach 레이스 흡수: 재로케이트 재시도 루프 ──────────────────────
   // box2-resv-card(재진)는 dnd-kit draggable 이다(aria-roledescription="draggable").
@@ -213,8 +242,21 @@ async function clickPastCardOrSkipOnAutoNoshow(
           `동시 run 의 QA-FIXTURE 전수 스윕으로 시드 소멸(null). ` +
           `!isPast 회귀 라인은 G6 정적 가드가 하드락하므로 거짓 RED 방지 위해 skip.`,
       );
-      // 시드 유효(status='confirmed') → detach/미render 레이스일 개연 → 짧게 backoff 후 재로케이트 재시도.
-      await page.waitForTimeout(1000);
+      // 시드 유효(status='confirmed')인데 카드 미render:
+      //   (a) 초기 전일 fetch 가 seed commit/realtime-merge 와 레이스 → reload 후 과거날짜 재조회로
+      //       커밋된 row 를 확정 편입(fresh full-day fetch).
+      //   (b) dnd-kit detach 레이스 → reload 는 이 또한 흡수(재렌더된 안정 DOM 을 새로 잡음).
+      //   콜백 미제공(레거시 호출부) 시에는 종전대로 짧게 backoff 후 relocate 재시도.
+      if (renavigate) {
+        try {
+          await renavigate();
+        } catch {
+          // reload/재이동 순간의 일시적 오류(네비 in-flight 등)는 다음 cycle 에서 재시도.
+          await page.waitForTimeout(1000);
+        }
+      } else {
+        await page.waitForTimeout(1000);
+      }
     }
   }
   // 예산 소진: 시드 유효(confirmed)인데도 카드 렌더/클릭이 끝내 실패 → 진짜 회귀/렌더 실패 → 원래 오류 전파.
@@ -273,16 +315,19 @@ test.describe('CHART-OPEN-GATE · G2 타임라인 초진(box1) click→open (tod
 // ════════════════════════════════════════════════════════════════════════════
 test.describe('CHART-OPEN-GATE · G3 타임라인 초진 과거날짜 click→open [역회귀 게이트]', () => {
   test('G3: 어제 초진 예약 카드 클릭 → 차트 오픈 (read-only 무관)', async ({ page }) => {
+    // 콜드스타트 + 카드 미render 시 reload 재조회 1 cycle(≈reload 8s + waitFor)를 60s 안에
+    // 흡수하도록 헤드룸 확보. 정상경로(즉시 render)는 조기 종료라 영향 없음.
+    test.setTimeout(90_000);
     const name = UNIQ();
     const customerId = await seedCustomer(name, 'new');
     const resvId = await seedReservation({ date: YESTERDAY, time: '14:00', visit_type: 'new', customerId, name });
     try {
       await gotoDashboard(page);
       // 어제로 이동 (수동 네비 = pin → 자동 롤오버 영향 없음)
-      await page.getByTestId('dash-date-prev').click();
+      await navigatePrevDay(page);
       // 과거 날짜 read-only 배너가 떠도 차트 열람(read)은 가능해야 한다.
       const card = page.locator('[data-testid="box1-resv-card"]', { hasText: name });
-      await clickPastCardOrSkipOnAutoNoshow(page, card, resvId);
+      await clickPastCardOrSkipOnAutoNoshow(page, card, resvId, () => renavigateToYesterday(page));
       const opened = await waitForChartOpen(page);
       expect(
         opened,
@@ -300,14 +345,17 @@ test.describe('CHART-OPEN-GATE · G3 타임라인 초진 과거날짜 click→op
 // ════════════════════════════════════════════════════════════════════════════
 test.describe('CHART-OPEN-GATE · G4 타임라인 재진 과거날짜 click→open [역회귀 게이트]', () => {
   test('G4: 어제 재진 예약 카드 클릭 → 차트 오픈', async ({ page }) => {
+    // 콜드스타트 + 카드 미render 시 reload 재조회 1 cycle(≈reload 8s + waitFor)를 60s 안에
+    // 흡수하도록 헤드룸 확보. 정상경로(즉시 render)는 조기 종료라 영향 없음.
+    test.setTimeout(90_000);
     const name = UNIQ();
     const customerId = await seedCustomer(name, 'returning');
     const resvId = await seedReservation({ date: YESTERDAY, time: '15:00', visit_type: 'returning', customerId, name });
     try {
       await gotoDashboard(page);
-      await page.getByTestId('dash-date-prev').click();
+      await navigatePrevDay(page);
       const card = page.locator('[data-testid="box2-resv-card"]', { hasText: name });
-      await clickPastCardOrSkipOnAutoNoshow(page, card, resvId);
+      await clickPastCardOrSkipOnAutoNoshow(page, card, resvId, () => renavigateToYesterday(page));
       const opened = await waitForChartOpen(page);
       expect(opened, '과거 날짜 재진 카드 클릭 후 차트가 열려야 함(RED면 !isPast 게이트 재발)').toBe(true);
     } finally {
