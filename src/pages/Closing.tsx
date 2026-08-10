@@ -2306,8 +2306,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       {/* T-20260804-foot-DAYCLOSE-PAYHIST-REFUND-BADGE-VERTICAL: 환불 시 배지 2~3개 수용 위해 w-16→w-24 */}
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-24">구분</th>
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-16">환불</th>
-                      {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 기존 [환불] 컬럼 오른쪽 신규 컬럼(플랜A 환불 BETA). */}
-                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-20">플랜A 환불</th>
+                      {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 기존 [환불] 컬럼 오른쪽 신규 컬럼(플랜A 환불 BETA).
+                          ★T-20260810-foot-CONSULTROOM-PAYBTN-ADD-REFUNDCOL-RENAME(AC-2): 컬럼 헤더 표기 '플랜A 환불'→'CRM 환불 BETA'로 rename(현장 직관성·'플랜A'는 내부명칭). 버튼 내부문구 '단말기 취소' 및 짝맞춤 로직(VG-4) 무변경. */}
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-20">CRM 환불 BETA</th>
                     </tr>
                   </thead>
                   <tbody>
