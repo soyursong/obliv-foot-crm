@@ -1,0 +1,15 @@
+-- ============================================================================
+-- T-20260810-foot-AUTH-SECDEF-ANON-REVOKE-SEAL · DOWN (rollback)
+--   UP 의 역연산 = before-image(2026-08-11 실측) 복원.
+--
+--   ── before-image 대비 UP 순델타 ──
+--     · 함수 REVOKE(FROM PUBLIC, anon) = no-op(anon/PUBLIC 이미 부재) → 역연산 없음.
+--         ★anon 을 함수에 re-GRANT 하지 않는다 — before-image 에 없던 상태이므로 복원 대상 아님.
+--     · 함수 GRANT authenticated = idempotent no-op(이미 present) → 역연산 없음.
+--     · 테이블 REVOKE ALL FROM anon = 유일 실질 델타 → 역연산 = anon 재-GRANT(rxtm 복원).
+--
+--   ⚠ rollback = audit 테이블 anon grant 재개통(RLS FORCED 로 inert 이나 grant-surface 재확장).
+--     사고 대응(정상 authenticated caller 회귀 오판 등) 시에만 발동. 발동 시 즉시 FOLLOWUP
+--     → planner/DA 재판정. 데이터 mutation 0 · 비파괴.
+-- ============================================================================
+GRANT SELECT, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.staff_auth_action_audit TO anon;
