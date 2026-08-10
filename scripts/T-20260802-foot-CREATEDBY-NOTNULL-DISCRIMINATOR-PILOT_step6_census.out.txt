@@ -1,0 +1,67 @@
+════════ STEP6 재센서스 (READ-ONLY, fresh prod rxlomoozakkjesdqjtvd) ════════
+
+총 행: 388  |  created_by NULL: 18  |  NON-NULL: 370
+created_by is_nullable: YES (STEP5 미적용 기대=YES) | content_checksum 컬럼: 존재 | collision-guard 트리거: 부재
+
+──────── NULL 행별 2-class 판정 ────────
+  20260606160000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="20260606160000_diagnosis_folder_and_favorites" file=WT✓/git✓ ck=NULL
+  20260803090000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_check_ins_assignment_consult_type" file=WT✓/git✓ ck=NULL
+  20260803160000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="redpay_unregistered_line_digest" file=WT✓/git✓ ck=NULL
+  20260803230000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_visit_nature_intake_lane" file=WT✓/git✓ ck=NULL
+  20260803230500 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_visit_nature_derive_seed_backfill" file=WT✓/git✓ ck=NULL
+  20260803234500 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_redpay_ingestion_gap_log_modeb" file=WT✓/git✓ ck=NULL
+  20260804020000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_hira_drug_name_index_ac8" file=WT✓/git✓ ck=NULL
+  20260804100000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_attendance_device_multi_active_reapproval_loop_fix" file=WT✓/git✓ ck=NULL
+  20260805110000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_check_in_services_softvoid" file=WT✓/git✓ ck=NULL
+  20260805190000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_saleslist_kimgyuri_ctb_backfill" file=WT✓/git✓ ck=NULL
+  20260806090000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="redpay_foot_registry_0806gap_admission" file=✗/git✓ ck=NULL
+  20260807100000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_rls_adminfunc_ungated_gate_sweep" file=✗/git✓ ck=SET
+  20260807150000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_health_maintenance_balances_satellite" file=WT✓/git✓ ck=NULL
+  20260807180000 [A(legacy/named)] v14=true stmt_null=false(len=1) name="foot_reservations_is_trial_marker" file=WT✓/git✓ ck=NULL
+  20260808090000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="redpay_foot_registry_0808gap_admission" file=✗/git✓ ck=NULL
+  20260809080000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_saleslist_f4872_shampoo_backfill" file=WT✓/git✓ ck=NULL
+  20260809100000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_heo4717_2e8f7aa5_ctb_cis_create" file=WT✓/git✓ ck=NULL
+  20260809150000 [A(legacy/named)] v14=true stmt_null=true(len=0) name="foot_consent_unique_id_formtype" file=WT✓/git✓ ck=NULL
+
+2-class 카운트: class-a=18  class-b=0  (합계 18)
+월별 분포: {"202606":1,"202608":17}
+
+──────── ⚠ 20260606160000 (6월 회귀 의심행) 집중 규명 ────────
+  판정: A(legacy/named)
+  name: "20260606160000_diagnosis_folder_and_favorites" | stmt_null: true | v14: true | checksum: null
+  working tree 파일: ["20260606160000_diagnosis_folder_and_favorites.sql"]
+  git history:
+    e1f8019a feat(foot): T-20260606-DIAGNOSIS-MASTER-MGMT AC-1/2/3 — 상병명 관리 메뉴 + 차트 폴더 picker + 원장별 즐겨찾기
+    supabase/migrations/20260606160000_diagnosis_folder_and_favorites.rollback.sql
+    supabase/migrations/20260606160000_diagnosis_folder_and_favorites.sql
+
+──────── 6월(202606) 원장행 맥락 ────────
+  6월 원장행 88개: 20260606160000(NULL), 20260609234500, 20260609235500, 20260610090000, 20260610100000, 20260610100010, 20260610110000, 20260611100000, 20260611140000, 20260611150000, 20260611160000, 20260611190000, 20260611200000, 20260611210000, 20260611220000, 20260612000000, 20260612010000, 20260612060000, 20260612140000, 20260612150000, 20260612160000, 20260613120000, 20260614120000, 20260614130000, 20260614230000, 20260615120000, 20260615160000, 20260615170000, 20260615190000, 20260616000000, 20260616010000, 20260616160000, 20260616180000, 20260617000000, 20260617120000, 20260617150000, 20260618120000, 20260618130000, 20260618140000, 20260618200000, 20260618201000, 20260620120100, 20260620163000, 20260621003000, 20260622120000, 20260622170000, 20260622200000, 20260622210000, 20260623120000, 20260623130000, 20260623150000, 20260623160000, 20260623170000, 20260623180000, 20260624100000, 20260624130000, 20260624160000, 20260624170000, 20260624180000, 20260625120000, 20260625130000, 20260625140000, 20260625150000, 20260628000000, 20260628140000, 20260628160000, 20260628200000, 20260629120000, 20260629140000, 20260629143000, 20260629150000, 20260629160000, 20260629170000, 20260629180000, 20260629190000, 20260629200000, 20260629210000, 20260630120000, 20260630120001, 20260630170000, 20260630181500, 20260630184500, 20260630190000, 20260630193000, 20260630200000, 20260630200001, 20260630210000, 20260630220000
+
+════════ 재센서스 완료 (무write 확인) ════════
+원장 컬럼: version:text, statements:ARRAY, name:text, created_by:text, idempotency_key:text, rollback:ARRAY, content_checksum:text
+
+6월 대조 샘플:
+  20260606160000 created_by=NULL ck=NULL stmt_null=true name="20260606160000_diagnosis_folder_and_favorites"
+  20260609234500 created_by=legacy-unattributed ck=SET stmt_null=true name=null
+  20260616160000 created_by=ledger-drift-sweep-track3 ck=NULL stmt_null=false name="opinion_doc_form_stack"
+  20260630220000 created_by=legacy-unattributed ck=SET stmt_null=true name="staff_coordinator_crud_rls_additive"
+
+created_by 값 분포(top15):
+   178  legacy-unattributed
+    98  ledger-drift-sweep-track3
+    18  (NULL)
+     3  ledger-drift-sweep-track2-stageB1
+     3  T-20260629-foot-GRADE-ENUM-INSERT-VALIDATE
+     3  T-20260628-ANON-KIOSK-CUTOVER-forward-doc-1qo3
+     3  dev-foot:T-20260802-foot-CREATEDBY-NOTNULL-DISCRIMINATOR-PIL
+     3  T-20260805-foot-REPAY-PKGLINK-REVTRANSITION-FWDFIX
+     3  supervisor
+     2  supervisor:T-20260717-foot-MIG-LEDGER-RECONCILE-ANONSWEEP
+     2  dev-foot:T-20260630-PERM-UNLOCK-EXPORT-AUTOSEND
+     2  T-20260618-foot-STAFF-ATTENDANCE-SSOT
+     2  T-20260710-CAPABILITY-MIG-PROD-APPLY
+     1  dev-foot:T-20260724-foot-JUYEON-DOCWRITE-1WK-TEMPACCESS
+     1  dev-foot-TOTALS-RECOMPUTE-PORT-ledger-reconcile
+
+08-02 STEP5.5 이후(version>170003) 신규 마이그: 총 41행 / created_by NULL 17행 (belt 미착지 실증)
