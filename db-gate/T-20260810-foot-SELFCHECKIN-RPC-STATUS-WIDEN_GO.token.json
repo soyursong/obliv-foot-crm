@@ -1,22 +1,25 @@
 {
-  "ticket_id": "T-20260810-foot-SELFCHECKIN-RPC-STATUS-WIDEN",
-  "gate": "DB-GATE-GO",
-  "issued_by": "supervisor",
-  "issued_at": "2026-08-10T02:47:28.000Z",
-  "expires_at": "2026-08-10T03:32:28.000Z",
-  "prod_ref": "rxlomoozakkjesdqjtvd",
-  "migration_sha256": "acbd8ea24283418ae3264c959f5e39690d062397c49e339cf3516a98b0a54dc8",
-  "migration_version": "20260810120000",
-  "migration_name": "foot_selfcheckin_status_widen",
-  "migration_files": [
-    "supabase/migrations/20260810120000_foot_selfcheckin_status_widen.sql",
-    "supabase/migrations/20260810120000_foot_selfcheckin_status_widen.rollback.sql",
-    "supabase/migrations/20260810120000_foot_selfcheckin_status_widen.dryrun.sql"
-  ],
-  "evidence_commit": "76f61951",
-  "key_id": "supv-dbgate-2026a",
-  "nonce": "f906051a9efcdf38",
-  "da_consult_reply": "DA-20260810-meta-RLS-DRIFT-GUARD-SEV1-TRIAGE §2 B6 (whitelist 확정: status IN confirmed,reserved,checked_in) + AC-0 건별 CONSULT MSG-20260810-113356-49v8. scalp2 T-20260723 선례 동형.",
-  "ceo_gate": "N/A — semantic-equiv ADDITIVE (read-set widen: WHERE status 절 1줄씩, clinic_id+date scope 불변, SECDEF/ACL/owner/search_path/masking 불변, 데이터 mutation 0, rollback 완전가역). 파괴 0 + DA GO → 대표게이트 면제 (autonomy §3.1).",
-  "precheck": "supervisor DDL-diff GO (commit 76f61951 authoritative bytes). function-diff = 두 함수 WHERE status 절만 (status='confirmed'→IN(confirmed,reserved,checked_in)); DROP/ALTER/DELETE/policy 0=순수 CREATE OR REPLACE body widen. C10 PREFLIGHT prod실측(Mgmt API): banner+today 각 single-overload(arity-shadow 0)·prosecdef=true·proconfig(banner=public,pg_temp / today='')·owner=postgres·has_widen=false(현 confirmed-only=rollback base 정확 일치)·anon_exec+authed_exec=true(GRANT 멱등 re-grant=ACL delta 0). C23 SECDEF public-tier(anon selfcheckin kiosk intended)+서버측 마스킹 firewall+ACL 무변→PASS. C2/C24 commit=순수 db_only(migration trio 3파일 327 insert, src/ 0접촉=caller-safe). C3 rollback 대칭(prosrc confirmed 복원). C4 non-contract RPC(§4-1c 미등록). C11 참조컬럼(status/clinic_id/reservation_date 등) 전건 prod 실재. C18/§2.8·C21 DA HOLD·RETRACT CLEAR(signals+MQ inbox 0, fresh frontmatter=deploy-ready·block_reason 부재). apply_before_go 준수(applied_at 공백). dryrun=무영속(txn-strip→ROLLBACK→post-probe still_has_widen=false)."
+ "ticket_id": "T-20260810-foot-SELFCHECKIN-RPC-STATUS-WIDEN",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-10T04:01:02.649Z",
+ "expires_at": "2026-08-10T04:46:02.650Z",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "f1ded39e70a43d1c8c40dd4dee4ed34f45c70c59d258c3888399f91cdf63e50b",
+ "migration_version": "20260810120001",
+ "migration_name": "foot_selfcheckin_status_widen",
+ "migration_files": [
+  "supabase/migrations/20260810120001_foot_selfcheckin_status_widen.sql",
+  "supabase/migrations/20260810120001_foot_selfcheckin_status_widen.rollback.sql",
+  "supabase/migrations/20260810120001_foot_selfcheckin_status_widen.dryrun.sql"
+ ],
+ "evidence_commit": "719f7c6f",
+ "supersedes": "v1 token(version 20260810120000·sha acbd8ea2..·evidence 76f61951·issued 11:47 KST) = MIG-SCOPE-RECHECK renumber(§13.1.C)로 STALE + TTL 만료(12:32 KST). 본 토큰 = 신 slot 재발행.",
+ "da_consult_reply": "DA CONSULT-REPLY GO(Q1) — canonical MSG-20260810-124245-dtbv(=1l7k re-route) + dev-foot canonical MSG-20260810-123444-syj4. SSOT=agents/docs/da_replies/da_decision_foot_selfcheckin_rpc_status_widen_20260810.md. whitelist IN(confirmed,reserved,checked_in)=scalp2 byte-identical(H1)·H2 sig/SECDEF/ACL/owner/search_path 불변·H3 종단상태 제외+scope 무접촉. Q2(match_reservation)=SEPARATE TRACK·본 apply 비차단. DA GO=change-class 판정, 본 물리 GO-token=배포 SSOT.",
+ "coherence_qa": "dev-foot §4 coherence QA = GRACEFUL PASS(12:52 KST, DEV isolation DB 무영속 tx): banner widen 표시✅·today-list 3-active+마스킹✅·match RPC(confirmed-only)×checked_in=graceful NULL(RAISE 0)✅·confirmed 정상 match 회귀0✅. evidence commit 94e75926(evidence-only). §7 재-CONSULT 트리거 미발동.",
+ "ceo_gate": "N/A — ADDITIVE(read-set widen: WHERE status 절 1줄씩×2, clinic_id+date scope 불변, SECDEF/ACL/owner/search_path/masking 불변, 데이터 mutation 0, rollback 완전가역). 파괴 0 + DA GO → 대표게이트 면제(autonomy §3.1).",
+ "precheck": "function-diff 재확인(719f7c6f vs 76f61951 QA-판정 blob): diff=comment-only(renumber 근거·rollback 파일명 참조), 함수 body/시그니처/DDL 델타 0 → 11:47 DDL-diff PASS 정당 계승. up.sql 내 ledger INSERT 부재(파일명-기반 runner 등록)=renumber 정합. C10 pre-apply prod 실측(Mgmt API, 13:0x KST): 두 함수 single-overload·prosecdef=true·owner=postgres·proconfig(banner=public,pg_temp / today=\"\")·has_widen=false(baseline 정확)·anon+authenticated EXECUTE=true. C19 bootstrap(§4-1c 미등록 RPC → canonical 대조 N/A-WARN): pre-apply prosrc md5 실측 = banner 321fb3cc1c15209ab0b153d7bd903fac / today 0a632516a0671f820bd391fba3f029a5 (apply 직전 재대조 의무). ledger: 20260810120000/20260810120001 공히 미기재(apply_before_go 준수). C18/§2.8+C21: signals+MQ+fresh frontmatter 재확인 — 활성 DA HOLD/RETRACT/BINDING 0·deploy_hold 부재·block_reason 부재. dryrun=No-Persistence Protocol 준수(txn-strip→ROLLBACK→post-probe). rollback=완전 가역(prosrc confirmed 복원). lease=supervisor-mq-dbgate claim.",
+ "postcheck_required": "apply 직전: prod prosrc md5 재대조(321fb3cc/0a632516 불변 확인 후 apply). apply 후: has_widen=true×2 · SECDEF/search_path/owner/anon-EXECUTE 불변 · cross-clinic 누수 0 · ledger 20260810120001 단건 기재 · 신 prosrc md5 기록(DA C19 canonical 갱신 통지).",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "e779437e11ed803a"
 }
