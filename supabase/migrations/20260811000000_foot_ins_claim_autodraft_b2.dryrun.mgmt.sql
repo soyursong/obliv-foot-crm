@@ -1,3 +1,18 @@
+-- T-20260810-foot-INS-CLAIM-AUTODRAFT (B-2) — DRY-RUN (Management-API 실행용, No-Persistence)
+-- 목적: supervisor 가 foot pooler DB 비번 없이 foot-supabase-pat (Management API /database/query) 로
+--   단일 query 내 BEGIN;…;ROLLBACK; 무영속 dryrun 을 돌려 C23 grant-seal 을 실측한다.
+--   (dryrun.mjs 는 pooler+SUPABASE_DB_PASSWORD 요구 → 비번 provision 시 그쪽 사용. 본 파일은 mgmt 경로 대체.)
+--
+-- 검증(단일 트랜잭션):
+--   1) 마이그 verbatim 적용 (아래 BEGIN 블록 내부)
+--   2) 신규 SECDEF 함수 3종에 anon/authenticated EXECUTE 잔차 = 0 (C23) + rollup.service_role=true 확인
+--   3) 의도적 sentinel RAISE EXCEPTION → 트랜잭션 ABORT → 영속 0 (No-Persistence)
+-- 결과: 에러 메시지 본문 "DRYRUN_C23_REPORT C23 PASS ..." 가 판정. (에러 = No-Persistence sentinel, 정상)
+-- 사후: POST-PROBE 쿼리를 별도 호출로 실행 → pg_proc 존재수 0 이어야 무영속 정상.
+--
+-- 실행(개념): POST {mgmt}/v1/projects/rxlomoozakkjesdqjtvd/database/query  body={"query": <본 파일 전체>}
+-- ============================================================
+BEGIN;
 -- T-20260810-foot-INS-CLAIM-AUTODRAFT (B-2) — up (청구 명세 자동 생성)
 --
 -- 근본원인: insurance_claims=0건. claim draft 가 InsuranceCopaymentPanel(수동 저장)에서만 생성되는데,
@@ -222,3 +237,31 @@ REVOKE ALL ON FUNCTION public.fn_build_insurance_claim_draft(uuid)              
 REVOKE ALL ON FUNCTION public.fn_rollup_insurance_claim_drafts(uuid, date, date) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.trg_service_charges_autodraft()                    FROM PUBLIC, anon, authenticated;  -- 트리거 fn, non-callable 이나 명시 seal(hygiene)
 GRANT EXECUTE ON FUNCTION public.fn_rollup_insurance_claim_drafts(uuid, date, date) TO service_role;
+
+-- ── C23 grant-seal 실측 (마이그 적용 직후, 같은 txn) ──
+DO $DR$
+DECLARE
+  v_anon_build bool := has_function_privilege('anon',          'public.fn_build_insurance_claim_draft(uuid)','EXECUTE');
+  v_auth_build bool := has_function_privilege('authenticated', 'public.fn_build_insurance_claim_draft(uuid)','EXECUTE');
+  v_anon_roll  bool := has_function_privilege('anon',          'public.fn_rollup_insurance_claim_drafts(uuid, date, date)','EXECUTE');
+  v_auth_roll  bool := has_function_privilege('authenticated', 'public.fn_rollup_insurance_claim_drafts(uuid, date, date)','EXECUTE');
+  v_anon_trg   bool := has_function_privilege('anon',          'public.trg_service_charges_autodraft()','EXECUTE');
+  v_auth_trg   bool := has_function_privilege('authenticated', 'public.trg_service_charges_autodraft()','EXECUTE');
+  v_svc_roll   bool := has_function_privilege('service_role',  'public.fn_rollup_insurance_claim_drafts(uuid, date, date)','EXECUTE');
+  v_residual   int;
+  v_verdict    text;
+BEGIN
+  v_residual := v_anon_build::int + v_auth_build::int + v_anon_roll::int + v_auth_roll::int + v_anon_trg::int + v_auth_trg::int;
+  IF v_residual = 0 AND v_svc_roll THEN v_verdict := 'C23 PASS'; ELSE v_verdict := 'C23 FAIL'; END IF;
+  RAISE EXCEPTION 'DRYRUN_C23_REPORT % | residual(anon+auth EXEC)=% | build[anon=% auth=%] rollup[anon=% auth=%] trg[anon=% auth=%] | rollup.service_role=% | (No-Persistence sentinel - txn ABORT expected)',
+    v_verdict, v_residual, v_anon_build, v_auth_build, v_anon_roll, v_auth_roll, v_anon_trg, v_auth_trg, v_svc_roll;
+END
+$DR$;
+
+ROLLBACK;  -- sentinel 예외로 이미 abort — 방어적 명시(비-예외 경로 없음)
+
+-- ============================================================
+-- POST-PROBE (별도 mgmt 호출) — 무영속 확인. 아래를 단독 query 로 실행:
+--   SELECT count(*) AS should_be_zero FROM pg_proc
+--   WHERE proname IN ('fn_build_insurance_claim_draft','fn_rollup_insurance_claim_drafts','trg_service_charges_autodraft');
+-- 기대값 0 (prod 미존재 + dryrun rollback). 0 아니면 leak = No-Persistence 위반.
