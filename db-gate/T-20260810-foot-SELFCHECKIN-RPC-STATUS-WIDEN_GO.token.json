@@ -1,0 +1,22 @@
+{
+  "ticket_id": "T-20260810-foot-SELFCHECKIN-RPC-STATUS-WIDEN",
+  "gate": "DB-GATE-GO",
+  "issued_by": "supervisor",
+  "issued_at": "2026-08-10T02:47:28.000Z",
+  "expires_at": "2026-08-10T03:32:28.000Z",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "migration_sha256": "acbd8ea24283418ae3264c959f5e39690d062397c49e339cf3516a98b0a54dc8",
+  "migration_version": "20260810120000",
+  "migration_name": "foot_selfcheckin_status_widen",
+  "migration_files": [
+    "supabase/migrations/20260810120000_foot_selfcheckin_status_widen.sql",
+    "supabase/migrations/20260810120000_foot_selfcheckin_status_widen.rollback.sql",
+    "supabase/migrations/20260810120000_foot_selfcheckin_status_widen.dryrun.sql"
+  ],
+  "evidence_commit": "76f61951",
+  "key_id": "supv-dbgate-2026a",
+  "nonce": "f906051a9efcdf38",
+  "da_consult_reply": "DA-20260810-meta-RLS-DRIFT-GUARD-SEV1-TRIAGE §2 B6 (whitelist 확정: status IN confirmed,reserved,checked_in) + AC-0 건별 CONSULT MSG-20260810-113356-49v8. scalp2 T-20260723 선례 동형.",
+  "ceo_gate": "N/A — semantic-equiv ADDITIVE (read-set widen: WHERE status 절 1줄씩, clinic_id+date scope 불변, SECDEF/ACL/owner/search_path/masking 불변, 데이터 mutation 0, rollback 완전가역). 파괴 0 + DA GO → 대표게이트 면제 (autonomy §3.1).",
+  "precheck": "supervisor DDL-diff GO (commit 76f61951 authoritative bytes). function-diff = 두 함수 WHERE status 절만 (status='confirmed'→IN(confirmed,reserved,checked_in)); DROP/ALTER/DELETE/policy 0=순수 CREATE OR REPLACE body widen. C10 PREFLIGHT prod실측(Mgmt API): banner+today 각 single-overload(arity-shadow 0)·prosecdef=true·proconfig(banner=public,pg_temp / today='')·owner=postgres·has_widen=false(현 confirmed-only=rollback base 정확 일치)·anon_exec+authed_exec=true(GRANT 멱등 re-grant=ACL delta 0). C23 SECDEF public-tier(anon selfcheckin kiosk intended)+서버측 마스킹 firewall+ACL 무변→PASS. C2/C24 commit=순수 db_only(migration trio 3파일 327 insert, src/ 0접촉=caller-safe). C3 rollback 대칭(prosrc confirmed 복원). C4 non-contract RPC(§4-1c 미등록). C11 참조컬럼(status/clinic_id/reservation_date 등) 전건 prod 실재. C18/§2.8·C21 DA HOLD·RETRACT CLEAR(signals+MQ inbox 0, fresh frontmatter=deploy-ready·block_reason 부재). apply_before_go 준수(applied_at 공백). dryrun=무영속(txn-strip→ROLLBACK→post-probe still_has_widen=false)."
+}
