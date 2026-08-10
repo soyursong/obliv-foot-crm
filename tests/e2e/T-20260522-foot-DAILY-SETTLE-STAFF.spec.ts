@@ -13,7 +13,7 @@ import { loginAndWaitForDashboard } from '../helpers';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 test.describe('DAILY-SETTLE-STAFF — 결제담당 컬럼 + 집계 (T-20260522)', () => {
   test.beforeEach(async ({ page }) => {

@@ -30,7 +30,7 @@ import { loginAndWaitForDashboard } from '../helpers';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const HAS_SERVICE_ROLE = SERVICE_KEY.length > 0;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 const SEED_MARKER = 'ROWCHECKSEED';
 
 const CERT_INPUT = 'input[placeholder="건강보험증 번호 (선택)"]';

@@ -17,7 +17,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 // 진료의 서명 트리거(enforce_medchart_signing_doctor, 의료법) 충족용 활성 clinic_doctor.
 const SIGNING_DOCTOR_ID = 'cd2639d0-a3d6-47f9-901e-5b841a4ce6d0'; // 문지은(is_default)
 // E2E 로그인 계정(TEST_EMAIL=test@medibuilder.com=김민경)의 staff 행. 기본 role=coordinator 라

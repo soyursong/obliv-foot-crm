@@ -103,6 +103,9 @@ if (isTruthyFlag(process.env.FOOT_E2E_DEV_ISOLATION)) {
   if (mapped.SUPABASE_SERVICE_ROLE_KEY)
     process.env.SUPABASE_SERVICE_ROLE_KEY = mapped.SUPABASE_SERVICE_ROLE_KEY;
   process.env.EXPECT_DEV_DB_REF = mapped.EXPECT_DEV_DB_REF; // → PRODREF-HARDGUARD 활성
+  // leg-A seed/fixture 정합: DEV clinic id 를 fixture 시더(CLINIC_ID)에 주입해 FK 정합.
+  //   외부에서 이미 준 값은 존중(??=). OFF 모드는 이 블록 자체 미진입 → prod 상수 그대로.
+  process.env.FIXTURE_CLINIC_ID ??= mapped.FIXTURE_CLINIC_ID;
   const devRef = mapped.EXPECT_DEV_DB_REF;
   if (devRef !== DEV_ISOLATION_REF) {
     // 문서상 dev ref 와 불일치 — 오배선 가능성 경고(치명은 아님: 실제 dev 프로젝트 교체 가능).

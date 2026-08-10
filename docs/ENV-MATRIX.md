@@ -84,6 +84,29 @@
 - **CI 최종 승격(그룹 전수 GREEN 후, supervisor)**: `FOOT_E2E_DEV_ISOLATION=1` 을 CI env 로 상시 주입 →
   §컷오버 step 2b(EXPECT_DEV_DB_REF)가 이 경로로 자동 충족. prod 무접점(db_change=false).
 
+#### leg-A seed/fixture 정합 진행 (2026-08-11, dev-foot — 점진 cutover)
+> DEV DB(kcdqtyivtqcjmcrdjkqi)는 실환자 데이터가 없다(빈 DB, PHI-0). 컷오버의 실 블로커 = fixture 시더가
+> **prod clinic id 를 하드코딩**해 DEV 에서 `customers_clinic_id_fkey`(23503) 로 깨지는 것.
+
+- **RC**: `tests/fixtures/index.ts` `CLINIC_ID` + 다수 spec 의 로컬 `const CLINIC_ID` 가 prod clinic
+  `74967aea-…` 을 하드코딩. DEV clinic 은 `4478bdb0-54cd-4b04-b506-7d023ecbcdba`(slug=jongno-foot,
+  "종로 풋센터(DEV)") 로 id 가 달라 fixture insert 전건 FK 실패.
+- **처방(env 파라미터화, OFF-inert)**: clinic id 를 `process.env.FIXTURE_CLINIC_ID ?? '74967aea…'` 로 전환.
+  ON 시 `playwright.config.ts` 로더가 `FIXTURE_CLINIC_ID`=DEV clinic(`tests/devIsolationEnv.ts`
+  `DEV_ISOLATION_CLINIC_ID`, env 파일 `DEV_FIXTURE_CLINIC_ID` 우선) 주입. **OFF(env 미설정)=prod 상수 그대로
+  → 현행 CI/로컬 무파손**.
+- **cutover 완료 그룹 (GREEN, 회귀 0)**:
+  - **unit 프로젝트 전수** — ON 1849 passed. OFF 베이스라인 대비 **isolation-attributable 신규 실패 0**
+    (ON 실패셋 ⊆ OFF 실패셋, 완전 동일 11건 = 정적 소스 가드 기존 실패 + 무관 티켓 워킹트리 미커밋 유래).
+    DB-touching 대표 spec `CHART-OPENGATE-SEED-ISOLATION-CROSSRUN`(6/6)·`JONGNO-PACKAGE-TRIPLE-DEFECT`(4/4)
+    DEV DB 에서 GREEN(수정 전엔 FK-abort 로 RED).
+  - **하드코딩 clinic-id 균일 리터럴 그룹**: `const CLINIC_ID = '74967aea…';` 74개 spec 을 env 파라미터화
+    (기계적·OFF-inert) → DEV 격리 실행 가능화.
+- **잔여(point-cutover, 빅뱅 금지)**: (1)비균일 clinic-id 하드코딩 15 spec(`FOOT_CLINIC_ID`/`FALLBACK_CLINIC`/
+  seal storage 경로 결합 등 — per-spec 판단 필요) (2)브라우저 그룹(desktop-chrome/tablet) — DEV auth
+  테스트유저(`test@medibuilder.com`)+active staff+services seed + Vite webServer 선행 필요.
+- **CI 상시주입 최종승격 + feature→main 착지 merge = supervisor leg-B**(leg-A GREEN 후 QA-REQUEST 트리거).
+
 ## 변경 이력
 - 2026-07-19: **obliv-foot-dev(kcdqtyivtqcjmcrdjkqi, Seoul) provisioning 완료** — T-20260719-foot-HARNESS-TESTDB-ISOLATION.
   격리 dev Supabase 신설(PHI-0). 스키마 적재·컷오버는 supervisor 협업(위 §테스트/E2E 격리 DB). prod 무접점(db_change=false).

@@ -87,7 +87,7 @@ test.describe('T-20260718 §A — 소스 정적 가드 (egress 축소 불변식)
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 test.describe('T-20260718 §B — 라이브 목록 fetch 정합 (신선도 회귀0)', () => {
   test('축소 select 가 목록 소비 컬럼을 반환하고 드롭 3종은 부재', async () => {
