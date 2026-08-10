@@ -1,0 +1,68 @@
+Pager usage is off.
+BEGIN
+CREATE FUNCTION
+CREATE FUNCTION
+INSERT 0 3
+=== (1) BANNER widen: checked_in 예약이 배너에 뜨는가 (기대: 10:00 returning) ===
+ reservation_time | visit_type 
+------------------+------------
+ 10:00:00         | returning
+(1 row)
+
+=== (2) TODAY list widen: 3-active 전부 (기대: 3행, 마스킹 뒤4자리 0099/0088/0077) ===
+ customer_name | customer_phone | reservation_time | visit_type 
+---------------+----------------+------------------+------------
+ 코*****인     | 0099           | 10:00:00         | returning
+ 코****약      | 0088           | 11:00:00         | returning
+ 코****펌      | 0077           | 12:00:00         | returning
+(3 rows)
+
+=== (3) COHERENCE: match RPC(confirmed-only) x checked_in 예약 → graceful NULL? (기대: t = NULL 반환, 예외 아님) ===
+ match_checkedin_is_null_graceful 
+----------------------------------
+ t
+(1 row)
+
+=== (3b) 대조: confirmed 예약은 match 됨 (기대: t) ===
+ match_confirmed_nonnull 
+-------------------------
+ t
+(1 row)
+
+ROLLBACK
+=== ROLLBACK done: dev 무영속 ===
+
+═══════════════════════════════════════════════════════════════════════════════
+COHERENCE QA 판정 (dev-foot, 2026-08-10) — DA CONSULT-REPLY MSG-20260810-123424-ekcr §Coherence
+═══════════════════════════════════════════════════════════════════════════════
+환경: DEV isolation DB (kcdqtyivtqcjmcrdjkqi), 전 시나리오 단일 tx 내 실행 후 ROLLBACK(무영속).
+대상 SQL: 배포 대상 migration 20260810120001_foot_selfcheckin_status_widen.sql 와 동일 widen
+          (status IN ('confirmed','reserved','checked_in'), scalp2 byte-identical, H2 보존).
+
+질문(DA): 배너 widen 후 이미 checked_in 예약을 환자가 탭/재매칭 시 match RPC(confirmed-only)가
+          graceful 멱등 ack('이미 체크인됨') 인지, error/무반응인지?
+
+판정: **GRACEFUL** — Q2 별건 유지 정당 (scope 승격 트리거 아님).
+
+근거:
+  [match 층] fn_selfcheckin_match_reservation(confirmed-only) × checked_in 예약
+    → 반환 = NULL (test (3): match_checkedin_is_null_graceful = t).
+    → plpgsql RAISE/EXCEPTION 없음. error/무반응 아님 = graceful NULL 반환.
+    → 대조 (3b): confirmed 예약은 정상 match(non-null) = 정상 동선 회귀 0.
+
+  [ack 층] 이미 체크인된 환자의 '이미 체크인됨' 멱등 ack 은 별도 RPC 가 담당:
+    · fn_selfcheckin_existing_checkin_today(clinic,customer) → RETURNS (id, queue_number)
+      = 당일 기존 체크인 존재 시 대기번호 반환 → 키오스크가 '이미 체크인됨(대기 N번)' 렌더.
+    · fn_selfcheckin_dup_guard → {duplicate:true, error_code:DUPLICATE_CHECKIN_TODAY}
+      (RAISE 아닌 graceful JSONB 반환) — 중복 체크인 생성 차단.
+    · UNIQUE INDEX unique_reservation_checkin (reservation_id) = DB-레벨 중복 backstop.
+    → 즉 match=NULL 로 폴백해도 create_check_in 이 무분별 중복행을 만들지 않음(가드 3중).
+
+결론: match RPC 무변경으로 충분(DA "graceful=match 무변경 충분"). Q2(match_reservation
+      widen)는 SEPARATE TRACK 유지 정당 — behavioral change(멱등성 위험) 별건 분석 대상.
+      배너 widen 단독 배포 = coherence-safe. §7 재-CONSULT('coherence error 경로인데 별건
+      없이 배너만 배포') 트리거 미발동.
+
+잔여(도메인 밖): 키오스크 FE 렌더 문구('이미 체크인됨')는 cross-repo(foot-checkin) 소관.
+  DB 계약(match=graceful NULL + existing_checkin_today ack)은 본 widen 으로 무훼손 → FE 는
+  기존 existing_checkin_today 소비 경로 그대로 = 회귀 없음.
