@@ -606,6 +606,13 @@ export interface CheckIn {
   consult_notify_sent_at?: string | null;
   consult_notify_by?: string | null;
   consult_notify_slack_ts?: string | null;
+  /** T-20260810-foot-INS-CLAIM-DIAGLINK (B-3, NHIS 직접청구): 스태프 캡처 KCD 상병코드(방문 단위).
+   *  건보 청구 상병 원천 — B-2 claim 생성 시 insurance_claim_diagnoses 로 복사(런타임 join=B-2 이후).
+   *  값=foot 정적 KCD 번들(kcdData.ts)에서 스태프가 '선택'한 코드만(발명/자유입력 금지).
+   *  NULL=미입력 → 급여방문 시 '상병 결핍' 표식 대상. body check_ins.kcd_code(20260515000010) 패턴 이식.
+   *  ADDITIVE nullable — DA CONSULT 1차 게이트 + supervisor DDL-diff/GO-token 후 prod 반영(co-deploy).
+   *  optional(?) — in-memory 리터럴 미포함 허용, DB select('*')에는 컬럼 적용 후 존재. */
+  kcd_code?: string | null;
 }
 
 export interface Package {

@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
 import { DocumentPrintPanel } from '@/components/DocumentPrintPanel';
+import { KcdDiagnosisField } from '@/components/insurance/KcdDiagnosisField';
 // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE
 // T-20260515-foot-PAYMENT-EDIT-REFLECT: PaymentDonePayload 추가 import
 import { PaymentEditDialog, PaymentAuditLogsPanel } from '@/components/PaymentEditDialog';
@@ -1587,6 +1588,20 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 <p className="text-xs text-muted-foreground">잔여 회차 없음 (패키지 등록 후 이용 가능)</p>
               )}
             </div>
+
+            {/* T-20260810-foot-INS-CLAIM-DIAGLINK (B-3): 건보 청구 상병(KCD) 스태프 캡처.
+                check_ins.kcd_code 저장 → B-2 claim 생성 시 insurance_claim_diagnoses 로 복사.
+                급여 방문 미입력 시 '상병 결핍' 표식. (DA CONSULT 1차 게이트 + supervisor GO-token 후 컬럼 co-deploy) */}
+            {latestCheckIn && (
+              <>
+                <Separator />
+                <KcdDiagnosisField
+                  checkInId={latestCheckIn.id}
+                  kcdCode={latestCheckIn.kcd_code}
+                  onSaved={() => onUpdated()}
+                />
+              </>
+            )}
 
             {/* AC7: 보험 영수증 / 처방전 — 항상 표시 (T-20260511-CUSTMGMT 3차) */}
             <Separator />
