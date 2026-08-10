@@ -700,6 +700,9 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
   //       가리켜 silent orphan/dangling 이 됨(자연키라 FK 제약 부재 = ticket 핵심 경고).
   //   - 기존 Dashboard.handleDeleteSlot(L6122)=무조건 hard-DELETE(당일 점유만 체크) →
   //     이력 참조를 검사하지 않음 = 결함. 무비판 복사 금지(ticket AC-0 #0). 여기선 census-게이트 적용.
+  //   census 는 4개 참조경로 전수 검사(FIX-REQUEST census_incomplete_destructive_orphan 반영):
+  //     room_assignments.room_name + check_ins.<type>_room + check_in_room_logs.assigned_room
+  //     + status_transitions.room_id. (하단 handleRemoveRoom 주석 (a)~(d) 참조)
   //   semantic(AC-3, Orphan-Row Archive-First Cleanup + FK Integrity Guard SOP 준용):
   //   - 참조 이력 0 슬롯: 안전 hard-DELETE(rooms 행 물리 제거 → 목록/대시보드에서 사라짐).
   //   - 참조 이력 ≥1 슬롯: archive = soft-deactivate(active=false) — 이력 순소실 0,
@@ -719,7 +722,16 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
 
   /** 슬롯 제거. census(참조 이력) → 0건이면 hard-DELETE, ≥1건이면 archive(active=false). */
   const handleRemoveRoom = async (room: Room) => {
-    // 1) 참조 이력 census — room_name 자연키 기반(배정 + 이용).
+    // 1) 참조 이력 census — room_name 자연키 기반. FIX(FIX-REQUEST census_incomplete_destructive_orphan):
+    //   방 이름(자연키)을 가리키는 참조경로는 4개다 — 전수 검사해야 hard-DELETE orphan 을 막는다:
+    //     (a) room_assignments.room_name          — 배정 이력
+    //     (b) check_ins.<type>_room               — 이용 이력(타입별 필드, heated_laser=null 이라 스킵됨)
+    //     (c) check_in_room_logs.assigned_room     — 방 드롭/자동동선(SPACE-AUTOROUTE) 이동로그(room_type 무관 전건)
+    //     (d) status_transitions.room_id           — room_id 컬럼이 rooms.id FK 가 아니라 방 이름 저장
+    //                                                (Dashboard L5358 room_id:roomName + 60일 백필 실이력)
+    //   (c)(d) 는 last-room-wins/중간경유 때문에 check_ins 최종방과 불일치할 수 있고,
+    //   특히 heated_laser 슬롯은 (b) 가 null 스킵 → 이력이 오직 (c) 에만 존재하므로 반드시 검사.
+    //   어느 쿼리든 error → fail-closed(return) = 불확실 census 위 파괴 금지.
     let refCount = 0;
     try {
       const { count: assignCount, error: aErr } = await supabase
@@ -739,6 +751,22 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
         if (cErr) throw cErr;
         refCount += ciCount ?? 0;
       }
+      // (c) check_in_room_logs — room_type 무관 전건(heated_laser 이동로그 포함).
+      const { count: logCount, error: lErr } = await supabase
+        .from('check_in_room_logs')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinic.id)
+        .eq('assigned_room', room.name);
+      if (lErr) throw lErr;
+      refCount += logCount ?? 0;
+      // (d) status_transitions — room_id 컬럼이 방 이름(자연키) 저장.
+      const { count: stCount, error: sErr } = await supabase
+        .from('status_transitions')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinic.id)
+        .eq('room_id', room.name);
+      if (sErr) throw sErr;
+      refCount += stCount ?? 0;
     } catch (e) {
       toast.error(`제거 전 이력 확인 실패: ${(e as Error).message}`);
       return;
@@ -754,8 +782,15 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       )) return;
       setRemovingId(room.id);
       try {
-        const { error } = await supabase.from('rooms').update({ active: false }).eq('id', room.id);
+        // rows-affected 검증(Cross-CRM Write Rows-Affected 표준): RLS 0-row 거부 시
+        //   error=null + 0행이면 toast.success 오발 → .select('id')로 실제 반영 행 확인.
+        const { data: updated, error } = await supabase
+          .from('rooms').update({ active: false }).eq('id', room.id).select('id');
         if (error) { toast.error(`슬롯 보관 실패: ${error.message}`); return; }
+        if (!updated || updated.length === 0) {
+          toast.error('슬롯 보관 실패: 권한이 없거나 대상을 찾지 못했습니다 (반영된 행 없음)');
+          return;
+        }
         invalidateRoomLists();
         toast.success(`"${room.name}" 슬롯 보관(비활성) 완료 — 대시보드에서 빠집니다`);
       } finally {
@@ -769,8 +804,15 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
       )) return;
       setRemovingId(room.id);
       try {
-        const { error } = await supabase.from('rooms').delete().eq('id', room.id);
+        // rows-affected 검증(Cross-CRM Write Rows-Affected 표준): RLS 0-row 거부 시
+        //   error=null + 0행이면 toast.success 오발 → .select('id')로 실제 삭제 행 확인.
+        const { data: deleted, error } = await supabase
+          .from('rooms').delete().eq('id', room.id).select('id');
         if (error) { toast.error(`슬롯 제거 실패: ${error.message}`); return; }
+        if (!deleted || deleted.length === 0) {
+          toast.error('슬롯 제거 실패: 권한이 없거나 대상을 찾지 못했습니다 (삭제된 행 없음)');
+          return;
+        }
         invalidateRoomLists();
         toast.success(`"${room.name}" 슬롯 제거 완료 — 대시보드에서 빠집니다`);
       } finally {

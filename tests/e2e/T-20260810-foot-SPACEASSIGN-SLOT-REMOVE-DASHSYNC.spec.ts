@@ -26,7 +26,9 @@
  * 실검증 = macstudio + 갤탭 field-soak(태블릿 실기기 confirm). 시크릿 부재 시 graceful skip.
  */
 import { test, expect } from '@playwright/test';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loginAndWaitForDashboard } from '../helpers';
+import { CLINIC_ID, seedCheckIn } from '../fixtures';
 
 const SLOT_PREFIX = 'E2ERM';
 
@@ -131,5 +133,113 @@ test.describe('T-20260810 — 슬롯 제거 → 대시보드 연동', () => {
     }
     // 관리자 계정이면 카드 노출이 정상 → 이 케이스는 관리자에서 통과(음성 케이스 아님).
     await expect(card).toBeVisible();
+  });
+});
+
+// ── FIX-REQUEST census_incomplete_destructive_orphan — 4-참조경로 census 데이터레벨 검증 ──────
+//   결함: 이전 census 는 room_assignments.room_name + check_ins.<type>_room 2경로만 검사 →
+//     check_in_room_logs.assigned_room / status_transitions.room_id 에만 이력이 남은 슬롯을
+//     refCount=0 으로 오판 → hard-DELETE → silent orphan. 특히 heated_laser 는 check_ins 필드가
+//     null(ROOM_CI_FIELD.heated_laser=null) 이라 이력이 오직 check_in_room_logs 에만 존재.
+//   본 블록은 handleRemoveRoom 의 census 4-쿼리(room_assignments/check_ins/check_in_room_logs/
+//     status_transitions)를 동일 술어로 재현해, 각 참조경로 단독으로도 refCount>0(→ archive 강등,
+//     NOT hard-DELETE)이 보장됨을 데이터레벨로 확증한다. service_role 시드 → run 후 회수.
+//   실 UI/대시보드 강등 확인 = macstudio + 갤탭 field-soak(태블릿 실기기 confirm).
+const SUPA_URL = process.env.VITE_SUPABASE_URL;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+/** handleRemoveRoom 과 동일한 4-참조경로 census 재현. 어느 쿼리든 error → throw(fail-closed 동형). */
+async function censusRefCount(
+  sb: SupabaseClient,
+  roomName: string,
+  ciField: string | null,
+): Promise<number> {
+  let refCount = 0;
+  const a = await sb.from('room_assignments').select('id', { count: 'exact', head: true })
+    .eq('clinic_id', CLINIC_ID).eq('room_name', roomName);
+  if (a.error) throw a.error;
+  refCount += a.count ?? 0;
+  if (ciField) {
+    const c = await sb.from('check_ins').select('id', { count: 'exact', head: true })
+      .eq('clinic_id', CLINIC_ID).eq(ciField, roomName);
+    if (c.error) throw c.error;
+    refCount += c.count ?? 0;
+  }
+  const l = await sb.from('check_in_room_logs').select('id', { count: 'exact', head: true })
+    .eq('clinic_id', CLINIC_ID).eq('assigned_room', roomName);
+  if (l.error) throw l.error;
+  refCount += l.count ?? 0;
+  const s = await sb.from('status_transitions').select('id', { count: 'exact', head: true })
+    .eq('clinic_id', CLINIC_ID).eq('room_id', roomName);
+  if (s.error) throw s.error;
+  refCount += s.count ?? 0;
+  return refCount;
+}
+
+test.describe('T-20260810 FIX — 4-참조경로 census (hard-DELETE orphan 방지)', () => {
+  let sb: SupabaseClient;
+  const cleanups: Array<() => Promise<void>> = [];
+
+  test.beforeAll(() => {
+    if (!SUPA_URL || !SERVICE_KEY) return;
+    sb = createClient(SUPA_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  });
+
+  test.afterAll(async () => {
+    for (const c of cleanups.reverse()) { try { await c(); } catch { /* best-effort */ } }
+  });
+
+  // 경로(c): check_in_room_logs 에만 이력이 있는 슬롯 → refCount>0 (이전 census 는 0 오판 → hard-DELETE).
+  test('check_in_room_logs-only 슬롯 → refCount>0 (archive, NOT hard-DELETE)', async () => {
+    if (!sb) test.skip(true, 'service_role env 부재 — graceful skip (field-soak 에서 실검증)');
+    const roomName = `${SLOT_PREFIX}-LOGONLY-${Date.now().toString().slice(-6)}`;
+    const ci = await seedCheckIn({ status: 'consult_waiting', visit_type: 'new' });
+    cleanups.push(ci.cleanup);
+    const ins = await sb.from('check_in_room_logs').insert({
+      check_in_id: ci.id, clinic_id: CLINIC_ID, assigned_room: roomName, room_type: 'treatment',
+    }).select('id');
+    expect(ins.error, ins.error?.message).toBeNull();
+    const logId = ins.data?.[0]?.id;
+    cleanups.push(async () => { if (logId) await sb.from('check_in_room_logs').delete().eq('id', logId); });
+
+    // room_assignments/check_ins 에는 이 이름이 없다 → 이전 2경로 census 였다면 refCount=0.
+    const count = await censusRefCount(sb, roomName, 'treatment_room');
+    expect(count, 'check_in_room_logs 경유 이력이 census 에 잡혀야 hard-DELETE 를 막는다').toBeGreaterThan(0);
+  });
+
+  // 경로(d): status_transitions.room_id 에만 이력이 있는 슬롯 → refCount>0.
+  test('status_transitions-only 슬롯 → refCount>0 (archive, NOT hard-DELETE)', async () => {
+    if (!sb) test.skip(true, 'service_role env 부재 — graceful skip');
+    const roomName = `${SLOT_PREFIX}-STONLY-${Date.now().toString().slice(-6)}`;
+    const ci = await seedCheckIn({ status: 'consult_waiting', visit_type: 'new' });
+    cleanups.push(ci.cleanup);
+    const ins = await sb.from('status_transitions').insert({
+      check_in_id: ci.id, clinic_id: CLINIC_ID,
+      from_status: 'consult_waiting', to_status: 'consultation', room_id: roomName,
+    }).select('id');
+    expect(ins.error, ins.error?.message).toBeNull();
+    const stId = ins.data?.[0]?.id;
+    cleanups.push(async () => { if (stId) await sb.from('status_transitions').delete().eq('id', stId); });
+
+    const count = await censusRefCount(sb, roomName, 'consultation_room');
+    expect(count, 'status_transitions.room_id(방 이름 저장) 이력이 census 에 잡혀야 한다').toBeGreaterThan(0);
+  });
+
+  // 최악 케이스: heated_laser 슬롯(ROOM_CI_FIELD=null → check_ins 스킵). 이력은 오직 check_in_room_logs.
+  test('heated_laser 이력슬롯(ci_field=null) → refCount>0 (archive, NOT hard-DELETE)', async () => {
+    if (!sb) test.skip(true, 'service_role env 부재 — graceful skip');
+    const roomName = `${SLOT_PREFIX}-HEATED-${Date.now().toString().slice(-6)}`;
+    const ci = await seedCheckIn({ status: 'consult_waiting', visit_type: 'returning' });
+    cleanups.push(ci.cleanup);
+    const ins = await sb.from('check_in_room_logs').insert({
+      check_in_id: ci.id, clinic_id: CLINIC_ID, assigned_room: roomName, room_type: 'heated_laser',
+    }).select('id');
+    expect(ins.error, ins.error?.message).toBeNull();
+    const logId = ins.data?.[0]?.id;
+    cleanups.push(async () => { if (logId) await sb.from('check_in_room_logs').delete().eq('id', logId); });
+
+    // heated_laser 는 ciField=null → check_ins 검사 스킵. check_in_room_logs 경로가 유일한 방어선.
+    const count = await censusRefCount(sb, roomName, null);
+    expect(count, 'heated_laser 이력(check_in_room_logs 전용)이 census 에 잡혀야 orphan 을 막는다').toBeGreaterThan(0);
   });
 });
