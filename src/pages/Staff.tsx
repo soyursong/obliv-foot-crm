@@ -39,6 +39,8 @@ import { STAFF_ROLE_LABEL as ROLE_LABEL, STAFF_ROLE_ORDER as ROLE_ORDER } from '
 import { canManageStaff, canManageRooms, assignableStaffRolesFor, type UserRole } from '@/lib/permissions';
 // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1: 신규 실장 표시명 '실장' suffix.
 import { withSiljangSuffix } from '@/lib/siljangSlack';
+// T-20260810-foot-COORD-STAFF-DUP-INSERT-GUARD: 활성 coordinator 중복 등록 forward-guard(canonical 다축 술어).
+import { evaluateCoordinatorDup, type CoordIdentity } from '@/lib/coordinatorDupGuard';
 
 type Role = StaffRole;
 
@@ -373,6 +375,9 @@ function CreateStaffDialog({
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('therapist');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260810-foot-COORD-STAFF-DUP-INSERT-GUARD: 활성 coordinator 동명(약한 축) 경고 상태 + 오버라이드(동명이인 계속 등록).
+  const [dupWarn, setDupWarn] = useState<CoordIdentity | null>(null);
+  const [dupOverride, setDupOverride] = useState(false);
   // T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 'director'(원장) 배정 불가. admin/manager/director 는 전 역할.
   // STEP4 닫힌 유니온: DB→FE 경계(actorRole: Role|string) 명시 캐스트로 유입점 표기. unknown → predicate fail-closed.
   const roleOptions = assignableStaffRolesFor(actorRole as UserRole | null | undefined, ROLE_ORDER);
@@ -381,14 +386,55 @@ function CreateStaffDialog({
     if (!open) {
       setName('');
       setRole('therapist');
+      setDupWarn(null);
+      setDupOverride(false);
     }
   }, [open]);
 
-  const save = async () => {
+  // 이름/역할이 바뀌면 직전 동명 경고·오버라이드는 무효화(신선 판정).
+  useEffect(() => {
+    setDupWarn(null);
+    setDupOverride(false);
+  }, [name, role]);
+
+  const save = async (overrideDup = false) => {
     if (!name.trim()) {
       toast.error('이름을 입력하세요');
       return;
     }
+    const finalName = role === 'consultant' ? withSiljangSuffix(name) : name.trim();
+
+    // T-20260810-foot-COORD-STAFF-DUP-INSERT-GUARD (forward-only·backfill 0):
+    //   활성 coordinator 중복 INSERT 를 canonical 다축 술어(within-clinic + phone 강한 축 / name 약한 축)로 차단/경고.
+    //   phone 일치 = 하드 차단 / name 일치 = 경고(동명이인 오차단 방지 위해 오버라이드 가능). name-string 단독 하드차단 금지.
+    if (role === 'coordinator') {
+      const { data: existing, error: qErr } = await supabase
+        .from('staff')
+        .select('id, name, phone')
+        .eq('clinic_id', clinicId)
+        .eq('role', 'coordinator')
+        .eq('active', true);
+      if (qErr) {
+        toast.error(`중복 확인 실패: ${qErr.message}`);
+        return;
+      }
+      const verdict = evaluateCoordinatorDup(
+        { name: finalName, phone: null }, // 등록폼은 phone 미캡처 → 강한 축은 향후 폼 확장 대비 방어적 처리
+        (existing ?? []) as CoordIdentity[],
+      );
+      if (verdict.kind === 'block') {
+        toast.error(
+          `이미 동일 연락처의 활성 코디네이터(${verdict.match.name ?? ''})가 등록되어 있습니다. 기존 계정을 사용하세요.`,
+        );
+        return;
+      }
+      if (verdict.kind === 'warn' && !(dupOverride || overrideDup)) {
+        // 동명 활성 coordinator 존재 → 인서트 보류, 경고 배너 표시(오버라이드 후 재제출).
+        setDupWarn(verdict.match);
+        return;
+      }
+    }
+
     setSubmitting(true);
     // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1 (QA-FIX A안): 신규 '실장'(consultant) 등록 시 이름 뒤 '실장' suffix.
     //   ⚠ staff.display_name 컬럼은 foot prod 부재(STAFF-NAME-UNIFY 미마이그) → codebase 전역 'display_name select/insert 금지' 불변식.
@@ -397,7 +443,7 @@ function CreateStaffDialog({
     //   비-실장 역할은 suffix 미부여(기존대로).
     const insertRow: { clinic_id: string; name: string; role: Role; active: boolean } = {
       clinic_id: clinicId,
-      name: role === 'consultant' ? withSiljangSuffix(name) : name.trim(),
+      name: finalName,
       role,
       active: true,
     };
@@ -437,12 +483,40 @@ function CreateStaffDialog({
               ))}
             </select>
           </div>
+          {dupWarn && (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+              role="alert"
+              data-testid="coord-dup-warn"
+            >
+              <p className="font-medium">
+                이미 같은 이름의 활성 코디네이터(&lsquo;{dupWarn.name}&rsquo;)가 등록되어 있습니다.
+              </p>
+              <p className="mt-1 text-amber-800">
+                같은 분이면 <b>취소</b>하고 기존 계정을 사용하세요. 동명이인(다른 분)이면 아래
+                &lsquo;동명이인 — 계속 등록&rsquo;을 눌러 진행하세요.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 border-amber-400"
+                data-testid="coord-dup-override"
+                disabled={submitting}
+                onClick={() => {
+                  setDupOverride(true);
+                  void save(true);
+                }}
+              >
+                동명이인 — 계속 등록
+              </Button>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button onClick={save} disabled={submitting}>
+          <Button onClick={() => save()} disabled={submitting}>
             {submitting ? '저장중…' : '등록'}
           </Button>
         </DialogFooter>
