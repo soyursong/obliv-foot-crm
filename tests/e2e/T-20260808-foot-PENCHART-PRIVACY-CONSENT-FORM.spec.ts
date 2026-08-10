@@ -123,15 +123,21 @@ test.describe('T-20260808 PENCHART-PRIVACY-CONSENT-FORM — 개인정보 수집�
     await expect(page.getByText('진료를 위한 정보 수집')).toBeVisible();
     await expect(page.getByText(/개인정보 수집·이용에 동의합니다 \(필수\)/)).toBeVisible();
 
-    // [2] AC-6 고유식별정보 수집·이용 (별도 필수, 개보법 §24) — ConsentFormDialog UNIQUE_ID verbatim
+    // [2] 고유식별정보 수집·이용 (필수) — ConsentFormDialog UNIQUE_ID verbatim
+    // FIX(2026-08-10): commit dd8d2a14 [T-20260810-foot-CONSENT-UNIQUEID-SECTION-FORMAT-ALIGN /
+    //   자매 FORM2-FORMAT-ALIGN] 이 §2 표기·서식을 1·3·4번과 통일 — 헤드 '(별도 필수, 개보법 §24)'→'(필수)',
+    //   dual 위젯(□동의함 □동의하지 않음)→ 1·3·4 동일 단일 체크박스. 이 스펙의 정합 前 단언이 라이브와
+    //   drift 하여 FAIL 하던 것을 배포 실재(deployed reality)로 동기화. §24 별도 opt-in '실질'(독립 동의
+    //   라인)은 보존됨 — '(필수)' 는 표기 통일이지 별도 동의 삭제가 아님.
     await expect(page.getByText('주민등록번호, 외국인등록번호, 여권번호')).toBeVisible();
     await expect(page.getByText('의료법 및 국민건강보험법에 따른 본인확인, 진료기록 작성, 건강보험 자격확인')).toBeVisible();
     await expect(page.getByText('의료법에 따른 진료기록 보존기간 (10년)')).toBeVisible();
-    await expect(page.getByText(/개인정보보호법 §24/)).toBeVisible();
-    await expect(page.getByText(/고유식별정보 수집·이용에 동의합니다 \(별도 필수\)/)).toBeVisible();
-    // 개인정보 수집·이용과 분리된 동의함/동의하지 않음 별도 선택란
-    await expect(page.getByText(/□ 동의함/)).toBeVisible();
-    await expect(page.getByText(/□ 동의하지 않음/)).toBeVisible();
+    // §2 = 1·3·4 와 동일 단일 체크박스 '(필수)' 서식 (별도 opt-in = 독립 동의 라인으로 보존)
+    await expect(page.getByText(/□ 고유식별정보 수집·이용에 동의합니다 \(필수\)/)).toBeVisible();
+    // 정합 후: dual 위젯(동의함/동의하지 않음)·'별도 필수' 라벨 미노출
+    await expect(page.getByText(/□ 동의함/)).toHaveCount(0);
+    await expect(page.getByText(/□ 동의하지 않음/)).toHaveCount(0);
+    await expect(page.getByText(/별도 필수/)).toHaveCount(0);
 
     // [3] 민감정보(건강·진료정보) (필수, 개보법 §23) — consentSensitiveItems verbatim
     await expect(page.getByText('건강정보, 진료기록, 상병명, 처방내역 등 민감 의료정보')).toBeVisible();
