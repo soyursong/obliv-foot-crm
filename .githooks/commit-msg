@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# commit-msg — "read-only prep / 진단성" 커밋 활성코드(FE/EF/마이그) 혼입 차단 (belt)
+#   T-20260720-meta-DIRTYTREE-PUSH-QAGATE-BYPASS-GUARD 조치항목 #2 (dev-meta 구현)
+#   로직 SSOT = ~/claude-sync/scripts/prep_commit_activecode_guard.sh (부재=fail-open+경고).
+#   우회(비권장, 사유 명기 의무): PREP_COMMIT_ACTIVECODE_BYPASS="사유" / git commit --no-verify.
+GUARD="$HOME/claude-sync/scripts/prep_commit_activecode_guard.sh"
+if [ -x "$GUARD" ]; then
+  bash "$GUARD" msg "$1" || exit 1
+else
+  echo "⚠️  [commit-msg] prep_commit_activecode_guard.sh 부재 — 활성코드 혼입 검사 skip (fail-open)" >&2
+fi
+exit 0
