@@ -49,7 +49,9 @@ AND (g) health_q_tokens.used_at IS NULL                        -- [freeze guard]
 
 ### 3.2 술어 산출물 (본 티켓 deliverable)
 - **canonical 술어 SQL**: `scripts/T-20260731-foot-FOOTQST-PHOTO-ORPHAN-TTL-SWEEP_orphan_predicate.sql` (READ-ONLY, `storage.objects` ⋈ tokens/results/photos, 전 클래스 가시화 + 클래스별 건수).
-- **dry-run 러너**: `scripts/T-20260731-foot-FOOTQST-PHOTO-ORPHAN-TTL-SWEEP_dryrun.mjs` (READ-ONLY, Storage list + 배치 조회 → 대상목록·건수 + freeze-set 스냅샷 JSON). Storage move/remove·DB write 0.
+- **★분류 술어 SSOT 모듈**: `scripts/_healthq_orphan_scan.mjs` — Storage 스캔 + 3-교집합 분류 로직을 **한 곳에** 둔다. dry-run 러너와 sweep 실행기가 이 모듈을 공유 → **술어 drift(=PHI 오삭제 위험) 원천 차단**. env 로더는 `.env`→`.env.local` 폴백(macstudio 개발머신 service_role 위치).
+- **dry-run 러너**: `scripts/T-20260731-foot-FOOTQST-PHOTO-ORPHAN-TTL-SWEEP_dryrun.mjs` (READ-ONLY, SSOT 모듈 소비 → 대상목록·건수 + freeze-set 스냅샷 JSON). Storage move/remove·DB write 0.
+- **sweep 실행기(gated)**: `scripts/T-20260731-foot-FOOTQST-PHOTO-ORPHAN-TTL-SWEEP_sweep_execute.mjs` — archive-first 2단 파괴잡. **기본=PLAN(READ-ONLY)**, `--execute` 플래그 있을 때만 실제 archive+delete. SSOT 모듈 동일 술어 사용. §5 실행 설계의 코드 구현체.
 
 ---
 
@@ -65,9 +67,9 @@ AND (g) health_q_tokens.used_at IS NULL                        -- [freeze guard]
 
 ---
 
-## 5. Archive-First 파괴 실행 설계 (★미착수 — supervisor gated 이후에만)
+## 5. Archive-First 파괴 실행 설계 (코드 구현 완료 — 실 파괴 실행은 supervisor gated 이후에만)
 
-`Cross-CRM Orphan-Row Archive-First Cleanup + FK Integrity Guard SOP` 봉투 준수. **본 티켓에서는 실행하지 않는다**(설계만).
+`Cross-CRM Orphan-Row Archive-First Cleanup + FK Integrity Guard SOP` 봉투 준수. 실행기(`..._sweep_execute.mjs`)로 **코드 구현되었으나**, `--execute` 없이는 PLAN(READ-ONLY) 모드로만 동작한다. **dev-foot 은 `--execute` 로 직접 돌리지 않는다(gate=supervisor).**
 
 1. **dry-run READ-ONLY 선행** (AC4·본 티켓): §3.2 러너로 대상목록·건수 + freeze-set 스냅샷 산출. supervisor 검토.
 2. **freeze-set 고정**: dry-run 시점 `B_orphan_ELIGIBLE` object_id 집합을 고정(freeze).
@@ -98,3 +100,23 @@ node scripts/T-20260731-foot-FOOTQST-PHOTO-ORPHAN-TTL-SWEEP_dryrun.mjs
 ```
 
 dry-run 은 **READ-ONLY** — Storage/DB 를 변경하지 않는다. 산출된 건수·freeze-set 이 supervisor 코드리뷰의 입력이며, 그 승인 후에만 §5 파괴 실행 설계로 진입한다.
+
+---
+
+## 8. dry-run 실건수 evidence (macstudio service_role 실행 — 2026-08-11)
+
+**실행 환경**: macstudio `.env.local`(service_role, project `rxlomoozakkjesdqjtvd`). service_role → RLS 우회 = 실 데이터 전수 스캔(silent 0-row read 아님. 91건 오브젝트 발견 + photo 행 매칭 확인 = 진성 non-empty read).
+
+| 지표 | 값 |
+|---|---|
+| Storage 오브젝트 총계 | **91건** |
+| `A_submitted_protected` (제출완료·sweep 절대배제) | **91건** |
+| `B_orphan_ELIGIBLE` (적격 orphan·삭제 대상) | **0건** |
+| `RESIDUE_used_but_result_absent` | 0건 |
+| `UNCLASSIFIED_no_token_row` | 0건 |
+| `B_draft_not_yet_expired` | 0건 |
+
+- **현시점 sweep 대상 = 0건.** 저장소의 모든 사진(91건)이 제출완료 원장(`health_q_photos` 행)에 결속 → 전량 보호대상. **지금 파괴잡을 돌려도 no-op(순소실 0).**
+- 실행기 PLAN 모드도 동일: `freeze-set 0건 → 종료(no-op, 멱등)`.
+- 함의: orphan 은 아직 누적되지 않음(미제출 draft-orphan 부재). 본 잡은 **누적 대비 상비 도구**로서 봉인해 두고, orphan 이 실제 발생하면 그때 supervisor gated 로 `--execute`. 정기 스케줄(cron)은 별건(§5.1).
+- evidence 원본 JSON(`..._dryrun.out.json`)은 `.gitignore` 대상(로컬 산출물) — 위 표가 커밋된 요약본. freeze-set 은 빈 배열(PHI 무동봉).
