@@ -595,7 +595,9 @@ const DraggableCard = memo(function DraggableCard({
           e.stopPropagation();
           cardHandlers?.onNameContext(checkIn, e);
         }}
-        title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
+        // T-20260811-foot-CUSTBOX-HOVER-REDBOX-RM-TOOLTIP-FIELDS: hover 시 카드 위에 겹쳐 뜨던
+        //   네이티브 title 힌트 툴팁('드래그=이동 · 우클릭…')을 제거(김주연 총괄, 스샷 F0BPHD028SY 빨간박스).
+        //   이 힌트가 간단정보(CustomerHoverCard) 팝업을 가려 현장 불편 → 제거. 카드 동작(드래그/우클릭/클릭/⋮) 불변.
         className={cn(
           'cursor-grab touch-none rounded border px-1.5 py-1 text-xs shadow-sm transition hover:shadow active:cursor-grabbing',
           flagBg || 'bg-white',
@@ -824,7 +826,8 @@ const DraggableCard = memo(function DraggableCard({
         e.stopPropagation();
         cardHandlers?.onNameContext(checkIn, e);
       }}
-      title="드래그=이동 · 우클릭=고객차트·예약 · ⋮=상태변경 · 클릭=상세"
+      // T-20260811-foot-CUSTBOX-HOVER-REDBOX-RM-TOOLTIP-FIELDS: hover 시 카드 위에 겹쳐 뜨던
+      //   네이티브 title 힌트 툴팁('드래그=이동 · 우클릭…') 제거(비-compact 카드 미러). 스샷 F0BPHD028SY 빨간박스.
       className={cn(
         'cursor-grab touch-none rounded border p-1 shadow-sm transition hover:shadow active:cursor-grabbing',
         flagBg || 'bg-white',

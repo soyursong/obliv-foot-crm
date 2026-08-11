@@ -7,7 +7,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, FileText, Phone, Stethoscope } from 'lucide-react';
+import { Clock, FileText, Phone, Stethoscope, LogIn, Cake } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { formatPhone, chartNoBadge, birthDateYMD } from '@/lib/format';
@@ -153,6 +153,16 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
     ? reservationTime.slice(0, 5)
     : format(new Date(checkIn.checked_in_at), 'HH:mm');
   const timeLabel = reservationTime ? '예약' : '체크인';
+
+  // T-20260811-foot-CUSTBOX-HOVER-REDBOX-RM-TOOLTIP-FIELDS: 간단정보(대시보드 hover)에
+  //   '접수 시간'·'생년월일' 2행 추가(김주연 총괄). 데이터 없으면 '-' graceful(레이아웃 유지).
+  //   접수시간 = check_ins.checked_in_at(접수/체크인 시각). 생년월일 = customers.birth_date(fetch).
+  const checkInDate = checkIn.checked_in_at ? new Date(checkIn.checked_in_at) : null;
+  const checkInTimeLabel =
+    checkInDate && !Number.isNaN(checkInDate.getTime())
+      ? format(checkInDate, 'MM.dd HH:mm')
+      : '';
+  const birthLabel = details?.birth_date ? birthDateYMD(details.birth_date) : '';
 
   return (
     <span
@@ -336,6 +346,22 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
             <Clock className="h-3.5 w-3.5 shrink-0 text-teal-500" />
             <span className="tabular-nums font-medium">{displayTime}</span>
             <span className="text-gray-400 text-[10px]">({timeLabel})</span>
+          </div>
+
+          {/* ── 접수 시간 (T-20260811-foot-CUSTBOX-HOVER-REDBOX-RM-TOOLTIP-FIELDS) ── */}
+          <div className="flex items-center gap-1.5 text-gray-600" data-testid="hover-checkin-time">
+            <LogIn className="h-3.5 w-3.5 shrink-0 text-teal-500" />
+            <span className="text-gray-400 text-[10px]">접수</span>
+            <span className="tabular-nums font-medium">{checkInTimeLabel || '-'}</span>
+          </div>
+
+          {/* ── 생년월일 (T-20260811-foot-CUSTBOX-HOVER-REDBOX-RM-TOOLTIP-FIELDS) ── */}
+          <div className="flex items-center gap-1.5 text-gray-600" data-testid="hover-birth-date">
+            <Cake className="h-3.5 w-3.5 shrink-0 text-teal-500" />
+            <span className="text-gray-400 text-[10px]">생년월일</span>
+            <span className="tabular-nums font-medium">
+              {loading && !details ? '불러오는 중…' : birthLabel || '-'}
+            </span>
           </div>
 
           {/* ── 핸드폰번호 ── */}
