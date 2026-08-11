@@ -1,0 +1,50 @@
+{
+  "ticket_id": "T-20260811-foot-SELFCHECKIN-DUP-IDEMPOTENCY-BACKFILL",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "migration_version": "20260811120000",
+  "migration_file": "20260811120000_foot_selfcheckin_dup_idempotency_forward_seal.sql",
+  "go_token_path": "db-gate/T-20260811-foot-SELFCHECKIN-DUP-IDEMPOTENCY-BACKFILL_GO.token.json",
+  "go_issued_at": "2026-08-11T04:33:55.520Z",
+  "go_expires_at": "2026-08-11T06:33:55.520Z",
+  "apply_ts": "2026-08-11T05:01:29.765Z",
+  "applied_at": "2026-08-11T05:01:30.439Z",
+  "ledger_recorded": true,
+  "migration_sha256": "5920bacd6641d6aec0436ed2ef715a15d522720522a1a144a57d02428868f39c",
+  "sig_verify": "pass",
+  "pre_image": {
+    "self_checkin_with_reservation_link": "740a27d5314fc95da57cc0ab65ea6442",
+    "fn_selfcheckin_dup_guard": "96b969b41fabf9697a322ca6c091f774"
+  },
+  "post_image": {
+    "self_checkin_with_reservation_link": "44fe03fea432dee8c948972cbb62f323",
+    "fn_selfcheckin_dup_guard": "f123cf25e29b560153281c81832a32ab"
+  },
+  "postcheck": {
+    "all_pass": true,
+    "checks": [
+      {
+        "fn": "self_checkin_with_reservation_link",
+        "changed": true,
+        "secdef": true,
+        "spath": true,
+        "owner": true,
+        "acl": true,
+        "kst": true,
+        "term": true
+      },
+      {
+        "fn": "fn_selfcheckin_dup_guard",
+        "changed": true,
+        "secdef": true,
+        "spath": true,
+        "owner": true,
+        "acl": true,
+        "kst": true,
+        "term": true
+      }
+    ]
+  },
+  "orphan_sensor_pre": 0,
+  "orphan_sensor_post": 0,
+  "generated_at": "2026-08-11T05:01:31.120Z"
+}
