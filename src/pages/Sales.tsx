@@ -46,12 +46,14 @@ import {
 } from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
 import { toast } from '@/lib/toast';
-import { BarChart2, Users, Layers, UserCheck, User } from 'lucide-react';
+import { BarChart2, Users, Layers, UserCheck, User, CreditCard } from 'lucide-react';
 import { SalesDailyTab } from '@/components/sales/SalesDailyTab';
 import { SalesPatientTab } from '@/components/sales/SalesPatientTab';
 import { SalesTreatmentTab } from '@/components/sales/SalesTreatmentTab';
 import { SalesDoctorTab } from '@/components/sales/SalesDoctorTab';
 import { SalesStaffTab } from '@/components/sales/SalesStaffTab';
+// T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: 결제수단별 매출 분해(실장별/치료사별과 병존 축).
+import { SalesPaymentMethodTab } from '@/components/sales/SalesPaymentMethodTab';
 
 // 탭 정의
 const SALES_TABS = [
@@ -60,6 +62,8 @@ const SALES_TABS = [
   { value: 'treatment', label: '시술별',     icon: Layers },
   { value: 'doctor',    label: '담당실장별', icon: UserCheck },
   { value: 'staff',     label: '담당치료사별', icon: User },
+  // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: 결제수단별 분해 축(카드/현금/이체/선수금차감/미분류).
+  { value: 'paymethod', label: '결제수단별', icon: CreditCard },
 ] as const;
 
 type SalesTabValue = (typeof SALES_TABS)[number]['value'];
@@ -154,6 +158,11 @@ export default function Sales() {
           {/* 담당치료사별 — T-20260515-foot-SALES-TAB-STAFF */}
           <TabsContent value="staff">
             <SalesStaffTab filter={filter} />
+          </TabsContent>
+
+          {/* 결제수단별 — T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN */}
+          <TabsContent value="paymethod">
+            <SalesPaymentMethodTab filter={filter} />
           </TabsContent>
         </Tabs>
       </div>
