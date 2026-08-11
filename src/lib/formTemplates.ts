@@ -335,6 +335,8 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'patient_phone',label: '전화번호', type: 'text',      x: 0, y: 0 },
       { key: 'patient_address', label: '주소', type: 'text',       x: 0, y: 0 },
       { key: 'diagnosis_ko', label: '소견',    type: 'multiline',  x: 0, y: 0 },
+      // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 = 발행일과 별개 축(원장 수기지정 가능).
+      { key: 'diagnosis_date', label: '진단일', type: 'date',      x: 0, y: 0 },
       { key: 'issue_date',   label: '발행일',  type: 'date',       x: 0, y: 0 },
       { key: 'clinic_name',  label: '의료기관',type: 'text',       x: 0, y: 0 },
       { key: 'clinic_address',label: '주소',   type: 'text',       x: 0, y: 0 },
@@ -362,6 +364,8 @@ export const FALLBACK_TEMPLATES: FormTemplate[] = [
       { key: 'patient_address', label: '주소',        type: 'text',      x: 0, y: 0 },
       { key: 'patient_phone',   label: '전화번호',    type: 'text',      x: 0, y: 0 },
       { key: 'diagnosis_ko',    label: '소견',        type: 'multiline', x: 0, y: 0 },
+      // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 = 발행일과 별개 축(원장 수기지정 가능).
+      { key: 'diagnosis_date',  label: '진단일',      type: 'date',      x: 0, y: 0 },
       { key: 'issue_date',      label: '발행일',      type: 'date',      x: 0, y: 0 },
       { key: 'clinic_name',     label: '의료기관',    type: 'text',      x: 0, y: 0 },
       { key: 'clinic_address',  label: '주소',        type: 'text',      x: 0, y: 0 },

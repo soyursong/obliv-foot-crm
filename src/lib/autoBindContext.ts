@@ -308,6 +308,11 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
     patient_birthdate: formatBirthDate(effBirthYYMMDD),
     patient_age: calcAge(effBirthYYMMDD),
     visit_date: visitDate,
+    // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1, scalp2 canonical 미러): 소견서·진단서 '진단일' 전용 토큰.
+    //   진단일 셀은 이전에 {{issue_date}}(=today) 로 바인딩돼 항상 '오늘'로 오출력 → 보험사 반려.
+    //   기본값 = 앵커 내원의 진료일(visitDate). 발행일({{issue_date}}=today)과 별개 축(불변식② 무접촉).
+    //   원장 수기 지정 시 field_data.diagnosis_date 우선(formTemplates field_map + printOpinionDoc 폴백).
+    diagnosis_date: visitDate,
     doctor_name: ctx.doctor ?? '',
     // T-20260718-foot-DOCPRINT-RX-DOCTOR-BIND: 처방전(rx_standard) 처방의료인 축 전용 바인딩.
     //   §12①4 법정 처방전의 처방의료인 '성명·면허번호'는 실제 의료인(사람)이라야 한다.

@@ -75,6 +75,11 @@ export interface AuthoredMedDoc {
     name1: string | null; name2: string | null; name3: string | null; name4: string | null;
   };
   /**
+   * T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1, scalp2 canonical 미러): 진단일 발행 스냅샷(field_data.diagnosis_date).
+   *   신규 발행분=앵커 내원일 각인. 미존재(각인 前 레거시)=null → printOpinionDoc 폴백이 진단일 공란 방지(AC-4).
+   */
+  diagnosisDate: string | null;
+  /**
    * T-20260729-foot-OPINIONDOC-ADMININFO-DOCTORNAME-STALE [P0]: 발행 후 원내 직원이 '행정정보 수정'으로
    *   정정한 행정필드 오버레이(발행본이 아니라 요청행 field_data.admin_overrides 에 저장됨 — 발행본 불변).
    *   ★RC: 데스크 출력(printAuthoredMedDoc)은 발행본(status='published') 스냅샷만 읽어 발행 당시 담당의
@@ -196,6 +201,8 @@ export function useAuthoredMedDocs(clinicId: string | null, customerId: string |
             name3: (fd['diag_name_3'] as string | null) ?? null,
             name4: (fd['diag_name_4'] as string | null) ?? null,
           },
+          // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 각인 read(각인 前 레거시=null → 폴백).
+          diagnosisDate: (fd['diagnosis_date'] as string | null) ?? null,
         };
       }
 
@@ -335,5 +342,8 @@ export async function printAuthoredMedDoc(
     //   printOpinionDoc 이 autoValues(check_in 폴백) 뒤에 truthy 일 때만 override → 스냅샷 값 우선.
     //   T-20260729: 상병코드 정정 오버레이가 있으면 그 값(primary)이 이긴다(열람 경로와 동일).
     diagCodes: effectiveDiagCodes,
+    // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 각인 스냅샷 우선. null(레거시)→폴백 발화
+    //   (autoValues.diagnosis_date=앵커내원일 → visit_date → issueDate). 데스크 재출력도 진단일=방문일 그대로.
+    diagnosisDate: doc.diagnosisDate,
   });
 }

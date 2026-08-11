@@ -47,6 +47,14 @@ export interface OpinionPrintData {
    */
   autoValues?: Record<string, string>;
   /**
+   * T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1, scalp2 canonical 미러): 진단일 발행 스냅샷(field_data.diagnosis_date).
+   *   소견서·진단서 양식의 진단일 셀은 {{diagnosis_date}} 로 바인딩된다(발행일 {{issue_date}}=today 와 별개 축).
+   *   ★공란 폴백 체인: diagnosisDate(발행 시 각인 스냅샷) → autoValues.diagnosis_date(=앵커 내원일) →
+   *     autoValues.visit_date → issueDate(최후 보루). 어느 경로에서도 진단일 셀이 공란이 되지 않음(AC-4 회귀 0).
+   *   미지정(autoValues 미주입 레거시 재출력)에서도 폴백이 발화 → 진단일 칸 비지 않음.
+   */
+  diagnosisDate?: string | null;
+  /**
    * T-20260721-foot-OPINIONDOC-DIAGCODE-BLANK [FIX-REQUEST, 이은상 팀장]: 발행본 스냅샷 상병(1급 소스).
    *   발행 시점 field_data.diag_code_1..4 / diag_name_1..4 (발행 당시 확정 4상병, 재출력 불변).
    *   ⚠ autoValues(check_in_services 폴백, 방문일 미매칭 위험) 뒤에 truthy 일 때만 override →
@@ -102,6 +110,16 @@ export function renderOpinionDocHtml(
   //   base 로 폴백한다. bindHtmlTemplate 은 키 부재를 ''(빈값)로 렌더 → autoValues 미지정 경로 회귀 0.
   const fieldValues: Record<string, string> = {
     ...(data.autoValues ?? {}),
+    // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일({{diagnosis_date}}) = 발행일과 별개 축.
+    //   진단일 셀이 이전엔 {{issue_date}}(=today)로 오바인딩돼 항상 '오늘'로 오출력 → 보험사 반려. 이제 전용 토큰.
+    //   폴백 체인(공란 방지): 각인 스냅샷 → autoValues.diagnosis_date(앵커 내원일) → visit_date → 발행일(issueDate).
+    //   autoValues spread 뒤에 명시 대입해 우선순위 확정(발행일 override 축과 무접촉 → 불변식② 무회귀).
+    diagnosis_date:
+      data.diagnosisDate ??
+      data.autoValues?.diagnosis_date ??
+      data.autoValues?.visit_date ??
+      data.issueDate ??
+      '',
     [bodyField]: data.body ?? '',           // 본문(소견/의견)란 — 발행 body 스냅샷은 항상 그대로 출력
     ...(data.chartNo ? { record_no: data.chartNo } : {}),
     ...(data.patientName ? { patient_name: data.patientName } : {}),

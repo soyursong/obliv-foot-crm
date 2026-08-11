@@ -453,6 +453,12 @@ export interface PublishedOpinionRow {
    *   을 이 값으로 우선 적용(null-safe). 미존재(대다수 발행분)=undefined → 발행본 스냅샷 그대로 출력(회귀 0).
    */
   adminOverrides?: AdminFieldOverrides;
+  /**
+   * T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1, scalp2 canonical 미러): 진단일 발행 스냅샷(field_data.diagnosis_date).
+   *   신규 발행분=앵커 내원일 각인. 미존재(각인 前 레거시 발행본)=null → printOpinionDoc 폴백(autoValues.visit_date
+   *   → issueDate)이 진단일 공란 방지(AC-4). 재출력 시 방문일 그대로 렌더(발행일=오늘과 별개 축).
+   */
+  diagnosis_date: string | null;
 }
 function usePublishedOpinions(clinicId: string | null, customerId: string | null, templateId: string | null) {
   return useQuery<PublishedOpinionRow[]>({
@@ -484,6 +490,8 @@ function usePublishedOpinions(clinicId: string | null, customerId: string | null
           check_in_id: (fd['check_in_id'] as string | null) ?? null,
           // T-20260721-foot-OPINIONDOC-SEAL-DOCTOR-MATCH: 발행자(진료의) clinic_doctors.id 스냅샷 — 도장 결선용.
           issued_by_doctor_id: (fd['issued_by_doctor_id'] as string | null) ?? null,
+          // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 각인 read(각인 前 레거시=null → 폴백).
+          diagnosis_date: (fd['diagnosis_date'] as string | null) ?? null,
         };
       });
 
@@ -571,6 +579,9 @@ export interface PublishOpinionInput {
   doctorLicenseNo: string | null;
   // T-20260620-foot-MEDDOC-DESK-PRINTONLY: 서류종류(소견서/진단서) 스냅샷 — 데스크 서류출력 게이트 식별키.
   docType: 'opinion' | 'diagnosis';
+  // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 각인 스냅샷 = 앵커 내원일(visitDate).
+  //   발행일(=오늘)과 별개 축. 재출력 시 field_data.diagnosis_date 로 되살아나 방문일 그대로 렌더(불변).
+  diagnosisDate: string | null;
 }
 // 발행 = publish_opinion_doc RPC(form_submissions published insert, append-only). 비가역=published 트리거(C1).
 function usePublishOpinion(clinicId: string | null) {
@@ -590,6 +601,9 @@ function usePublishOpinion(clinicId: string | null) {
           // T-20260620-foot-MEDDOC-DESK-PRINTONLY: 서류종류 스냅샷(JSONB ADDITIVE, NO-DDL).
           //   데스크 서류출력(소견서/진단서)이 이 발행본으로 출력 버튼 활성화 게이트를 식별.
           doc_type: input.docType,
+          // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 각인(JSONB ADDITIVE, NO-DDL, db_change:false).
+          //   앵커 내원일(visitDate) 스냅샷 → 재출력 시 진단일=방문일 그대로(발행일=오늘과 별개 축). 보험사 제출 정합.
+          diagnosis_date: input.diagnosisDate,
         },
       });
       if (error) throw error;
@@ -1130,6 +1144,9 @@ export function OpinionEditorDialog({
         doctorName: issuer.issuedByName,
         doctorLicenseNo: issuer.issuedByLicenseNo,
         docType: initialDocType === 'diagnosis' ? 'diagnosis' : 'opinion',
+        // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 = 앵커 내원일(visitDate, L832).
+        //   발행일(=오늘)과 별개 축으로 각인 → 과거방문 앵커 발행 시 진단일=방문일·발행일=오늘 서로 다르게 렌더(AC-1/2).
+        diagnosisDate: visitDate,
       });
       toast.success(`${docTitle}가 발행되었습니다.`);
       setText('');
@@ -1204,6 +1221,9 @@ export function OpinionEditorDialog({
       clinicPhone: clinicHeader?.phone ?? null,
       formKey: row.doc_type === 'diagnosis' ? 'diagnosis' : 'diag_opinion',
       autoValues,
+      // T-20260811-foot-OPINIONDOC-DIAGDATE-ISSUEDATE-MISBIND (P1): 진단일 각인 스냅샷 우선. null(레거시)→폴백 발화
+      //   (autoValues.diagnosis_date=앵커내원일 → visit_date → issueDate). 진단일 공란 0(AC-4).
+      diagnosisDate: row.diagnosis_date,
     });
     if (!ok) toast.error('팝업이 차단되었습니다. 팝업을 허용해주세요.');
   };

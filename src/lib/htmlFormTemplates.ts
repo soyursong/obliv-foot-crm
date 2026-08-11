@@ -227,7 +227,7 @@ ${COMMON_STYLE}
         <td style="width:60px; background:#f8f8f8;">발 병 일</td>
         <td>{{onset_date}}</td>
         <td style="width:60px; background:#f8f8f8;">진 단 일</td>
-        <td>{{issue_date}}</td>
+        <td>{{diagnosis_date}}</td>
       </tr>
     </tbody>
   </table>
@@ -776,7 +776,7 @@ ${COMMON_STYLE}
         <td style="width:60px; background:#f8f8f8;">발 병 일</td>
         <td>{{onset_date}}</td>
         <td style="width:60px; background:#f8f8f8;">진 단 일</td>
-        <td>{{issue_date}}</td>
+        <td>{{diagnosis_date}}</td>
       </tr>
     </tbody>
   </table>
