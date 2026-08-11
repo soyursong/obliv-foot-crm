@@ -1,0 +1,16 @@
+{
+  "ticket": "T-20260811-foot-CHARTEDIT-TRIAL-PRICE-BACKFILL",
+  "kind": "data-correction-backfill-archive-first",
+  "table": "package_sessions",
+  "field": "unit_price",
+  "captured_by": "dev-foot",
+  "captured_context": "G-gate READ-ONLY SELECT (service_role), pre-apply before-image",
+  "freeze_set_count": 4,
+  "note": "가역(reversible) archive. rollback = SET unit_price=<archived unit_price>(=0) WHERE id=<pk>. GO-token 前 무영속.",
+  "rows": [
+    { "pk": "57398393-4911-4eb0-a413-d8440b6b2b04", "unit_price": 0, "session_type": "trial", "session_date": "2026-08-07", "performed_by": "eed1d06d-9a55-44cf-96c9-e251d6febb34", "status": "used", "deleted_at": null, "package_id": "ad6521c2-69a5-4770-827d-a956dd0ebb12", "trial_unit_price_target": 10000, "chart_number": "F-5537", "customer_name": "차민주" },
+    { "pk": "63157a7a-88bc-472c-9633-6aa710ca1373", "unit_price": 0, "session_type": "trial", "session_date": "2026-08-06", "performed_by": "eed1d06d-9a55-44cf-96c9-e251d6febb34", "status": "used", "deleted_at": null, "package_id": "4388ae14-f782-43c0-90fa-af26c07bc2a5", "trial_unit_price_target": 10000, "chart_number": "F-5668", "customer_name": "우경아" },
+    { "pk": "d29b8665-910f-4c6b-8296-cd17f0a80823", "unit_price": 0, "session_type": "trial", "session_date": "2026-08-07", "performed_by": "eed1d06d-9a55-44cf-96c9-e251d6febb34", "status": "used", "deleted_at": null, "package_id": "559f3d0d-2a82-4046-a724-b1203e4b5ad5", "trial_unit_price_target": 10000, "chart_number": "F-5727", "customer_name": "정석현" },
+    { "pk": "b9eed069-ca0d-454e-b3a9-ed3d17353060", "unit_price": 0, "session_type": "trial", "session_date": "2026-08-06", "performed_by": "eed1d06d-9a55-44cf-96c9-e251d6febb34", "status": "used", "deleted_at": null, "package_id": "51301119-8125-48d6-98a3-4a9f786646c9", "trial_unit_price_target": 10000, "chart_number": "F-5538", "customer_name": "강득중" }
+  ]
+}
