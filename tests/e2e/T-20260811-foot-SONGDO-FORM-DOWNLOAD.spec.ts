@@ -55,20 +55,20 @@ test.describe('SONGDO-FORM-DOWNLOAD · 파일명', () => {
 });
 
 test.describe('SONGDO-FORM-DOWNLOAD · txt 골격', () => {
-  test('헤더에 차트번호·환자명·생성일·방문건수 포함', () => {
+  test('헤더=현장 차트 골격(차트번호 :/환자명 :) + 하단 생성일·방문건수 메타', () => {
     const txt = buildProgressTxt(
       { chartNumber: 'F-4696', name: '허유희' },
       [mkVisit({})],
       new Date('2026-08-11T09:00:00'),
     );
-    expect(txt).toContain('경과분석 치료이력');
-    expect(txt).toContain('차트번호: F-4696');
-    expect(txt).toContain('환자명: 허유희');
-    expect(txt).toContain('생성일: 2026-08-11');
-    expect(txt).toContain('방문 건수: 1건');
+    // 현장 차트 "404658 최은규" 골격: '차트번호 : ' / '환자명 : '(공백-콜론-공백).
+    expect(txt).toContain('차트번호 : F-4696');
+    expect(txt).toContain('환자명 : 허유희');
+    // 생성일·방문건수는 문서 하단 메타로 이동(차트 골격 오염 방지).
+    expect(txt).toContain('경과분석 치료이력 · 생성일 2026-08-11 · 방문 1건');
   });
 
-  test('날짜별 블록 = 예약일시/담당자/룸/메모 노출', () => {
+  test('날짜별 블록 = {YYYY년 MM월 DD일} [예약/접수메모] + 메모원문 + (예약: 시각) 담당자/룸', () => {
     const txt = buildProgressTxt(
       { chartNumber: 'F-4696', name: '허유희' },
       [
@@ -82,24 +82,24 @@ test.describe('SONGDO-FORM-DOWNLOAD · txt 골격', () => {
       ],
       new Date('2026-08-11T09:00:00'),
     );
-    expect(txt).toContain('2026-05-01 (금) 10:30');
-    expect(txt).toContain('담당자: @홍길동');
-    expect(txt).toContain('룸: 레이저룸');
-    expect(txt).toContain('메모/시술내용:');
-    // 메모는 원문 그대로 보존(라벨 포함).
-    expect(txt).toContain('- 예약메모: 내성발톱 5회차');
-    expect(txt).toContain('- 접수메모: 레이저 비가열 10분');
+    // 날짜 블록 헤더 = 'YYYY년 MM월 DD일    [예약/접수메모]'.
+    expect(txt).toContain('2026년 05월 01일    [예약/접수메모]');
+    // 메모는 원문 그대로 보존(라벨 포함, 불릿/추가가공 없이 한 줄씩).
+    expect(txt).toContain('예약메모: 내성발톱 5회차');
+    expect(txt).toContain('접수메모: 레이저 비가열 10분');
+    // 예약시각 + 담당자/룸 한 줄.
+    expect(txt).toContain(' (예약: 10:30)    @홍길동 / 레이저룸');
   });
 
-  test('담당자/룸 누락 → — 폴백, 메모 0건 → (기록 없음)', () => {
+  test('담당자/룸 누락 → — 폴백, 메모 0건 → (메모 없음)', () => {
     const txt = buildProgressTxt(
       { chartNumber: 'F-4696', name: '허유희' },
-      [mkVisit({ registrarName: null, room: null, memoLines: [] })],
+      [mkVisit({ date: '2026-05-01', time: '10:30', registrarName: null, room: null, memoLines: [] })],
       new Date('2026-08-11T09:00:00'),
     );
-    expect(txt).toContain('담당자: —');
-    expect(txt).toContain('룸: —');
-    expect(txt).toContain('메모/시술내용: (기록 없음)');
+    expect(txt).toContain('(메모 없음)');
+    // 담당자/룸 모두 없으면 '—'.
+    expect(txt).toContain(' (예약: 10:30)    —');
   });
 
   test('방문 순서 = 입력(호출부 정렬)을 그대로 반영', () => {
@@ -112,13 +112,15 @@ test.describe('SONGDO-FORM-DOWNLOAD · txt 골격', () => {
       ],
       new Date('2026-08-11T09:00:00'),
     );
-    const i1 = txt.indexOf('[1]');
-    const i2 = txt.indexOf('[2]');
-    const i3 = txt.indexOf('[3]');
+    const i1 = txt.indexOf('2026년 05월 01일');
+    const i2 = txt.indexOf('2026년 06월 01일');
+    const i3 = txt.indexOf('2026년 08월 01일');
     expect(i1).toBeGreaterThan(-1);
     expect(i1).toBeLessThan(i2);
     expect(i2).toBeLessThan(i3);
-    expect(txt).toContain('[3] 2026-08-01 (토) 09:00');
+    // 메모 원문도 순서대로.
+    expect(txt.indexOf('1회차')).toBeLessThan(txt.indexOf('3회차'));
+    expect(txt.indexOf('3회차')).toBeLessThan(txt.indexOf('5회차'));
   });
 
   test('방문 0건 → 안내 문구(붕괴 없음)', () => {
@@ -127,7 +129,7 @@ test.describe('SONGDO-FORM-DOWNLOAD · txt 골격', () => {
       [],
       new Date('2026-08-11T09:00:00'),
     );
-    expect(txt).toContain('방문 건수: 0건');
+    expect(txt).toContain('· 방문 0건');
     expect(txt).toContain('치료이력이 없습니다.');
   });
 });
