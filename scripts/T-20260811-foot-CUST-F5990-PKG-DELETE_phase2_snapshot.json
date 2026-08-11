@@ -1,0 +1,85 @@
+{
+  "ticket": "T-20260811-foot-CUST-F5990-PKG-DELETE",
+  "phase": "phase2_softcancel",
+  "before_packages": [
+    {
+      "id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "package_name": "무좀체험권",
+      "status": "active",
+      "total_sessions": 1,
+      "total_amount": 0,
+      "paid_amount": 0,
+      "updated_at": "2026-08-11 06:37:43.12352+00"
+    }
+  ],
+  "before_package_sessions": [
+    {
+      "id": "1bee6ad4-a0be-4784-a7fc-5407ea3531a7",
+      "package_id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "check_in_id": "ec84b828-c304-4771-a41a-88f693b54191",
+      "session_number": 1,
+      "session_type": "trial",
+      "status": "used",
+      "deleted_at": null,
+      "created_at": "2026-08-11 06:29:12.934847+00"
+    }
+  ],
+  "before_check_ins": [
+    {
+      "id": "ec84b828-c304-4771-a41a-88f693b54191",
+      "package_id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "status": "done",
+      "checked_in_at": "2026-08-11 05:35:40.731688+00",
+      "completed_at": "2026-08-11 06:34:11.190308+00",
+      "deleted_at": null,
+      "created_at": "2026-08-11 05:35:40.731688+00"
+    }
+  ],
+  "update_returning": [
+    {
+      "id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "status": "cancelled",
+      "updated_at": "2026-08-11 09:34:43.884496+00"
+    }
+  ],
+  "after_packages": [
+    {
+      "id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "package_name": "무좀체험권",
+      "status": "cancelled",
+      "total_sessions": 1,
+      "total_amount": 0,
+      "paid_amount": 0,
+      "updated_at": "2026-08-11 09:34:43.884496+00"
+    }
+  ],
+  "after_package_sessions": [
+    {
+      "id": "1bee6ad4-a0be-4784-a7fc-5407ea3531a7",
+      "package_id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "check_in_id": "ec84b828-c304-4771-a41a-88f693b54191",
+      "session_number": 1,
+      "session_type": "trial",
+      "status": "used",
+      "deleted_at": null,
+      "created_at": "2026-08-11 06:29:12.934847+00"
+    }
+  ],
+  "after_check_ins": [
+    {
+      "id": "ec84b828-c304-4771-a41a-88f693b54191",
+      "package_id": "ba6771ef-d66e-495d-ae51-8a48f1f62ec8",
+      "status": "done",
+      "checked_in_at": "2026-08-11 05:35:40.731688+00",
+      "completed_at": "2026-08-11 06:34:11.190308+00",
+      "deleted_at": null,
+      "created_at": "2026-08-11 05:35:40.731688+00"
+    }
+  ],
+  "result": {
+    "rows_affected": 1,
+    "packages_status": "active → cancelled",
+    "package_sessions_unchanged": true,
+    "check_ins_unchanged": true
+  }
+}
