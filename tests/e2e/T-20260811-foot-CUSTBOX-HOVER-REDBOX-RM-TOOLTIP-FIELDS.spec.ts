@@ -52,6 +52,27 @@ test.describe('T-20260811-foot-CUSTBOX-HOVER-REDBOX-RM-TOOLTIP-FIELDS', () => {
     }
   });
 
+  // AC-1b (재보고 잔존원): 카드 div title 은 이미 제거됐으나, 성함 인접 자식요소
+  //   (차트#='차트 열기' / 슬롯배지='현재 위치…')의 네이티브 title 힌트가 hover 시
+  //   간단정보 팝업 위에 겹쳐 뜨던 '빨간박스'의 잔존원 → 자식요소 title 도 0개여야 함.
+  test('AC-1b: 고객박스 자식요소(차트#·슬롯배지)에 네이티브 title 힌트가 없다', async ({ page }) => {
+    const cards = page.locator('[data-testid="checkin-card"]');
+    if ((await cards.count()) === 0) {
+      test.skip(true, '대기 카드 없는 환경 — 구조 검증 skip');
+      return;
+    }
+    // 차트# 링크에 '차트 열기' 힌트 title 잔존 금지
+    const chartnoTitled = page.locator(
+      '[data-testid="waiting-card-chartno"][title*="차트 열기"]',
+    );
+    await expect(chartnoTitled).toHaveCount(0);
+    // 슬롯 위치 배지에 '현재 위치' 힌트 title 잔존 금지
+    const locBadgeTitled = page.locator(
+      '[data-testid="card-location-badge"][title*="현재 위치"]',
+    );
+    await expect(locBadgeTitled).toHaveCount(0);
+  });
+
   // AC-2 & AC-3 & AC-4: hover → 간단정보 tooltip 에 접수/생년월일 표시 + 기존 항목 유지
   test('AC-2: 고객박스 hover 시 간단정보 tooltip에 접수시간·생년월일 항목이 표시된다', async ({ page }) => {
     const cards = page.locator('[data-testid="checkin-card"]');

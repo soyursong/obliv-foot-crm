@@ -625,7 +625,8 @@ const DraggableCard = memo(function DraggableCard({
               <span
                 data-testid="card-location-badge"
                 className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
-                title={`현재 위치: ${slotName}`}
+                // T-20260811-foot-DASH-CUSTBOX-HOVER-REDBOX-REMOVE-MEMO-FIELDS(AC1 재보고): 슬롯배지 네이티브
+                //   title('현재 위치…') 힌트 제거 — hover 시 간단정보 팝업 위 겹침(빨간박스) 잔존원. 배지 표시 불변.
               >
                 <MapPin className="h-2 w-2" />
                 {slotName}
@@ -638,7 +639,10 @@ const DraggableCard = memo(function DraggableCard({
               data-testid="waiting-card-chartno"
               data-chartno-popup={checkIn.customer_id ? '1' : undefined}
               role={checkIn.customer_id ? 'button' : undefined}
-              title={checkIn.customer_id ? '차트 열기' : undefined}
+              // T-20260811-foot-DASH-CUSTBOX-HOVER-REDBOX-REMOVE-MEMO-FIELDS(AC1 재보고): 성함 인접 차트# 의
+              //   네이티브 title 힌트('차트 열기')가 hover 시 간단정보(CustomerHoverCard) 팝업 위에 겹쳐 뜨던
+              //   '빨간박스'의 잔존원(카드 div title 은 79fd9cd6 에서 제거했으나 자식요소 title 잔존). 힌트만 제거.
+              //   클릭→차트 진입(onClick)·role 불변 → 동선 회귀 0(AC3).
               onClick={checkIn.customer_id ? (e) => openChartNo(checkIn.customer_id, e) : undefined}
             >
               {chartNoBadge(chartNum ?? null)}
@@ -856,7 +860,8 @@ const DraggableCard = memo(function DraggableCard({
             <span
               data-testid="card-location-badge"
               className="inline-flex items-center gap-0.5 shrink-0 text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-100 rounded px-1 py-px whitespace-nowrap"
-              title={`현재 위치: ${slotName}`}
+              // T-20260811-foot-DASH-CUSTBOX-HOVER-REDBOX-REMOVE-MEMO-FIELDS(AC1 재보고): 슬롯배지 네이티브
+              //   title('현재 위치…') 힌트 제거(비-compact 카드 미러) — hover 겹침 빨간박스 잔존원. 배지 표시 불변.
             >
               <MapPin className="h-2.5 w-2.5" />
               {slotName}
