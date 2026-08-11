@@ -7246,7 +7246,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 let curConsultDue = 0;
 
                 for (const p of packages) {
-                  if (p.status === 'cancelled') continue; // 취소 패키지는 미수 의무 소멸 → 이력 제외
+                  // T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE(AC-2 port): 취소뿐 아니라 환불(refunded)
+                  //   패키지도 미수 의무 소멸 → 미수요약/이력 제외. loadCustomerOutstanding(active-only SSOT)과 정합.
+                  //   Packages.tsx round1(6df35061)과 동일 술어를 CustomerChartPage 실화면으로 port.
+                  if (p.status === 'cancelled' || p.status === 'refunded') continue; // 취소·환불 = 미수 의무 소멸 → 이력 제외
                   const rows = pkgPayments.filter((pp) => pp.package_id === p.id);
                   const pkgTotal = p.total_amount ?? 0;
                   const consultTotal = p.consultation_fee ?? 0;
@@ -7726,6 +7729,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   <div className="space-y-3">
                     {/* T-20260522-foot-PKG-EDIT-DEL AC-5: cancelled(soft delete) 패키지 비노출 */}
                     {packages.filter((p) => p.status !== 'cancelled').map((p) => {
+                      // ── T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE (CustomerChartPage port, db_change=false) ──
+                      //   round1(6df35061)이 Packages.tsx(패키지관리)에만 착지 → reporter 실화면 /chart/{id} 패키지 탭
+                      //   (CustomerChartPage)은 게이팅 전무. Packages.tsx 와 동일 술어(status==='refunded')를 이 실화면에 port.
+                      //   순수 표시/상태 렌더 게이팅 — 환불 원장/회차 세션행/RPC/미수 산식 semantics 무접촉(hard-delete 0).
+                      const isRefundVoided = p.status === 'refunded';
                       const usedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'used');
                       // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 실수 삭제된 회차(soft-delete) — 복원용 노출
                       const deletedSessions = packageSessions.filter((s) => s.package_id === p.id && s.status === 'deleted');
@@ -7746,7 +7754,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                       // 시술내역 리스트 (회차 차감 기록)
                       const TREAT_KO: Record<string, string> = { heated_laser: '가열', unheated_laser: '비가열', podologue: '포돌로게', iv: '수액', preconditioning: '프컨', trial: '체험권', reborn: 'Re:Born' };
                       return (
-                        <div key={p.id} className="rounded-lg border border-muted/40 overflow-hidden">
+                        <div
+                          key={p.id}
+                          /* AC-4: 환불 티켓 = 회색(무효) 처리. 클릭/상세는 유지, 시각적으로만 무효화. */
+                          data-testid={isRefundVoided ? 'pkg-row-refunded' : 'pkg-row'}
+                          className={cn(
+                            'rounded-lg border border-muted/40 overflow-hidden',
+                            isRefundVoided && 'bg-muted/30 opacity-60',
+                          )}
+                        >
                           {/* 패키지 헤더 — T-20260511-foot-C21-PKG-TICKET-DATE: 발행일자 추가 */}
                           {/* T-20260522-foot-PKG-EDIT-DEL: 수정/삭제 버튼 추가 */}
                           <div className="flex items-center justify-between bg-muted/20 px-3 py-1.5">
@@ -7822,18 +7838,32 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                               )}
                             </div>
                           </div>
+                          {/* T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE(AC-3 port): 환불 티켓 terminal 배너(사용불가 명시). */}
+                          {isRefundVoided && (
+                            <div
+                              data-testid="pkg-refunded-void-banner"
+                              className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+                            >
+                              환불완료 · 사용불가
+                            </div>
+                          )}
                           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ③: 패키지 금액/진료비 금액 별도 표기 + 항목별 잔금(§4-A: 합산 단일표기 금지). */}
                           {(() => {
                             const rows = pkgPayments.filter((pay) => pay.package_id === p.id);
                             // T-20260717-foot-PKGPAY-RECEIPT-MISSING-SYSTEMIC-FIX: effectiveNetPaid(회수1/양도 폴백)로 phantom 미수 치유.
-                            const pkgDue = computeOutstanding(p.total_amount, effectiveNetPaid(p, rows));
+                            // T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE(AC-2 port): 환불 티켓 = 잔금/미수 0(채무 소멸, active-only SSOT 정합).
+                            const pkgDue = isRefundVoided ? 0 : computeOutstanding(p.total_amount, effectiveNetPaid(p, rows));
                             const pkgSt = balanceStatus(pkgDue);
                             const fee = p.consultation_fee ?? 0;
-                            const consultDue = computeOutstanding(fee, netPaidFromPayments(rows, 'consultation'));
+                            const consultDue = isRefundVoided ? 0 : computeOutstanding(fee, netPaidFromPayments(rows, 'consultation'));
                             const consultSt = balanceStatus(consultDue);
-                            const showConsult = fee > 0 || netPaidFromPayments(rows, 'consultation') !== 0;
+                            // 환불 티켓은 진료비 잔금도 표시 억제(active-only SSOT 정합).
+                            const showConsult = !isRefundVoided && (fee > 0 || netPaidFromPayments(rows, 'consultation') !== 0);
                             const balanceChip = (st: ReturnType<typeof balanceStatus>, due: number) =>
-                              st === 'paid' ? (
+                              // AC-2 port: 환불 티켓은 '완납'(녹색) 대신 무효 '환불' 표기 — 회색 무효행과 시각 정합.
+                              isRefundVoided ? (
+                                <span className="text-muted-foreground" data-testid="pkg-detail-outstanding">환불</span>
+                              ) : st === 'paid' ? (
                                 <span className="text-emerald-600">완납</span>
                               ) : (
                                 <span className={st === 'due' ? 'text-red-600 font-semibold' : 'text-amber-600 font-semibold'}>
@@ -7890,7 +7920,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                     <td className="px-2 py-1.5 text-right tabular-nums text-[11px]">{row.unitPrice > 0 ? formatAmount(row.unitPrice) : '-'}</td>
                                     <td className="px-2 py-1.5 text-center text-[11px]">{row.qty}회</td>
                                     <td className="px-2 py-1.5 text-center font-semibold text-sage-700 text-[11px]">{row.used}회</td>
-                                    <td className="px-2 py-1.5 text-center font-semibold text-orange-600 text-[11px]">{row.qty - row.used}회</td>
+                                    {/* AC-1 port: 환불 티켓은 잔여 전 종류 0(사용불가). 세션행/RPC 불변 — 표시단 clamp. */}
+                                    <td className="px-2 py-1.5 text-center font-semibold text-orange-600 text-[11px]" data-testid="pkg-remaining-cell">{isRefundVoided ? 0 : row.qty - row.used}회</td>
                                   </tr>
                                 ))}
                               </tbody>
