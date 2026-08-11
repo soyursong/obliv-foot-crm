@@ -25,7 +25,7 @@ export interface AutoVisitLogRow {
   date: string;
   /** 패키지내용(함축) — interim: "{총회차}회" */
   packageContent: string;
-  /** 금일 치료 횟수 = "{총회수}-{당일차감횟수}" (예: "12-1") */
+  /** 금일 치료 횟수 = "{그날 기준 잔여}-{당일차감횟수}" (예: 24-1, 23-1, 22-1 … 누적차감) */
   todayCount: string;
   /** 차감치료사 (당일 차감 수행 담당 치료사, 복수 시 ', ' join) */
   therapists: string;
@@ -38,7 +38,14 @@ export interface AutoVisitLogRow {
  * 정렬 = 일자 최신순(DESC). 고객당 1 히스토리 테이블에 방문행 누적(per-visit 폼 재생성 아님).
  *
  * - 패키지내용 = 해당 패키지 총 회수 "{total}회" (interim).
- * - 금일 치료 횟수 = "{total}-{당일 차감건수}" (reporter item#5 · 스샷 "5-1" 형식).
+ * - 금일 치료 횟수 = "{그날 기준 잔여}-{당일 차감건수}" (예: 24-1, 23-1, 22-1 …).
+ *     T-20260811-foot-PENCHART-VISITLOG-TODAYCOUNT-CUMULATIVE-FIX (김주연 총괄 C0ATE5P6JTH):
+ *     구버그 = 첫 번째 숫자에 total(총회차, 항상 전체 24)을 고정 base 로 사용 → 전 방문행 '24-1' 동일 표기.
+ *     정정 = 그날 기준 잔여(= total − 그 날짜 이전까지 누적 차감) 를 첫 숫자로 사용.
+ *       · 패키지별로 날짜 오름차순 누적차감 계산 → 각 방문일 시작 시점의 잔여 회차를 산출.
+ *       · 잔여 = total − (해당 날짜보다 이른 날들의 차감 합계). 당일 차감은 이 잔여에서 뺀다는 뜻으로 별도 표기.
+ *       · READ-ONLY 파생(packages/package_sessions write-back 0, db_change=false).
+ *     ★직교축 무접촉: '패키지내용' 보험구분 함축('비N/가M')은 INSURANCE-SPLIT-PHASE2 소관 — 미접촉.
  * - 차감치료사 = 당일 차감 수행 치료사(들), null 은 '-'.
  */
 export function buildAutoVisitLogRows(
@@ -63,14 +70,35 @@ export function buildAutoVisitLogRows(
     if (s.staff_name) g.therapists.add(s.staff_name);
   }
 
+  // 패키지별 날짜 오름차순 누적차감 → 각 방문일 '시작 시점' 잔여(= total − 이전 날들 차감 합계) 산출.
+  //   grain = (date, package_id) 이므로 패키지 내 그룹은 날짜 유일 → prefix-sum 으로 정확.
+  //   당일(같은 날) 차감은 잔여에서 빼지 않는다(첫 숫자 = 당일 시작 시점 잔여, 둘째 숫자 = 당일 차감건수).
+  const remainingAtStart = new Map<Group, number | null>();
+  const byPkg = new Map<string, Group[]>();
+  for (const g of groups.values()) {
+    const arr = byPkg.get(g.pkgId);
+    if (arr) arr.push(g);
+    else byPkg.set(g.pkgId, [g]);
+  }
+  for (const [pkgId, arr] of byPkg) {
+    const total = pkgById.get(pkgId)?.total_sessions ?? null;
+    arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 날짜 오름차순
+    let deductedBefore = 0;
+    for (const g of arr) {
+      remainingAtStart.set(g, total != null ? total - deductedBefore : null);
+      deductedBefore += g.count; // 다음(더 늦은) 방문일부터 반영
+    }
+  }
+
   const rows: AutoVisitLogRow[] = [];
   for (const [key, g] of groups) {
     const total = pkgById.get(g.pkgId)?.total_sessions ?? null;
+    const remaining = remainingAtStart.get(g) ?? null;
     rows.push({
       key,
       date: g.date,
       packageContent: total != null ? `${total}회` : '-',
-      todayCount: total != null ? `${total}-${g.count}` : `-${g.count}`,
+      todayCount: remaining != null ? `${remaining}-${g.count}` : `-${g.count}`,
       therapists: g.therapists.size > 0 ? Array.from(g.therapists).join(', ') : '-',
     });
   }
