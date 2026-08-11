@@ -113,7 +113,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const SERVICE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   // 도파민 crm-cancel-callback full URL. DOPAMINE_CALLBACK_URL 이 base/full 어느 형태든 정규화
   //   (foot sibling EF crm-payment-sync-emit·dopamine-callback-dispatch 동일 관용).
   const CB_RAW = (Deno.env.get("DOPAMINE_CALLBACK_URL") ?? "").replace(/\/+$/, "");
