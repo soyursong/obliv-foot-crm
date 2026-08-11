@@ -2403,6 +2403,12 @@ function DashboardTimeline({
   // resvToSlot: module-level 함수 사용 (T-20260515-foot-DASH-SLOT-DRAG)
 
   const matchedCiIds = new Set<string>();
+  // T-20260811-foot-DASH-CUSTBOX-DUP-AUTOCREATE-F5465: 1고객=1박스 불변식 강제.
+  //   정책 T-20260510-DASH-SLOT-REWORK-P0 (중복 절대금지). DB에 동일 고객 당일 복수
+  //   check_in 행(예약매칭 1 + 미매칭 워크인 1)이 존재해도 타임라인은 고객당 단일
+  //   박스만 렌더한다. 예약 루프에서 박스가 생성된 customer_id를 기록 → 워크인 루프에서
+  //   동일 고객의 미매칭 중복 체크인은 렌더 제외(defense-in-depth·FE-only).
+  const boxedCustomerIds = new Set<string>();
   // T-20260530-foot-WALKIN-OFFHOUR-SLOT: 영업시간 외 클램핑된 워크인의 실접수 시각 (ci.id → 'HH:mm')
   const offHourActualTimeMap = new Map<string, string>();
   // T-20260530-foot-WALKIN-TIMETABLE: 워크인 체크인 ID 집합 (예약 미매칭) → 'W' 배지 표시 기준
@@ -2436,24 +2442,32 @@ function DashboardTimeline({
       // 초진
       if (!ci) {
         // 셀프접수 전 → 1번 박스 (비활성). 노쇼도 미내원 → 1번 박스에 유지(배지 표시)
-        if (r.status === 'confirmed' || isNoShow) sd.newBox1.push(r);
+        if (r.status === 'confirmed' || isNoShow) {
+          sd.newBox1.push(r);
+          if (r.customer_id) boxedCustomerIds.add(r.customer_id); // 1고객=1박스 기록
+        }
         // status='checked_in' + selfCheckIns에 없음 = 칸반으로 이동 완료 → 미표시
       } else {
         // 셀프접수 완료 → 2번 박스 (활성, 드래그/클릭)
         matchedCiIds.add(ci.id);
         sd.newBox2Ci.push(ci);
+        if (r.customer_id) boxedCustomerIds.add(r.customer_id); // 1고객=1박스 기록
         if (isNoShow) noshowCiIdSet.add(ci.id);
       }
     } else {
       // 재진
       if (!ci) {
         // 셀프접수 전 → 2번 박스 (재진은 예약부터 활성, 차트 접근). 노쇼도 유지(배지 표시)
-        if (r.status === 'confirmed' || isNoShow) sd.retBox2Resv.push(r);
+        if (r.status === 'confirmed' || isNoShow) {
+          sd.retBox2Resv.push(r);
+          if (r.customer_id) boxedCustomerIds.add(r.customer_id); // 1고객=1박스 기록
+        }
         // status='checked_in' + 없음 = treatment_waiting 이상 이동 → 미표시
       } else {
         // 체크인 매칭 → 2번 박스 (활성)
         matchedCiIds.add(ci.id);
         sd.retBox2Ci.push(ci);
+        if (r.customer_id) boxedCustomerIds.add(r.customer_id); // 1고객=1박스 기록
         if (isNoShow) noshowCiIdSet.add(ci.id);
       }
     }
@@ -2473,6 +2487,10 @@ function DashboardTimeline({
   const isSunday = date.getDay() === 0; // 0=일요일 → 오프아워 클램핑 예외(pass-through)
   for (const ci of selfCheckIns) {
     if (matchedCiIds.has(ci.id)) continue;
+    // T-20260811-foot-DASH-CUSTBOX-DUP-AUTOCREATE-F5465: 1고객=1박스 불변식.
+    //   이미 박스가 생성된 고객(예약매칭 또는 앞선 워크인)의 미매칭 중복 체크인은
+    //   렌더 제외 — 동일 고객 당일 복수 check_in 행이 존재해도 박스는 하나만.
+    if (ci.customer_id && boxedCustomerIds.has(ci.customer_id)) continue;
     const d = new Date(ci.checked_in_at);
     const h = d.getHours();
     const mm = d.getMinutes();
@@ -2489,6 +2507,7 @@ function DashboardTimeline({
     }
     // T-20260530-foot-WALKIN-TIMETABLE: 워크인 등록 → 'W' 배지 기준
     walkInCiIdSet.add(ci.id);
+    if (ci.customer_id) boxedCustomerIds.add(ci.customer_id); // 1고객=1박스 기록 (후속 중복 워크인 차단)
     const sd = ensure(slot);
     if (ci.visit_type === 'new') {
       sd.newBox2Ci.push(ci);
