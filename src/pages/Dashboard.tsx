@@ -2024,6 +2024,7 @@ function DraggableBox1Card({
       }}
       title={cardDisplayName(reservation)}
       data-testid="box1-resv-card"
+      data-resv-id={reservation.id}
       data-noshow={isNoShow ? 'true' : undefined}
     >
       {/* 성함 식별자 줄 (1행): [초] 배지 · 성함(전체표시) · 폰뒷4 · 간략메모칩 · 미수배지 · 노쇼 · 접수버튼 */}
@@ -2176,6 +2177,7 @@ function DraggableBox2ResvCard({
         ? `${cardDisplayName(reservation)} — 힐러 치료 예정`
         : cardDisplayName(reservation)}
       data-testid="box2-resv-card"
+      data-resv-id={reservation.id}
       data-noshow={isNoShow ? 'true' : undefined}
     >
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
@@ -3764,6 +3766,10 @@ export default function Dashboard() {
   const todaySearchRef = useRef<HTMLInputElement>(null);
   const todaySearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const todaySearchWrapRef = useRef<HTMLDivElement>(null);
+  // T-20260811-foot-DASH-SEARCH-SCROLL-HIGHLIGHT: 검색 결과 선택 시 매칭 카드로 1회 스크롤+강조 타깃.
+  //   selector = 체크인 카드([data-checkin-id]) 또는 예약 카드([data-resv-id]). nonce = 동일 카드 재선택도
+  //   effect 재실행(스크롤/플래시 재시작) 위해 매 선택마다 갱신. null이면 no-op(미선택/초기화).
+  const [searchScrollTarget, setSearchScrollTarget] = useState<{ selector: string; nonce: number } | null>(null);
 
   // ── 줌 + 레이아웃 편집 상태 ──────────────────────────────────────────────────
   const [zoomLevel, setZoomLevel] = useState<number>(() => {
@@ -6680,20 +6686,55 @@ export default function Dashboard() {
   }, []);
 
   // 당일 검색 결과 클릭 핸들러
+  // T-20260811-foot-DASH-SEARCH-SCROLL-HIGHLIGHT: 검색 결과 선택 시 상세 시트를 띄우는 대신
+  //   보드(당일 현황) 위의 매칭 고객 카드로 자동 스크롤 이동 + 시각 강조(테두리/배경 플래시).
+  //   - 체크인 완료 → 체크인 카드([data-checkin-id]) 타깃 (칸반/타임라인 어느 컬럼이든 DOM에 존재하는 첫 노드).
+  //   - 아직 체크인 전 → 예약 카드([data-resv-id]) 타깃 + 예약시간 안내 토스트(보드를 가리지 않는 비침습 힌트).
+  //   RESVDEEPLINK(T-20260804) '항목 이동+하이라이트' 패턴 재사용(트리거=검색어, 화면=당일 현황).
   const handleTodaySearchSelect = useCallback((r: Reservation) => {
     setTodaySearchOpen(false);
     setTodaySearchQ('');
     setTodaySearchResults([]);
-    // 체크인된 경우 → 상세 시트 오픈
     const checkIn = rows.find((ci) => ci.reservation_id === r.id);
-    if (checkIn) {
-      setSelectedCheckIn(checkIn);
-    } else {
-      // 아직 체크인 전 → 예약 시간 안내
+    const selector = checkIn
+      ? `[data-checkin-id="${checkIn.id}"]`
+      : `[data-resv-id="${r.id}"]`;
+    if (!checkIn) {
+      // 아직 체크인 전 → 예약 시간 안내(카드 강조와 병행, 보드 비가림 토스트)
       const timeStr = r.reservation_time ? r.reservation_time.slice(0, 5) : '';
       toast.info(`${r.customer_name ?? ''} — ${timeStr} 예약, 아직 체크인 전입니다`);
     }
+    // nonce = 동일 카드 재선택 시에도 effect 재실행(스크롤/플래시 재시작).
+    setSearchScrollTarget({ selector, nonce: Date.now() });
   }, [rows]);
+
+  // T-20260811-foot-DASH-SEARCH-SCROLL-HIGHLIGHT: 검색 선택 타깃 카드로 1회 스크롤 + 강조.
+  //   ⚠ flicker/재스크롤 방지(cross-ref T-20260715-foot-DOCDASH-FLICKER): 검색 선택(사용자 액션)당 1회만
+  //   실행하고, rows/렌더 상태에는 의존하지 않는다(자동새로고침 re-render로 재트리거 안 함). double rAF로
+  //   드롭다운 닫힘·결과 렌더가 정착한 뒤 scrollIntoView → 무한 re-scroll·깜빡임 없음.
+  useEffect(() => {
+    if (!searchScrollTarget) return;
+    const { selector } = searchScrollTarget;
+    let raf1 = 0;
+    let raf2 = 0;
+    let flashTimer: ReturnType<typeof setTimeout> | null = null;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(selector);
+        if (!el) return; // 회귀안전: 카드 미발견(취소·상태변경 등) 시 조용히 no-op
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        el.classList.remove('card-search-flash');
+        void el.offsetWidth; // reflow → 재선택 시 애니메이션 재시작 강제
+        el.classList.add('card-search-flash');
+        flashTimer = setTimeout(() => el.classList.remove('card-search-flash'), 2600);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      if (flashTimer) clearTimeout(flashTimer);
+    };
+  }, [searchScrollTarget]);
 
   // T-20260708-foot-DASH-TIMETABLE-RESV-BROKEN-QUICKADD-DISABLE (AC2, 정책):
   //   대시보드 통합시간표의 신규예약 생성 진입점 차단 플래그(김주연 총괄 명시 요청 — '신규예약 생성 막고 당일

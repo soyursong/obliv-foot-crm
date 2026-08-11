@@ -237,6 +237,11 @@ export default defineConfig({
         //   저장방식=form_submissions.field_data 재사용(신규 테이블/컬럼0). auth/DB/server 불요·결정론.
         //   실 UI+persist+print = supervisor field-soak(code-gate: write-correctness+RRN 마스킹 렌더).
         '**/T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK.spec.ts',
+        // T-20260811-foot-DASH-SEARCH-SCROLL-HIGHLIGHT: 당일 현황 대시보드 '당일 검색' 결과 선택 → 보드 매칭 카드
+        //   자동 스크롤 + 강조(outline flash). 정적 소스 가드(handleTodaySearchSelect selector 산출 / scrollIntoView /
+        //   card-search-flash CSS outline·유한1회 / data-resv-id 앵커 / double rAF flicker 방지 / null·무매칭 회귀).
+        //   auth/DB/server 불요·결정론. 실 검색→스크롤 착지·강조 가시성 = supervisor field-soak(갤탭 실기기).
+        '**/T-20260811-foot-DASH-SEARCH-SCROLL-HIGHLIGHT.spec.ts',
         // T-20260807-foot-CONSULTASSIGN-TRIAL-EXCL-CHART2: 체험단(is_trial) 마커 기준 상담 배정 수 제외 + 2번 차트 [체험단].
         //   Stream A(VG3 LEFT JOIN 등가·walk-in 생존·forward-only) + Stream B(bucketOf) 순수 결정함수 + 마이그 §36 방화벽
         //   정적 소스 가드. auth/DB/webServer 불요·결정론. 실 UI+데이터경로 = 컬럼 prod 적용 후 supervisor field-soak.

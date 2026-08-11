@@ -257,6 +257,22 @@
   outline: 2px solid transparent; /* 마운트 시 초기 상태 — 깜빡임 시작 전 노출 방지 */
 }
 
+/* T-20260811-foot-DASH-SEARCH-SCROLL-HIGHLIGHT: 당일 현황 대시보드 검색 결과 카드 강조.
+   outline 기반(healer-blink 패턴 준용) — kanban 컬럼의 overflow:auto 컨테이너 안에서도
+   box-shadow와 달리 클립되지 않아 항상 가시. teal(브랜드) outline + 옅은 배경 플래시 →
+   2.4s ease-out 1회 후 transparent 종료(both). 클래스 자체도 타이머로 제거(재선택 시 재시작). */
+@keyframes card-search-flash-kf {
+  0%   { outline-color: #0d9488; background-color: rgba(20, 184, 166, 0.28); }
+  70%  { outline-color: #14b8a6; background-color: rgba(20, 184, 166, 0.14); }
+  100% { outline-color: rgba(20, 184, 166, 0); background-color: rgba(20, 184, 166, 0); }
+}
+.card-search-flash {
+  outline: 3px solid transparent;
+  outline-offset: 1px;
+  border-radius: 6px;
+  animation: card-search-flash-kf 2.4s ease-out 1 both;
+}
+
 /* T-20260522-foot-LASER-TIMER AC-3: 레이저 타이머 깜빡임 (2단계)
  * T-20260523-foot-LASER-TIMER AC-3 보강: amber(1분 경고) + red(만료) 분리 */
 
