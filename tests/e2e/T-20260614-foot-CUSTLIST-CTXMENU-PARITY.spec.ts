@@ -32,8 +32,11 @@ async function loginIfNeeded(page: import('@playwright/test').Page, email?: stri
 async function openCustomerRowContextMenu(page: import('@playwright/test').Page) {
   await page.goto(`${BASE_URL}/admin/customers`);
   await page.waitForLoadState('networkidle', { timeout: 15000 });
-  // 검색 결과 행 로드 대기 (이름 컬럼이 있는 tbody tr) — 데이터 안착까지 충분히 대기
-  const row = page.locator('tbody tr').first();
+  // ★실제 데이터 행만 타깃: 빈 상태 행(<td colSpan> '고객이 없습니다')은 onContextMenu 핸들러가 없어
+  //   우클릭해도 메뉴가 안 뜬다(CI dev DB 고객 0건일 때 발생 — 앰비언트 데이터 의존 flakiness의 실체).
+  //   데이터 행은 체크박스(data-testid=cust-row-check)를 가지므로 이를 판별자로 사용 → 데이터 유무와
+  //   무관하게 결정론 확보(0건이면 return false → 호출부 test.skip).
+  const row = page.locator('tbody tr', { has: page.getByTestId('cust-row-check') }).first();
   if (!(await row.isVisible({ timeout: 10000 }).catch(() => false))) return false;
   // 행 렌더/재정렬(results.map) 안정화 짧게 대기
   await page.waitForTimeout(300);
