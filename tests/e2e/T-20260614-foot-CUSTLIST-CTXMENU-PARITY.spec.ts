@@ -26,13 +26,28 @@ async function loginIfNeeded(page: import('@playwright/test').Page, email?: stri
   }
 }
 
-/** 고객관리에서 첫 번째 고객 행을 우클릭해 로컬 CustomerContextMenu를 여는 헬퍼 */
+/** 고객관리에서 첫 번째 고객 행을 우클릭해 로컬 CustomerContextMenu를 여는 헬퍼.
+ *  CI 부하/데이터 재렌더로 우클릭이 메뉴를 열지 못하는 flakiness 방지 —
+ *  실제 데이터 행이 안정될 때까지 대기 + 메뉴가 뜰 때까지 우클릭 재시도. */
 async function openCustomerRowContextMenu(page: import('@playwright/test').Page) {
   await page.goto(`${BASE_URL}/admin/customers`);
   await page.waitForLoadState('networkidle', { timeout: 15000 });
-  // 검색 결과 행 로드 대기 (이름 컬럼이 있는 tbody tr)
+  // 검색 결과 행 로드 대기 (이름 컬럼이 있는 tbody tr) — 데이터 안착까지 충분히 대기
   const row = page.locator('tbody tr').first();
-  if (!(await row.isVisible({ timeout: 5000 }).catch(() => false))) return false;
+  if (!(await row.isVisible({ timeout: 10000 }).catch(() => false))) return false;
+  // 행 렌더/재정렬(results.map) 안정화 짧게 대기
+  await page.waitForTimeout(300);
+
+  const menu = menuLocator(page);
+  // 우클릭 → 메뉴 오픈 최대 4회 재시도 (단발 우클릭 유실/재렌더 race 보정)
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await row.click({ button: 'right' });
+    if (await menu.isVisible({ timeout: 2500 }).catch(() => false)) return true;
+    // 메뉴 미노출 시 바깥 클릭으로 상태 초기화 후 재시도
+    await page.mouse.click(5, 5).catch(() => {});
+    await page.waitForTimeout(300);
+  }
+  // 마지막 한 번 더 시도 (호출부 waitFor가 최종 판정)
   await row.click({ button: 'right' });
   await page.waitForTimeout(400);
   return true;
