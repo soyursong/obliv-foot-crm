@@ -148,7 +148,13 @@ export default function Packages() {
               <tr
                 key={p.id}
                 onClick={() => setSelectedId(p.id)}
-                className="cursor-pointer border-t hover:bg-muted/40 h-11"
+                data-testid={p.status === 'refunded' ? 'pkg-row-refunded' : 'pkg-row'}
+                /* T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE(AC-4): 환불 티켓 = 회색(무효) 처리.
+                   12회권 환불 → 24회권 신규 시 환불행=회색·활성행=정상 시각 구분. 클릭/상세 진입은 유지. */
+                className={cn(
+                  'cursor-pointer border-t hover:bg-muted/40 h-11',
+                  p.status === 'refunded' && 'bg-muted/30 text-muted-foreground opacity-60',
+                )}
               >
                 <td className="px-3 py-2 font-medium">
                   {p.customer?.name}
@@ -159,7 +165,8 @@ export default function Packages() {
                 <td className="px-3 py-2 text-right">{formatAmount(p.total_amount)}</td>
                 {/* 잔금 = 패키지 금액 − 순납부(paid_amount 캐시 = Σpackage_payments). 0/완납이면 '—'(0이면 생략). */}
                 {(() => {
-                  const outstanding = computeOutstanding(p.total_amount, p.paid_amount);
+                  // T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE: 환불 티켓 잔금 = '—'(채무 소멸·SSOT active-only 정합).
+                  const outstanding = p.status === 'refunded' ? 0 : computeOutstanding(p.total_amount, p.paid_amount);
                   const st = balanceStatus(outstanding);
                   return (
                     <td className={cn('px-3 py-2 text-right tabular-nums', st === 'due' ? 'font-semibold text-red-600' : st === 'over' ? 'text-amber-600' : 'text-muted-foreground')}>
@@ -1513,6 +1520,21 @@ function PackageDetailSheet({
   const totalPaid = pkgPayments.filter((p) => p.payment_type === 'payment').reduce((s, p) => s + p.amount, 0);
   const totalRefunded = pkgPayments.filter((p) => p.payment_type === 'refund').reduce((s, p) => s + p.amount, 0);
 
+  // ── T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE (RC=파생/표시 게이팅, db_change=false) ────────
+  //   [RC · dev DB 런타임 재현] 패키지 환불 시 환불행이 append-only INSERT 되고(원장 무결) cross-ledger
+  //   트리거(foot_recompute_package_status)가 net≤0 → packages.status='refunded' 로 정상 전이한다. 그러나
+  //   (1) get_package_remaining(RPC)은 declared−used('used' 세션만)로 잔여를 산출해 status 를 **무시** →
+  //       미사용 회차권은 환불 후에도 잔여가 살아있고, (2) 아래 미수 박스는 computeOutstanding(total, net)
+  //       을 status 무관하게 계산 → 환불로 net=0 이 되면 미수가 total(2,960,000) 로 **부활**한다.
+  //   리스트 뱃지 SSOT(loadCustomerOutstanding)은 이미 status='active' 한정(환불=0-due) 이므로, 본 상세시트를
+  //   그 SSOT 에 **정합**시키는 순수 표시 게이팅으로 해소한다 — 환불 원장/회차 세션행/미수 산식 semantics 무변경.
+  //   (AC-6: hard-delete 0·append-only 원장 보존. AC-3 상태전이는 트리거가 이미 수행 = 표시·사용차단만 보강.)
+  const isRefundVoided = pkg.status === 'refunded';
+  // 잔여 회차 표시 0화: 환불 티켓은 전 종류 잔여 0(사용불가). 세션행/RPC 불변 — 표시단에서만 clamp.
+  const displayRemaining: PackageRemaining | null = isRefundVoided
+    ? { heated: 0, unheated: 0, iv: 0, preconditioning: 0, podologe: 0, trial: 0, reborn: 0, total_used: 0, total_remaining: 0 }
+    : remaining;
+
   return (
     <Sheet open onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <SheetContent className="max-w-xl">
@@ -1542,11 +1564,22 @@ function PackageDetailSheet({
             <div className="text-xs text-muted-foreground">{formatPhone(pkg.customer?.phone)}</div>
           </div>
 
+          {/* T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE: 환불 티켓 terminal 배너(사용불가 명시·AC-3). */}
+          {isRefundVoided && (
+            <div
+              data-testid="pkg-refunded-void-banner"
+              className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
+            >
+              환불완료 · 사용불가
+            </div>
+          )}
+
+          {/* 잔여 회차: 환불 티켓은 displayRemaining(전 종류 0)로 표시 → 잔여 0/total(AC-1). */}
           <div className="grid grid-cols-4 gap-2 text-xs">
-            <Stat label="가열" used={pkg.heated_sessions - (remaining?.heated ?? pkg.heated_sessions)} total={pkg.heated_sessions} />
-            <Stat label="비가열" used={pkg.unheated_sessions - (remaining?.unheated ?? pkg.unheated_sessions)} total={pkg.unheated_sessions} />
-            <Stat label="수액" used={pkg.iv_sessions - (remaining?.iv ?? pkg.iv_sessions)} total={pkg.iv_sessions} />
-            <Stat label="사전처치" used={pkg.preconditioning_sessions - (remaining?.preconditioning ?? pkg.preconditioning_sessions)} total={pkg.preconditioning_sessions} />
+            <Stat label="가열" used={pkg.heated_sessions - (displayRemaining?.heated ?? pkg.heated_sessions)} total={pkg.heated_sessions} />
+            <Stat label="비가열" used={pkg.unheated_sessions - (displayRemaining?.unheated ?? pkg.unheated_sessions)} total={pkg.unheated_sessions} />
+            <Stat label="수액" used={pkg.iv_sessions - (displayRemaining?.iv ?? pkg.iv_sessions)} total={pkg.iv_sessions} />
+            <Stat label="사전처치" used={pkg.preconditioning_sessions - (displayRemaining?.preconditioning ?? pkg.preconditioning_sessions)} total={pkg.preconditioning_sessions} />
           </div>
           {(pkg.podologe_sessions ?? 0) > 0 && (
             <div className="rounded bg-muted/40 px-2.5 py-1.5 text-xs">
@@ -1557,7 +1590,7 @@ function PackageDetailSheet({
           {/* T-20260608-foot-PKG-REBORN-TEMPLATE-MGMT: Re:Born 회차 현황 */}
           {(pkg.reborn_sessions ?? 0) > 0 && (
             <div className="rounded bg-muted/40 px-2.5 py-1.5 text-xs">
-              Re:Born {(pkg.reborn_sessions ?? 0) - (remaining?.reborn ?? (pkg.reborn_sessions ?? 0))}/{pkg.reborn_sessions}회 사용
+              Re:Born {(pkg.reborn_sessions ?? 0) - (displayRemaining?.reborn ?? (pkg.reborn_sessions ?? 0))}/{pkg.reborn_sessions}회 사용
             </div>
           )}
 
@@ -1584,13 +1617,15 @@ function PackageDetailSheet({
             //   결제행이 비었을 때 (a)회수1 단건(PKGCLASS-SESSION1-SINGLE) 또는 (b)양도 승계(PACKAGE-TRIPLE-DEFECT)는
             //   paid_amount 폴백 → phantom 미수 치유. 그 외(회수≥2 등)는 결제행 그대로(회귀 0).
             const effPaid = effectiveNetPaid(pkg, pkgPayments);
-            const outstanding = computeOutstanding(pkg.total_amount, effPaid);
+            // T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE(AC-2): 환불 티켓은 미수 0(환불로 채무 소멸).
+            //   loadCustomerOutstanding(active-only SSOT)과 정합 — net=0 부활분(2,960,000)을 표시단에서 clamp.
+            const outstanding = isRefundVoided ? 0 : computeOutstanding(pkg.total_amount, effPaid);
             const st = balanceStatus(outstanding);
             return (
               <div
                 className={cn(
                   'flex items-center justify-between rounded-lg px-3 py-2',
-                  st === 'due' ? 'bg-red-50' : st === 'over' ? 'bg-amber-50' : 'bg-emerald-50',
+                  isRefundVoided ? 'bg-muted/40' : st === 'due' ? 'bg-red-50' : st === 'over' ? 'bg-amber-50' : 'bg-emerald-50',
                 )}
               >
                 <div className="text-xs text-muted-foreground">미수금 (패키지 잔금)</div>
@@ -1598,13 +1633,14 @@ function PackageDetailSheet({
                   <span
                     className={cn(
                       'text-base font-bold tabular-nums',
-                      st === 'due' ? 'text-red-600' : st === 'over' ? 'text-amber-600' : 'text-emerald-600',
+                      isRefundVoided ? 'text-muted-foreground' : st === 'due' ? 'text-red-600' : st === 'over' ? 'text-amber-600' : 'text-emerald-600',
                     )}
+                    data-testid="pkg-detail-outstanding"
                   >
-                    {st === 'paid' ? formatAmount(0) : formatAmount(Math.abs(outstanding))}
+                    {formatAmount(isRefundVoided ? 0 : (st === 'paid' ? 0 : Math.abs(outstanding)))}
                   </span>
-                  <Badge variant={st === 'due' ? 'destructive' : st === 'over' ? 'outline' : 'teal'}>
-                    {balanceStatusLabel(st)}
+                  <Badge variant={isRefundVoided ? 'destructive' : st === 'due' ? 'destructive' : st === 'over' ? 'outline' : 'teal'}>
+                    {isRefundVoided ? '환불' : balanceStatusLabel(st)}
                   </Badge>
                 </div>
               </div>
@@ -1612,7 +1648,8 @@ function PackageDetailSheet({
           })()}
 
           {/* T-20260616-foot-PKG-OUTSTANDING-BALANCE ①: 진료비(별도) — consultation_fee − 순납부(fee_kind='consultation'). §4-A: 패키지 금액과 합산 단일표기 금지(별도 박스). */}
-          {((pkg.consultation_fee ?? 0) > 0 || netPaidFromPayments(pkgPayments, 'consultation') !== 0) && (() => {
+          {!isRefundVoided && ((pkg.consultation_fee ?? 0) > 0 || netPaidFromPayments(pkgPayments, 'consultation') !== 0) && (() => {
+            // T-20260811-foot-PLANA-REFUND-PKGSESSION-INVALIDATE: 환불 티켓은 진료비 잔금도 표시 억제(active-only SSOT 정합).
             const fee = pkg.consultation_fee ?? 0;
             const outstanding = computeOutstanding(fee, netPaidFromPayments(pkgPayments, 'consultation'));
             const st = balanceStatus(outstanding);
