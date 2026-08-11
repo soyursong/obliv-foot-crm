@@ -24,6 +24,7 @@ import {
   getSimulationCustomerIds,
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
+import { fetchAttributedPayments, STAFF_UNASSIGNED } from '@/lib/staffRevenue';
 import { todaySeoulISODate } from '@/lib/format';
 import {
   fetchRevenue,
@@ -326,8 +327,8 @@ export async function fetchMonthlyComparison(
 //     귀속을 db_change=false / path a(no-DDL) 로 배포한 선례 — 본 정정은 그 canon 을 일자 grain 에 재적용.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 담당실장 미지정 매출 버킷 sentinel(SalesDoctorTab UNASSIGNED 와 동일 의미). */
-export const STAFF_BREAKDOWN_UNASSIGNED = '__UNASSIGNED__';
+/** 담당실장 미지정 매출 버킷 sentinel(SSOT staffRevenue.STAFF_UNASSIGNED 와 동일 값·의미). */
+export const STAFF_BREAKDOWN_UNASSIGNED = STAFF_UNASSIGNED;
 
 export interface StaffDailyCol {
   id: string;     // staff UUID or STAFF_BREAKDOWN_UNASSIGNED
@@ -349,94 +350,32 @@ export interface StaffDailyBreakdown {
   monthLabel: string;      // "yyyy-MM"
 }
 
-interface StaffBreakdownPayRow {
-  amount: number;
-  payment_type: string | null;
-  accounting_date: string | null;
-  customer_id: string | null;
-}
-
 export async function fetchStaffDailyBreakdown(
   clinicId: string,
   refISO: string,
 ): Promise<StaffDailyBreakdown> {
   const cur = monthBounds(refISO);
-  const simIds = await getSimulationCustomerIds(clinicId);
 
-  // 소스① 단건 payments — 전체(tax_type 무관), accounting_date 축, deleted 제외.
-  // 소스② 패키지 package_payments 테이블 — accounting_date 축, status 컬럼 부재 → 필터 없음.
-  //   (SalesDoctorTab 총매출 = 단건net + 패키지net 과 동일 2-소스 net 집계 → 숫자 일치.)
-  const [{ data: pays, error: payErr }, { data: pkgs, error: pkgErr }] =
-    await Promise.all([
-      supabase
-        .from('payments')
-        .select('amount, payment_type, accounting_date, customer_id')
-        .eq('clinic_id', clinicId)
-        .not('status', 'eq', 'deleted')
-        .gte('accounting_date', cur.from)
-        .lte('accounting_date', cur.to),
-      supabase
-        .from('package_payments')
-        .select('amount, payment_type, accounting_date, customer_id')
-        .eq('clinic_id', clinicId)
-        .gte('accounting_date', cur.from)
-        .lte('accounting_date', cur.to),
-    ]);
-  if (payErr) throw payErr;
-  if (pkgErr) throw pkgErr;
-
-  // sim(테스트) 고객 결제 제외(매출집계 탭과 동일 방어필터). 워크인(customer_id NULL) 보존.
-  const singleRows = excludeSimulationPaymentRows(
-    (pays ?? []) as StaffBreakdownPayRow[],
-    simIds,
+  // T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-3 산식 SSOT 통합 + FIX-2A 상태필터):
+  //   구 인라인 2-소스 페치·귀속·집계를 lib/staffRevenue SSOT(fetchAttributedPayments)로 수렴.
+  //   · 소스① 단건 payments + 소스② 패키지 package_payments net, 귀속축=assigned_staff_id, sim 제외 = SSOT 동일.
+  //   · FIX-2A: 단건 status 필터가 SSOT 에서 status NOT IN ('cancelled','deleted') 로 통일(구 'deleted'만 제외).
+  //   여기서는 SSOT 가 돌려준 flat 귀속행을 accounting_date 일자 grain 으로만 버킷팅한다(표시 shape).
+  const { rows: attributed, staffMeta } = await fetchAttributedPayments(
+    clinicId,
+    cur.from,
+    cur.to,
   );
-  const pkgRows = excludeSimulationPaymentRows(
-    (pkgs ?? []) as StaffBreakdownPayRow[],
-    simIds,
-  );
-  const rows = [...singleRows, ...pkgRows];
 
-  // customer_id → assigned_staff_id (SalesDoctorTab 동일 3-step join, 단건 ∪ 패키지 고객).
-  const custIds = [
-    ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
-  ];
-  const custStaffMap = new Map<string, string>();
-  if (custIds.length > 0) {
-    const { data: custs, error: custErr } = await supabase
-      .from('customers')
-      .select('id, assigned_staff_id')
-      .in('id', custIds);
-    if (custErr) throw custErr;
-    for (const c of (custs ?? []) as {
-      id: string;
-      assigned_staff_id: string | null;
-    }[]) {
-      if (c.assigned_staff_id) custStaffMap.set(c.id, c.assigned_staff_id);
-    }
-  }
-
-  // staff_id → name.
-  const staffNameMap = new Map<string, string>();
-  const { data: staffList, error: staffErr } = await supabase
-    .from('staff')
-    .select('id, name')
-    .eq('clinic_id', clinicId);
-  if (staffErr) throw staffErr;
-  for (const s of (staffList ?? []) as { id: string; name: string }[]) {
-    staffNameMap.set(s.id, s.name);
-  }
-
-  // 집계: day → (staffId → net), staffId → net 총합.
+  // 집계: day → (staffId → net), staffId → net 총합. net = 환불→음수, 그 외→양수(단건·패키지 동일).
   const dayStaff = new Map<number, Map<string, number>>();
   const staffTotals = new Map<string, number>();
-  for (const p of rows) {
-    if (!p.accounting_date) continue;
-    const day = Number(p.accounting_date.slice(8, 10));
+  for (const r of attributed) {
+    if (!r.accountingDate) continue;
+    const day = Number(r.accountingDate.slice(8, 10));
     if (!day) continue;
-    const staffId =
-      (p.customer_id && custStaffMap.get(p.customer_id)) ||
-      STAFF_BREAKDOWN_UNASSIGNED;
-    const net = p.payment_type === 'refund' ? -p.amount : p.amount;
+    const staffId = r.staffId; // SSOT: 미배정/워크인 = STAFF_UNASSIGNED (= STAFF_BREAKDOWN_UNASSIGNED)
+    const net = r.isRefund ? -r.amount : r.amount;
     if (!dayStaff.has(day)) dayStaff.set(day, new Map());
     const dm = dayStaff.get(day)!;
     dm.set(staffId, (dm.get(staffId) ?? 0) + net);
@@ -450,7 +389,7 @@ export async function fetchStaffDailyBreakdown(
       name:
         id === STAFF_BREAKDOWN_UNASSIGNED
           ? '미지정'
-          : staffNameMap.get(id) ?? '미지정',
+          : staffMeta.get(id)?.name || '미지정',
       total,
     }))
     .sort((a, b) => {

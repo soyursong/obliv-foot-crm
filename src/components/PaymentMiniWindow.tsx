@@ -129,6 +129,10 @@ import {
   toLocalDateStr,
   detectSurchargeKind,
   computeSurcharge,
+  // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: 가산 요율 canon(0.30) — 수납 grain 을 RPC 영속과 정합시키기
+  //   위해 재도입(11c1ebcf revert 경로). 결함① reconcile: 수납 grain 은 RPC calc_copayment 미러(base×(1+rate)
+  //   grade-keyed)로 산출하고 RPC 에도 동일 rate 전달 → payments↔service_charges divergence 0.
+  SURCHARGE_RATE,
 } from '@/lib/nightHolidaySurcharge';
 import { loadAutoBindContext, applyBillingFallback } from '@/lib/autoBindContext';
 // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 발급 직전 미저장 2번차트 저장 가드
@@ -2001,7 +2005,40 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: 가산 진찰료 본인분도 5% 정합(payBilling grain 동일).
     ageInfantRate: customerInfantCopayRate,
   });
-  const settleSurcharge = computeSurcharge(settleSurchargeBase.covered, settleSurchargeBase.copay, settleSurchargeKind);
+  // ── T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB (Phase B, 결함① 이중계상 reconcile) ─────────────────
+  //   [배경] 6fd6dc85 는 수납 grain 가산을 computeSurcharge(진찰료 본인부담 base×0.30 을 floor10)로 산출하고
+  //     RPC(record_insurance_consult_payment)에도 p_surcharge_rate 를 전달했다. 그런데 RPC 는 가산을 **수가
+  //     자체**에 fold(base×(1+rate) 후 grade-keyed floor100, §2-2-7 AC-2 "가산은 진찰료 수가를 올린다")하므로,
+  //     두 경로의 rounding 모델이 달라 수납 표시·payments(FE floor10) ≠ service_charges(RPC floor100) divergence
+  //     가 생겼다(결함①). 11c1ebcf 는 이를 미봉으로 p_surcharge_rate 전달을 revert(가산은 FE 표시에만 잔존,
+  //     service_charges 미영속 = 명세 저계상). Phase A 로 RPC v1.7/v2 가 prod 라이브된 지금, 정합 방향으로 재도입한다.
+  //   [reconcile] 수납 grain 가산도 **RPC 와 동일 모델**(computeFootBilling surchargeRate → base×(1+rate),
+  //     grade-keyed = calc_copayment 미러)로 산출한다. settleSurchargeInclusive(가산 반영) − settleSurchargeBase
+  //     (가산 무) = 가산 delta → 종전 computeSurcharge(floor10) 대체. 이로써 payableTotalWithSurcharge 의 진찰료
+  //     copay component == RPC consultCopaySum(진찰료) → remainder=비급여分, payments↔service_charges divergence 0,
+  //     가산 1회 계상(이중가산 0). kind=null(평일) → rate=0 → inclusive==base → delta 전부 0(회귀 0, 시나리오3).
+  //   [grade-keyed 3제약] grade=null → 수납은 general_default(잠정 30%, 종전과 동일)·명세는 RPC 가 covered=0
+  //     (phantom NHIS 금지, AC-1) → 수납/명세 copay 는 general parity by construction. 하드코딩 70% 없음.
+  //   [무접촉] 문서 grain(applyNightHolidaySurcharge, computeSurcharge floor10)·선수금차감(deductSurcharge)은
+  //     RPC write-path 밖 → 그대로 유지(T-20260728 두 grain 분리 계승, 회귀 0).
+  const settleSurchargeRate = settleSurchargeKind ? SURCHARGE_RATE : 0;
+  const settleSurchargeInclusive = computeConsultationSurchargeBase(footBillingItems, customerInsuranceGrade, {
+    unknownGradeCopay: 'general_default',
+    hiraUnitValue: clinicHiraUnitValue,
+    ageInfantRate: customerInfantCopayRate,
+    surchargeRate: settleSurchargeRate,
+  });
+  // computeConsultationSurchargeBase 반환 {covered, copay} 의미 = {coveredTotal(급여 진료비 전액=본인+공단),
+  //   copaymentTotal(본인부담)}. 따라서 delta 를 computeSurcharge 와 동일 계약({amount=본인+공단 총가산,
+  //   copay=본인 가산, covered=amount−copay=공단 가산})으로 환산한다(downstream payCopaymentWithSurcharge/
+  //   gupyeoCoveredWithSurcharge/grandTotalWithSurcharge 소비 계약 불변). rate=0 → 세 값 모두 0(회귀 0).
+  const settleSurchargeAmount = Math.max(0, settleSurchargeInclusive.covered - settleSurchargeBase.covered);  // 총 가산(급여 base×rate delta)
+  const settleSurchargeCopay = Math.max(0, settleSurchargeInclusive.copay - settleSurchargeBase.copay);       // 본인 가산분
+  const settleSurcharge = {
+    amount: settleSurchargeAmount,
+    copay: settleSurchargeCopay,
+    covered: Math.max(0, settleSurchargeAmount - settleSurchargeCopay),                                       // 공단 가산분 = 총 − 본인
+  };
   // ── T-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE [현장 P0, RC, reporter 김주연 총괄] ──────────────
   //   ★ FIX-REQUEST(contract_violation, DA-20260728-foot-NIGHT-HOLIDAY-COPAY-TRUNCATE-UNIT): 절사단위 floor10 → **floor100** 정정.
   //   [증상] 야간·공휴일 급여 진료 수납 시 가산금(30%)이 포함되면 급여 자부담(본인부담금)에 절사가 미적용
@@ -2601,6 +2638,15 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       const visitDate =
         checkIn.checked_in_at?.slice(0, 10) ??
         new Date().toISOString().slice(0, 10);
+      // ── T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB (Phase B) — p_surcharge_rate 재도입 ──────────────
+      //   진찰료 시간외/공휴/토요 30% 가산을 service_charges(명세)에 영속(Option B). 판정 SSOT=settleSurchargeKind
+      //   (detectSurchargeKind 배포본 재사용, 병렬 재구현 금지) → rate 로만 전달. RPC v2 가 진찰료(hira_category=
+      //   'consultation') 급여건에만 self-gate 반영(이중계상 가드=진료비 전체합산 금지, body canon) → 처치/검사
+      //   (KOH 등)엔 rate=0. calc_copayment(가산 반영 base) 단일권위로 명세+FK-copay 동일 산출(general parity by
+      //   construction). 수납 grain(settleSurcharge)도 동일 모델(base×(1+rate) grade-keyed) 미러 → divergence 0.
+      //   ⚠ Phase A 마이그(20260725180000, RPC 7-arg) prod 라이브 전제(2026-08-11 confirm) — 미적용 시 PGRST202/404.
+      //   rate=0(평일 주간) → v1 byte-identical 회귀 0.
+      const consultSurchargeRate = settleSurchargeKind ? SURCHARGE_RATE : 0;
       let consultCopaySum = 0;
       for (const svc of coveredServices) {
         const { data: rpcData, error: rpcErr } = await supabase.rpc(
@@ -2612,6 +2658,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
             p_service_id: svc.id,
             p_method: splits[0].method,
             p_visit_date: visitDate,
+            p_surcharge_rate: consultSurchargeRate,
           },
         );
         if (rpcErr) {

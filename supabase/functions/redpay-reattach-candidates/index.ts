@@ -77,7 +77,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== "POST") return json(405, { ok: false, error: "method_not_allowed" });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const SERVICE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
   // ── 인증 — 로그인 스태프 세션 JWT(reverse-match 동형) ──────────────────────────

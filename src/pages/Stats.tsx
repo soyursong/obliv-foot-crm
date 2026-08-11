@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth';
 import {
   fetchCategoryRevenue,
   fetchConsultantPerf,
+  fetchConsultantPerfByAssignedStaff,
   fetchNoshowReturning,
   fetchRevenue,
   fetchTherapistSummary,
@@ -34,7 +35,10 @@ import {
   type StaffDailyBreakdown,
   type NoshowPrevCompare,
 } from '@/lib/mtmSales';
-import { downloadConsultantSalesReport } from '@/lib/consultantSalesExport';
+import {
+  downloadConsultantSalesReport,
+  buildConsultantDualAxis,
+} from '@/lib/consultantSalesExport';
 import { toast } from '@/lib/toast';
 import { Download } from 'lucide-react';
 import RevenueSection from '@/components/stats/RevenueSection';
@@ -116,6 +120,9 @@ export default function Stats() {
   const [revenue, setRevenue]                       = useState<RevenueRow[]>([]);
   const [categories, setCategories]                 = useState<CategoryRow[]>([]);
   const [consultants, setConsultants]               = useState<ConsultantRow[]>([]);
+  // T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-1): ② staff축 매출(assigned_staff_id net).
+  //   방문축(consultants, RPC)과 staff.id 로 union 해 dual-axis view-model 을 만든다.
+  const [consultantsStaffRev, setConsultantsStaffRev] = useState<ConsultantRow[]>([]);
   const [noshowReturning, setNoshowReturning]       = useState<NoshowReturningRow[]>([]);
   // T-20260804-foot-MTM-SALES-DASH-RESTRUCTURE: 01 카드 확장지표 · 02 전월비교 · 05 전월노쇼.
   const [mtmMetrics, setMtmMetrics]                 = useState<MtmCardMetrics | null>(null);
@@ -143,10 +150,12 @@ export default function Stats() {
         if (tab === 'revenue') {
           // MTM 5섹션: 기존 4종(매출/시술별/실장/노쇼) + MTM 확장 3종(01 카드지표·02 전월비교·05 전월노쇼).
           //   refISO=from 기준 달의 1일~말일 경계로 전월 비교를 계산(선택 기간과 무관하게 월 단위).
-          const [rev, cat, cons, nsr, mtm, cmp, staffBd, nprev] = await Promise.all([
+          const [rev, cat, cons, consStaffRev, nsr, mtm, cmp, staffBd, nprev] = await Promise.all([
             fetchRevenue(clinic.id, from, to),
             fetchCategoryRevenue(clinic.id, from, to),
             fetchConsultantPerf(clinic.id, from, to),
+            // FIX-1: ② [총매출액]·[객단가] staff축 소스(assigned_staff_id net, ①③④⑤ 동일 SSOT).
+            fetchConsultantPerfByAssignedStaff(clinic.id, from, to),
             fetchNoshowReturning(clinic.id, from, to),
             fetchMtmCardMetrics(clinic.id, from, to),
             fetchMonthlyComparison(clinic.id, from),
@@ -157,6 +166,7 @@ export default function Stats() {
           setRevenue(rev);
           setCategories(cat);
           setConsultants(cons);
+          setConsultantsStaffRev(consStaffRev);
           setNoshowReturning(nsr);
           setMtmMetrics(mtm);
           setMonthlyCompare(cmp);
@@ -208,6 +218,14 @@ export default function Stats() {
     [revenue],
   );
 
+  // T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-1-A): ② 전용 dual-axis view-model.
+  //   방문축(consultants, 건수 KPI) + staff축(consultantsStaffRev, 매출) 을 staff.id 로 union.
+  //   ② 화면(ConsultantSection)과 ⑥ 엑셀(handleExportSalesReport)이 이 동일 view-model 을 소비한다.
+  const consultantDual = useMemo(
+    () => buildConsultantDualAxis(consultants, consultantsStaffRev),
+    [consultants, consultantsStaffRev],
+  );
+
   // T-20260804-foot-MTM-SALES-DASH-RESTRUCTURE (01, AC-B): 예상월매출(추정) — 산식 미정의 잔여 1건.
   //   임시 = 당월 경과일 일평균 × 해당월 총일수(현재월만, 과거/커스텀월은 null → '-'). planner FOLLOWUP 대상.
   const projectedMonthly = useMemo(
@@ -221,13 +239,14 @@ export default function Stats() {
   // AGG 다운로드 경로(Sales.tsx fetchSalesRawRows)와 코드/데이터 완전 분리.
   const handleExportSalesReport = () => {
     if (loading) return;
-    if (consultants.length === 0) {
+    if (consultantDual.length === 0) {
       toast.info('해당 기간에 실장별 매출 내역이 없습니다.');
       return;
     }
     try {
-      downloadConsultantSalesReport(consultants, rangeFrom, rangeTo);
-      toast.success(`일간매출보고 다운로드 완료 (실장 ${consultants.length}명)`);
+      // FIX-1-E: ⑥ 엑셀도 ②와 동일 dual-axis view-model 소비 → [매출] == ② [총매출액].
+      downloadConsultantSalesReport(consultantDual, rangeFrom, rangeTo);
+      toast.success(`일간매출보고 다운로드 완료 (실장 ${consultantDual.length}명)`);
     } catch (e) {
       console.error('[Stats] 일간매출보고 다운로드 실패', e);
       toast.error('다운로드 중 오류가 발생했습니다.');
@@ -326,7 +345,7 @@ export default function Stats() {
           <RevenueSection rows={revenue} loading={loading} metrics={mtmMetrics} projectedMonthly={projectedMonthly} />
           <MonthlyComparisonSection data={monthlyCompare} staffBreakdown={staffDaily} loading={loading} />
           <CategorySection rows={categories} loading={loading} />
-          <ConsultantSection rows={consultants} loading={loading} totalNetRevenue={revenueNetTotal} />
+          <ConsultantSection rows={consultantDual} loading={loading} totalNetRevenue={revenueNetTotal} />
           <NoshowReturningSection rows={noshowReturning} loading={loading} prev={noshowPrev} />
         </>
       ) : tab === 'tm' ? (

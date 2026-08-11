@@ -15,7 +15,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 test.describe('PKG-REGEN-LEDGER-FE-CONVERGE — 재생성 원장 수렴 데이터 계약', () => {
   test('재생성 = superseded_by lineage + 원장 re-anchor(잔액 정합·고아 0) / 일반 결제 회귀 0', async () => {

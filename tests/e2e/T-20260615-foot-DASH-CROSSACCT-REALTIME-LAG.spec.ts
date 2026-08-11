@@ -25,7 +25,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from '@supaba
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 // ⚠ supabase-js: postgres_changes 핸들러는 subscribe() 전에 등록해야 함.
 //   따라서 .on()은 채널 생성 직후 등록하고, 수신분은 captured 변수에 모은다(B 세션 시뮬).

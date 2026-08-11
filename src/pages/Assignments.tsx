@@ -2703,7 +2703,8 @@ export default function Assignments() {
               <div>
                 <CardTitle className="text-sm">실장 랭킹</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  재직 상담 실장 기준 · 월매출(1일~선택일) 순 · 관리자 전용
+                  {/* T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-H): 랭킹 모수 한정 명시. */}
+                  재직 상담실장만 · 미지정/비상담직 제외 · 월매출(1일~선택일) 순 · 관리자 전용
                   <br />
                   ※ 매출 귀속 = 고객 카드 담당자(2번차트 담당 실장) 기준 · 매출집계 담당실장별과 동일 기준
                 </p>

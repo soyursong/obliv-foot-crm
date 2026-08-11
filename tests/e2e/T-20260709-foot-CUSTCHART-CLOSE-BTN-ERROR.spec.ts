@@ -33,7 +33,7 @@ const PANEL = path.resolve(__dirname, '../../src/components/DocumentPrintPanel.t
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 const MARKER = '[QA-FIXTURE]';
 let _sb: SupabaseClient | null = null;
 const svc = () => (_sb ??= createClient(SUPA_URL, SERVICE_KEY));

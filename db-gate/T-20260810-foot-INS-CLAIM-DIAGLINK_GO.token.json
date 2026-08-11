@@ -1,0 +1,19 @@
+{
+ "ticket_id": "T-20260810-foot-INS-CLAIM-DIAGLINK",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-10T13:02:52.365Z",
+ "expires_at": "2026-08-10T13:47:52.365Z",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "6c38eb9a11a96420d9645d29c40677bce414dfaf521777df45bd338ed7e723fb",
+ "migration_version": "20260811010000",
+ "migration_name": "foot_check_ins_kcd_code_b3",
+ "up_file": "supabase/migrations/20260811010000_foot_check_ins_kcd_code_b3.sql",
+ "lane": "sql-file-migration",
+ "change_class": "ADDITIVE — ALTER TABLE public.check_ins ADD COLUMN IF NOT EXISTS kcd_code TEXT (nullable · DEFAULT 없음 · backfill 0 · 기존행 무변경 · DROP 0 · txn-control(BEGIN/COMMIT) 없음 · reversible=DROP COLUMN IF EXISTS). body(동일 요양기관 13328581) 20260515000010 패턴 이식, kcd_codes 마스터 미신설(foot 정적번들 lockdown).",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "18f629fb4ade1a40",
+ "da_consult_reply": "조건부 GO(ADDITIVE) — DA CONSULT-REPLY MSG-20260810-203221-2zrw. 신규 판정클래스 아님(body check_ins.kcd_code fork + 스태프 trust-tier 캡처). SSOT=da_decision_foot_ins_claim_diaglink_kcd_staffcapture_20260810. change-class 판정=DA / apply-gate·order=supervisor 물리 GO-token chokepoint(H8).",
+ "ceo_gate": "N/A(파괴게이트 면제) — CEO MISSION MSG-20260810-184759-navf B-3(발톱 상병 청구 연결). risk_verdict=GO_WARN(KCD 코드값 발명 금지 1급게이트). ADDITIVE+DA GO → autonomy §3.1 대표 파괴게이트 면제. 발명금지=FE isKnownKcdCode 정적번들 대조 + H6 B-2 claim-assembly reject/flag backstop(placeholder/자동합성 금지).",
+ "precheck": "DB-GATE PASS(2026-08-10, supervisor) — prod ref rxlomoozakkjesdqjtvd live introspection(READ-ONLY, write 0). DDL-diff(up/down): up=ADD COLUMN IF NOT EXISTS kcd_code TEXT + COMMENT / down=DROP COLUMN IF EXISTS kcd_code. 대칭·reversible·순수 ADDITIVE. C11 prod-schema: check_ins EXISTS · RLS enabled(relrowsecurity=true) · ADD COLUMN 단일문·원자성 OK. C12/C1 대상컬럼 실재: kcd_code prod ABSENT(information_schema.columns 0건) → genuine ADD·collision 0. version forward-clean: 20260811010000 ledger 미존재 · B-2 20260811000000 ledger 미존재(둘 다 미적용) · ledger max=20260810230000 < 신규 version → 충돌 0·gap-forward 아님. H4 RLS census(direct): check_ins RLS ON + 16 policy 전건 authenticated role-gated(clinic-scoped) → 신규 kcd_code = row-level RLS 상속(별도 컬럼 RLS 불요). H5 anon-PHI 노출(★direct measurement, 표면 census보다 강): anon 표 grant 0건(C6 grantee={authenticated,postgres,service_role}, anon 부재) · anon check_ins SELECT policy 0(구 anon_checkin_read USING(true) 제거 확인, 잔존 anon-touching=anon_insert_checkin_self INSERT-only·SELECT echo 아님·grant 부재로 inert) → 신규 상병PHI 컬럼 anon-read 표면=0(자동 커버). H5 WARN(non-blocking): census 가 인용한 verify-gate proxy \"prod ledger 에 20260615180000 applied\" = 실측 FALSE(ledger 170000/[180000 MISSING]/190000 gap). 그러나 20260615180000 의 실효(anon check_ins SELECT REVOKE + anon_checkin_read DROP)는 prod 에 실재(직접 grant/policy 측정으로 확인) → 안전 불변식은 더 강한 직접 증거로 충족. version-row 미기록 = 양성 Ledger-Reconciliation divergence(Migration Ledger Reconciliation 표준 소관·planner/DA note 권고·본 GO 무저촉). dry-run No-Persistence Protocol: sentinel RAISE EXCEPTION rollback · up.sql txn-control(BEGIN/COMMIT) 0건 확인(strip 불요) · dryrun.sql PRE=f/POST=t/ROLLBACK 무영속. C18/C21 DA HOLD/RETRACT: CLEAR(signals.md + supervisor MQ 활성 HOLD/RETRACT/bounce 0). C24 working-tree 무결성: up.sql on-disk == HEAD blob(cdf3f025) MATCH·drift 0. content-binding sha256=6c38eb9a…723fb. C22 CEO 조건: B-3 미션·GO_WARN·발명금지 게이트 코드경로 존재(FE+B-2 backstop). H1 캡처면=check_ins.kcd_code only(insurance_claim_diagnoses 직서 0) · H9 단일컬럼=방문당 단일 KCD. apply lane = db_apply_guard.sh(SQL-file chokepoint, dev-foot 집행). co-deploy(컬럼→FE) = C11/C12 순서 준수."
+}

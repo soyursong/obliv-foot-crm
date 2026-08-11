@@ -1,0 +1,236 @@
+/**
+ * T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE — 실장별 매출 SSOT (FIX-3 + FIX-2A)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 왜 이 파일인가 (FIX-3, SSOT 부재 → 재발 8차의 씨앗)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *   customers.assigned_staff_id('2번차트 담당 실장') 기준 2-소스(payments 단건 +
+ *   package_payments 패키지) net 귀속 집계가 서로 다른 3파일에 **독립 구현 3벌**로
+ *   존재했다:
+ *     ① lib/mtmSales.ts   fetchStaffDailyBreakdown  (통계>실장별 일별 매출)
+ *     ③ components/sales/SalesDoctorTab.tsx           (매출집계>담당실장별)
+ *     ④ lib/stats.ts      fetchConsultantPerfByAssignedStaff (배정>랭킹)
+ *   숫자는 맞았으나 "맞는 이유가 규약이 아니라 우연"이었다(셋 중 하나만 고치면 발산).
+ *   → 결제행 페치 + 귀속 + net 집계 **코어를 이 파일 1곳으로 수렴**한다. 표시 shape
+ *     (일자 grain / gross·환불 분리 / net·결제고객)만 각 호출자가 담당한다.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * FIX-2A — 상태 필터 통일 (총매출 KPI 정합)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *   구 3벌은 payments.status ≠ 'deleted' 만 걸었다(cancelled 미제외 → 취소 결제를 매출로
+ *   계상). 총매출 KPI RPC foot_stats_revenue 는 `status NOT IN ('cancelled','deleted')`
+ *   를 건다(20260719140000_foot_stats_revenue_filter_sim_status.sql:73). 두 규칙이
+ *   어긋나 실렌더에서 실장별 합계 ≠ 총매출(순)이 됐다.
+ *   → 이 코어에서 **status NOT IN ('cancelled','deleted')** 로 통일(1곳 수정 = 4경로 정합).
+ *   package_payments 는 status/deleted_at/voided_at 컬럼 부재(foot 실측) → 필터 없음.
+ *
+ *   ⚠ 순수 READ-ONLY. 신규 컬럼/테이블/enum 0. write/RPC/DDL 무접촉(db_change=false).
+ *     귀속축(customers.assigned_staff_id)·기간축(accounting_date)·환불 net 규칙 전부 불변.
+ */
+
+import { supabase } from '@/lib/supabase';
+import {
+  getSimulationCustomerIds,
+  excludeSimulationPaymentRows,
+} from '@/lib/simulationFilter';
+
+/** 담당실장 미지정(assigned_staff_id NULL 또는 워크인 customer_id NULL) 매출 버킷 sentinel. */
+export const STAFF_UNASSIGNED = '__UNASSIGNED__';
+
+/** 귀속된 결제행 1건 (단건 payments 또는 패키지 package_payments). */
+export interface AttributedPayment {
+  /** 귀속 staff.id (customers.assigned_staff_id) 또는 STAFF_UNASSIGNED. */
+  staffId: string;
+  /** 결제 고객 id (워크인=NULL). distinct 결제고객 산출용. */
+  customerId: string | null;
+  /** 결제 금액(양수 magnitude). net 부호는 isRefund 로 판정. */
+  amount: number;
+  /** 환불행 여부(payment_type='refund'). */
+  isRefund: boolean;
+  /** 소스 테이블. 'single'=payments, 'package'=package_payments. */
+  source: 'single' | 'package';
+  /** 회계일(accounting_date, YYYY-MM-DD). 일자 grain 집계용. */
+  accountingDate: string | null;
+}
+
+/** staff.id → 이름/직군/재직 메타. 로스터 정책 판정용. */
+export interface StaffMeta {
+  id: string;
+  name: string;
+  role: string | null;
+  active: boolean | null;
+}
+
+export interface AttributedPayments {
+  rows: AttributedPayment[];
+  staffMeta: Map<string, StaffMeta>;
+}
+
+interface RawPayRow {
+  amount: number | null;
+  payment_type: string | null;
+  customer_id: string | null;
+  accounting_date: string | null;
+}
+
+/**
+ * SSOT — 기간 내 2-소스(단건 payments + 패키지 package_payments) 결제행을 페치하고
+ * customers.assigned_staff_id('2번차트 담당 실장')로 귀속한 flat 행 배열을 반환한다.
+ *
+ * · 상태필터: payments.status NOT IN ('cancelled','deleted') (FIX-2A, foot_stats_revenue 동일 규칙).
+ *   package_payments = status 컬럼 부재 → 필터 없음.
+ * · sim(테스트) 고객 결제 제외(excludeSimulationPaymentRows). 워크인(customer_id NULL) 보존.
+ * · 미배정(assigned_staff NULL) 또는 워크인 → staffId=STAFF_UNASSIGNED 버킷.
+ * · 기간축 = accounting_date(회계 SSOT). 귀속축·기간축·환불 규칙 전부 기존과 동일(무변경).
+ */
+export async function fetchAttributedPayments(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<AttributedPayments> {
+  const [{ data: payData, error: payErr }, { data: pkgData, error: pkgErr }] =
+    await Promise.all([
+      supabase
+        .from('payments')
+        .select('amount, payment_type, customer_id, accounting_date')
+        .eq('clinic_id', clinicId)
+        // FIX-2A: 취소·삭제 결제 제외(foot_stats_revenue 와 동일 규칙). 구 .not(status,eq,deleted) 교체.
+        .not('status', 'in', '(cancelled,deleted)')
+        .gte('accounting_date', from)
+        .lte('accounting_date', to),
+      supabase
+        .from('package_payments')
+        .select('amount, payment_type, customer_id, accounting_date')
+        .eq('clinic_id', clinicId)
+        .gte('accounting_date', from)
+        .lte('accounting_date', to),
+    ]);
+  if (payErr) throw payErr;
+  if (pkgErr) throw pkgErr;
+
+  // sim 고객 결제 제외(매출 표시 방어필터). 워크인(customer_id NULL) 보존.
+  const simIds = await getSimulationCustomerIds(clinicId);
+  const single = excludeSimulationPaymentRows((payData ?? []) as RawPayRow[], simIds);
+  const pkg = excludeSimulationPaymentRows((pkgData ?? []) as RawPayRow[], simIds);
+
+  // customer_id → assigned_staff_id ('2번차트 담당자'). 500건씩 청크 조회(URL 길이 안전).
+  const custIds = [
+    ...new Set(
+      [...single, ...pkg].map((r) => r.customer_id).filter(Boolean) as string[],
+    ),
+  ];
+  const custStaff = new Map<string, string>();
+  for (let i = 0; i < custIds.length; i += 500) {
+    const chunk = custIds.slice(i, i + 500);
+    const { data: custs, error: custErr } = await supabase
+      .from('customers')
+      .select('id, assigned_staff_id')
+      .in('id', chunk);
+    if (custErr) throw custErr;
+    for (const c of (custs ?? []) as { id: string; assigned_staff_id: string | null }[]) {
+      if (c.assigned_staff_id) custStaff.set(c.id, c.assigned_staff_id);
+    }
+  }
+
+  // staff.id → 메타(이름/직군/재직). 로스터 정책 판정 소스.
+  const { data: staffRows, error: staffErr } = await supabase
+    .from('staff')
+    .select('id, name, role, active')
+    .eq('clinic_id', clinicId);
+  if (staffErr) throw staffErr;
+  const staffMeta = new Map<string, StaffMeta>();
+  for (const s of (staffRows ?? []) as {
+    id: string;
+    name: string | null;
+    role: string | null;
+    active: boolean | null;
+  }[]) {
+    staffMeta.set(s.id, { id: s.id, name: s.name ?? '', role: s.role, active: s.active });
+  }
+
+  const rows: AttributedPayment[] = [];
+  const push = (r: RawPayRow, source: 'single' | 'package') => {
+    const staffId =
+      (r.customer_id && custStaff.get(r.customer_id)) || STAFF_UNASSIGNED;
+    rows.push({
+      staffId,
+      customerId: r.customer_id,
+      amount: r.amount ?? 0,
+      isRefund: r.payment_type === 'refund',
+      source,
+      accountingDate: r.accounting_date,
+    });
+  };
+  for (const r of single) push(r, 'single');
+  for (const r of pkg) push(r, 'package');
+
+  return { rows, staffMeta };
+}
+
+/** staff 버킷별 net 성분 (표시 shape 파생용 원자값). */
+export interface StaffNetBucket {
+  staffId: string;
+  /** 단건(payments) 비환불 SUM (gross). */
+  singleGross: number;
+  /** 단건(payments) 환불 SUM (양수 magnitude). */
+  singleRefund: number;
+  /** 패키지(package_payments) net (환불=음수상계). */
+  pkgNet: number;
+  /** distinct 결제고객 id (단건∪패키지, 환불행 포함 — 구 ④ 산식 동일). */
+  customers: Set<string>;
+}
+
+/** net = 단건net + 패키지net = (singleGross − singleRefund) + pkgNet. */
+export function bucketNet(b: StaffNetBucket): number {
+  return b.singleGross - b.singleRefund + b.pkgNet;
+}
+
+/**
+ * 귀속행 → staff 버킷별 net 성분 맵. 표시 shape(누적/환불/총, net/결제고객)의 단일 원자 소스.
+ * ⚠ 로스터 필터를 하지 않는다 — STAFF_UNASSIGNED 포함 전 버킷 반환. 로스터/미지정 정책은
+ *   호출자가 selectRoster()로 적용(정책=인자, 산식=불변 / FIX-3).
+ */
+export function aggregateStaffNet(rows: AttributedPayment[]): Map<string, StaffNetBucket> {
+  const map = new Map<string, StaffNetBucket>();
+  const ensure = (staffId: string): StaffNetBucket => {
+    let b = map.get(staffId);
+    if (!b) {
+      b = { staffId, singleGross: 0, singleRefund: 0, pkgNet: 0, customers: new Set() };
+      map.set(staffId, b);
+    }
+    return b;
+  };
+  for (const r of rows) {
+    const b = ensure(r.staffId);
+    if (r.source === 'single') {
+      if (r.isRefund) b.singleRefund += r.amount;
+      else b.singleGross += r.amount;
+    } else {
+      b.pkgNet += r.isRefund ? -r.amount : r.amount;
+    }
+    // distinct 결제고객: customerId 있는 모든 귀속행(환불 포함) — 구 ④ custSet 규약 동일.
+    if (r.customerId) b.customers.add(r.customerId);
+  }
+  return map;
+}
+
+/**
+ * 로스터/미지정 정책 (FIX-3, 정책=인자):
+ *   · 'all'               ①③⑤ — 전 staff + 미지정 버킷 보존(비상담직·퇴사자 행 유지).
+ *   · 'consultant-all'    ②   — role='consultant'(퇴사 포함) 만. 미지정·비상담직·워크인 제외.
+ *   · 'consultant-active' ④   — role='consultant' AND active≠false(재직). 미지정·비상담직 제외.
+ */
+export type RosterPolicy = 'all' | 'consultant-all' | 'consultant-active';
+
+/** 해당 staff 버킷이 로스터 정책에 포함되는지 판정. */
+export function inRoster(
+  staffId: string,
+  meta: StaffMeta | undefined,
+  policy: RosterPolicy,
+): boolean {
+  if (policy === 'all') return true;
+  if (staffId === STAFF_UNASSIGNED) return false; // 미지정/워크인 제외
+  if (!meta || meta.role !== 'consultant') return false; // 비상담직 제외
+  if (policy === 'consultant-active' && meta.active === false) return false; // 퇴사 제외
+  return true;
+}

@@ -25,15 +25,14 @@ import * as XLSX from 'xlsx';
 import type { ConsultantRow } from '@/lib/stats';
 
 /**
- * 실장별 매출액: RPC total_amount 우선, 미반환(구버전) 시 객단가×건수 역산 fallback.
- * ⚠ T-20260717-foot-CONSULTANT-ARPU-STATS (AC6): avg_amount 분모가 상담'건수'→상담'고객수'로
- *   재정의되어 `avg_amount × ticketing_count ≠ total_amount` 가 되었다(역산식 무효). 단 현 RPC 는
- *   total_amount 를 항상 반환하므로 이 fallback 은 dead-path(미발화). avg_amount NULL 이어도
- *   상단 total_amount 분기에서 종료되어 안전. 구버전 RPC 하위호환 목적으로만 잔존.
+ * 실장별 매출액 = staff축(customers.assigned_staff_id) net 매출(total_amount).
+ * T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-1-E, DoD #11):
+ *   구 `avg_amount × ticketing_count` 역산 fallback 제거. avg_amount 분모가 상담'건수'→'고객수'로
+ *   재정의된 뒤 역산식은 이미 무효(dead-path)였고, 현재 매출은 staff축 net(total_amount)에서만
+ *   읽는다(방문축 avg_amount 와 무관). total_amount 미반환 시 0(집계 대상 아님).
  */
-export function consultantRevenue(r: Pick<ConsultantRow, 'total_amount' | 'avg_amount' | 'ticketing_count'>): number {
-  if (typeof r.total_amount === 'number') return r.total_amount;
-  return Math.round((r.avg_amount ?? 0) * r.ticketing_count);
+export function consultantRevenue(r: Pick<ConsultantRow, 'total_amount'>): number {
+  return r.total_amount ?? 0;
 }
 
 /**
@@ -46,6 +45,101 @@ export function consultantOverallUnitPrice(totalRevenue: number, totalCustomers:
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-1) — '상담실장 티켓팅 실적' dual-axis view-model
+//
+// 문제(현장): ② '상담실장 티켓팅 실적'의 [총매출액]·[객단가]가 옛 방문축(check_ins.consultant_id,
+//   foot_stats_consultant RPC total_amount)에 남아 ① '실장별 일별 매출'(assigned_staff_id)과
+//   실장 1인당 최대 268만원 발산. 미귀속 대사도 음수(-1,582,200)로 붕괴.
+//
+// 해법: '두 열 교체'가 아니라 ② 전용 view-model 을 신설해 두 축을 명시적으로 union 한다.
+//   · 방문축(무접촉): [티켓팅건수]·[패키지전환율] = foot_stats_consultant RPC (건수 KPI 정본).
+//   · staff축(교정):  [총매출액]·[결제고객]·[객단가] = customers.assigned_staff_id net 매출
+//        (fetchConsultantPerfByAssignedStaff, ①③④⑤ 와 동일 SSOT 축 = 담당실장 net).
+//   · union: 어느 한 축에만 존재하는 실장도 행 보존(행 universe 누락 0, DoD #8).
+//        - 방문 있으나 staff축 매출 0 → revenue 0 / avg null.
+//        - staff축 매출 있으나 방문 없음 → ticketing 0 / conversion 0.
+//   객단가 분모 = 결제고객(staff축 distinct 결제고객) — 분자(net)와 동일 축(DoD #5).
+// ─────────────────────────────────────────────────────────────────────────
+export interface ConsultantDualAxisRow {
+  /** staff.id (방문축 consultant_id == staff축 assigned_staff_id, 동일 staff 식별자). */
+  staffId: string;
+  name: string;
+  // ── 방문축 (foot_stats_consultant RPC — 건수 KPI, 무접촉) ──
+  /** 티켓팅 건수(방문/상담 건수). */
+  ticketingCount: number;
+  /** 패키지 결제 전환 건수. */
+  packageCount: number;
+  /** 패키지 전환율(%) = package/ticketing. ticketing=0 → 0. */
+  conversionRate: number;
+  // ── staff축 (customers.assigned_staff_id net — ①③④⑤ 동일 SSOT) ──
+  /** 총매출액 = staff축 net(환불 차감). */
+  revenue: number;
+  /** 결제고객 수 = staff축 distinct 결제고객(객단가 분모). */
+  payingCustomers: number;
+  /** 객단가 = net / 결제고객 (staff축, 분자·분모 동일 축). 결제고객 0 → null('-'). */
+  avgAmount: number | null;
+  // ── provenance(어느 축에서 유래했는지 — union 누락 방어/디버그) ──
+  hasVisit: boolean;
+  hasRevenue: boolean;
+}
+
+/**
+ * ② dual-axis view-model 빌더. 방문축 RPC 행 + staff축 매출 행을 staff.id 로 union.
+ * ⑥ 일간매출보고 엑셀(downloadConsultantSalesReport)과 ② 화면(ConsultantSection)이 이 동일 view-model 을
+ * 소비해 두 표면이 항상 같은 숫자를 보이도록 한다(DoD #3).
+ *
+ * @param visitRows 방문축 = fetchConsultantPerf (foot_stats_consultant RPC, 재직 상담실장 read-side 필터 적용됨)
+ * @param staffRevRows staff축 = fetchConsultantPerfByAssignedStaff (assigned_staff_id net, consultant-active 로스터)
+ */
+export function buildConsultantDualAxis(
+  visitRows: ConsultantRow[],
+  staffRevRows: ConsultantRow[],
+): ConsultantDualAxisRow[] {
+  const byId = new Map<string, ConsultantDualAxisRow>();
+  const ensure = (staffId: string, name: string): ConsultantDualAxisRow => {
+    let row = byId.get(staffId);
+    if (!row) {
+      row = {
+        staffId,
+        name: name || '미지정',
+        ticketingCount: 0,
+        packageCount: 0,
+        conversionRate: 0,
+        revenue: 0,
+        payingCustomers: 0,
+        avgAmount: null,
+        hasVisit: false,
+        hasRevenue: false,
+      };
+      byId.set(staffId, row);
+    }
+    return row;
+  };
+
+  // 방문축(건수 KPI) — 무접촉 소비.
+  for (const v of visitRows) {
+    const row = ensure(v.consultant_id, v.name);
+    row.ticketingCount = v.ticketing_count;
+    row.packageCount = v.package_count;
+    row.conversionRate = v.ticketing_count > 0 ? (v.package_count / v.ticketing_count) * 100 : 0;
+    row.hasVisit = true;
+    if (v.name && (row.name === '미지정')) row.name = v.name;
+  }
+
+  // staff축(매출) — [총매출액]·[결제고객]·[객단가] 교정 소스.
+  for (const s of staffRevRows) {
+    const row = ensure(s.consultant_id, s.name);
+    row.revenue = s.total_amount ?? 0;
+    row.payingCustomers = s.consulted_customer_count ?? 0;
+    row.avgAmount = s.avg_amount ?? null;
+    row.hasRevenue = true;
+    if (s.name) row.name = s.name; // staff축 이름을 canonical 로(방문축 라벨이 미지정일 수 있음)
+  }
+
+  return [...byId.values()];
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // T-20260723-foot-CONSULTANT-TKTREV-LABEL-RECONCILE — 일마감 대사 표시(표시계층 only)
 //
 // 부모 RCA(T-20260723-foot-CONSULTANT-TKTREV-DAYCLOSE-RECONCILE, done) 결론:
@@ -54,26 +148,30 @@ export function consultantOverallUnitPrice(totalRevenue: number, totalCustomers:
 //   수학적으로 View B ⊂ 전체결제 → 두 값이 같아지는 건 by-design 상 불가(회귀·버그 아님).
 //
 // 본 헬퍼는 그 by-design 차이를 화면에서 "대사 가능"하게 만드는 순수 표시 파생이다:
-//   실적합(attributed) = Σ consultantRevenue(r)            ← foot_stats_consultant RPC canonical
-//   미귀속(unattributed) = 총매출(순) − 실적합              ← 기존 소스(foot_stats_revenue) 파생
+//   실적합(attributed) = Σ staff축 net(dual-axis row.revenue)    ← ①③④⑤ 동일 SSOT 축(재직 상담실장)
+//   미귀속(unattributed) = 총매출(순) − 실적합                    ← 미지정·워크인·비상담직·퇴사실장 잔여
 //   ∴ attributed + unattributed ≡ total (항등, 반올림 오차 없이 성립)
 //
-// ⚠ 순수 read-only. 집계 산식·귀속 스코프(BINDING-3)·RPC·DB 무접촉.
-//   totalNetRevenue = 매출통계 '총 매출(순)'(= pkg+single−refund, net·accounting_date)로,
-//   consultantRevenue(net·accounting_date)와 동일 축이라 차감이 유효하다.
+// ★ T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-1-D, DoD #6):
+//   구 attributed = Σ 방문축 total_amount(check_ins.consultant_id) 라 총매출(assigned_staff_id 축)과
+//   축이 달라 미귀속이 음수(-1,582,200)로 붕괴했다. attributed 를 staff축 net(dual-axis) 로 바꾸면
+//   실적합 ⊂ 총매출(순) 이 성립 → 미귀속 ≥ 0(음수 소멸). 차액 = 미지정+워크인+비상담직+퇴사 상담실장.
+//
+// ⚠ 순수 read-only. 집계 산식·RPC·DB 무접촉. totalNetRevenue = 매출통계 '총 매출(순)'
+//   (= pkg+single−refund, net·accounting_date)로 staff축 net 과 동일 축이라 차감이 유효하다.
 //   unattributed 를 clamp 하지 않는다 — 항등(실적합+미귀속=총매출)이 화면에서 정확히 성립해야 함.
 // ─────────────────────────────────────────────────────────────────────────
 export interface ConsultantRevenueReconciliation {
-  attributed: number;    // 상담실장 귀속 매출 합계(실적합)
-  unattributed: number;  // 미귀속 매출 (총매출 − 실적합). by-design 상 ≥ 0.
+  attributed: number;    // 상담실장(staff축) 귀속 매출 합계(실적합)
+  unattributed: number;  // 미귀속 매출 (총매출 − 실적합). staff축 subset 이라 ≥ 0.
   total: number;         // 총 매출(순) = 일마감 전체 결제 대사 기준
 }
 
 export function reconcileConsultantRevenue(
-  rows: Pick<ConsultantRow, 'total_amount' | 'avg_amount' | 'ticketing_count'>[],
+  rows: Pick<ConsultantDualAxisRow, 'revenue'>[],
   totalNetRevenue: number,
 ): ConsultantRevenueReconciliation {
-  const attributed = rows.reduce((s, r) => s + consultantRevenue(r), 0);
+  const attributed = rows.reduce((s, r) => s + r.revenue, 0);
   return {
     attributed,
     unattributed: totalNetRevenue - attributed,
@@ -85,25 +183,27 @@ const REPORT_HEADERS = ['실장명', '매출', '상담건수', '상담객단가'
 
 /**
  * 매출통계 탭 일간매출보고 xlsx 다운로드.
- * @param rows ConsultantRow[] (통계 화면이 이미 로드한 실장별 실적)
+ * T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-1-E, DoD #3):
+ *   ② 화면과 '같은' dual-axis view-model 을 소비 → 엑셀 [매출] == ② [총매출액](staff축) 항상 일치.
+ * @param rows ConsultantDualAxisRow[] (Stats 화면이 build 한 dual-axis 실장별 실적)
  * @param from 기간 시작 (YYYY-MM-DD)
  * @param to   기간 종료 (YYYY-MM-DD)
  */
 export function downloadConsultantSalesReport(
-  rows: ConsultantRow[],
+  rows: ConsultantDualAxisRow[],
   from: string,
   to: string,
 ): void {
-  // 매출 내림차순 (보고서 가독성)
-  // T-20260718: unit(객단가) = RPC avg_amount 직접 소비(÷상담고객수 canonical). NULL 은 빈칸 유지.
-  //   count(상담건수 컬럼)=ticketing_count 불변 · customers(합계 분모용)=consulted_customer_count.
+  // 매출 내림차순 (보고서 가독성).
+  //   revenue(매출)  = staff축 net(② [총매출액]와 동일)         · count(상담건수) = 방문축 ticketing(무접촉)
+  //   customers(합계 분모) = staff축 결제고객(payingCustomers)   · unit(객단가) = staff축 avgAmount(net/결제고객)
   const ordered = [...rows]
     .map((r) => ({
       name: r.name,
-      revenue: consultantRevenue(r),
-      count: r.ticketing_count,
-      customers: r.consulted_customer_count ?? 0,
-      unit: r.avg_amount, // number | null (분모 0 → NULL)
+      revenue: r.revenue,
+      count: r.ticketingCount,
+      customers: r.payingCustomers,
+      unit: r.avgAmount, // number | null (결제고객 0 → NULL)
     }))
     .sort((a, b) => b.revenue - a.revenue);
 

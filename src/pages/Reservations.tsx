@@ -277,6 +277,22 @@ function notifyCustomerRefresh(customerId: string | null | undefined) {
   } catch { /* storage 불가 환경(사파리 프라이빗 등) 무시 */ }
 }
 
+// T-20260811-foot-INFLOW-FORWARDFILL-INHERIT-WIRE (§36-4-a genuine-first firewall):
+//   customers.first_inflow_channel(최초유입 canonical·immutable·first-write-wins) 각인은 고객의 "진성 first-touch"
+//   에서만 발화한다. IS NULL(=first_inflow 미각인) 단독 가드는 불충분 — 기존 다-방문 고객(과거 예약/방문 다수인데
+//   first_inflow=NULL 백로그)의 later 예약에서 그 시점 채널을 최초유입으로 오각인하면 attribution corruption
+//   (DA HARD REJECT: "IS NULL 단독 가드로 later 예약 stamp"). 진성 first-touch = 이 고객의 사전 예약 0건 AND
+//   사전 체크인 0건(현재 생성 중인 예약행 INSERT 前 시점 = 이 함수의 first_inflow 블록이 payload INSERT 앞에 위치).
+//   forward-only(NULL 백로그 무접촉·소급 금지). count 조회 실패 시 보수적으로 first-touch 아님 판정(under-stamp ≫ over-stamp).
+async function isGenuineFirstTouch(customerId: string): Promise<boolean> {
+  const [resvRes, ciRes] = await Promise.all([
+    supabase.from('reservations').select('id', { count: 'exact', head: true }).eq('customer_id', customerId),
+    supabase.from('check_ins').select('id', { count: 'exact', head: true }).eq('customer_id', customerId),
+  ]);
+  if (resvRes.error || ciRes.error) return false;
+  return (resvRes.count ?? 0) === 0 && (ciRes.count ?? 0) === 0;
+}
+
 async function createReservationCanonical(input: CanonicalCreateInput): Promise<CanonicalCreateResult> {
   const normalizedPhone = input.phone ? (normalizeToE164(input.phone) ?? input.phone.trim()) : null;
 
@@ -340,16 +356,31 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
       // 구환 상속 — 재입력 요구 없이 예약행에도 최초유입 각인.
       effectiveInflow = existing;
     } else if (effectiveInflow && !existing) {
-      // 신규 최초유입 first-write-wins stamp. inbound.etc 사유는 first_inflow_source_ref 동반(walk-in 컨벤션 동일).
-      const reason = input.inflow_reason?.trim();
-      await supabase
-        .from('customers')
-        .update({
-          first_inflow_channel: effectiveInflow,
-          first_inflow_at: new Date().toISOString(),
-          ...(reason ? { first_inflow_source_ref: reason } : {}),
-        })
-        .eq('id', input.customerId);
+      // T-20260811-foot-INFLOW-FORWARDFILL-INHERIT-WIRE (§36-4-a): 신규 최초유입 first-write-wins stamp —
+      //   단, genuine-first(진성 first-touch)일 때만. IS NULL(!existing) 단독으로는 기존 다-방문 고객(first_inflow=NULL
+      //   백로그)의 later 예약을 최초유입으로 오각인 = attribution corruption(HARD REJECT). 사전 예약/체크인 0건일 때만 각인.
+      //   inbound.etc 사유는 first_inflow_source_ref 동반(walk-in 컨벤션 동일). unknown → 미각인(NULL 유지·합성 금지).
+      const genuineFirst = await isGenuineFirstTouch(input.customerId);
+      if (genuineFirst) {
+        const reason = input.inflow_reason?.trim();
+        const { data: stamped, error: stampErr } = await supabase
+          .from('customers')
+          .update({
+            first_inflow_channel: effectiveInflow,
+            first_inflow_at: new Date().toISOString(),
+            ...(reason ? { first_inflow_source_ref: reason } : {}),
+          })
+          .eq('id', input.customerId)
+          // DB-level first-write-wins 방어(동시성/경합에도 최초 각인 보존). rows-affected 검증 근거값도 확보.
+          .is('first_inflow_channel', null)
+          .select('id');
+        // rows-affected 검증(§36-4-a blanket write 금지): 0행이면 경합으로 이미 각인됨(first-write-wins 유지·무해).
+        if (stampErr) {
+          console.warn('[INFLOW-FORWARDFILL] first_inflow 각인 실패(무해·NULL 유지):', stampErr.message);
+        } else if (!stamped || stamped.length === 0) {
+          console.info('[INFLOW-FORWARDFILL] first_inflow 각인 0행(경합/이미 각인) — first-write-wins 보존');
+        }
+      }
     }
   }
 
@@ -1453,6 +1484,11 @@ export default function Reservations() {
               memo: srcRow.memo,
               booking_memo: srcRow.booking_memo,
               status: 'confirmed',
+              // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 복사 생성도 유입경로 canonical 상속(원본행 값 승계).
+              //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉.
+              //   forward-only·first-write-wins(원본 이미 각인된 canonical 코드 그대로 복제, 재입력·매핑·치환 0).
+              //   원본 미각인(null)이면 null 승계 — 무해(신규 코드 생성 안 함).
+              inflow_channel: srcRow.inflow_channel ?? null,
               // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI (AC1): 복사 생성도 담당자=생성 계정.
               created_by: changedBy,
               // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 어드민 복사 생성 = 수기 → manual.

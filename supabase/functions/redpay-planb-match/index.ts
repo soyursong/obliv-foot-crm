@@ -56,7 +56,7 @@ import {
 } from "./match.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
 
 // ── T-20260730-foot-REDPAY-PLANB-GOLIVE-0805-SCHEDULE-LOCK — auto-create(경로A) 활성 게이트 ──

@@ -83,7 +83,7 @@ import FIXTURES from "./__fixtures__/redpay-responses.json" with { type: "json" 
 
 // ── 환경 변수 ─────────────────────────────────────────────────────────────
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const REDPAY_API_KEY            = Deno.env.get("REDPAY_API_KEY") ?? "";
 const REDPAY_BUSINESS_NO        = Deno.env.get("REDPAY_BUSINESS_NO") ?? "";
 // clinic 해석 안정키 (T-20260716-foot-REDPAY-RESOLVER-SLUG-P0-HOTFIX / DA sweep §13.4 RULING-2 서브픽스①).

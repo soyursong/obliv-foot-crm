@@ -21,7 +21,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // 신규 secret 명시 주입 우선 → 표준 service_role fallback (가산적·무중단)
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get("FOOT_SERVICE_ROLE_KEY") ??
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // worker 인증용 (pg_net 헤더 X-Internal-Cron 과 일치) = vault internal_cron_secret.
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 // 재시도 소진 임계 — worker backoff(1·2·4·8·16·32·60min)와 동일. 소진 시 DLQ 종결.

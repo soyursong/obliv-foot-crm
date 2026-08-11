@@ -34,7 +34,7 @@ const TOKEN_FNS = [
 // 검증용 known 데이터 (라이브 시드)
 const STAFF_USER_ID = 'ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12'; // 김주연 auth.users.id
 const CUSTOMER_ID = '747286b0-045d-472d-ad87-3d49c42c40b5';
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 async function withClient<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
   const client = new Client({

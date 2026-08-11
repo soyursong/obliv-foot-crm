@@ -31,7 +31,7 @@ const STATS = 'src/lib/stats.ts';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // jongno-foot (풋 정본)
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변) // jongno-foot (풋 정본)
 const sb = () => createClient(SUPA_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 test.describe('T-20260807 랭킹 귀속축 consultant → assigned_staff_id', () => {

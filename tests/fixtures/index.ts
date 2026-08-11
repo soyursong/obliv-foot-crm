@@ -15,7 +15,13 @@ import { CANONICAL_ORIGIN, DEPRECATED_HOSTS } from '../../src/lib/canonicalHost'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-export const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+// 픽스처가 write 하는 clinic FK. 기본값 = prod clinic(현행 CI/로컬 무파손).
+//   T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER (leg-A seed/fixture 정합):
+//   DEV 격리 DB(kcdqtyivtqcjmcrdjkqi)엔 이 prod clinic id 가 없어 fixture insert 가
+//   customers_clinic_id_fkey(23503) 로 깨진다. FOOT_E2E_DEV_ISOLATION=1 이면 config 로더가
+//   process.env.FIXTURE_CLINIC_ID 에 DEV clinic id(jongno-foot)를 주입 → 여기서 그 값을 쓴다.
+//   OFF(env 미설정) = prod 상수 그대로 → 빅뱅 금지·현행 무파손.
+export const CLINIC_ID = (process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8').trim();
 export const MARKER = '[QA-FIXTURE]';
 // 픽스처 customer/reservation 이름 접두 — orphan(마커 누락/생성중단) 스윕용 2차 키.
 //   seedCheckIn → `qa-fixture-{ts}`, seedReservation → `qa-res-{ts}`.

@@ -44,11 +44,12 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
-  excludeSimulationPaymentRows,
-} from '@/lib/simulationFilter';
+  fetchAttributedPayments,
+  aggregateStaffNet,
+  STAFF_UNASSIGNED,
+  type AttributedPayments,
+} from '@/lib/staffRevenue';
 import { useClinic } from '@/hooks/useClinic';
 import { formatAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -58,40 +59,7 @@ interface Props {
   filter: SalesFilterState;
 }
 
-const UNASSIGNED = '__UNASSIGNED__';
-
-// ─── DB row types ────────────────────────────────────────────────────────────
-
-/** 단건 payments 행 (누적 gross + 환불금 소스). status≠deleted, accounting_date 윈도우. */
-interface PaymentRow {
-  amount: number;
-  payment_type: string | null; // 'payment' | 'refund'
-  customer_id: string | null;
-}
-
-/** 패키지 package_payments 행 (누적 NET 소스, 환불=음수상계). status 컬럼 부재(foot 실측). */
-interface PkgPaymentRow {
-  amount: number;
-  payment_type: string | null; // 'payment' | 'refund' | 'deposit'…
-  customer_id: string | null;
-}
-
-interface StaffNameRow {
-  id: string;
-  name: string;
-}
-
-// 쿼리 결과 묶음
-interface DoctorTabData {
-  /** 단건 결제(payments) — 누적 gross + 환불금 */
-  singlePayments: PaymentRow[];
-  /** 패키지 결제(package_payments) — 누적 NET(환불 음수상계) */
-  pkgPayments: PkgPaymentRow[];
-  /** customer_id → assigned_staff_id (귀속: 2번차트 담당자) */
-  custStaffMap: Map<string, string>;
-  /** staff_id → name */
-  staffNameMap: Map<string, string>;
-}
+const UNASSIGNED = STAFF_UNASSIGNED;
 
 // ─── 집계 타입 ────────────────────────────────────────────────────────────────
 
@@ -111,120 +79,35 @@ export function SalesDoctorTab({ filter }: Props) {
   const { from, to } = filter.dateRange;
   const searchQuery = filter.searchQuery.trim().toLowerCase();
 
-  const { data, isLoading } = useQuery<DoctorTabData>({
+  // T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-3 산식 SSOT 통합 + FIX-2A 상태필터):
+  //   구 인라인 4-step(단건/패키지 페치 + assigned_staff 귀속 + gross/net 집계)을 lib/staffRevenue SSOT 로 수렴.
+  //   SSOT StaffNetBucket(singleGross/singleRefund/pkgNet)이 곧 이 탭의 누적(gross)·환불·net 성분과 1:1 대응한다:
+  //     · 누적매출(gross) = singleGross + pkgNet   · 환불금 = singleRefund   · 총매출 = 누적 − 환불(렌더 계산).
+  //   FIX-2A: 단건 status 필터가 SSOT 에서 status NOT IN ('cancelled','deleted') 로 통일(구 'deleted'만 제외).
+  const { data, isLoading } = useQuery<AttributedPayments>({
     queryKey: ['sales-doctor-gross', clinic?.id, from, to],
     enabled: !!clinic,
-    queryFn: async () => {
-      // 1. 단건 결제(payments): accounting_date 윈도우 · status≠deleted · payment/refund 전부.
-      //    누적 gross = payment_type≠'refund' SUM · 환불금 = payment_type='refund' SUM.
-      const { data: payData, error: payErr } = await supabase
-        .from('payments')
-        .select('amount, payment_type, customer_id')
-        .eq('clinic_id', clinic!.id)
-        .not('status', 'eq', 'deleted')
-        .gte('accounting_date', from)
-        .lte('accounting_date', to);
-      if (payErr) throw payErr;
-
-      // 2. 패키지 결제(package_payments): accounting_date 윈도우. status 컬럼 부재 → 필터 없음(환불=음수상계).
-      //    누적 NET 에 접어 넣음(부모 랭킹net 시절과 동일 취급 → 패키지 환불 1회 차감).
-      const { data: pkgData, error: pkgErr } = await supabase
-        .from('package_payments')
-        .select('amount, payment_type, customer_id')
-        .eq('clinic_id', clinic!.id)
-        .gte('accounting_date', from)
-        .lte('accounting_date', to);
-      if (pkgErr) throw pkgErr;
-
-      // 방어필터: is_simulation=true 고객 결제 제외(테스트 데이터 오염 방지, 워크인 NULL 보존).
-      const simIds = await getSimulationCustomerIds(clinic!.id);
-      const singlePayments = excludeSimulationPaymentRows(
-        (payData ?? []) as PaymentRow[],
-        simIds,
-      );
-      const pkgPayments = excludeSimulationPaymentRows(
-        (pkgData ?? []) as PkgPaymentRow[],
-        simIds,
-      );
-
-      // 3. 결제 고객 → assigned_staff_id(2번차트 담당자) 매핑 (단건 ∪ 패키지 고객).
-      const custIds = [
-        ...new Set(
-          [
-            ...singlePayments.map((r) => r.customer_id),
-            ...pkgPayments.map((r) => r.customer_id),
-          ].filter(Boolean) as string[],
-        ),
-      ];
-      const custStaffMap = new Map<string, string>(); // customer_id → staff_id
-      if (custIds.length > 0) {
-        const { data: custs, error: custErr } = await supabase
-          .from('customers')
-          .select('id, assigned_staff_id')
-          .in('id', custIds);
-        if (custErr) throw custErr;
-        for (const c of (custs ?? []) as { id: string; assigned_staff_id: string | null }[]) {
-          if (c.assigned_staff_id) custStaffMap.set(c.id, c.assigned_staff_id);
-        }
-      }
-
-      // 4. staff id↔name (담당 실장 이름 해석)
-      const staffNameMap = new Map<string, string>();
-      const { data: staffList, error: staffErr } = await supabase
-        .from('staff')
-        .select('id, name')
-        .eq('clinic_id', clinic!.id);
-      if (staffErr) throw staffErr;
-      for (const s of (staffList ?? []) as StaffNameRow[]) {
-        staffNameMap.set(s.id, s.name);
-      }
-
-      return { singlePayments, pkgPayments, custStaffMap, staffNameMap };
-    },
+    queryFn: () => fetchAttributedPayments(clinic!.id, from, to),
   });
 
   // ── 담당실장별 집계 (사람 grain = staff.id, 단일축 assigned_staff_id) ─────────────
   const stats = useMemo<StaffStat[]>(() => {
-    const {
-      singlePayments = [], pkgPayments = [], custStaffMap = new Map(), staffNameMap = new Map(),
-    } = data ?? {};
-    const map = new Map<string, StaffStat>();
-
-    const ensure = (staffId: string): StaffStat => {
-      let stat = map.get(staffId);
-      if (!stat) {
-        stat = {
-          staffId,
-          staffName:
-            staffId === UNASSIGNED ? '미지정' : (staffNameMap.get(staffId) ?? '알 수 없음'),
-          cumulativeRevenue: 0,
-          refundAmount: 0,
-        };
-        map.set(staffId, stat);
-      }
-      return stat;
-    };
-
-    const staffOf = (customerId: string | null): string =>
-      (customerId ? custStaffMap.get(customerId) : undefined) ?? UNASSIGNED;
-
-    // ② 단건(payments): gross → 누적 / refund → 환불금(부모 AC-4).
-    for (const p of singlePayments) {
-      const stat = ensure(staffOf(p.customer_id));
-      if (p.payment_type === 'refund') {
-        stat.refundAmount += Math.abs(p.amount ?? 0);
-      } else {
-        stat.cumulativeRevenue += p.amount ?? 0;
-      }
+    if (!data) return [];
+    const buckets = aggregateStaffNet(data.rows);
+    const list: StaffStat[] = [];
+    for (const [staffId, b] of buckets.entries()) {
+      list.push({
+        staffId,
+        staffName:
+          staffId === UNASSIGNED ? '미지정' : (data.staffMeta.get(staffId)?.name || '알 수 없음'),
+        // 누적매출(gross) = 단건 gross + 패키지 net (패키지 환불은 net 안에서 1회 상계).
+        cumulativeRevenue: b.singleGross + b.pkgNet,
+        // 환불금 = 단건 환불 SUM (부모 AC-4 불변, payments-only).
+        refundAmount: b.singleRefund,
+      });
     }
 
-    // ② 패키지(package_payments): NET(환불 음수상계) → 누적 에 접어 넣음(환불금 컬럼 미표기).
-    for (const pp of pkgPayments) {
-      const net = pp.payment_type === 'refund' ? -(pp.amount ?? 0) : (pp.amount ?? 0);
-      ensure(staffOf(pp.customer_id)).cumulativeRevenue += net;
-    }
-
-    return Array.from(map.values()).sort((a, b) => {
+    return list.sort((a, b) => {
       // '미지정'은 항상 맨 아래
       if (a.staffId === UNASSIGNED) return 1;
       if (b.staffId === UNASSIGNED) return -1;

@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
 
   // ── Supabase service role client (내부 전용 — 외부로 키 노출 없음) ──────────
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const serviceKey  = Deno.env.get('CRM_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEYS') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const admin       = createClient(supabaseUrl, serviceKey);
 
   try {
