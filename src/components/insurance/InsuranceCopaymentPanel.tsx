@@ -3,12 +3,15 @@
  *
  * T-20260504-foot-INSURANCE-COPAYMENT (최초 구현)
  * T-20260520-foot-INS-UI              (AC-4: insurance_claims 연동 / AC-5: 이중기록 방지)
+ * T-20260810-foot-INS-CLAIM-AUTODRAFT (B-2: claim draft 생성을 DB 트리거로 일원화)
  *
  * 저장 전략:
- *  - service_charges (append-only 감사 로그) — 기존 흐름 유지 (AC-5)
- *  - insurance_claims + claim_items (현재 청구 상태 upsert) — 신규 (AC-4)
- *    check_in_id 기준으로 draft claim 1개만 유지.
- *    재저장 시: 기존 claim_items 삭제 → 재삽입, claim 합계 갱신.
+ *  - service_charges (append-only 감사 로그) — 이 패널은 이 한 가지만 쓴다.
+ *  - insurance_claims + claim_items 는 더 이상 여기서 쓰지 않는다.
+ *    service_charges AFTER INSERT 트리거(trg_service_charges_autodraft →
+ *    fn_build_insurance_claim_draft)가 수납확정 자동경로를 포함한 모든 service_charges
+ *    쓰기에서 draft claim 을 금액 verbatim 으로 파생한다(단일 생성자 = 수동/자동 이중생성 방지).
+ *    B-2 이전엔 이 패널(수동)에서만 claim 이 생겨 현장 자동경로는 명세 0건이었다 → 근본원인 해소.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -135,9 +138,10 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
   /**
    * 산출 이력 저장
    *
-   * AC-5: service_charges 는 append-only 감사 로그 — 기존 로직 유지.
-   * AC-4: insurance_claims 는 check_in_id 기준 upsert (draft 1건 유지).
-   *        재저장 시 claim_items 를 삭제 후 재삽입하여 최신 상태 보존.
+   * service_charges (append-only 감사 로그) 만 INSERT 한다.
+   * insurance_claims / claim_items 는 DB 트리거(trg_service_charges_autodraft)가
+   *   이 INSERT 를 받아 금액 verbatim 으로 draft claim 을 파생한다(B-2). 여기서 직접 쓰지 않는다
+   *   — 단일 생성자로 일원화해 수동/자동 이중생성을 막는다.
    */
   const persistCharges = async () => {
     if (!customerId) return;
@@ -173,95 +177,15 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
     }
 
     const { error: chargeErr } = await supabase.from('service_charges').insert(chargeRows);
+    setSaving(false);
     if (chargeErr) {
-      setSaving(false);
       setSavedAt(`저장 실패: ${chargeErr.message}`);
       return;
     }
 
-    // ── 2. insurance_claims UPSERT (check_in_id 기준 draft 1건) ──────────
-    // check_in_id 로 기존 draft claim 조회
-    let claimId: string | null = null;
-
-    const { data: existingClaim } = await supabase
-      .from('insurance_claims')
-      .select('id')
-      .eq('check_in_id', checkIn.id)
-      .eq('claim_status', 'draft')
-      .maybeSingle();
-
-    if (existingClaim?.id) {
-      // 기존 claim 재사용 — claim_items 삭제 후 재삽입
-      claimId = existingClaim.id;
-      await supabase.from('claim_items').delete().eq('claim_id', claimId);
-
-      // 합계 갱신
-      const { error: updateErr } = await supabase
-        .from('insurance_claims')
-        .update({
-          total_base:       totals.base,
-          total_copayment:  totals.copay,
-          total_covered:    totals.covered,
-          visit_date:       checkIn.checked_in_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-        })
-        .eq('id', claimId);
-
-      if (updateErr) {
-        setSaving(false);
-        setSavedAt(`청구 갱신 실패: ${updateErr.message}`);
-        return;
-      }
-    } else {
-      // 신규 claim 생성
-      const { data: newClaim, error: claimErr } = await supabase
-        .from('insurance_claims')
-        .insert({
-          clinic_id:     checkIn.clinic_id,
-          customer_id:   customerId,
-          check_in_id:   checkIn.id,
-          visit_date:    checkIn.checked_in_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-          claim_status:  'draft',
-          total_base:    totals.base,
-          total_copayment: totals.copay,
-          total_covered: totals.covered,
-        })
-        .select('id')
-        .single();
-
-      if (claimErr || !newClaim) {
-        setSaving(false);
-        setSavedAt(`청구 생성 실패: ${claimErr?.message ?? '알 수 없는 오류'}`);
-        return;
-      }
-      claimId = newClaim.id;
-    }
-
-    // ── 3. claim_items INSERT ─────────────────────────────────────────────
-    const itemRows: Array<Record<string, unknown>> = [];
-    for (const sid of selectedIds) {
-      const r = results.get(sid);
-      const svc = services.find((s) => s.id === sid);
-      if (!r || !svc) continue;
-      itemRows.push({
-        claim_id:           claimId,
-        service_id:         sid,
-        hira_code:          svc.hira_code,
-        hira_score:         svc.hira_score,
-        quantity:           1,
-        base_amount:        r.base_amount,
-        copayment_amount:   r.copayment_amount,
-        covered_amount:     r.insurance_covered_amount,
-      });
-    }
-
-    const { error: itemErr } = await supabase.from('claim_items').insert(itemRows);
-    setSaving(false);
-
-    if (itemErr) {
-      setSavedAt(`항목 저장 실패: ${itemErr.message}`);
-      return;
-    }
-
+    // insurance_claims / claim_items 는 DB 트리거(trg_service_charges_autodraft)가
+    //   위 service_charges INSERT 를 받아 draft claim 을 금액 verbatim 으로 파생한다(B-2).
+    //   클라이언트에서 직접 쓰지 않는다 — 단일 생성자로 수동/자동 이중생성 방지.
     setSavedAt(`${chargeRows.length}건 산출·청구 이력 저장 완료`);
   };
 

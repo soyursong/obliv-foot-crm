@@ -20,11 +20,15 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AmountInput } from '@/components/ui/AmountInput';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { formatAmount, parseAmount, formatDateTimeDots } from '@/lib/format';
+// T-20260730-foot-PAYEDIT-METHOD-TO-CARD-DUALPATH — 현금/이체→카드 정정 이중경로(자동/수기) controlled write-path
+import { changeMethodToCardAuto, changeMethodToCardManual } from '@/lib/changePaymentMethodToCard';
+import { isPaymentPlanbEnabled } from '@/lib/paymentPlanb';
 
 // T-20260522-foot-PAY-DROPDOWN-LONGRE: 롱레 CRM 정합성 — membership 추가
 type PayMethod = 'card' | 'cash' | 'transfer' | 'membership';
@@ -88,9 +92,22 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState('');
 
+  // T-20260730-foot-PAYEDIT-METHOD-TO-CARD-DUALPATH — 현금/이체→카드 정정 이중경로 상태
+  //   ① 단말 자동승인(auto) → 안 되면 ② 수기입력(manual). 동일 화면 fallback(김다인 confirm 2026-08-10).
+  const [cardEntryMode, setCardEntryMode] = useState<'auto' | 'manual'>('auto');
+  const [approvalNo, setApprovalNo] = useState('');
+  const [approvalError, setApprovalError] = useState('');
+  const [autoPending, setAutoPending] = useState(false); // 자동 미연결 → 수기 fallback 노출
+
   const [submitting, setSubmitting] = useState(false);
 
   if (!payment) return null;
+
+  // 현금/이체 등 비-카드 수납을 '카드'로 정정하는 상황에서만 이중경로 UI 노출(피처플래그 격리).
+  const convertingToCard = mode === 'edit' && method === 'card' && payment.method !== 'card';
+  const showDualPath = convertingToCard && isPaymentPlanbEnabled();
+  // 수기 입력창 노출: ② 수기 선택했거나, ① 자동이 미연결로 fallback 된 상태.
+  const showManualEntry = showDualPath && (cardEntryMode === 'manual' || autoPending);
 
   /* ── helpers ──────────────────────────────────────────────────── */
 
@@ -120,7 +137,81 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
 
   /* ── submit handlers ──────────────────────────────────────────── */
 
+  // T-20260730-foot-PAYEDIT-METHOD-TO-CARD-DUALPATH — 현금/이체→카드 정정(이중경로)
+  //   ① 자동: 카드 전환 + reverse-match EF 트리거(서버가 VAN raw 원자 링크). 미연결이면 동일 화면 ② 수기 fallback.
+  //   ② 수기: 승인번호 직접 입력 → controlled in-place UPDATE. money-path 가드는 lib(loadAndGuard) 에서 강제.
+  const handleCardConversion = async () => {
+    const newAmount = parseAmount(amountStr);
+    if (newAmount <= 0) {
+      toast.error('금액을 입력하세요');
+      return;
+    }
+    const inst = method === 'card' && installment > 0 ? installment : 0;
+    const before = { amount: payment.amount, method: payment.method, installment: payment.installment };
+    const after = { amount: newAmount, method: 'card', installment: inst > 0 ? inst : null };
+
+    // ② 수기(직접 선택 또는 자동 fallback): 승인번호 필수.
+    if (showManualEntry) {
+      if (!approvalNo.trim()) {
+        setApprovalError('카드 승인번호를 입력하세요');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const actor = await currentUser();
+        const res = await changeMethodToCardManual({
+          paymentId: payment.id, amount: newAmount, installment: inst, approvalNo: approvalNo.trim(),
+        });
+        if (!res.ok) {
+          toast.error(res.message ?? '카드 정정 실패');
+          return;
+        }
+        await insertAudit({
+          action: 'edit', before, after, actor,
+          reason: `결제수단 정정→카드(수기 승인번호 ${approvalNo.trim()})`,
+        });
+        toast.confirm('카드로 정정 완료');
+        onDone({ id: payment.id, amount: newAmount, method: 'card', installment: after.installment });
+      } catch (e: unknown) {
+        toast.error(`카드 정정 실패: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // ① 자동: 카드 전환 후 reverse-match 트리거.
+    setSubmitting(true);
+    try {
+      const actor = await currentUser();
+      const res = await changeMethodToCardAuto({ paymentId: payment.id, amount: newAmount, installment: inst });
+      if (!res.ok) {
+        toast.error(res.message ?? '카드 정정 실패');
+        return;
+      }
+      await insertAudit({
+        action: 'edit', before, after, actor,
+        reason: '결제수단 정정→카드(단말 자동승인)',
+      });
+      if (res.autoMatch?.matched) {
+        toast.confirm('카드 단말 승인이 자동 연결되었습니다');
+        onDone({ id: payment.id, amount: newAmount, method: 'card', installment: after.installment });
+      } else {
+        // 자동 미연결 → 동일 화면에서 수기입력 fallback 노출(dialog 유지, onDone 미호출).
+        setAutoPending(true);
+        toast.warning('자동 승인이 아직 연결되지 않았어요. 승인번호를 직접 입력해 주세요.');
+      }
+    } catch (e: unknown) {
+      toast.error(`카드 정정 실패: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleEdit = async () => {
+    // 현금/이체→카드 정정은 이중경로(자동/수기) controlled write-path 로 분기(피처플래그 ON).
+    if (showDualPath) return handleCardConversion();
+
     const newAmount = parseAmount(amountStr);
     if (newAmount <= 0) {
       toast.error('금액을 입력하세요');
@@ -360,6 +451,73 @@ export function PaymentEditDialog({ payment, mode, onClose, onDone }: Props) {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* ── 현금/이체→카드 정정 이중경로(자동/수기) — T-20260730-foot-PAYEDIT-METHOD-TO-CARD-DUALPATH ── */}
+              {showDualPath && (
+                <div className="space-y-2 rounded-md border border-teal-200 bg-teal-50/40 p-3" data-testid="card-dualpath">
+                  <Label>카드 승인 방식</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      data-testid="card-mode-auto"
+                      onClick={() => { setCardEntryMode('auto'); setAutoPending(false); setApprovalError(''); }}
+                      className={cn(
+                        'rounded-md border py-2 text-sm font-medium transition',
+                        cardEntryMode === 'auto' && !autoPending
+                          ? 'border-teal-600 bg-teal-50 text-teal-700'
+                          : 'border-input bg-background hover:bg-muted',
+                      )}
+                    >
+                      ① 단말 자동승인
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="card-mode-manual"
+                      onClick={() => { setCardEntryMode('manual'); setApprovalError(''); }}
+                      className={cn(
+                        'rounded-md border py-2 text-sm font-medium transition',
+                        cardEntryMode === 'manual' || autoPending
+                          ? 'border-teal-600 bg-teal-50 text-teal-700'
+                          : 'border-input bg-background hover:bg-muted',
+                      )}
+                    >
+                      ② 수기입력
+                    </button>
+                  </div>
+
+                  {!showManualEntry && (
+                    <p className="text-xs text-muted-foreground">
+                      카드 단말기로 결제하면 승인 정보가 자동으로 연결돼요. 자동이 안 되면 승인번호를 직접 입력할 수 있어요.
+                    </p>
+                  )}
+
+                  {autoPending && (
+                    <p data-testid="auto-pending-notice" className="text-xs text-amber-700">
+                      자동 승인이 아직 연결되지 않았어요. 아래에 카드 승인번호를 직접 입력해 주세요.
+                    </p>
+                  )}
+
+                  {showManualEntry && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">카드 승인번호<span className="ml-1 text-destructive">*</span></Label>
+                      <Input
+                        data-testid="input-approval-no"
+                        value={approvalNo}
+                        onChange={(e) => {
+                          setApprovalNo(e.target.value);
+                          if (e.target.value.trim()) setApprovalError('');
+                        }}
+                        placeholder="카드 승인번호"
+                        inputMode="numeric"
+                        className={cn(approvalError && 'border-destructive')}
+                      />
+                      {approvalError && (
+                        <p data-testid="approval-error" className="text-xs text-destructive">{approvalError}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>

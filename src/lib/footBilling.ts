@@ -383,7 +383,14 @@ export function computeFootBilling(
   //   미전달(undefined/null) 시 = 기존 price base 그대로(전 호출부 회귀 0 · backward-compat).
   // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: ageInfantRate = 나이 파생 infant 세부율(만0세 0.05 /
   //   만1~5세 0.21). grade==='infant' 정률경로에만 라이브 적용(effectiveCopayRate). 미전달=grade-only 그대로.
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null },
+  // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB (Phase B, 결함① 이중계상 reconcile): surchargeRate =
+  //   진찰료 시간외/공휴/토요 가산 배수(canon 0.30). 급여 base(coveredBaseUnit)에 (1+rate) fold →
+  //   가산 반영 수가 위에서 grade-keyed copay 를 산출한다. 이는 서버 RPC calc_copayment v1.7(L118
+  //   v_base=ROUND(score×unit×(1+rate)))와 **동일 rounding 모델**의 미러 — 수납 grain(settle) 이 명세
+  //   (record_insurance_consult_payment 영속)와 divergence 0 이 되도록 한다(가산은 수가 자체를 올린다,
+  //   §2-2-7 AC-2). 미전달/0 → v1.6 byte-identical(회귀 0). 문서 grain(computeSurcharge floor10)은 별도
+  //   경로(applyNightHolidaySurcharge)라 무접촉 — 두 grain 분리는 T-20260728 DA 판정(문서==수납 요건 폐기) 계승.
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null; surchargeRate?: number | null },
 ): FootBillingResult {
   const pricingItems = items.filter((i) => !isCodeItem(i.service));
   // ── 급여 base 권위 소스 (1원 canon) = ROUND(hira_score × hira_unit_value) ──────────────
@@ -402,13 +409,17 @@ export function computeFootBilling(
   //   ★ 클라 표시 carve-out(문서에 18,840 렌더)은 별개 P3 display-unify 트랙(reporter surface 확인 게이트) —
   //     본 함수(billing base 집계)와 무관. isFlatPublishedExamFee 술어는 그 트랙 위해 export 유지(호출만 제거).
   const hiraUnitValue = opts?.hiraUnitValue ?? null;
+  // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: 가산 배수 clamp [0,1] — RPC calc_copayment v1.7 L70
+  //   (GREATEST(0, LEAST(1, COALESCE(rate,0)))) 미러. 급여 hira-scored 정상분기에만 fold(비급여/price-fallback 무영향).
+  const surchargeRate = Math.max(0, Math.min(1, opts?.surchargeRate ?? 0));
   const coveredBaseUnit = (svc: BillingService): number | null => {
     if (
       hiraUnitValue != null &&
       svc.hira_score != null &&
       getTaxClass(svc, insuranceGrade) === '급여'
     ) {
-      return Math.round(svc.hira_score * hiraUnitValue);
+      // 가산 반영 base = ROUND(hira_score × hira_unit_value × (1+rate)). rate=0 → 종전값 byte-identical(회귀 0).
+      return Math.round(svc.hira_score * hiraUnitValue * (1 + surchargeRate));
     }
     return null; // price base 유지(비급여 / hira_score NULL / hira_unit_value 미전달)
   };
@@ -856,7 +867,9 @@ export function computeConsultationSurchargeBase(
   insuranceGrade: InsuranceGrade | null,
   // T-20260807-foot-COPAY-INFANT-5PCT-LIVE-WIRING: ageInfantRate 도 computeFootBilling 로 pass-through
   //   (진찰료 가산 base 의 infant 본인부담이 aggregate 5% 와 정합하도록). 미전달=grade-only 그대로.
-  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null },
+  // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: surchargeRate pass-through — 진찰료 subset 의 급여 base 를
+  //   (1+rate) fold 하여 가산 반영 수가·grade-keyed copay 를 산출(RPC record_insurance_consult_payment 미러).
+  opts?: { unknownGradeCopay?: 'covered_full' | 'general_default'; hiraUnitValue?: number | null; ageInfantRate?: number | null; surchargeRate?: number | null },
 ): { covered: number; copay: number } {
   const consultItems = items.filter((i) => isConsultationFeeItem(i.service, insuranceGrade));
   if (consultItems.length === 0) return { covered: 0, copay: 0 };

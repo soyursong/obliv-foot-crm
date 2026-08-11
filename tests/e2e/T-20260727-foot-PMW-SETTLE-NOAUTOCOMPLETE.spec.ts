@@ -29,7 +29,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 // PaymentMiniWindow.executeAutoDone 완료전이 게이트의 write-semantic 을 그대로 재현하는 시뮬레이터.
 //   [19:47 스코프 확장] taxType(선수금/일반) 무관하게 완료전이(status/transition/flag)를 항상 스킵.

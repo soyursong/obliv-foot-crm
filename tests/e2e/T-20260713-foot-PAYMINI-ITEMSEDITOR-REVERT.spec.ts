@@ -26,7 +26,7 @@ import { fileURLToPath } from 'url';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 const __dirname_ = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel: string) => readFileSync(path.resolve(__dirname_, '../../', rel), 'utf-8');

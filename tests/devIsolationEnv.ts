@@ -13,6 +13,14 @@
 export const KNOWN_PROD_REF = 'rxlomoozakkjesdqjtvd';
 /** obliv-foot-dev (E2E/CI 격리 DB, PHI-0) — docs/ENV-MATRIX.md §테스트/E2E 격리 DB. */
 export const DEV_ISOLATION_REF = 'kcdqtyivtqcjmcrdjkqi';
+/**
+ * DEV 격리 DB 의 clinic id (slug=jongno-foot, "종로 풋센터(DEV)").
+ *   fixture 시더(tests/fixtures/index.ts CLINIC_ID)는 기본값으로 prod clinic 을 쓴다 —
+ *   DEV DB엔 그 prod id 가 없어 insert 가 FK(customers_clinic_id_fkey/23503) 로 깨진다.
+ *   컷오버 시 이 값을 FIXTURE_CLINIC_ID 로 주입해 fixture write 를 DEV clinic 에 정합시킨다.
+ *   비-secret(단순 FK id). env 파일에 DEV_FIXTURE_CLINIC_ID 가 있으면 그게 우선(재프로비저닝 대비).
+ */
+export const DEV_ISOLATION_CLINIC_ID = '4478bdb0-54cd-4b04-b506-7d023ecbcdba';
 
 /** FOOT_E2E_DEV_ISOLATION 플래그 truthy 판정. 미설정/0/false/off/no = OFF(현행 유지). */
 export function isTruthyFlag(v: string | undefined | null): boolean {
@@ -27,6 +35,11 @@ export interface DevIsolationMapping {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   /** = DEV_SUPABASE_PROJECT_REF → PRODREF-HARDGUARD(assertExpectedDbTarget) 활성화. */
   EXPECT_DEV_DB_REF: string;
+  /**
+   * fixture 시더가 write 할 DEV clinic id (→ process.env.FIXTURE_CLINIC_ID).
+   *   env 파일의 DEV_FIXTURE_CLINIC_ID 가 있으면 우선, 없으면 DEV_ISOLATION_CLINIC_ID 상수.
+   */
+  FIXTURE_CLINIC_ID: string;
 }
 
 /**
@@ -51,7 +64,12 @@ export function mapDevIsolationEnv(
         `(url=${devUrl}). prod 오배선 의심 → fail-closed abort.`,
     );
   }
-  const out: DevIsolationMapping = { VITE_SUPABASE_URL: devUrl, EXPECT_DEV_DB_REF: devRef };
+  const fixtureClinicId = (devEnv.DEV_FIXTURE_CLINIC_ID ?? '').trim() || DEV_ISOLATION_CLINIC_ID;
+  const out: DevIsolationMapping = {
+    VITE_SUPABASE_URL: devUrl,
+    EXPECT_DEV_DB_REF: devRef,
+    FIXTURE_CLINIC_ID: fixtureClinicId,
+  };
   if (devEnv.DEV_SUPABASE_ANON_KEY) out.VITE_SUPABASE_ANON_KEY = devEnv.DEV_SUPABASE_ANON_KEY;
   if (devEnv.DEV_SUPABASE_SERVICE_ROLE_KEY)
     out.SUPABASE_SERVICE_ROLE_KEY = devEnv.DEV_SUPABASE_SERVICE_ROLE_KEY;

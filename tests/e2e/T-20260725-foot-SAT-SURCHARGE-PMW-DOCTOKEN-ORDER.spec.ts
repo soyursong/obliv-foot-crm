@@ -206,43 +206,44 @@ test.describe('결함② — 진찰료 단독(진찰료 가산 누락 회귀가�
 });
 
 /**
- * ★결함③ — p_surcharge_rate RPC 전달 제거(되돌리기) 회귀가드 (source-level)
+ * ★결함③ — p_surcharge_rate 회귀가드 (source-level)
  *
- * 배경: 6fd6dc85 가 급여 진찰료 수납 시 calc_copayment / record_insurance_consult_payment RPC 에
- *   `p_surcharge_rate` 인자를 FE 에서 전달 추가 → prod 에 v1.7 RPC 시그니처 부재 → PGRST202(404) →
- *   급여 진찰료 수납 기록 깨짐. 결함①(FE base 가산)과 겹치면 RPC측+FE측 이중가산.
- *   → 11c1ebcf 에서 FE call-site 의 p_surcharge_rate 전달을 revert(가산은 결함① FE 산식 경로로 단일화).
- *
- * ★가드(재도입 방지): PaymentMiniWindow.tsx 소스에 어떤 RPC 로도 p_surcharge_rate 를 전달하지 않는다.
- *   - PGRST202(404) 미발생: RPC 는 prod 실재 시그니처(rate 인자 없음)로만 호출.
- *   - 이중가산 0: 가산은 결함① FE 산식(진찰료 subset)에서 1회만. RPC 는 rate 무전달.
- *   - RPC/DB 무접촉: service_charges 영속(Option B) 마이그는 별건 — 본 가드는 FE call-site 만 검증.
+ * ── AMENDED 2026-08-11 by T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB (Phase B) ──────────────────────
+ *   [소유/coordinate] 본 가드의 원 소유 = archived T-20260725-foot-SAT-SURCHARGE-PMW-DOCTOKEN-ORDER.
+ *     dev-foot 단독 제거 금지 → 소유 축(planner lifecycle) coordinate 하에 **은퇴가 아니라 개정(polarity flip)**.
+ *     coordinate 기록: dev-foot FOLLOWUP(planner) + Phase B 티켓 본문 작업2("회귀가드 은퇴/개정") = 승인 근거.
+ *   [원 가드 목적 = 소멸] 원 가드는 "prod 에 v1.7/v2 RPC 시그니처가 없는 동안" p_surcharge_rate 재도입을 차단해
+ *     PGRST202(404)를 막는 것이었다. Phase A(마이그 20260725180000)가 prod 라이브(2026-08-11 confirm,
+ *     calc_copayment 5-arg / record_insurance_consult_payment 7-arg, POSTCHECK PASS)되어 그 전제가 소멸.
+ *   [개정 후 가드 = 정합 방향 고정] 이제 반대로, p_surcharge_rate 가 RPC 에 **전달되어야** service_charges
+ *     영속(Option B)이 활성화된다. 본 블록은 (a) RPC 재배선 존재 (b) rate=kind-gated(하드코딩 금지)
+ *     (c) 수납 grain 이 RPC 모델(surchargeRate)로 reconcile 되어 이중가산 0 임을 소스레벨로 고정한다.
+ *   [무접촉 유지] 위 결함② 가드(출력토큰 가산-순서)는 불변 — 개정은 결함③(p_surcharge_rate polarity)만.
  */
-test.describe('결함③ — p_surcharge_rate RPC 전달 제거(재도입 방지 회귀가드)', () => {
+test.describe('결함③ — p_surcharge_rate RPC 재배선 + reconcile 회귀가드 (Phase A 이후 개정본)', () => {
   const specDir = dirname(fileURLToPath(import.meta.url));
   const pmwSrc = readFileSync(
     resolve(specDir, '../../src/components/PaymentMiniWindow.tsx'),
     'utf8',
   );
 
-  test('PaymentMiniWindow 는 어떤 RPC 에도 p_surcharge_rate 를 전달하지 않는다(PGRST202/이중가산 방지)', () => {
-    expect(pmwSrc).not.toContain('p_surcharge_rate');
+  test('PaymentMiniWindow 는 record_insurance_consult_payment 에 p_surcharge_rate 를 전달한다(Option B 영속 활성화)', () => {
+    // Phase A prod 라이브 전제 — 신 시그니처(7-arg)로 rate 전달. 명세(service_charges) base×1.3 영속.
+    expect(pmwSrc).toMatch(/p_surcharge_rate\s*:/);
+    expect(pmwSrc).toContain('record_insurance_consult_payment');
   });
 
-  test('가산 요율(SURCHARGE_RATE)을 RPC 인자 컨텍스트로 재도입하지 않는다', () => {
-    // 결함① FE 산식 경로(computeConsultationSurchargeBase/computeSurcharge)는 rate 를 정상 사용하되,
-    // RPC 전달용 consultSurchargeRate 변수(=6fd6dc85 패턴)는 부재해야 한다.
-    expect(pmwSrc).not.toContain('consultSurchargeRate');
-    expect(pmwSrc).not.toMatch(/p_surcharge_rate\s*:/);
+  test('가산 rate 는 kind-gate 파생(하드코딩 금지) — consultSurchargeRate = settleSurchargeKind ? SURCHARGE_RATE : 0', () => {
+    // 판정 SSOT(detectSurchargeKind→settleSurchargeKind) 재사용, 병렬 재구현/하드코딩 30% 금지.
+    expect(pmwSrc).toContain('consultSurchargeRate');
+    expect(pmwSrc).toMatch(/consultSurchargeRate\s*=\s*settleSurchargeKind\s*\?\s*SURCHARGE_RATE\s*:\s*0/);
   });
 
-  test('calc_copayment / record_insurance_consult_payment 호출부에 rate 인자 없음', () => {
-    // 두 RPC 호출부가 prod 실재 시그니처(rate 인자 없음)로만 호출되는지 정적 확인.
-    for (const rpcName of ['calc_copayment', 'record_insurance_consult_payment']) {
-      expect(pmwSrc).toContain(rpcName);
-    }
-    // 파일 전체에 rate 전달 토큰이 0회 → 두 호출부 모두 무전달로 귀결.
-    const occurrences = (pmwSrc.match(/p_surcharge_rate/g) ?? []).length;
-    expect(occurrences).toBe(0);
+  test('수납 grain reconcile — RPC 모델(surchargeRate) 미러로 이중가산 0 (floor10 standalone 경로 아님)', () => {
+    // 결함① reconcile: 수납 grain 가산은 computeConsultationSurchargeBase(..., surchargeRate) 로 RPC(base×(1+rate)
+    //   grade-keyed) 미러 산출. payableTotalWithSurcharge 진찰료 copay component == RPC consultCopaySum →
+    //   payments↔service_charges divergence 0, 가산 1회 계상. surchargeRate 옵션 배선을 소스레벨로 고정한다.
+    expect(pmwSrc).toMatch(/surchargeRate\s*:\s*settleSurchargeRate/);
+    expect(pmwSrc).toContain('settleSurchargeInclusive');
   });
 });

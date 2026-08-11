@@ -56,8 +56,13 @@ test.describe('AC-5 자동 차팅 유지 — seed', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].date).toBe('2026-08-08'); // 최신순 유지
     expect(rows[0].packageContent).toBe('12회');
-    expect(rows[0].todayCount).toBe('12-1');
+    // SESCOUNT-CUMULATIVE-FIX(T-20260811, reporter 정정): 앞=총회수(고정) / 뒤=방문 회차 순번.
+    //   2026-08-05=1회차, 2026-08-08=2회차 → 최신행 '12-2'(구버그 '12-1' 반복 아님).
+    expect(rows[0].todayCount).toBe('12-2');
     expect(rows[0].therapists).toBe('혜인');
+    // 더 이른 방문(2026-08-05)은 1회차 → '12-1'.
+    expect(rows[1].date).toBe('2026-08-05');
+    expect(rows[1].todayCount).toBe('12-1');
     for (const r of rows) expect(r.note).toBe('');
   });
 

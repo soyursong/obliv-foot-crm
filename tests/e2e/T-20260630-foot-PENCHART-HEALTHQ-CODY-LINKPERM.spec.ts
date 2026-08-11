@@ -39,7 +39,7 @@ const DB_USER = process.env.SUPABASE_DB_USER ?? 'postgres.rxlomoozakkjesdqjtvd';
 
 // 라이브 시드(REGRESS4 spec 과 동일) — staff 연결자(김주연) + 기본 clinic
 const STAFF_USER_ID = 'ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12'; // 김주연 auth.users.id (staff 연결)
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 const RANDOM_UNAPPROVED_ID = '00000000-0000-0000-0000-000000000000';
 
 async function withClient<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {

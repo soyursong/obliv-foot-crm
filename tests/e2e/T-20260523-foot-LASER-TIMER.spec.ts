@@ -31,7 +31,7 @@ import { loginAndWaitForDashboard } from '../helpers';
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 // 종로 풋센터 clinic_id (PAYMENT-AUTO-DONE 등 기존 spec 과 동일 상수)
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 // T-20260616-foot-LASER-TIMER-SETTING-CONNECT: 타이머 버튼이 clinics.laser_time_units 로 동적화됨.
 // 이 spec 은 btn-5/15/20 고정 가정이므로, 결정성 확보를 위해 clinic 설정을 [5,15,20] 으로 시드 후 원복.
 const CLINIC_SLUG = 'jongno-foot';

@@ -22,7 +22,7 @@ import { loginAndWaitForDashboard } from '../helpers';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL ?? 'https://rxlomoozakkjesdqjtvd.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 
 /** 그리드 시간 행 메타 (선행 스펙과 동일 산출 — now 이하 최대 슬롯 = currentSlot). */
 async function gridMeta(page: Page) {

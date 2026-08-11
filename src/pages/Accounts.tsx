@@ -38,6 +38,27 @@ const ROLE_DISPLAY_ORDER: UserRole[] = [
   'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff', 'technician', 'tm',
 ];
 
+// T-20260810-foot-STAFF-DUPEMAIL-ERRMSG-UX: 중복 이메일(=이미 등록된 계정) 실패 식별.
+//   1순위 = EF 가 명시 반환하는 code 'ALREADY_REGISTERED'(resolveUserByEmail+프로필매핑 판별 재사용,
+//   cross_crm_auth_identity_standard 준수 — FE 는 ?email= 필터를 독자 신뢰하지 않고 EF 판정을 그대로 사용).
+//   2순위(폴백) = EF 사전판별이 놓친 뒤 GoTrue createUser / RPC 유니크위반이 사후 거부한 경우, 그
+//   authoritative 에러 메시지 시그니처로 "이미 등록된 계정"임을 식별해 generic '생성 오류' 대신 명시 표기.
+//   메시지 표기 분류일 뿐 — 파괴/식별 판단이나 신규 생성 로직에는 관여하지 않음(AC-3).
+function isAlreadyRegistered(code: string | undefined, msg: string | undefined): boolean {
+  if (code === 'ALREADY_REGISTERED') return true;
+  const m = (msg ?? '').toLowerCase();
+  if (!m) return false;
+  return (
+    m.includes('already registered') ||
+    m.includes('already been registered') ||
+    m.includes('already exists') ||
+    m.includes('email address has already') ||
+    m.includes('user already') ||
+    m.includes('duplicate key') ||          // Postgres 23505 (user_profiles/email unique)
+    m.includes('이미 등록')
+  );
+}
+
 // 임시 비번 자동 생성 (영문대소+숫자+특수, 10자)
 function generateTempPassword(): string {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -321,9 +342,11 @@ export default function Accounts() {
     if (transportError || !envelope || envelope.ok !== true) {
       const code = envelope?.error?.code;
       const msg = envelope?.error?.message ?? transportError ?? '알 수 없는 오류';
-      if (code === 'ALREADY_REGISTERED') {
-        toast.error('이미 등록된 이메일이에요. 기존 계정 목록에서 확인하거나 다른 이메일을 사용하세요.');
+      if (isAlreadyRegistered(code, msg)) {
+        // AC-1: 이미 등록된 계정 → 명시 문구(현장이 원인을 바로 알 수 있게).
+        toast.error('이미 등록된 계정입니다. 기존 계정 목록에서 확인하거나 다른 이메일을 사용하세요.');
       } else {
+        // AC-2: 중복 이외 실패(입력검증·네트워크 등)는 기존 문구 유지 — 회귀 없음.
         toast.error(`계정 등록 실패: ${msg}`);
       }
       return;

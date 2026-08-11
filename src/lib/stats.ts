@@ -1,8 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
-  excludeSimulationPaymentRows,
-} from '@/lib/simulationFilter';
+  fetchAttributedPayments,
+  aggregateStaffNet,
+  bucketNet,
+  inRoster,
+} from '@/lib/staffRevenue';
 
 /**
  * F12 통계 대시보드 RPC 호출 헬퍼.
@@ -254,98 +256,26 @@ export async function fetchConsultantPerfByAssignedStaff(
   from: string,
   to: string,
 ): Promise<ConsultantRow[]> {
-  // 1. 결제행: 단건(payments) + 패키지(package_payments). accounting_date 윈도우.
-  //    단건은 status='deleted' 제외(삭제 결제 미집계) — 매출집계>담당실장별과 동일.
-  const [{ data: payData, error: payErr }, { data: pkgData, error: pkgErr }] = await Promise.all([
-    supabase
-      .from('payments')
-      .select('amount, payment_type, customer_id')
-      .eq('clinic_id', clinicId)
-      .not('status', 'eq', 'deleted')
-      .gte('accounting_date', from)
-      .lte('accounting_date', to),
-    supabase
-      .from('package_payments')
-      .select('amount, payment_type, customer_id')
-      .eq('clinic_id', clinicId)
-      .gte('accounting_date', from)
-      .lte('accounting_date', to),
-  ]);
-  if (payErr) throw payErr;
-  if (pkgErr) throw pkgErr;
+  // T-20260810-foot-CONSULTANT-REVENUE-AXIS-RECONCILE (FIX-3 산식 SSOT 통합 + FIX-2A 상태필터):
+  //   구 인라인 3-step(결제행 페치 + assigned_staff 귀속 + net 집계)을 lib/staffRevenue SSOT 로 수렴.
+  //   3벌 복제(①mtmSales ③SalesDoctorTab ④여기) 제거 → 산식·상태필터·귀속축이 1곳에서만 정의된다.
+  //   · 로스터 = 'consultant-active'(재직 상담사 role='consultant' AND active≠false) — 랭킹 leaderboard 규약 불변.
+  //   · net·귀속(assigned_staff_id)·기간(accounting_date)·sim 제외 = SSOT 와 동일(회귀 0).
+  //   · FIX-2A: 단건 status 필터가 SSOT 에서 status NOT IN ('cancelled','deleted') 로 통일됨
+  //     (구 'deleted'만 제외 → 취소 결제도 제외). 김지윤 등 취소 결제 보유 실장만 값 변동, 그 외 0.
+  const { rows: attributed, staffMeta } = await fetchAttributedPayments(clinicId, from, to);
+  const buckets = aggregateStaffNet(attributed);
 
-  // 2. 시뮬레이션 고객 결제 제외(매출집계>담당실장별과 동일 방어필터). 워크인(customer_id NULL) 보존.
-  const simIds = await getSimulationCustomerIds(clinicId);
-  const singlePayments = excludeSimulationPaymentRows(
-    (payData ?? []) as { amount: number; payment_type: string | null; customer_id: string | null }[],
-    simIds,
-  );
-  const pkgPayments = excludeSimulationPaymentRows(
-    (pkgData ?? []) as { amount: number; payment_type: string | null; customer_id: string | null }[],
-    simIds,
-  );
-
-  // 3. 결제고객 → assigned_staff_id('2번차트 담당자'). customer_id NULL/미배정은 귀속 불가 → 랭킹 제외.
-  const custIds = [
-    ...new Set(
-      [
-        ...singlePayments.map((r) => r.customer_id),
-        ...pkgPayments.map((r) => r.customer_id),
-      ].filter(Boolean) as string[],
-    ),
-  ];
-  const custStaff = new Map<string, string>(); // customer_id → assigned_staff_id
-  for (let i = 0; i < custIds.length; i += 500) {
-    const chunk = custIds.slice(i, i + 500);
-    const { data: custs, error: custErr } = await supabase
-      .from('customers')
-      .select('id, assigned_staff_id')
-      .in('id', chunk);
-    if (custErr) throw custErr;
-    for (const c of (custs ?? []) as { id: string; assigned_staff_id: string | null }[]) {
-      if (c.assigned_staff_id) custStaff.set(c.id, c.assigned_staff_id);
-    }
-  }
-
-  // 4. 로스터 = 재직 상담사(role='consultant', active≠false). 랭킹은 '재직 상담 실장' leaderboard.
-  //    명시 active=false(퇴사)만 제외(active true/null=재직 유지, fetchConsultantPerf read-side 필터와 동일 규약).
-  const { data: staffRows, error: staffErr } = await supabase
-    .from('staff')
-    .select('id, name, role, active')
-    .eq('clinic_id', clinicId)
-    .eq('role', 'consultant');
-  if (staffErr) throw staffErr;
-  const rosterName = new Map<string, string>();
-  for (const s of (staffRows ?? []) as { id: string; name: string; active: boolean | null }[]) {
-    if (s.active === false) continue; // 명시 퇴사 제외
-    rosterName.set(s.id, s.name);
-  }
-
-  // 5. assigned_staff_id 로 net 귀속. 로스터(재직 상담실장)에 속한 staff 만 집계(비상담직/미배정 매출 제외).
-  const net = new Map<string, number>(); // staffId → net 매출
-  const custSet = new Map<string, Set<string>>(); // staffId → distinct 결제고객
-  const accrue = (customerId: string | null, amount: number) => {
-    if (!customerId) return; // 워크인(고객 미지정) → 귀속 불가, 랭킹 제외
-    const staffId = custStaff.get(customerId);
-    if (!staffId || !rosterName.has(staffId)) return; // 미배정 or 비상담실장 → 랭킹 제외
-    net.set(staffId, (net.get(staffId) ?? 0) + amount);
-    if (!custSet.has(staffId)) custSet.set(staffId, new Set());
-    custSet.get(staffId)!.add(customerId);
-  };
-  for (const p of singlePayments) {
-    accrue(p.customer_id, (p.payment_type === 'refund' ? -1 : 1) * (p.amount ?? 0));
-  }
-  for (const pp of pkgPayments) {
-    accrue(pp.customer_id, (pp.payment_type === 'refund' ? -1 : 1) * (pp.amount ?? 0));
-  }
-
-  // 6. ConsultantRow[] 로 shape (기존 랭킹 machinery 재사용). 매출귀속된 상담실장만 반환.
   const rows: ConsultantRow[] = [];
-  for (const [staffId, total] of net.entries()) {
-    const custCount = custSet.get(staffId)?.size ?? 0;
+  for (const [staffId, b] of buckets.entries()) {
+    const meta = staffMeta.get(staffId);
+    // 랭킹 로스터: 재직 상담실장만(미지정/워크인/비상담직/퇴사 제외).
+    if (!inRoster(staffId, meta, 'consultant-active')) continue;
+    const total = bucketNet(b);
+    const custCount = b.customers.size;
     rows.push({
       consultant_id: staffId,
-      name: rosterName.get(staffId) ?? '—',
+      name: meta?.name || '—',
       ticketing_count: 0,
       package_count: 0,
       avg_amount: custCount > 0 ? Math.round(total / custCount) : null,

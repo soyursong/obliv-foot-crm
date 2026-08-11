@@ -18,7 +18,7 @@ import { loginAndWaitForDashboard } from '../helpers';
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+const CLINIC_ID = process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8'; // FIXTURE_CLINIC_ID: DEVDB-ISOLATION-CUTOVER leg-A(OFF=prod 상수 불변)
 const COVERED_SERVICE_ID = 'b98f6831-12a3-459b-b199-f543dd15cba1'; // 진찰료(초진) hira_score 153.36
 const MARKER = 'RESETTLE-E2E';
 
