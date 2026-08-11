@@ -231,6 +231,12 @@ export default defineConfig({
         //   [de-list leg] 서류 발행 화면 제거(DOCLIST_ORDER_10/DOC_CATEGORY_CONSENT_KEYS 제거·FALLBACK active=false).
         //   auth/DB/server 불요·결정론. 실 UI(펜차트 A4 손서명 합성)+seed active=false apply = supervisor field-soak/DB-GATE.
         '**/T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-RELOCATE.spec.ts',
+        // T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD: 개인정보 수집·이용 동의서 펜차트 양식 목록 추가.
+        //   PenChartTab BUILTIN_PRIVACY_CONSENT(html_render) 배경 서식 = HTML 템플릿 재사용(getHtmlTemplate/
+        //   bindHtmlTemplate, 5개 동의항목 verbatim + 날짜/성명 자동 + 서명 빈칸) + 목록 membership 정적 소스 가드.
+        //   ADDITIVE only — 서류출력의 privacy_consent_form 유지(DOCLIST_ORDER_10/DOC_CATEGORY_CONSENT_KEYS/active 무접촉).
+        //   auth/DB/server 불요·결정론(db_change=false). 실 UI(펜차트 A4 손서명 합성) = supervisor field-soak.
+        '**/T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD.spec.ts',
         // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형(수정·저장·출력) 재작업.
         //   seed/overlay/eligibility/print-mask 순수함수(autoVisitLog) 단언 + CustomerChartPage/EditableAutoVisitLogBox
         //   정적 소스 가드(AC-1 별도탭 폐지·양식 내부 배치 / VG1 ledger write-back0 / VG3 rows-affected / VG4 RRN 미저장).

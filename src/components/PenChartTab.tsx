@@ -183,6 +183,20 @@ export const BUILTIN_FOREIGNER_CONSENT: Template = {
   form_key: 'foreigner_noncovered_consent',
 };
 
+// T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD:
+//   개인정보 수집·이용 동의서 — 서류 발행 화면(DocumentPrintPanel)에만 노출되던 privacy_consent_form 을
+//   펜차트 양식 선택 목록에도 노출(환불/비급여·외국인 동의서와 나란히). 구조 동형 선례 = BUILTIN_FOREIGNER_CONSENT.
+//   코드-드리븐 builtin — template_format='html_render'(PRIVACY_CONSENT_FORM_HTML 런타임 래스터화) →
+//   서식 노출에 DB seed 행 불요(db_change=false). template_path='' — 배경은 htmlRenderBgUrl(html2canvas)로 주입.
+//   ADDITIVE: 서류 발행 화면의 기존 privacy_consent_form 은 유지(제거 금지) — 펜차트 목록 membership 만 추가.
+export const BUILTIN_PRIVACY_CONSENT: Template = {
+  id: 'builtin-privacy-consent-form',
+  name_ko: '개인정보 수집·이용 동의서',
+  template_path: '',
+  template_format: 'html_render',
+  form_key: 'privacy_consent_form',
+};
+
 // T-20260522-foot-PENCHART-TOOLS-V2 AC-1 DPR 2.0:
 // CANVAS_W = 794 = A4 너비 at 96 DPI (210mm × 96/25.4 ≈ 793.7px)
 // DRAW_DPR = 2 강제 → draw canvas 물리 픽셀 = 1588×2246 (A4 192 DPI)
@@ -518,8 +532,10 @@ const isRefundConsentKey = (k: string) => k === 'refund_consent';
 const isPersonalChecklistKey = (k: string) => k.startsWith('personal_checklist_');
 
 /** T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: HTML 서식을 런타임 래스터화해 배경으로
- *  쓰는 양식(PNG 배경 대신 html2canvas data URL). 현재 대상: 외국인 비급여 진료 동의서. */
-const isHtmlRenderFormKey = (k: string) => k === 'foreigner_noncovered_consent';
+ *  쓰는 양식(PNG 배경 대신 html2canvas data URL).
+ *  대상: 외국인 비급여 진료 동의서 · 개인정보 수집·이용 동의서(T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD). */
+const isHtmlRenderFormKey = (k: string) =>
+  k === 'foreigner_noncovered_consent' || k === 'privacy_consent_form';
 
 /**
  * T-20260731-foot-PENCHART-PHOTO-ATTACH: 저장 파일명 prefix(양식 종류 판별).
@@ -532,7 +548,10 @@ const filePrefixForFormKey = (formKey?: string): string => {
   if (formKey && isRefundConsentKey(formKey)) return 'rc_';
   if (formKey && isPersonalChecklistKey(formKey)) return `pc_${formKey === 'personal_checklist_senior' ? 'sr_' : ''}`;
   // T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-REPLACE: 외국인 비급여 진료 동의서 저장 파일 prefix.
-  if (formKey && isHtmlRenderFormKey(formKey)) return 'fnc_';
+  if (formKey === 'foreigner_noncovered_consent') return 'fnc_';
+  // T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD: 개인정보 수집·이용 동의서 저장 파일 prefix
+  //   (외국인 동의서와 별 prefix — 저장 파일 종류 구분 유지).
+  if (formKey === 'privacy_consent_form') return 'pcf_';
   return '';
 };
 
@@ -1284,6 +1303,9 @@ export function PenChartTab({
         const bound = bindHtmlTemplate(tplHtml, {
           issue_date: new Date().toLocaleDateString('ko-KR'),
           patient_name: customerName ?? '',
+          // T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD: 개인정보 동의서 서식은 {{clinic_name}} 슬롯 보유
+          //   (외국인 서식엔 없어 무해). autoBindContext 폴백과 동일 값(foot 단일지점) 주입 → '기관' 셀 공란 방지.
+          clinic_name: '오블리브 풋센터 종로',
         });
         // 오프스크린 A4 컨테이너(논리 794×1123, 흰 배경) — form-wrap(190mm≈718px)이 margin auto 로 중앙정렬.
         host = document.createElement('div');
@@ -1305,7 +1327,7 @@ export function PenChartTab({
         const dataUrl = rendered.toDataURL('image/png');
         if (!cancelled) setHtmlRenderBgUrl(dataUrl);
       } catch (e) {
-        console.error('[PenChartTab] 외국인 비급여 동의서 HTML 래스터화 실패:', e);
+        console.error('[PenChartTab] HTML 서식 래스터화 실패:', fk, e);
         if (!cancelled) setHtmlRenderBgUrl(null);
       } finally {
         if (host && host.parentNode) host.parentNode.removeChild(host);
@@ -3760,6 +3782,28 @@ export function PenChartTab({
               <div>
                 <div className="font-semibold text-neutral-800 text-sm">외국인 비급여 진료 동의서</div>
                 <div className="text-xs text-neutral-600 mt-0.5">Agreement on Non-Covered Medical Treatment &amp; Fees (5조항 국·영문)</div>
+              </div>
+              <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
+                A4 손서명
+              </span>
+            </button>
+
+            {/* T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD:
+                개인정보 수집·이용 동의서 — 서류 발행 화면에만 있던 것을 펜차트 양식 탭에도 노출(외국인 동의서와 나란히).
+                코드-드리븐 builtin(BUILTIN_PRIVACY_CONSENT, template_format='html_render') → DB seed 불요.
+                선택 시 activeDrawTemplate=privacy_consent_form → HTML 서식(5개 동의항목, T-20260808 확정본 verbatim)을
+                html2canvas 로 A4 배경 래스터화(useEffect) 후 손서명 2-layer 합성. 날짜=오늘·성명=환자 자동.
+                ADDITIVE — 서류 발행 화면의 기존 개인정보동의서 항목은 유지(제거 아님). */}
+            <button
+              onClick={() => handleSelectTemplate(BUILTIN_PRIVACY_CONSENT)}
+              className="flex items-center gap-3 rounded-lg border-2 border-neutral-200 bg-neutral-50 p-4 text-left hover:border-neutral-400 hover:bg-neutral-100 transition"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-200">
+                <FileText className="h-5 w-5 text-neutral-700" />
+              </div>
+              <div>
+                <div className="font-semibold text-neutral-800 text-sm">개인정보 수집·이용 동의서</div>
+                <div className="text-xs text-neutral-600 mt-0.5">Consent to Collection &amp; Use of Personal Information (5개 동의항목)</div>
               </div>
               <span className="ml-auto rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-700">
                 A4 손서명
