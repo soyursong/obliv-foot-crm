@@ -51,6 +51,12 @@ export interface AttributedPayment {
   source: 'single' | 'package';
   /** 회계일(accounting_date, YYYY-MM-DD). 일자 grain 집계용. */
   accountingDate: string | null;
+  /**
+   * T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: 결제수단(payments/package_payments.method).
+   *   'card'|'cash'|'transfer'|'membership' 또는 null/미지정. 결제수단별 분해 축 전용 —
+   *   staffId 귀속·net 규칙엔 무관(ADDITIVE 노출). null/미지정은 소비처에서 '미분류/기타' 버킷으로.
+   */
+  method: string | null;
 }
 
 /** staff.id → 이름/직군/재직 메타. 로스터 정책 판정용. */
@@ -71,6 +77,8 @@ interface RawPayRow {
   payment_type: string | null;
   customer_id: string | null;
   accounting_date: string | null;
+  /** T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: 결제수단(card/cash/transfer/membership/null). */
+  method: string | null;
 }
 
 /**
@@ -92,7 +100,8 @@ export async function fetchAttributedPayments(
     await Promise.all([
       supabase
         .from('payments')
-        .select('amount, payment_type, customer_id, accounting_date')
+        // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: method 추가(ADDITIVE, 결제수단별 분해축용).
+        .select('amount, payment_type, customer_id, accounting_date, method')
         .eq('clinic_id', clinicId)
         // FIX-2A: 취소·삭제 결제 제외(foot_stats_revenue 와 동일 규칙). 구 .not(status,eq,deleted) 교체.
         .not('status', 'in', '(cancelled,deleted)')
@@ -100,7 +109,8 @@ export async function fetchAttributedPayments(
         .lte('accounting_date', to),
       supabase
         .from('package_payments')
-        .select('amount, payment_type, customer_id, accounting_date')
+        // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: method 추가(ADDITIVE, 결제수단별 분해축용).
+        .select('amount, payment_type, customer_id, accounting_date, method')
         .eq('clinic_id', clinicId)
         .gte('accounting_date', from)
         .lte('accounting_date', to),
@@ -159,6 +169,8 @@ export async function fetchAttributedPayments(
       isRefund: r.payment_type === 'refund',
       source,
       accountingDate: r.accounting_date,
+      // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: 결제수단 노출(집계·귀속 무관, 분해축 전용).
+      method: r.method ?? null,
     });
   };
   for (const r of single) push(r, 'single');
@@ -210,6 +222,92 @@ export function aggregateStaffNet(rows: AttributedPayment[]): Map<string, StaffN
     }
     // distinct 결제고객: customerId 있는 모든 귀속행(환불 포함) — 구 ④ custSet 규약 동일.
     if (r.customerId) b.customers.add(r.customerId);
+  }
+  return map;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN — 결제수단별 분해 축
+//   실장별/치료사별과 '동일 모집단(fetchAttributedPayments rows)'을 method 로만 재버킷팅한다.
+//   ⇒ Σ(결제수단별 net) === Σ(전 rows net) === 담당실장별 '총 매출'(SalesDoctorTab) 이 구조적으로 보장.
+//   신규 매출 산식 창작 0 — 분해 축(결제수단)만 다르다. null/미지정 method = '미분류/기타' 버킷(누락 0).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 결제수단 정본 키 4종 + 미분류. DB method(card/cash/transfer/membership) → 이 키로 정규화. */
+export type PayMethodKey = 'card' | 'cash' | 'transfer' | 'membership' | 'unknown';
+
+/** DB method 값 → 정본 키. 알 수 없거나 null → 'unknown'(미분류/기타 버킷). */
+export function normalizePayMethod(method: string | null | undefined): PayMethodKey {
+  switch (method) {
+    case 'card':
+    case 'cash':
+    case 'transfer':
+    case 'membership':
+      return method;
+    default:
+      return 'unknown';
+  }
+}
+
+/** 결제수단 정본 키 → 한국어 표기(현장). */
+export const PAY_METHOD_LABEL: Record<PayMethodKey, string> = {
+  card: '카드',
+  cash: '현금',
+  transfer: '이체',
+  membership: '선수금차감',
+  unknown: '미분류/기타',
+};
+
+/** 표시 순서(고정) — 카드·현금·이체·선수금차감·미분류/기타. */
+export const PAY_METHOD_ORDER: PayMethodKey[] = [
+  'card',
+  'cash',
+  'transfer',
+  'membership',
+  'unknown',
+];
+
+/** 결제수단 버킷 1개의 net 성분(표시 shape 파생용). */
+export interface PayMethodBucket {
+  methodKey: PayMethodKey;
+  /** 비환불 결제 SUM(gross). 단건+패키지 모두 포함. */
+  gross: number;
+  /** 환불 SUM(양수 magnitude). 단건+패키지 모두 포함. */
+  refund: number;
+  /** 결제 건수(환불행 제외). */
+  count: number;
+}
+
+/** net = gross − refund. 담당실장별 '총 매출'과 동일 net 정의(환불 1회 차감). */
+export function payMethodNet(b: PayMethodBucket): number {
+  return b.gross - b.refund;
+}
+
+/**
+ * 귀속행(AttributedPayment[]) → 결제수단 버킷별 net 성분 맵.
+ * ⚠ staffId·로스터 무관 — 전 rows 를 method(정규화 키)로만 그룹핑한다.
+ *   ∴ Σ(payMethodNet) === Σ(전 rows net) === 담당실장별 총매출(구조적 tie-out, D2).
+ */
+export function aggregateByPaymentMethod(
+  rows: AttributedPayment[],
+): Map<PayMethodKey, PayMethodBucket> {
+  const map = new Map<PayMethodKey, PayMethodBucket>();
+  const ensure = (key: PayMethodKey): PayMethodBucket => {
+    let b = map.get(key);
+    if (!b) {
+      b = { methodKey: key, gross: 0, refund: 0, count: 0 };
+      map.set(key, b);
+    }
+    return b;
+  };
+  for (const r of rows) {
+    const b = ensure(normalizePayMethod(r.method));
+    if (r.isRefund) {
+      b.refund += r.amount;
+    } else {
+      b.gross += r.amount;
+      b.count += 1;
+    }
   }
   return map;
 }
