@@ -7,7 +7,9 @@
  *   펜차트 양식 항목에 넣어달라고!!!!" → 서류출력 목록에만 있던 것을 펜차트 양식 목록에도 membership 추가.
  *
  * 구조 동형 선례(deployed): T-20260810-foot-FOREIGNER-NONCOVERED-CONSENT-PENCHART-RELOCATE.
- *   차이 = 본 건은 ADDITIVE only — 서류출력 목록의 기존 개인정보동의서는 유지(제거/ de-list 아님).
+ *   본 건 = RELOCATE 2-leg: (add) 펜차트 양식 목록 노출 + (hide) 서류출력(DocumentPrintPanel) 목록 제거.
+ *   ★hide leg = reversible(DOC_PANEL_HIDDEN_FORM_KEYS 화이트리스트 1행 추가) — form_templates 행·
+ *     DOCLIST_ORDER_10·active 무접촉(db_change=false, 하드삭제 아님, 1줄 revert).
  *
  * 구현(FOREIGNER 패턴 동형):
  *   PenChartTab BUILTIN_PRIVACY_CONSENT(template_format='html_render') — 선택 시 HTML 서식
@@ -18,7 +20,9 @@
  * AC2: 날짜=오늘, 성명=환자명 자동. 서명란 수기(빈칸).
  * AC3: 문안 = T-20260808 확정본 verbatim(5개 동의항목 전량 렌더, dev 재창작 0).
  * AC4: 서명표 배치(날짜/성명 · 기관/서명) 정합.
- * AC5: 기존 양식/서류출력 회귀 0 — 서류출력의 privacy_consent_form 유지(ADDITIVE), 대표 양식 HTML 무접촉.
+ * AC5(hide leg): 서류출력(DocumentPrintPanel)에서 privacy_consent_form 제거 — reversible
+ *   (DOC_PANEL_HIDDEN_FORM_KEYS 화이트리스트). form_templates 행·DOCLIST_ORDER_10·active 무접촉
+ *   (db_change=false, 하드삭제 아님). 나머지 서류출력 항목·대표 양식 HTML 회귀 0.
  *
  * NOTE: htmlFormTemplates / formTemplates 는 supabase 의존성 없어 unit(auth·server 불요)로 직접 import.
  *   펜차트 배경은 getHtmlTemplate('privacy_consent_form') 결과를 html2canvas 로 래스터화한 것이므로,
@@ -37,6 +41,7 @@ import {
   FALLBACK_TEMPLATES,
   DOCLIST_ORDER_10,
   DOC_CATEGORY_CONSENT_KEYS,
+  DOC_PANEL_HIDDEN_FORM_KEYS,
   groupDocList,
 } from '../../src/lib/formTemplates';
 
@@ -130,24 +135,45 @@ test.describe('T-20260811 PENCHART-PRIVACY-CONSENT-FORMLIST-ADD — 개인정보
     }
   });
 
-  // ── AC5: 기존 서류출력/양식 회귀 0 (ADDITIVE — de-list 아님) ─────────────────
-  test('AC5 — 서류출력의 개인정보동의서 유지(ADDITIVE) + 대표 양식 HTML 무접촉', () => {
-    // (a) 서류출력 화이트리스트/그룹 membership 유지(제거 금지).
-    expect(DOCLIST_ORDER_10).toContain(FORM_KEY);
-    expect(DOC_CATEGORY_CONSENT_KEYS).toContain(FORM_KEY);
-    // (b) FALLBACK 행 active=true 유지(서류출력 노출 보존).
+  // ── AC5(hide leg): 서류출력에서 제거 — reversible + db_change=false + 회귀 0 ────────
+  test('AC5 — 서류출력(DocumentPrintPanel)에서 개인정보동의서 제거(hide leg)', () => {
+    // (a) hide leg 존재: DOC_PANEL_HIDDEN_FORM_KEYS 화이트리스트에 등록.
+    expect(DOC_PANEL_HIDDEN_FORM_KEYS).toContain(FORM_KEY);
+    // (b) DocumentPrintPanel 실제 파이프라인 재현(visibleTemplates 필터 → groupDocList).
+    //     DocumentPrintPanel.tsx:1002 = templates.filter(t => !HIDDEN.includes(t.form_key)) → groupDocList.
+    const visible = FALLBACK_TEMPLATES.filter(
+      (t) => t.active && !DOC_PANEL_HIDDEN_FORM_KEYS.includes(t.form_key),
+    );
+    const shownKeys = groupDocList(visible).flatMap((g) => g.templates.map((t) => t.form_key));
+    expect(shownKeys).not.toContain(FORM_KEY); // 서류출력 목록에서 사라짐
+  });
+
+  test('AC5 — reversible + db_change=false 불변식(행·DOCLIST_ORDER_10·active 무접촉)', () => {
+    // (a) 하드삭제 아님: form_templates FALLBACK 행 보존 + active=true 유지(가역).
     const fb = FALLBACK_TEMPLATES.find((t) => t.form_key === FORM_KEY);
     expect(fb).toBeTruthy();
     expect(fb!.active).toBe(true);
-    // (c) groupDocList 결과에 여전히 노출(서류출력 목록 회귀 0).
-    const groups = groupDocList(FALLBACK_TEMPLATES.filter((t) => t.active));
-    const allKeys = groups.flatMap((g) => g.templates.map((t) => t.form_key));
-    expect(allKeys).toContain(FORM_KEY);
-    // (d) 대표 양식 HTML 무접촉 + 자매 외국인 동의서 유지.
+    // (b) DOCLIST_ORDER_10 / 카테고리 SSOT 무접촉(FE 표시필터만으로 hide) → 1줄 revert 가능.
+    expect(DOCLIST_ORDER_10).toContain(FORM_KEY);
+    expect(DOC_CATEGORY_CONSENT_KEYS).toContain(FORM_KEY);
+    // (c) 대표 양식 HTML 무접촉 + 자매 외국인 동의서 유지.
     for (const k of ['diagnosis', 'diag_opinion', 'bill_detail', 'foreigner_noncovered_consent', FORM_KEY]) {
       expect(isHtmlTemplate(k)).toBe(true);
       expect(getHtmlTemplate(k)).toBeTruthy();
     }
     expect(FORM_META[FORM_KEY]).toBeTruthy();
+  });
+
+  test('AC5 — 나머지 서류출력 항목 회귀 0(privacy 만 제거)', () => {
+    const visible = FALLBACK_TEMPLATES.filter(
+      (t) => t.active && !DOC_PANEL_HIDDEN_FORM_KEYS.includes(t.form_key),
+    );
+    const shownKeys = groupDocList(visible).flatMap((g) => g.templates.map((t) => t.form_key));
+    // DOCLIST_ORDER_10 중 hidden 이 아닌 나머지는 전부 계속 노출.
+    for (const k of DOCLIST_ORDER_10) {
+      if (k === FORM_KEY || DOC_PANEL_HIDDEN_FORM_KEYS.includes(k)) continue;
+      const present = FALLBACK_TEMPLATES.some((t) => t.form_key === k && t.active);
+      if (present) expect(shownKeys).toContain(k);
+    }
   });
 });

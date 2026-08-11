@@ -1170,6 +1170,15 @@ export const DOC_PANEL_HIDDEN_FORM_KEYS: ReadonlyArray<string> = [
   'health_questionnaire_senior',
   'refund_consent',
   'ins_claim_form',
+  // T-20260811-foot-PENCHART-PRIVACY-CONSENT-FORMLIST-ADD (RELOCATE hide leg):
+  //   개인정보 수집·이용 동의서(privacy_consent_form)는 T-…-FORMLIST-ADD add leg 로 펜차트 양식
+  //   선택 목록(PenChartTab)에 노출 완료 → 서류출력(DocumentPrintPanel) 목록에서는 숨긴다.
+  //   김주연 총괄('서류 출력 항목에 들어가 있잖아! 펜차트 양식 항목에 넣어달라고!!!!') relocate 확정.
+  //   ★reversible: 본 화이트리스트에서 이 한 줄 제거 = 서류출력 재노출(1줄 revert). form_templates
+  //     행·DOCLIST_ORDER_10·active 무접촉 → db_change=false, 하드삭제 아님. 구조 동형=FOREIGNER-RELOCATE.
+  //   scope=DocumentPrintPanel 표시 필터 1행. (결제미니창 PaymentMiniWindow 는 이 필터 미적용 →
+  //     현장확인 시 결제미니창에서도 숨길지 responder 회수 대상.)
+  'privacy_consent_form',
 ];
 
 // ─── 서류 출력 목록 확정 10종 SSOT (T-20260620-foot-DOCLIST-ORDER-10) ───
