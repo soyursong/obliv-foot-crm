@@ -39,6 +39,7 @@ import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
 import { formatAmount, formatPhone, formatDateTimeDots, formatDateTimeSeconds, todaySeoulStr, todaySeoulISODate, seoulISODate, chartNoBadge } from '@/lib/format';
+import { normalizeToE164 } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 // T-20260522-foot-CHECKIN-CONSENT-REMOVE: PreChecklist/ChecklistForm/ConsentForm 제거 (PenChart 이관 완료)
 import { InsuranceDocPanel } from '@/components/InsuranceDocPanel';
@@ -592,6 +593,81 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   /** 서류 발행 섹션 스크롤 타깃 (데스크 메뉴 → 보험청구 서류 발급 버튼) */
   const docPrintRef = useRef<HTMLDivElement>(null);
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: 자동 차트오픈 오연결 교차검증 게이트
+  //   (모티켓 T-20260617-foot-CHECKIN-CHART-LINK-3KEY AC-3 의 표시 시점 잔여 구멍)
+  //
+  // 문제: 아래 auto-open useEffect 는 checkIn.customer_id 로 2번차트를 '무조건' 열어
+  //   Dashboard.openChartFor 의 verifyChartLinkOrConfirm 게이트를 우회했다. 체크인 카드에서
+  //   confirm 을 취소해도 디테일시트 경로로 타 환자 차트가 열릴 수 있었다(6/17 김사비→문자테스트).
+  //
+  // CHART_UNIFORMITY_LOCK 양립(옵션 A, planner 권고): 본 게이트는 '정상 동작에서 고객별로
+  //   열리고/안 열리는 UX 분기'가 아니라, '데이터 무결성 오류 상태(성함 불일치)에서만' 차단하는
+  //   균일한 에러 가드다. 모든 고객에 동일 규칙(일치=무조건오픈 / 성함 불일치=차단+확인) → LOCK 이
+  //   금지한 '고객별 불일치'가 아니다. 정상 매칭은 종전대로 무조건 오픈(회귀0).
+  //
+  // ⚠️ 동기화: 이 로직은 Dashboard.tsx verifyChartLinkOrConfirm / phoneSame 과 의미가 동일해야 한다
+  //   (caller 드리프트 = 6차 재발 근원). 한쪽 수정 시 양쪽 동시 갱신.
+  const phoneSame = useCallback((a?: string | null, b?: string | null): boolean | null => {
+    const a164 = normalizeToE164(a ?? null);
+    const b164 = normalizeToE164(b ?? null);
+    if (a164 && b164) return a164 === b164;
+    const ad = (a ?? '').replace(/\D/g, '');
+    const bd = (b ?? '').replace(/\D/g, '');
+    if (ad.length >= 8 && bd.length >= 8) return ad.slice(-8) === bd.slice(-8);
+    return null; // 한쪽이라도 유효 번호 아님 → 비교 불가(차단 근거로 쓰지 않음)
+  }, []);
+
+  // 차트 오픈 직전 교차검증 — 반환 true=오픈 진행 / false=오픈 차단.
+  //   조회 실패 시 비차단(가용성 우선 — read-only 차트 오픈 불변식과 정합).
+  const verifyChartOpenOrConfirm = useCallback(async (
+    customerId: string,
+    expectedName?: string | null,
+    expectedPhone?: string | null,
+  ): Promise<boolean> => {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('name, phone, chart_number')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (error || !data) return true; // 조회 실패 → 비차단(오픈 허용)
+    const chartName = (data.name ?? '').trim();
+    const shownName = (expectedName ?? '').trim();
+    const chartNo = (data.chart_number ?? '').trim(); // 1급 권위 키(UNIQUE)
+    const chartLabel = chartNo ? `[${chartNo}] ` : '';
+    const nameMismatch = !!chartName && !!shownName && chartName !== shownName;
+    const phoneCmp = phoneSame(expectedPhone, data.phone);
+    if (nameMismatch) {
+      // 성함 불일치 = 타 환자 차트 추정 → 차단형 확인 프롬프트 (차트번호 1급 권위 키 명시)
+      return window.confirm(
+        `⚠️ 고객 연결 불일치 — 다른 환자의 차트일 수 있습니다.\n\n`
+        + `· 카드 표기: ${shownName}${expectedPhone ? ` / ${expectedPhone}` : ''}\n`
+        + `· 연결된 차트: ${chartLabel}${chartName}${data.phone ? ` / ${data.phone}` : ''}\n\n`
+        + `그래도 이 차트를 여시겠습니까?\n(취소 시 열지 않습니다 — 고객관리에서 차트번호로 연결을 재확인하세요)`,
+      );
+    }
+    if (phoneCmp === false) {
+      // 성함 일치 + 연락처 상이(번호 변경 가능) → 비차단 경고 (연결된 차트번호 명시)
+      toast.warning(`연락처가 차트와 다릅니다 (카드 ${expectedPhone ?? '-'} / 차트 ${chartLabel}${data.phone ?? '-'}). 동일 고객인지 확인하세요.`);
+    }
+    return true;
+  }, [phoneSame]);
+
+  // 자동 차트오픈 race-guard: checkIn 이 빠르게 바뀌면(카드 연속 클릭) 앞선 비동기 검증이
+  //   늦게 resolve 되어 stale 차트를 열 수 있다 → effect 실행마다 토큰을 올리고 최신 토큰만 오픈.
+  const autoOpenTokenRef = useRef(0);
+  const guardedAutoOpenChart = useCallback(async (
+    customerId: string,
+    expectedName?: string | null,
+    expectedPhone?: string | null,
+  ) => {
+    const token = ++autoOpenTokenRef.current;
+    const ok = await verifyChartOpenOrConfirm(customerId, expectedName, expectedPhone);
+    if (token !== autoOpenTokenRef.current) return; // 그 사이 다른 체크인으로 전환 → stale 오픈 차단
+    if (!ok) return; // 오연결 추정 → staff 취소 → 타 차트 오픈 차단
+    openChart(customerId);
+  }, [verifyChartOpenOrConfirm, openChart]);
+
   // 체크인 변경 시 시술 항목 + 진료종류 초기화
   // T-20260515-foot-CHART2-REOPEN 5차 fix (atomic): data-reset + auto-open 단일 effect로 병합.
   // 이전 4차 fix(068239c): 두 개의 별도 effect로 분리 → React 18에서 effect 간 배칭 순서가
@@ -617,8 +693,10 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     // T-20260516-foot-CHART-OPEN-UNIFY AC-5: 칸반 슬롯 간 동일 열림 방식 통일
     // 기존: visit_type === 'new' 조건 → 초진만 2번차트 자동 오픈 (상담대기/치료대기/진료대기 불일치)
     // 변경: customer_id 있으면 visit_type 무관 2번차트 자동 오픈 (김사비 방식 = 전체 통일 기준)
+    // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: 무조건 openChart → guardedAutoOpenChart 로 교체.
+    //   정상 매칭은 종전대로 무조건 오픈(LOCK 보존), 성함 불일치일 때만 차단+확인(균일 에러 가드).
     if (checkIn?.customer_id) {
-      openChart(checkIn.customer_id); // 모든 슬롯 2번차트 자동 오픈
+      void guardedAutoOpenChart(checkIn.customer_id, checkIn.customer_name, checkIn.customer_phone);
     } else {
       closeChart(); // 환자 전환 시 stale 차트 닫기
     }
@@ -639,9 +717,12 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   // customer_id=null 케이스(초진/워크인)에서 phone 해석 완료 시점에 2번차트 열기
   // → 모든 고객 클릭 시 customer 식별만 되면 2번차트가 동일하게 열림 (김사비 기준 통일)
   // CHART_UNIFORMITY_LOCK: 이 동작을 조건부로 만들면 고객별 불일치 재발. 제거·분기 금지.
+  // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: phone 해석 고객도 동일 교차검증 게이트 경유.
+  //   resolvedCustomerId 는 phone 매칭(last-8 ilike)으로 찾은 고객 → last-8 충돌로 타 환자일 수
+  //   있으므로 성함 불일치 시 차단(균일 에러 가드). 정상 매칭은 무조건 오픈(LOCK 보존).
   useEffect(() => {
     if (resolvedCustomerId && !checkIn?.customer_id) {
-      openChart(resolvedCustomerId);
+      void guardedAutoOpenChart(resolvedCustomerId, checkIn?.customer_name, checkIn?.customer_phone);
     }
   }, [resolvedCustomerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1155,7 +1236,9 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
       return;
     }
     // T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용
-    openChart(data.id);
+    // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: phone 기반 조회도 성함 교차검증 경유
+    //   (last-8 충돌로 타 환자일 수 있음 — 성함 불일치 시 차단+확인).
+    void guardedAutoOpenChart(data.id, checkIn.customer_name, checkIn.customer_phone);
   };
 
   // T-20260529-foot-CHART-OPEN-SINGLE: 고객 연결 UI 핸들러 ─────────────────────────
@@ -1777,12 +1860,14 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
                 className="flex-1 gap-2 border-teal-400 text-teal-700 hover:bg-teal-50 text-sm h-11"
                 onClick={() => {
                   // T-20260516-foot-CHART2-STATE-UNIFY: ChartContext openChart 사용
+                  // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: 수동 오픈도 동일 교차검증 게이트 경유
+                  //   (오연결 성함 불일치 시 차단+확인 — auto/manual 균일 규칙).
                   if (checkIn.customer_id) {
                     // 1순위: customer_id FK 직접 참조 (가장 확실)
-                    openChart(checkIn.customer_id);
+                    void guardedAutoOpenChart(checkIn.customer_id, checkIn.customer_name, checkIn.customer_phone);
                   } else if (resolvedCustomerId) {
                     // 2순위: chart_number + phone 일치로 조회된 고객 ID (환자명 불일치 허용)
-                    openChart(resolvedCustomerId);
+                    void guardedAutoOpenChart(resolvedCustomerId, checkIn.customer_name, checkIn.customer_phone);
                   } else {
                     // 3순위: phone 기반 실시간 조회 (로드 타임 조회 실패 시 재시도)
                     openChartFallback();
