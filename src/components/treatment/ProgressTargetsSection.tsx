@@ -19,7 +19,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { hasOpsAuthority } from '@/lib/permissions';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
-import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download } from 'lucide-react';
+import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { parseFootSites, formatFootSites } from '@/components/FootSiteSelector';
@@ -31,6 +31,15 @@ import {
   logProgressCsvExport,
   type ProgressCsvRow,
 } from '@/lib/progressTreatmentCsv';
+// T-20260811-foot-SONGDO-FORM-DOWNLOAD: 경과분석 대상자 '날짜별 치료이력 txt 다운로드'(예약/접수메모 그대로 출력·소스 A).
+//   per-row '치료이력 다운로드' 버튼 → 해당 환자의 예약(방문)별 메모/담당자/룸을 txt로 반출. admin/manager 게이트(CSV와 동일).
+import {
+  buildProgressTxt,
+  progressTxtFilename,
+  downloadProgressTxt,
+  logProgressTxtExport,
+  type ProgressTxtVisit,
+} from '@/lib/progressTreatmentTxt';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 경과분석 리스트에 발행 관련 버튼 2종 UI 배치.
 //   ① 개별 '발행하기'(row별) ② 상단 '일괄처리' + row 체크박스(다건 선택·전체선택·선택개수).
@@ -151,6 +160,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   //   경과분석 탭 열람권과 동일 계층. 치료사/일반직원에게는 CSV 버튼 미노출.
   const canExportCsv = hasOpsAuthority(profile);
   const [csvBusy, setCsvBusy] = useState(false);
+  // T-20260811-foot-SONGDO-FORM-DOWNLOAD: per-row txt 다운로드 진행 상태(현재 처리 중인 reservationId).
+  const [txtBusyId, setTxtBusyId] = useState<string | null>(null);
   // T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드 다이얼로그 open 상태.
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
@@ -327,6 +338,165 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
       toast.error(`CSV 내보내기 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
     } finally {
       setCsvBusy(false);
+    }
+  };
+
+  // T-20260811-foot-SONGDO-FORM-DOWNLOAD: 단일 환자의 날짜별 치료이력(예약/접수메모 그대로) → txt 다운로드.
+  //   소스 (A) 확정 — 예약(reservations)·접수(check_ins) 메모 텍스트를 파싱없이 원문 나열. read-only 조회만(DDL0).
+  const handleTxtExport = async (row: ProgressTargetRow) => {
+    if (!canExportCsv) return; // 방어(버튼 미노출이지만 이중 가드).
+    if (!row.customerId) {
+      toast.warning('고객 정보가 없어 치료이력을 내려받을 수 없습니다.');
+      return;
+    }
+    if (!clinic?.id) return;
+    setTxtBusyId(row.reservationId);
+    try {
+      // 1) 고객 메타(차트번호·이름) — 헤더/파일명용. 실패 시 리스트 스냅샷 폴백.
+      let chartNumber = row.chartNumber;
+      let name = row.customerName;
+      try {
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('id, chart_number, name')
+          .eq('id', row.customerId)
+          .maybeSingle();
+        if (cust) {
+          chartNumber = (cust as { chart_number: string | null }).chart_number ?? chartNumber;
+          name = (cust as { name: string | null }).name ?? name;
+        }
+      } catch {
+        // 메타 보강 실패 — 리스트 스냅샷 유지.
+      }
+
+      // 2) 예약(방문) 이력 — 취소 제외, 날짜/시간 오름차순. ADDITIVE 메모 컬럼 미적용 prod 폴백.
+      const FULL_SEL =
+        'id, reservation_date, reservation_time, registrar_name, memo, booking_memo, brief_note';
+      const CORE_SEL = 'id, reservation_date, reservation_time, registrar_name';
+      const runResvQuery = (sel: string) =>
+        supabase
+          .from('reservations')
+          .select(sel)
+          .eq('clinic_id', clinic.id)
+          .eq('customer_id', row.customerId!)
+          .neq('status', 'cancelled')
+          .order('reservation_date', { ascending: true })
+          .order('reservation_time', { ascending: true });
+      let resvRows: Array<Record<string, unknown>> = [];
+      {
+        const { data, error } = await runResvQuery(FULL_SEL);
+        if (error) {
+          if (/booking_memo|brief_note|memo|registrar_name|42703|PGRST204/.test(error.message ?? '')) {
+            const retry = await runResvQuery(CORE_SEL);
+            if (retry.error) throw retry.error;
+            resvRows = (retry.data ?? []) as unknown as Array<Record<string, unknown>>;
+          } else {
+            throw error;
+          }
+        } else {
+          resvRows = (data ?? []) as unknown as Array<Record<string, unknown>>;
+        }
+      }
+
+      // 3) 접수(check_ins) — 룸 + 접수/시술 메모. reservation_id FK 연결분만(read-only).
+      const resvIds = resvRows.map((r) => String(r['id'] ?? '')).filter(Boolean);
+      const ciByResv = new Map<string, Record<string, unknown>>();
+      if (resvIds.length > 0) {
+        try {
+          const { data: ciData } = await supabase
+            .from('check_ins')
+            .select(
+              'reservation_id, treatment_room, laser_room, consultation_room, examination_room, ' +
+                'treatment_memo, notes, treatment_kind, treatment_contents',
+            )
+            .in('reservation_id', resvIds);
+          for (const c of (ciData ?? []) as unknown as Array<Record<string, unknown>>) {
+            const rid = c['reservation_id'] ? String(c['reservation_id']) : '';
+            if (rid) ciByResv.set(rid, c);
+          }
+        } catch {
+          // 접수 보강 실패 — 예약 메모만으로 계속.
+        }
+      }
+
+      // 4) 방문 블록 조립 — 예약/접수 메모를 라벨과 함께 '그대로' 나열.
+      const textOf = (v: unknown): string => (v == null ? '' : String(v).trim());
+      const pushMemo = (lines: string[], label: string, value: unknown) => {
+        const t = textOf(value);
+        if (t) lines.push(`${label}: ${t}`);
+      };
+      const visits: ProgressTxtVisit[] = resvRows.map((r) => {
+        const rid = String(r['id'] ?? '');
+        const ci = ciByResv.get(rid);
+        const room =
+          textOf(ci?.['treatment_room']) ||
+          textOf(ci?.['laser_room']) ||
+          textOf(ci?.['consultation_room']) ||
+          textOf(ci?.['examination_room']) ||
+          null;
+
+        const memoLines: string[] = [];
+        // 예약 메모 3종(그대로).
+        pushMemo(memoLines, '예약메모', r['booking_memo']);
+        pushMemo(memoLines, '메모', r['memo']);
+        pushMemo(memoLines, '간략메모', r['brief_note']);
+        // 접수/시술 메모.
+        if (ci) {
+          const tm = ci['treatment_memo'];
+          let tmDetails: unknown = null;
+          try {
+            const parsed = typeof tm === 'string' ? JSON.parse(tm) : tm;
+            tmDetails = (parsed as { details?: unknown } | null)?.details ?? null;
+          } catch {
+            tmDetails = null;
+          }
+          pushMemo(memoLines, '접수메모', tmDetails);
+          const notes = ci['notes'];
+          let notesText: unknown = null;
+          try {
+            const parsed = typeof notes === 'string' ? JSON.parse(notes) : notes;
+            notesText = (parsed as { text?: unknown } | null)?.text ?? null;
+          } catch {
+            notesText = null;
+          }
+          pushMemo(memoLines, '접수노트', notesText);
+          pushMemo(memoLines, '진료종류', ci['treatment_kind']);
+          const contents = ci['treatment_contents'];
+          if (Array.isArray(contents) && contents.length > 0) {
+            pushMemo(memoLines, '진료내용', contents.map((c) => textOf(c)).filter(Boolean).join(', '));
+          }
+        }
+
+        return {
+          date: String(r['reservation_date'] ?? ''),
+          time: String(r['reservation_time'] ?? '').slice(0, 5),
+          registrarName: r['registrar_name'] ? String(r['registrar_name']) : null,
+          room,
+          memoLines,
+        };
+      });
+
+      if (visits.length === 0) {
+        toast.warning('해당 환자의 치료이력(예약)이 없습니다.');
+        return;
+      }
+
+      // PHI 반출 감사로그(필수 AC) — 다운로드 직전 기록.
+      logProgressTxtExport({
+        actor: profile?.email ?? profile?.id ?? null,
+        actorRole: profile?.role ?? null,
+        clinicId: clinic.id,
+        chartNumber: chartNumber ?? null,
+        visitCount: visits.length,
+      });
+
+      const content = buildProgressTxt({ chartNumber: chartNumber ?? null, name: name ?? null }, visits);
+      downloadProgressTxt(content, progressTxtFilename(chartNumber, name));
+      toast.confirm(`'${name}' 치료이력 ${visits.length}건을 txt로 내려받았습니다.`);
+    } catch (e) {
+      toast.error(`치료이력 다운로드 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setTxtBusyId(null);
     }
   };
 
@@ -526,16 +696,37 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     </td>
                     {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행하기 버튼(placeholder). */}
                     <td className="px-2 py-1 whitespace-nowrap text-right">
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="outline"
-                        onClick={() => handleIssueOne(r)}
-                        data-testid="progress-issue-btn"
-                      >
-                        <FileUp className="h-3 w-3" />
-                        발행하기
-                      </Button>
+                      <div className="inline-flex items-center gap-1.5">
+                        {/* T-20260811-foot-SONGDO-FORM-DOWNLOAD: 개별 '치료이력 다운로드'(txt) — admin/manager(운영권한)만 노출(PHI 가드). */}
+                        {canExportCsv && (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            onClick={() => handleTxtExport(r)}
+                            disabled={txtBusyId === r.reservationId || !r.customerId}
+                            title="날짜별 치료이력(예약/접수메모)을 txt 파일로 내려받기"
+                            data-testid="progress-txt-download-btn"
+                          >
+                            {txtBusyId === r.reservationId ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <FileText className="h-3 w-3" />
+                            )}
+                            치료이력
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          onClick={() => handleIssueOne(r)}
+                          data-testid="progress-issue-btn"
+                        >
+                          <FileUp className="h-3 w-3" />
+                          발행하기
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
