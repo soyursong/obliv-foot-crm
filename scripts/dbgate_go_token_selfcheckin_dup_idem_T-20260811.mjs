@@ -1,0 +1,119 @@
+/**
+ * DB-GATE GO-token 발행 (supervisor 전용) — foot SELFCHECKIN dup idempotency forward-seal (Leg A)
+ * ticket: T-20260811-foot-SELFCHECKIN-DUP-IDEMPOTENCY-BACKFILL
+ * lane  : SQL-file 마이그 (CREATE OR REPLACE FUNCTION 2종 = catalog-mutating, body-only ADDITIVE)
+ *         content-binding = migration up.sql 전문 sha256.
+ * 서명   : ed25519 private (~/.config/medibuilder-secrets/supervisor-dbgate-go-ed25519.pem)
+ * 검증쌍 : db-gate/keys/supervisor_dbgate_go_ed25519.pub.pem (key_id supv-dbgate-2026a)
+ * ⚠ 이 스크립트는 GO-token(.json+.sig) 파일만 쓴다(prod 무접촉). apply 는 GO-token 검증 후 dev-foot.
+ */
+import { readFileSync, writeFileSync } from 'node:fs';
+import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+
+const TICKET = 'T-20260811-foot-SELFCHECKIN-DUP-IDEMPOTENCY-BACKFILL';
+const SQL_REL = 'supabase/migrations/20260811120000_foot_selfcheckin_dup_idempotency_forward_seal.sql';
+const EXPECTED_SHA = '5920bacd6641d6aec0436ed2ef715a15d522720522a1a144a57d02428868f39c';
+
+const sql = readFileSync(new URL('../' + SQL_REL, import.meta.url), 'utf8');
+const sha = crypto.createHash('sha256').update(sql, 'utf8').digest('hex');
+if (sha !== EXPECTED_SHA) {
+  console.error(`❌ content-binding 불일치 — 실측 sha256=${sha} ≠ 사전합의 ${EXPECTED_SHA}. 서명 중단.`);
+  process.exit(1);
+}
+
+const now = new Date();
+const exp = new Date(now.getTime() + 120 * 60 * 1000); // TTL 120m
+
+const token = {
+  ticket_id: TICKET,
+  gate: 'DB-GATE-GO',
+  issued_by: 'supervisor',
+  issued_at: now.toISOString(),
+  expires_at: exp.toISOString(),
+  prod_ref: 'rxlomoozakkjesdqjtvd',
+  migration_sha256: sha, // = up.sql 전문 sha256 (content-binding)
+  migration_version: '20260811120000',
+  migration_name: 'foot_selfcheckin_dup_idempotency_forward_seal',
+  migration_file: SQL_REL,
+  migration_files: [
+    SQL_REL,
+    'supabase/migrations/20260811120000_foot_selfcheckin_dup_idempotency_forward_seal.rollback.sql',
+  ],
+  rollback_sha256: 'c0b0bdd63e32646ee0d6f5106bdb58464ac17e95e03649b4e35da6f62dc3d9e5',
+  lane: 'migration-sql-file',
+  evidence_commit: '534f7cb7',
+  change_class:
+    'ADDITIVE body-only (catalog-mutating, 스키마-shape DDL 0) — CREATE OR REPLACE FUNCTION 2종: ' +
+    'self_checkin_with_reservation_link + fn_selfcheckin_dup_guard. 델타 = §2.5/pre-check 룩업 술어 ' +
+    '2줄(각 함수) — [RC seal] KST 영업일 = 서버 now-KST 고정((now() AT TIME ZONE Asia/Seoul)::date, ' +
+    'client p_today 날짜프레임 버그 면역) + [H-A5] status <> cancelled → NOT IN (cancelled, done) ' +
+    '(정당 2차 실방문 over-dedup 방지). 신규 컬럼/타입/enum/테이블/index 0 · 데이터 mutation 0 · ' +
+    'partial UNIQUE index 미도입(§2-10). reversible(rollback = 술어-前 prod 정본 복원).',
+  key_id: 'supv-dbgate-2026a',
+  nonce: crypto.randomBytes(8).toString('hex'),
+  da_consult_reply:
+    'DA cross_crm_data_contract §2-10 write-time dedup canonical (foot leg) — CONSULT-REPLY ' +
+    'MSG-20260811-122921-xaow (DA-20260811-foot-SELFCHECKIN-DUP-IDEMPOTENCY-BACKFILL) = 조건부 GO(2-leg). ' +
+    'Leg A = ADDITIVE 멱등 가드(partial UNIQUE 미채택 · CI-A linked 매칭 필수 · SECDEF byte-identical 보존). ' +
+    '§3.1 CEO 파괴게이트 면제 YES(파괴0 · RLS 무접촉 · exposure-neutral) · 단 catalog-mutating → ' +
+    'GO-token 선행 REQUIRED(ADDITIVE/DDL-0 ≠ 면제). Leg B(orphan backfill) = PHASE-2 별도 GO-token.',
+  ceo_gate:
+    'N/A — §3.1 CEO 파괴게이트 면제(ADDITIVE body-only: 술어 하드닝 · 신규 컬럼/타입/enum/테이블/index 0 · ' +
+    '데이터 mutation 0 · cross-product 계약 변경 0 · 완전가역). ⚠ CREATE OR REPLACE FUNCTION = ' +
+    'catalog-mutating → DDL-0 carve 아님 → 본 GO-token 물리 선행이 apply 전제(apply_before_go 금지 · C20).',
+  precheck:
+    'MIG-GATE PASS(2026-08-11, supervisor). 독립 prod census(Management API READ-ONLY, WRITE/DDL 0):\n' +
+    'C10 pg_proc PREFLIGHT — 두 함수 live prosrc == 선언 canonical(self_checkin ← 20260719120000 · ' +
+    'dup_guard ← 20260602200000): prod-vs-canonical CODE-IDENTICAL(self_checkin 은 inline-comment 차 2건뿐 · ' +
+    'dup_guard 완전 byte-identical) → OOB drift 0(stomp 없음). live src_md5 = ' +
+    'self_checkin 740a27d5314fc95da57cc0ab65ea6442 · dup_guard 96b969b41fabf9697a322ca6c091f774.\n' +
+    'C23 function-diff — prod-vs-forward 델타 = 정확히 의도 2줄/함수(§2.5·pre-check 술어: ' +
+    'status<>cancelled→NOT IN(cancelled,done) + =v_today/p_today→=(now() AT TIME ZONE Asia/Seoul)::date), ' +
+    '그 외 코드 변경 0. SECDEF assert: prosecdef=true · proconfig search_path=public,pg_temp · owner=postgres · ' +
+    'proacl anon=X/authenticated=X/service_role=X 전건 forward 재선언과 일치(byte-preserve, H-A3/§15-5-10 무붕괴).\n' +
+    'C11 prod-realness — 두 함수 prod 실재 · check_ins/reservations/customers/status_transitions 실재 · ' +
+    'catalog-mutating function-only(CREATE TABLE/INDEX/ALTER/DROP/ADD COLUMN/TYPE 0 = schema-shape DDL 0).\n' +
+    'No-Persistence dry-run(Migration Dry-Run No-Persistence Protocol) — up.sql 의 trailing COMMIT→ROLLBACK ' +
+    'strip 후 단일 txn 실행 = 오류 0(DDL clean apply) · post-probe src_md5 2/2 before-image 동일 = 무영속(0 persistence).\n' +
+    'deploy-precheck matrix: C0 fresh(no prior NO-GO)·C18/C18-2 DA HOLD·additive-binding CLEAR(signals+MQ 재확인: ' +
+    'CONSULT-REPLY=조건부 GO, active HOLD 0)·C21 RETRACT CLEAR(frontmatter fresh reread: status=approved· ' +
+    'block_reason 부재·deploy_hold 부재·applied_at 공백)·C24 commit binding(branch HEAD == 534f7cb7 = dev 명시 commit). ' +
+    'C1(env)/C5(build)/C13/C25/C26/C27/C28/C29/C30/C31/C32/C33 N/A(db_only migration·no bundle/apk/onconflict/EF/' +
+    'staff-identity/codeploy/turnstile). C12 ref-col N/A(신규 컬럼 0). C19 계약자산 RPC body-drift: 본 2 함수는 ' +
+    '§4-1c 등록 계약자산 아님(§2-10 write-time dedup canonical 준수 — body-invariant 토큰 CI-A 매칭·REUSE·SECDEF 보존).\n' +
+    'apply=dev-foot 책임(C20 apply_before_go 준수: apply_ts>=issued_at & <=expires_at · go_token_path/go_issued_at/' +
+    'apply_ts evidence 3필드 기록 · apply_claim_guard 경유). apply-후 POSTCHECK(supervisor 사후검증): 두 함수 ' +
+    'live prosrc 델타 착지(= (now() AT TIME ZONE Asia/Seoul)::date + NOT IN(cancelled,done)) · SECDEF/search_path/' +
+    'owner/GRANT 존치 · 소스닫힘 센서(신규 dup-orphan 지문 0 수렴)로 Leg B 착수 gate. ' +
+    'Leg B(orphan backfill) = seal 後 별도 freeze+dry-run exact-count+2차 GO-token(본 토큰 범위 밖).',
+};
+
+const jsonPath = new URL(`../db-gate/${TICKET}_GO.token.json`, import.meta.url);
+writeFileSync(jsonPath, JSON.stringify(token, null, 1) + '\n');
+
+const priv = crypto.createPrivateKey(
+  readFileSync(path.join(os.homedir(), '.config', 'medibuilder-secrets', 'supervisor-dbgate-go-ed25519.pem')),
+);
+const sig = crypto.sign(null, readFileSync(jsonPath), priv);
+writeFileSync(new URL(`../db-gate/${TICKET}_GO.token.sig`, import.meta.url), sig.toString('base64'));
+
+const pub = crypto.createPublicKey(
+  readFileSync(new URL('../db-gate/keys/supervisor_dbgate_go_ed25519.pub.pem', import.meta.url)),
+);
+const ok = crypto.verify(null, readFileSync(jsonPath), pub, sig);
+console.log(
+  JSON.stringify(
+    {
+      ticket: TICKET,
+      issued: token.issued_at,
+      expires: token.expires_at,
+      migration_sha256: sha,
+      sig_selfverify: ok ? 'pass' : 'FAIL',
+    },
+    null,
+    1,
+  ),
+);
+if (!ok) process.exit(1);
