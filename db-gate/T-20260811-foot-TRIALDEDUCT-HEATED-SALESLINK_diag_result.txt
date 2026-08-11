@@ -1,0 +1,45 @@
+
+=== (A) trial(체험권) status=used 전건: 227행 ===
+  unit_price=0 잔존: 31행
+    ├ package.trial_unit_price>0 인데 스냅샷 0 (=미연동 진성 잔존): 28행
+    └ package.trial_unit_price 0/NULL (정당 0 가능): 3행
+
+=== (B) 빨간박스 4행 현재 상태 (child backfill 반영 여부) ===
+  F-5537: unit_price=10000 / pkg.trial_unit_price=10000 / 2026-08-07
+  F-5727: unit_price=10000 / pkg.trial_unit_price=10000 / 2026-08-07
+  F-5668: unit_price=10000 / pkg.trial_unit_price=10000 / 2026-08-06
+  F-5538: unit_price=10000 / pkg.trial_unit_price=10000 / 2026-08-06
+
+=== (C) 진성 미연동(trial_unit_price>0 & snapshot=0) 28행 목록 ===
+  F-4815 | 2026-07-17 | snap=0 | pkg.trial=10000 | perf=8c21c9ab-eb83-4688-a95b-4566c301c470
+  F-4747 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=e01d9c38-4748-4119-9071-5a233decf5aa
+  F-4773 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=e01d9c38-4748-4119-9071-5a233decf5aa
+  F-4548 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4795 | 2026-07-17 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4653 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=8d244cee-3a7c-4220-8e1c-43e03c8e505a
+  F-4850 | 2026-07-17 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4515 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4911 | 2026-07-21 | snap=0 | pkg.trial=10000 | perf=7d2747cc-f669-43c5-b611-806808b5dfb0
+  F-4538 | 2026-07-18 | snap=0 | pkg.trial=10000 | perf=8c21c9ab-eb83-4688-a95b-4566c301c470
+  F-4848 | 2026-07-20 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4804 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=1d2165fa-5263-4521-9402-d19b8ceae451
+  F-4591 | 2026-07-15 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4543 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=8d244cee-3a7c-4220-8e1c-43e03c8e505a
+  F-4780 | 2026-07-15 | snap=0 | pkg.trial=59000 | perf=8c21c9ab-eb83-4688-a95b-4566c301c470
+  F-4785 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4645 | 2026-07-14 | snap=0 | pkg.trial=10000 | perf=03642b85-4b30-48e4-b762-c2d04e6af7f3
+  F-4680 | 2026-07-17 | snap=0 | pkg.trial=10000 | perf=8c21c9ab-eb83-4688-a95b-4566c301c470
+  F-4655 | 2026-07-14 | snap=0 | pkg.trial=10000 | perf=03642b85-4b30-48e4-b762-c2d04e6af7f3
+  F-4595 | 2026-07-15 | snap=0 | pkg.trial=10000 | perf=7c24cd3b-8e52-4c72-9652-e14f75151514
+  F-4736 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=e01d9c38-4748-4119-9071-5a233decf5aa
+  F-4750 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=1d2165fa-5263-4521-9402-d19b8ceae451
+  F-4832 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=e01d9c38-4748-4119-9071-5a233decf5aa
+  F-4651 | 2026-07-16 | snap=0 | pkg.trial=10000 | perf=1d2165fa-5263-4521-9402-d19b8ceae451
+  F-4704 | 2026-07-17 | snap=0 | pkg.trial=10000 | perf=5fb3e3b1-1c5a-461b-9159-c330a52feb95
+  F-4660 | 2026-07-21 | snap=0 | pkg.trial=10000 | perf=7c24cd3b-8e52-4c72-9652-e14f75151514
+  F-5275 | 2026-07-29 | snap=0 | pkg.trial=10000 | perf=8d244cee-3a7c-4220-8e1c-43e03c8e505a
+  F-5787 | 2026-08-08 | snap=0 | pkg.trial=10000 | perf=7d2747cc-f669-43c5-b611-806808b5dfb0
+
+=== (D) heated: 전건 0 / unit_price=0 0행 (그중 pkg단가>0 미연동 잔존 0행) ===
+
+=== (D) unheated: 전건 0 / unit_price=0 0행 (그중 pkg단가>0 미연동 잔존 0행) ===
