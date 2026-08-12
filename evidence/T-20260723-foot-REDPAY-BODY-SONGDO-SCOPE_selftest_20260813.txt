@@ -1,0 +1,96 @@
+[redpay-macstudio][foot] self-test 시작 (네트워크 미사용) — 미등록 TID 즉시 알람
+  ✅ extractTid: col_tid 우선
+  ✅ extractTid: data.tid 폴백(538144 계열)
+  ✅ extractTid: TID 부재 → 빈문자열
+  ✅ 미등록 TID 2종 즉시 감지 (실제=2)
+  ✅ 동일 TID 건수 누적 2 (col_tid shape)
+  ✅ data.tid shape 미등록 TID 도 COALESCE 로 감지
+  ✅ data.tid=등록 TID 는 false-alarm 방지(스킵)
+  ✅ merchant_id 정확
+  ✅ dedup: 이미 알림한 TID 억제 (실제=1)
+  ✅ 빈 drift → 0건
+  ✅ union: reg 존재 → registry union 경로(구 early-return shadow 제거)
+  ✅ union: merchant admit env 무변경(union 미적용 → cross-tenant 미확대)
+  ✅ union: env stale TID 보존(historical 무탈락)
+  ✅ union: registry SSOT TID 항상 포함 → 236류 오탐 봉인
+  ✅ union: TID 중복 제거
+  ✅ union: reg=null → fail-safe
+  ✅ union: DB 미가용 시 env tid 유지(fail-safe)
+  ✅ union: DB 미가용 시 env merchant 유지
+  ✅ union: env 없음 → merchant=registry(종전 무변경)
+  ✅ union: env 없음 → tid=registry(union 무의미)
+  ✅ union: 겹치는 TID 는 1회만(dedup)
+  ✅ union: env-고유 + registry-고유 모두 포함
+  ✅ foot-scope 보존: registry TID union → drift 오탐 재발0(admit merchant_id 무변경)
+  ✅ autoseed: 기등록 merchant 신 TID → 후보 1건
+  ✅ autoseed: 동일 신 TID 2건 → 후보 1건 trx_count=2
+  ✅ autoseed: 미등록 merchant → fail-closed 후보 0(§3)
+  ✅ autoseed: 이미 primary/superseded → 멱등 no-op 후보 제외(§4②)
+  ✅ autoseed: tidWhitelist 등록 TID → 스킵
+  ✅ autoseed: merchant/TID 미상 → 스킵
+  ✅ autoseed: data.tid-only shape 포착(COALESCE)
+  ✅ unscopable: merchant·tid 부재 → true(격리)
+  ✅ unscopable: merchant.id=null·tid부재 → true
+  ✅ unscopable: merchant 존재 → false(스코프 판정 가능)
+  ✅ unscopable: tid 존재 → false(식별자 있음)
+  ✅ unscopable: data.tid 존재(COALESCE) → false
+  ✅ unscopable: distinct 키 3종(TX1 dedup) (실제=3)
+  ✅ unscopable: 동일 trxid 건수 누적 2
+  ✅ unscopable: trxid 부재 → 승인시각+금액 합성키
+  ✅ unscopable dedup: 이미 알림한 trxid 억제 (실제=2)
+  ✅ unscopable: 빈 입력 → 0건
+  ✅ xdomain-guard: body→jongno-foot = 차단(RC: 도수 오염 실 벡터)
+  ✅ xdomain-guard: body→songdo-foot = 차단
+  ✅ xdomain-guard: foot→jongno-foot = 허용(foot 폴러 무영향)
+  ✅ xdomain-guard: body→jongno-dosu(전용) = 허용(분리 후 정상)
+  ✅ xdomain-guard: body+slug미지정 = fail-closed 차단(bizno 폴백=풋 관성)
+  ✅ xdomain-guard: foot+slug미지정 = 허용
+  ✅ digest AC3: 등록 merchant 전이 resolved 분리 (실제 resolved=1)
+  ✅ digest AC3: 미등록만 잔존 2건 (실제=2)
+  ✅ digest AC5: registry 공집합 → 전량 미등록(유실0)
+  ✅ digest AC4: 요약 포맷(총건수+행) 정확
+  ✅ digest AC5: 0건 → 빈 문자열(빈 digest 금지)
+  ✅ digest AC7: 3일+ 장기 미처리 1건 분리(b=5일경과) (실제=1)
+  ✅ digest AC7: 에스컬레이션 문안 정확
+  ✅ digest AC7: 장기 0건 → 빈 문자열(발송 억제)
+  ✅ installverify: N건 요약줄 문안 정확 (실제=🧪 설치검증 추정 3건 — 승인 즉시 취소된 순액 0원 소액(설치·단말 검증 추정). 개별 확인요청 대신 요약 표기(대사 화면에서 필터로 펼쳐볼 수 있음).)
+  ✅ installverify: 0건 → 빈 문자열(요약줄 생략)
+  ✅ installverify: 음수 → 빈 문자열(방어)
+  ✅ resweep: lookback=1 = 구 T-1 동작 동일(회귀 0) (실제=2026-08-05T06:00:00.000Z)
+  ✅ resweep: lookback=3 시작 = 1일 창보다 정확히 2일 과거(정산 lag ≥T-3 커버) (delta=2일)
+  ✅ resweep: 3일 창 시작 < 1일 창 시작 → late-settled orphan 재수집 범위 포함
+  ✅ resweep: from 은 정각 자정 착지(초/ms=0)
+  ✅ resweep: lookback=0 → fail-safe 3일
+  ✅ resweep: lookback=NaN → fail-safe 3일
+  ✅ resweep: lookback 음수 → fail-safe 3일
+  ✅ resweep 멱등: 동일 (trxid,status,amount) 재fetch → 동일 멱등키(= on_conflict MERGE, net-new=0)
+  ✅ resweep 멱등: 취소(status/amount 상이) = 별 행(멱등키가 상태전이 보존 → 정산 정합)
+  ✅ resweep 멱등: 4행(승인×3 재fetch + 취소×1) → 2 distinct 행(승인1·취소1)으로 collapse (실제=2)
+  ✅ deadband: 511 은 dead band 목록에 존재(FALSE-CLEAN 대상)
+  ✅ deadband: 457(라이브)은 dead band 아님
+  ✅ deadband: 511 = present-but-dead(값 있음 + 죽은 band)
+  ✅ deadband: 457(라이브) = dead 아님
+  ✅ deadband: 공란 = dead 아님(그건 read-fail 소관, 별개 축)
+  ✅ deadband: undefined = dead 아님(read-fail 소관)
+  ✅ 직교: 죽은 band 여도 값 present → read-fail 아님
+  ✅ alarm: dead band + 200 + 0행 → 발화(신규 신호 b)
+  ✅ alarm: 라이브 band + 0행 → 무발화(정상 clean 신호 c)
+  ✅ alarm: dead band 인데 행 존재(14) → 무발화(dead 아님 경계)
+  ✅ alarm: 200 아님 → 무발화(HTTP 오류 별도 경로 소관)
+  ✅ alarm: bizno 부재 → 무발화(read-fail 경로 소관, 별개 신호 a)
+  ✅ alarm: 발화 사유 라벨 정확
+  ✅ bizno-list: body 양쪽(457,506) 파싱 → 2스코프 순서보존
+  ✅ bizno-list: foot 단일값 → 1스코프(하위호환)
+  ✅ bizno-list: 공백 trim
+  ✅ bizno-list: 중복 제거(dedup)
+  ✅ bizno-list: 공란 element 제거
+  ✅ bizno-list: 미설정/공란 → 빈 리스트(FAILCLOSED 불변식 보존 — 하드코딩 default 없음)
+  ✅ bizno-list: 빈 리스트 대표값 "" → read-fail(457 조용한 상속 봉인)
+  ✅ dohsu-wl: 송도 도수2(1777540751, 191건 ₩46.2M) 편입
+  ✅ dohsu-wl: 송도 도수1(1777540842) 편입
+  ✅ dohsu-wl: 종로 band 유지(양쪽 병존)
+  ✅ dohsu-wl: 롱래(1777540911/tid 2074000004) 제외(오수집 금지)
+  ✅ dohsu-wl: 송도풋 대역 제외
+  ✅ dohsu-wl: 도수VAN(1779768019/020)=송도풋 collision 대역 → 제외(보수적 fail-closed)
+  ✅ dohsu-wl: 506 도수 ∩ 종로 band = ∅(무교집 → whitelist 교체 없이는 recon 미복구 확증)
+[redpay-macstudio][foot] ✅ self-test 전체 통과
