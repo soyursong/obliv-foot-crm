@@ -115,3 +115,8 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 
 # git worktrees (isolation dirs — never track)
 _wt-*
+
+# T-20260628-ops-PHI-IN-GIT-AUDIT Phase A-6 (2026-08-13) — HIGH·off-git PHI 재축적분.
+#   AC4 stuck-set freeze 스냅샷(fixture 행에 실환자형 오분류 가능 e164 잔존) → off-git backup(~/phi-redaction-backup/…/phaseA6_20260813/obliv-foot-crm/)으로만 보존.
+#   git rm --cached 로 tracking 해제 + 재-track 차단(anchored exact-path). history rewrite 미수행(Phase B).
+/evidence/T-20260713-foot-CHECKIN-DELETE-RESV-RESTORE_ac4_freeze.json

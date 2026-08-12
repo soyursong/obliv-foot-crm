@@ -174,7 +174,7 @@ NOTIFY pgrst, 'reload schema';
 --   --   INSERT INTO payments(amount,method,pos_response) VALUES
 --   --     (1000,'card','{"pan":"4111111111111111"}'::jsonb);            -- Rule B (Luhn PAN)
 --   --   INSERT ... pos_response = '{"cvv":"123"}'::jsonb;               -- Rule A (CVV)
---   --   INSERT ... pos_response = '{"rrn":"900101-1234567"}'::jsonb;    -- Rule C (RRN)
+--   --   INSERT ... pos_response = '{"rrn":"[RRN-redacted]"}'::jsonb;    -- Rule C (RRN)
 --   -- 아래는 통과 기대(마스킹):
 --   --   INSERT ... pos_response = '{"pan":"411111******1111","approval":"A123"}'::jsonb;
 -- ============================================================

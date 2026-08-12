@@ -3,7 +3,7 @@
  *
  * CEO 행별 confirm 스탬프(2026-07-07T16:39:40+0900, MSG-20260707-163441-ohqd):
  *   질문1(QA 가명 76건) = 일괄정리 OK → status='cancelled' 논리삭제.
- *   질문2(김민경 3건, +821043160981) = 유지(별개방문, 시각역전 근거) → drop 안 함.
+ *   질문2([name-redacted] 3건, [e164-redacted]) = 유지(별개방문, 시각역전 근거) → drop 안 함.
  *
  * ⛔ 실행 결과는 idempotent + 가드형이다. index 는 활성중복 0 일 때만 생성.
  *   Step1: CEO 확인 q1 76건 status='cancelled' 논리삭제(DELETE 금지, 내방기록 보존).
@@ -11,7 +11,7 @@
  *   Step2: 재조사 — (clinic_id, customer_id, KST-day) status<>cancelled 활성중복 COUNT.
  *   Step3: 0 이면 idx_checkins_walkin_daily partial UNIQUE 적용. 아니면 ABORT(exit 2) + 잔존 덤프.
  *
- * ★ 구조적 가드: 김민경 3건(customer 83ab4fe1)은 전부 동일 KST-day(2026-06-02) 활성이다.
+ * ★ 구조적 가드: [name-redacted] 3건(customer 83ab4fe1)은 전부 동일 KST-day(2026-06-02) 활성이다.
  *   partial index 키 = (clinic_id, customer_id, (created_at AT TIME ZONE 'Asia/Seoul')::date).
  *   → 3건 전부 keep 하면 동일 키 3중복 → CREATE UNIQUE INDEX 즉시 23505 실패.
  *   "별개방문"이라도 인덱스는 달력일(day) 단위라 동일일자면 충돌. CEO 유지 결정과 index 생성은 상충.
@@ -58,7 +58,7 @@ async function q(sql) {
   return JSON.parse(text);
 }
 
-// ── CEO 질문1 confirm: QA 가명 76 drop-target (김민경 3건 제외) ──────────────
+// ── CEO 질문1 confirm: QA 가명 76 drop-target ([name-redacted] 3건 제외) ──────────────
 const CANCEL_IDS = [
   "23b18544-9bca-4d30-a1ea-00e51f13419b",
   "660e6302-78a6-49c0-b8af-854819a3252c",
@@ -138,11 +138,11 @@ const CANCEL_IDS = [
   "7533a0e2-f107-4eb1-863b-dea57dfb2cfb",
 ];
 
-// ★ 절대 취소 금지 — CEO 질문2 "유지" 결정 (김민경 3건).
+// ★ 절대 취소 금지 — CEO 질문2 "유지" 결정 ([name-redacted] 3건).
 const NEVER_CANCEL_IDS = [
-  "207bf234-8851-4a38-8c56-c0191bea96b8", // 김민경 done
-  "6425a5c8-8fb7-46d6-a762-93d9922eeb48", // 김민경 done
-  "d404c423-d638-4652-bf8c-daff068a361f", // 김민경 payment_waiting
+  "207bf234-8851-4a38-8c56-c0191bea96b8", // [name-redacted] done
+  "6425a5c8-8fb7-46d6-a762-93d9922eeb48", // [name-redacted] done
+  "d404c423-d638-4652-bf8c-daff068a361f", // [name-redacted] payment_waiting
 ];
 
 const CANCEL_REASON =
@@ -175,7 +175,7 @@ for (const k of NEVER_CANCEL_IDS) {
 
 (async () => {
   out(`🚀 T-20260602-foot-SELFCHECKIN-DUP-INDEX check_ins dedupe 집행`);
-  out(`   CANCEL 후보(질문1): ${CANCEL_IDS.length}건 / NEVER_CANCEL(질문2 김민경): ${NEVER_CANCEL_IDS.length}건`);
+  out(`   CANCEL 후보(질문1): ${CANCEL_IDS.length}건 / NEVER_CANCEL(질문2 [name-redacted]): ${NEVER_CANCEL_IDS.length}건`);
 
   // ── Step0: 사전 조회 ──────────────────────────────────────────────────
   const pre = await q(
@@ -200,14 +200,14 @@ for (const k of NEVER_CANCEL_IDS) {
   );
   out(`   ✅ UPDATE 영향 row: ${upd.length}건`);
 
-  // ── Step1.5: 김민경 3건 무결(활성 유지) 확인 ─────────────────────────
+  // ── Step1.5: [name-redacted] 3건 무결(활성 유지) 확인 ─────────────────────────
   const keep = await q(
     `SELECT id, status FROM public.check_ins WHERE id = ANY(${sqlArray(NEVER_CANCEL_IDS)});`
   );
-  out(`\n[Step1.5] 김민경 3건 무결 확인: ${keep.length}/${NEVER_CANCEL_IDS.length}건`);
+  out(`\n[Step1.5] [name-redacted] 3건 무결 확인: ${keep.length}/${NEVER_CANCEL_IDS.length}건`);
   for (const k of keep) out(`   KEEP ${k.id} status=${k.status}`);
   if (keep.some((k) => k.status === "cancelled")) {
-    out(`   ❌ 치명: 김민경 KEEP 대상이 cancelled 됨 — 중단`);
+    out(`   ❌ 치명: [name-redacted] KEEP 대상이 cancelled 됨 — 중단`);
     writeReport("FATAL_KEEP_CANCELLED");
     process.exit(1);
   }
@@ -247,8 +247,8 @@ for (const k of NEVER_CANCEL_IDS) {
     for (const r of residual) {
       out(`      [${r.kst_day}] ${r.customer_name} ${r.customer_phone ?? "-"} — ${r.n}건`);
     }
-    out(`\n   ⚠️ 원인: 김민경 3건(동일 KST-day 2026-06-02) CEO "유지" + 미확인 테스트 그룹.`);
-    out(`      partial index 는 day 단위라 김민경 3건 keep 시 동일 키 3중복 → 23505.`);
+    out(`\n   ⚠️ 원인: [name-redacted] 3건(동일 KST-day 2026-06-02) CEO "유지" + 미확인 테스트 그룹.`);
+    out(`      partial index 는 day 단위라 [name-redacted] 3건 keep 시 동일 키 3중복 → 23505.`);
     out(`      → planner/CEO 재결정 필요. index 미적용으로 정직하게 종료.`);
     writeReport("ABORT_ACTIVE_DUP_REMAIN");
     process.exitCode = 2;

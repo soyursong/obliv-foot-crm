@@ -11,7 +11,7 @@ DO $$
 DECLARE cl uuid:='11111111-1111-1111-1111-111111111111'; today date:=(now() AT TIME ZONE 'Asia/Seoul')::date;
   raw uuid; resv uuid; res jsonb; nbefore int; nafter int; ci record;
 BEGIN
-  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'최종테스트','+821099565453') RETURNING id INTO raw;
+  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'최종테스트','+821012345678') RETURNING id INTO raw;
   INSERT INTO reservations(clinic_id,customer_id,reservation_date,status) VALUES(cl,raw,today,'confirmed') RETURNING id INTO resv;
   SELECT count(*) INTO nbefore FROM customers WHERE clinic_id=cl;
   res := self_checkin_with_reservation_link(cl, jsonb_build_object('name','최***트','phone','5453','reservation_id',resv,'visit_type','returning'), today);
@@ -52,7 +52,7 @@ DECLARE cl uuid:='11111111-1111-1111-1111-111111111111'; today date:=(now() AT T
 BEGIN
   DELETE FROM status_transitions; DELETE FROM check_ins WHERE clinic_id=cl;
   SELECT count(*) INTO nbefore FROM customers WHERE clinic_id=cl;
-  res := self_checkin_with_reservation_link(cl, jsonb_build_object('name','김워크인','phone','01012349999','visit_type','new'), today);
+  res := self_checkin_with_reservation_link(cl, jsonb_build_object('name','김워크인','phone','01000009991','visit_type','new'), today);
   SELECT count(*) INTO nafter FROM customers WHERE clinic_id=cl;
   IF (res->>'success')<>'true' THEN RAISE EXCEPTION 'success≠true: %',res; END IF;
   IF nafter<>nbefore+1 THEN RAISE EXCEPTION '신규 워크인 INSERT 안됨(회귀): %->%',nbefore,nafter; END IF;
@@ -70,7 +70,7 @@ DECLARE cl uuid:='11111111-1111-1111-1111-111111111111'; today date:=(now() AT T
   raw uuid; resv uuid; r1 jsonb; r2 jsonb; cnt int;
 BEGIN
   DELETE FROM status_transitions; DELETE FROM check_ins WHERE clinic_id=cl; DELETE FROM reservations WHERE clinic_id=cl;
-  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'재체크인','+821055559999') RETURNING id INTO raw;
+  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'재체크인','+821000009991') RETURNING id INTO raw;
   INSERT INTO reservations(clinic_id,customer_id,reservation_date,status) VALUES(cl,raw,today,'confirmed') RETURNING id INTO resv;
   r1 := self_checkin_with_reservation_link(cl, jsonb_build_object('name','최***트','phone','5453','reservation_id',resv,'visit_type','returning'), today);
   r2 := self_checkin_with_reservation_link(cl, jsonb_build_object('name','최***트','phone','5453','reservation_id',resv,'visit_type','returning'), today);
@@ -87,10 +87,10 @@ DECLARE cl uuid:='11111111-1111-1111-1111-111111111111'; today date:=(now() AT T
   res jsonb; nbefore int; nafter int; ci record;
 BEGIN
   DELETE FROM status_transitions; DELETE FROM check_ins WHERE clinic_id=cl; DELETE FROM reservations WHERE clinic_id=cl; DELETE FROM customers WHERE clinic_id=cl;
-  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'중복자','010-1111-2222');
-  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'중복자','+821011112222');
+  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'중복자','010-1234-5678');
+  INSERT INTO customers(clinic_id,name,phone) VALUES(cl,'중복자','+821012345678');
   SELECT count(*) INTO nbefore FROM customers WHERE clinic_id=cl;
-  res := self_checkin_with_reservation_link(cl, jsonb_build_object('name','중복자','phone','01011112222','visit_type','new'), today);
+  res := self_checkin_with_reservation_link(cl, jsonb_build_object('name','중복자','phone','01012345678','visit_type','new'), today);
   SELECT count(*) INTO nafter FROM customers WHERE clinic_id=cl;
   IF (res->>'success')<>'true' THEN RAISE EXCEPTION 'success≠true(차단): %',res; END IF;
   IF (res->>'customer_id') IS NOT NULL THEN RAISE EXCEPTION '≥2인데 자동연결됨: %',res; END IF;

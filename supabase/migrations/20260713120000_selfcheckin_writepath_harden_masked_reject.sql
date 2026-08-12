@@ -9,7 +9,7 @@
 --   식별키로 안 쓰고, 마스킹 name+phone 복합키 매칭 → v_match_count=0 → L107-115 마스킹 신규
 --   customers INSERT → 마스터 오염. L169 check_ins denormalized 도 마스킹 저장.
 --   증거(prod, 실환자0·전부 test/DUMMY): cust 512998d0 최***트/5453 ← raw 8fa12f4c 최종테스트/
---   +821099565453(38초前) · cust 0356b229 …/9089 ← raw c51dd5e0 …/+821054149089.
+--   [e164-redacted](38초前) · cust 0356b229 …/9089 ← raw c51dd5e0 …/[e164-redacted].
 --
 -- 하드닝 (DA 계약 (a)(b)(c)(d)):
 --   (a) 매칭키 = phone canonical digits + customer_id. 마스킹 표시값(name '*' / phone tail-only)은

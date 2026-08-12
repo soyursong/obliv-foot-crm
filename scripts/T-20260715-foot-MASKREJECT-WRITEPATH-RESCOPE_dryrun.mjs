@@ -46,7 +46,7 @@ EXCEPTION WHEN others THEN INSERT INTO _dr VALUES('D_upsert_masked_cancel','UNEX
 
 -- E: upsert 정상 성함 active (real slug) → 가드 통과, 예약 upsert 성공 uuid (회귀 무·false-reject 무)
 DO $D$ DECLARE u uuid; BEGIN
-  u := public.upsert_reservation_from_source('dopamine','__dr_e__','${SLUG}','+821077776666','김정상',CURRENT_DATE+1,'11:00');
+  u := public.upsert_reservation_from_source('dopamine','__dr_e__','${SLUG}','+821099998888','김정상',CURRENT_DATE+1,'11:00');
   INSERT INTO _dr VALUES('E_upsert_legit_active','passed guard → '||CASE WHEN u IS NOT NULL THEN 'reservation ok' ELSE 'NULL' END);
 EXCEPTION WHEN others THEN INSERT INTO _dr VALUES('E_upsert_legit_active','UNEXPECTED '||SQLSTATE); END $D$;
 
