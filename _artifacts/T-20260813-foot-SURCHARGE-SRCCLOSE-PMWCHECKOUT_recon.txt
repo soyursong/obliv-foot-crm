@@ -1,0 +1,134 @@
+
+=== Q3 clinics.hira_unit_value (89.40 stale check) ===
+[
+  {
+    "id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+    "name": "오블리브 풋센터 송도",
+    "hira_unit_value": 95.6,
+    "hira_unit_value_year": 2026
+  },
+  {
+    "id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "name": "오블리브의원 서울오리진점",
+    "hira_unit_value": 95.6,
+    "hira_unit_value_year": 2026
+  }
+]
+
+=== Q1 진찰료/외래관리료 후보 services (키잉 3축 대조) ===
+[
+  {
+    "id": "de611ed5-154a-475d-9eb3-19d6d3bad881",
+    "name": "초진진찰료-의원",
+    "service_code": "AA154",
+    "hira_code": "AA154",
+    "hira_category": null,
+    "hira_score": 197.12,
+    "is_insurance_covered": true,
+    "price": 18840
+  },
+  {
+    "id": "117befad-e8f8-48c6-b496-89c37a68a441",
+    "name": "재진진찰료-의원",
+    "service_code": "AA254",
+    "hira_code": "AA254",
+    "hira_category": null,
+    "hira_score": 139.85,
+    "is_insurance_covered": true,
+    "price": 13370
+  },
+  {
+    "id": "3eb86239-af92-468c-afd3-94daa28acad6",
+    "name": "공휴일 초진진찰료-의원",
+    "service_code": "050",
+    "hira_code": null,
+    "hira_category": null,
+    "hira_score": null,
+    "is_insurance_covered": false,
+    "price": 24490
+  },
+  {
+    "id": "1a82c70a-07fe-4321-be44-8a206e3d1aa0",
+    "name": "재진-물리치료,주사 등 시술받은 경우",
+    "service_code": "AA222",
+    "hira_code": "AA222",
+    "hira_category": null,
+    "hira_score": 49.09,
+    "is_insurance_covered": true,
+    "price": 4690
+  },
+  {
+    "id": "ed424017-f3d2-4a8f-a00c-b81ab7c69069",
+    "name": "초진진찰료",
+    "service_code": null,
+    "hira_code": null,
+    "hira_category": null,
+    "hira_score": null,
+    "is_insurance_covered": true,
+    "price": 18840
+  },
+  {
+    "id": "b98f6831-12a3-459b-b199-f543dd15cba1",
+    "name": "진찰료 (초진)",
+    "service_code": null,
+    "hira_code": "AA154",
+    "hira_category": "consultation",
+    "hira_score": 153.36,
+    "is_insurance_covered": true,
+    "price": 0
+  },
+  {
+    "id": "df698d26-b99b-43f3-aae8-6fb2e816ce52",
+    "name": "(공휴일)초진진찰료-의원",
+    "service_code": "050",
+    "hira_code": null,
+    "hira_category": null,
+    "hira_score": null,
+    "is_insurance_covered": false,
+    "price": 24490
+  },
+  {
+    "id": "e9a8a107-ab76-4b4d-8bda-792ea9f2fdb2",
+    "name": "재진진찰료",
+    "service_code": "AA155",
+    "hira_code": null,
+    "hira_category": null,
+    "hira_score": null,
+    "is_insurance_covered": true,
+    "price": 13740
+  },
+  {
+    "id": "c6852ba9-389d-4490-8f8b-cdb60baa1890",
+    "name": "의약품관리료",
+    "service_code": "ADD109",
+    "hira_code": null,
+    "hira_category": null,
+    "hira_score": null,
+    "is_insurance_covered": false,
+    "price": 500
+  },
+  {
+    "id": "eaf0449e-75db-4b7e-acc6-bfceef0c4d0c",
+    "name": "재진진찰료(영상판독)",
+    "service_code": "C2100001",
+    "hira_code": null,
+    "hira_category": null,
+    "hira_score": null,
+    "is_insurance_covered": false,
+    "price": 13740
+  }
+]
+
+=== Q1b 급여 services hira_category 분포 (NULL 적재율) ===
+{
+  "total": 11,
+  "dist": {
+    "__NULL__": 7,
+    "procedure": 1,
+    "consultation": 1,
+    "examination": 1,
+    "prescription": 1
+  }
+}
+
+[RECON DONE] READ-ONLY — write 0.
