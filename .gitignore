@@ -111,3 +111,6 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 
 # git worktrees (isolation dirs — never track)
 _wt-*
+
+# PHI before-image archives (data-correction backfill) — never commit
+_artifacts/
