@@ -870,7 +870,12 @@ ${COMMON_STYLE}
   }
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
-  /* T-20260731-foot-DOCFORM-URGENT-6FIX AC-D2: diag-grid 표 삭제에 따라 고아 CSS 규칙 제거(.bill-wrap .diag-grid). */
+  /* T-20260724-foot-DOCPRINT-DIAGCODE-OVERFLOW-2PAGE: 상병 2열 그리드는 행수를 절반으로 줄여 1페이지 유지.
+     추가 안전마진으로 상병 셀만 패딩·폰트를 소폭 압축(다른 표·합계 영향 없음). */
+  /* T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT: 세부내역서 [상병코드] 별도 표기 복원(문원장 요청).
+     T-20260731 AC-D2에서 diag-grid 표와 함께 제거됐던 고아 CSS 규칙을 원복 — 그 표를 다시 렌더하기 위함.
+     OVERFLOW-2PAGE에서 이미 1페이지 보장으로 검증된 컴팩트 그리드 CSS 그대로 복원(레이아웃 재발명 0). */
+  .bill-wrap .diag-grid td, .bill-wrap .diag-grid th { padding: 1px 4px; font-size: 8pt; line-height: 1.15; }
   @media print {
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
        콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
@@ -921,9 +926,52 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- T-20260731-foot-DOCFORM-URGENT-6FIX AC-D: 상병(상병코드·상병명) 표 삭제(팀장 2026-07-31). ※총괄 사실통지 대상
-       (T-20260721-PAYDETAIL-DIAGCODE-SHOW 로 추가 → OVERFLOW-2PAGE·DOC-LAYOUT-FIX④ 3회 손댄 자산 폐기).
-       {{diag_code_N}}/{{diag_name_N}} 토큰 소스(autoBind)는 무접촉 — 소견서·진단서·진료확인서(CODE)가 공유. 템플릿에서 미렌더만. -->
+  <!-- T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT: 진료비 세부내역서에 [상병코드] 별도 표기 복원 (문원장 요청, 첨부 20260812_102243.png).
+       삽입값 = 결제 미니창(PaymentMiniWindow) ② 차트 코드 zone 에서 고객별로 선택·저장된 상병코드
+       (service_charges 상병 → check_in_services 폴백, 결제미니창 PATH-4). ★persist 위치 실확인 완료:
+       diag_code_N/diag_name_N 토큰이 이미 전 렌더 경로(autoBind + applyDiagCodesFromVisit + DocumentPrintPanel batchDiagItems
+       + PaymentMiniWindow buildCodeEnrichedValues)에서 채워짐 → 신규 write/바인딩 0, 순수 서류 렌더 변경.
+       T-20260731 AC-D 에서 삭제됐던 자산을 OVERFLOW-2PAGE 에서 이미 1페이지 보장으로 검증된 2열 컴팩트 그리드 그대로 복원(재발명 0).
+       금액·진료비 산정·수납/계산 로직 무접촉(읽기만). 아래 항목 테이블·계/합계 무변경.
+       ── 원문 T-20260721/T-20260724/DOC-LAYOUT-FIX④ 설계 주석(원복) ──
+       diag_code_N/diag_name_N = 소견서/진단서와 동일 단일 소스. 값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 빈칸
+       (상병 미선택 고객은 빈 셀로 graceful 표기, 에러 없음). 행 가시성(diag_row_3/4_style)은 print 경로가 이미 세팅 — 신규 바인딩 0.
+       상병 다건(2~4건)도 최대 2 물리행(2 entries/row)으로 수용해 세로 높이 절반 → A4 landscape 1페이지 내 완결.
+       diag-grid 좌블록(연번·코드·상병명) 50% / 우블록 50% 대칭 — table-layout:fixed+colgroup. -->
+  <table class="diag-grid" style="margin-bottom:4px; table-layout:fixed;">
+    <colgroup>
+      <col style="width:8%" /><col style="width:18%" /><col style="width:24%" />
+      <col style="width:8%" /><col style="width:18%" /><col style="width:24%" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>연번</th>
+        <th>상병코드</th>
+        <th style="text-align:left;">상병명</th>
+        <th>연번</th>
+        <th>상병코드</th>
+        <th style="text-align:left;">상병명</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td style="white-space:nowrap;">{{diag_code_1}}</td>
+        <td style="text-align:left;">{{diag_name_1}}</td>
+        <td>2</td>
+        <td style="white-space:nowrap;">{{diag_code_2}}</td>
+        <td style="text-align:left;">{{diag_name_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td>3</td>
+        <td style="white-space:nowrap;">{{diag_code_3}}</td>
+        <td style="text-align:left;">{{diag_name_3}}</td>
+        <td>4</td>
+        <td style="white-space:nowrap;">{{diag_code_4}}</td>
+        <td style="text-align:left;">{{diag_name_4}}</td>
+      </tr>
+    </tbody>
+  </table>
 
   <!-- 항목 테이블 -->
   <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-2/AC-8: 참조양식(IMG_8778) 2단 헤더 정합.
