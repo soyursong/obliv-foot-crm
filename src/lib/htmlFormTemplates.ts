@@ -879,6 +879,14 @@ ${COMMON_STYLE}
      ★삽입값 = 결제 미니창에서 고객별 선택·저장된 상병코드(diag_code_N/diag_name_N 토큰, 전 렌더 경로에서 이미 채워짐 → 신규 write/바인딩 0, db_change=false). */
   .bill-wrap .diag-cell th { width: 80px; white-space: nowrap; }
   .bill-wrap .diag-cell td, .bill-wrap .diag-cell th { padding: 3px 6px; font-size: 8.5pt; line-height: 1.3; }
+  /* T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL (AC7 fold · 김주연 총괄 추가요청 MSG-20260812-120158):
+     한 줄 칸(bordered cell) 안에서 복수 상병코드를 나누는 '칸막이(구분선)'의 두께·간격을 전체 균일하게.
+     각 상병코드 = inline-block .diag-item — 좌우 padding 8px(균일 간격) + border-left 1px(균일 두께 구분선).
+     첫 코드는 좌측 칸막이/패딩 제거(맨 앞 칸막이 없음). 4개 이상에서도 동일 규칙 → 폭·두께 일정(현장 확인 축).
+     ★single-row 유지 — diag-grid 다행표 재도입 아님(AC6). 코드 없는 칸은 diag_row_N_style=display:none 으로 접힘(빈 칸막이 방지). */
+  .bill-wrap .diag-cell td.diag-list { padding: 3px 0; }
+  .bill-wrap .diag-cell .diag-item { display: inline-block; padding: 0 8px; border-left: 1px solid #333; line-height: 1.3; vertical-align: top; }
+  .bill-wrap .diag-cell .diag-item:first-child { padding-left: 0; border-left: none; }
   @media print {
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
        콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
@@ -943,7 +951,13 @@ ${COMMON_STYLE}
     <tbody>
       <tr>
         <th>상병코드</th>
-        <td>{{diag_code_1}} {{diag_name_1}}&nbsp;&nbsp;{{diag_code_2}} {{diag_name_2}}&nbsp;&nbsp;{{diag_code_3}} {{diag_name_3}}&nbsp;&nbsp;{{diag_code_4}} {{diag_name_4}}</td>
+        <!-- AC7 fold (MSG-20260812-120158): 복수 상병코드를 '균일 두께(border-left 1px)·균일 간격(좌우 8px)'의 칸막이로 나눔.
+             각 코드 = inline-block .diag-item, 첫 코드는 칸막이 없음. 코드 없는 칸은 diag_row_N_style=display:none 으로 접힘(빈 칸막이/graceful AC4).
+             ★한 줄(single row) 유지 — 다행 표(diag-grid) 아님(AC6). </span 다음 '>'를 다음 줄로 내려 inline-block 사이 공백노드 제거(간격 균일). -->
+        <td class="diag-list"><span class="diag-item">{{diag_code_1}} {{diag_name_1}}</span
+          ><span class="diag-item" style="{{diag_row_2_style}}">{{diag_code_2}} {{diag_name_2}}</span
+          ><span class="diag-item" style="{{diag_row_3_style}}">{{diag_code_3}} {{diag_name_3}}</span
+          ><span class="diag-item" style="{{diag_row_4_style}}">{{diag_code_4}} {{diag_name_4}}</span></td>
       </tr>
     </tbody>
   </table>

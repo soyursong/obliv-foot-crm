@@ -47,6 +47,8 @@ const baseBillValues = (): Record<string, string> => ({
   diag_code_2: 'B354', diag_name_2: '체부백선',
   diag_code_3: 'B353', diag_name_3: '발백선',
   diag_code_4: '', diag_name_4: '',
+  // 칸 가시성 토큰(3건 = 2·3 노출, 4 숨김) — 실 바인딩(PaymentMiniWindow/DocumentPrintPanel) 산출값 미러.
+  diag_row_2_style: '',
   diag_row_3_style: '',
   diag_row_4_style: 'display:none',
   diag_extra_codes_html: '',
@@ -58,13 +60,26 @@ const withNone = (): Record<string, string> => {
     v[`diag_code_${n}`] = '';
     v[`diag_name_${n}`] = '';
   });
+  // 0건 → 2·3·4 칸 전부 접힘(실 바인딩 count=0 미러)
+  v['diag_row_2_style'] = 'display:none';
+  v['diag_row_3_style'] = 'display:none';
+  v['diag_row_4_style'] = 'display:none';
   return v;
 };
 
-// 상병 4건(복수 상한) — 전부 한 칸/한 줄에 inline 표기 확인용
+// 상병 2건 — 칸막이 1개(코드1↔코드2)만, 3·4 칸 접힘
+const with2 = (): Record<string, string> => {
+  const v = baseBillValues();
+  v['diag_code_3'] = ''; v['diag_name_3'] = '';
+  v['diag_row_3_style'] = 'display:none';
+  return v;
+};
+
+// 상병 4건(복수 상한) — 전부 한 칸/한 줄에 inline 표기 + 칸막이 균일 확인용(원장 미리보기 축)
 const with4 = (): Record<string, string> => ({
   ...baseBillValues(),
   diag_code_4: 'K297', diag_name_4: '상세불명의 위염',
+  diag_row_2_style: '',
   diag_row_4_style: '',
 });
 
@@ -81,6 +96,16 @@ function extractDiagCell(html: string): string {
 function rowCount(cellHtml: string): number {
   const rows = cellHtml.match(/<tr\b[^>]*>/g) ?? [];
   return rows.length;
+}
+
+/** [상병코드] 칸 안 .diag-item span 총 개수(가시/비가시 무관 — 구조 고정 4칸). */
+function diagItemCount(cellHtml: string): number {
+  return (cellHtml.match(/class="diag-item"/g) ?? []).length;
+}
+
+/** display:none 으로 접힌(비가시) .diag-item span 개수(빈 칸막이 방지 확인). */
+function hiddenDiagItemCount(cellHtml: string): number {
+  return (cellHtml.match(/class="diag-item"[^>]*style="[^"]*display:none/g) ?? []).length;
 }
 
 // ── AC1: [상병코드]가 테두리 칸(table.diag-cell) 안에 한 줄로 표기 ─────────────────
@@ -142,6 +167,52 @@ test('AC3 금액·진료비 산정·합계·계산서/영수증 로직 무접촉
   expect(html).toContain('초진진찰료');
   expect(html).toContain('5,280');   // detail_subtotal / copayment / total
   expect(html).toContain('12,330');  // subtotal_fund (공단부담금 표시 유지)
+});
+
+// ── AC7 (fold MSG-20260812-120158, 김주연 총괄 추가요건): 복수 상병코드 칸막이(구분선) 폭·두께 균일 ──
+//   한 줄 칸 안에서 복수 상병코드를 나누는 구분선의 두께·간격을 전체 균일하게(코드마다 들쭉날쭉 금지).
+//   원장이 4개 상병코드 미리보기 확인 → 4개(이상)에서도 칸막이 폭·두께 일정. ★single-row 유지(다행표 아님).
+test('AC7 각 상병코드가 개별 .diag-item 칸으로 분리 (4건 → span 4개, 구 &nbsp; 들쭉날쭉 구분자 제거)', () => {
+  const cell = extractDiagCell(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, with4()));
+  expect(diagItemCount(cell)).toBe(4);          // 코드마다 1칸(구조 고정)
+  expect(hiddenDiagItemCount(cell)).toBe(0);    // 4건 전부 노출
+  expect(cell).not.toContain('&nbsp;&nbsp;');   // 구 ad-hoc 간격(들쭉날쭉) 제거
+  expect(rowCount(cell)).toBe(1);               // 여전히 단일 행(AC6, 다행표 아님)
+});
+
+test('AC7 칸막이 = 단일 CSS 규칙 → 폭·두께 전체 균일 (border-left 1px + 좌우 padding 8px, 첫 코드 예외)', () => {
+  // bill_detail 템플릿엔 <style> 블록이 2개(공유 + bill-wrap) → 특정 블록 슬라이스 대신 전체 문자열에서 규칙 매칭.
+  const tpl = getHtmlTemplate('bill_detail')!;
+  // 모든 .diag-item 이 공유하는 단일 규칙 → 코드 수와 무관하게 폭·두께 일정
+  expect(tpl).toMatch(/\.diag-item\s*\{[^}]*border-left:\s*1px\s+solid/);
+  expect(tpl).toMatch(/\.diag-item\s*\{[^}]*padding:\s*0\s+8px/);
+  // 첫 코드 = 맨 앞 칸막이/좌패딩 제거
+  expect(tpl).toMatch(/\.diag-item:first-child\s*\{[^}]*border-left:\s*none/);
+  expect(tpl).toMatch(/\.diag-item:first-child\s*\{[^}]*padding-left:\s*0/);
+});
+
+test('AC7 4건 span 동일 클래스·개별 폭/두께 인라인 없음 (균일성 훼손 방지)', () => {
+  const cell = extractDiagCell(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, with4()));
+  const spans = cell.match(/<span class="diag-item"[^>]*>/g) ?? [];
+  expect(spans.length).toBe(4);
+  // 가시 span 어디에도 폭/두께를 흔드는 개별 인라인 border/width 없음 → 규칙 1개가 전부 지배
+  for (const s of spans) {
+    expect(s).not.toMatch(/\bborder/);
+    expect(s).not.toMatch(/\bwidth/);
+  }
+});
+
+test('AC7 graceful — 2건이면 3·4 칸 접힘(빈 칸막이 노출 0), 여전히 단일 행', () => {
+  const cell = extractDiagCell(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, with2()));
+  expect(diagItemCount(cell)).toBe(4);        // span 구조는 4칸 고정
+  expect(hiddenDiagItemCount(cell)).toBe(2);  // 3·4 접힘 → 빈 칸막이 노출 0
+  expect(rowCount(cell)).toBe(1);
+});
+
+test('AC7/AC4 0건이면 코드 칸 전부 접힘(빈 칸막이 전무, 라벨만 유지)', () => {
+  const cell = extractDiagCell(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, withNone()));
+  expect(hiddenDiagItemCount(cell)).toBe(3);  // 2·3·4 접힘(코드1 span = first-child, 칸막이 자체 없음)
+  expect(cell).toContain('상병코드');
 });
 
 // ── 단일 소스 정합: 소견서/진단서와 동일 상병 토큰 ────────────────────────────────
