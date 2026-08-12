@@ -6,8 +6,9 @@
  *           filterProgress state/토글버튼/필터 분기 회수 → 예약관리는 항상 전체 예약 표시(기존 OFF 동작 = 기본).
  *           ⚠ progress_check_required 트리거/배지(읽기전용 표시)는 유지 — 변경2 데이터 소스.
  *   [변경2] 치료테이블(/admin/treatment-table) — ③ '경과분석' 탭 신설(기존 2탭 뒤 3번째).
- *           당일(부모 공통 날짜선택기, 기본=오늘) progress_check_required 예약을 리스트(테이블)로 표시.
- *           컬럼: 환자 / 회차 / 예약시간 / 담당자. 캘린더·일간보기 형태 금지.
+ *           [갱신 T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER] 나열 기준 = 활성 패키지 보유 +
+ *           (used_sessions+1)%6==0(6배수 회차 도래) 환자 전부(오늘 예약 무관·미예약 포함)를 리스트(테이블)로 표시.
+ *           컬럼: 환자 / 회차 / 다음 예약 / 담당자. 캘린더·일간보기 형태 금지.
  *
  * 데이터: 전부 기존 컬럼 read-only(progress_check_required/label = T-PROGRESS-CHECKPOINT 트리거 SSOT 소비).
  *   신규 테이블/컬럼/enum/RLS/트리거 0 → NO-DDL. db_change=false.
@@ -107,24 +108,38 @@ test.describe('T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL', () => {
     expect(t).toContain("'history' | 'diagdoc' | 'exam' | 'blood' | 'progress'");
   });
 
-  test('시나리오2: 경과분석 탭 = 당일 progress_check_required 예약 리스트(read-only)', () => {
+  test('시나리오2: 경과분석 탭 = 활성 패키지 6배수 도래 대상자 리스트(read-only)', () => {
+    // [갱신] T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준 변경.
+    //   FROM: reservations(progress_check_required=true, 예약일=오늘) 당일 대상자
+    //   TO:   활성 패키지(status='active', tier>0) 보유 + (used_sessions+1)%6==0 인 환자 전부
+    //         (오늘 예약 무관·미예약 포함). 다음 예약(오늘 이후 최이른)은 정렬/표시용으로만 조인.
     const s = progressSection();
-    // 데이터 소스 = reservations(progress_check_required=true, 당일, 취소 제외)
+    // 데이터 소스 = 활성 패키지 + package_sessions(used) 카운트 → 6배수 도래 필터
+    expect(s).toContain("from('packages')");
+    expect(s).toContain("eq('status', 'active')");
+    expect(s).toContain("from('package_sessions')");
+    expect(s).toContain("eq('status', 'used')");
+    expect(s).toContain('isSixMultipleTarget');
+    expect(s).toContain('anticipatedSession');
+    // 다음 예약(오늘 이후 미취소 최이른)은 표시/정렬용 조인으로 잔존
     expect(s).toContain("from('reservations')");
-    expect(s).toContain("eq('progress_check_required', true)");
-    expect(s).toContain("eq('reservation_date', date)");
     expect(s).toContain("neq('status', 'cancelled')");
+    // 구 당일 필터 기준은 리스트 모집단에서 제거됨(회귀 가드)
+    expect(s).not.toContain("eq('progress_check_required', true)");
+    expect(s).not.toContain("eq('reservation_date', date)");
     // 리스트(테이블) 형태 — 캘린더/일간보기 아님
     expect(s).toContain('data-testid="progress-targets-table"');
     expect(s).toContain('<table');
-    // 컬럼: 환자 / 회차 / 예약시간 / 담당자
+    // 컬럼: 환자 / 회차 / 다음 예약 / 담당자
     expect(s).toContain('환자');
     expect(s).toContain('회차');
-    expect(s).toContain('예약시간');
+    expect(s).toContain('다음 예약');
     expect(s).toContain('담당자');
     expect(s).toContain('data-testid="progress-label-cell"');
-    expect(s).toContain('data-testid="progress-time-cell"');
+    expect(s).toContain('data-testid="progress-nextresv-cell"');
     expect(s).toContain('data-testid="progress-registrar-cell"');
+    // 구 '예약시간' 컬럼 testid 는 소멸(회귀 가드)
+    expect(s).not.toContain('data-testid="progress-time-cell"');
   });
 
   test('시나리오2: 이름 좌클릭=2번차트 / 우클릭=CRM 컨텍스트 메뉴(부모 재사용)', () => {
@@ -134,11 +149,12 @@ test.describe('T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL', () => {
     expect(s).toContain('nameInteraction.onContextMenu(e,');
   });
 
-  // ── 시나리오 3: 엣지 — 당일 대상자 0명 ─────────────────────────────────────
-  test('시나리오3: 경과분석 탭 — 당일 대상자 0명 빈 상태 메시지(에러 없음)', () => {
+  // ── 시나리오 3: 엣지 — 6배수 도래 대상자 0명 ───────────────────────────────
+  test('시나리오3: 경과분석 탭 — 대상자 0명 빈 상태 메시지(에러 없음)', () => {
+    // [갱신] T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 빈상태 문구 변경(당일→6배수 도래).
     const s = progressSection();
     expect(s).toContain('data-testid="progress-targets-empty"');
-    expect(s).toContain('오늘 경과분석 대상자가 없습니다');
+    expect(s).toContain('6의 배수 회차 도래 경과분석 대상자가 없습니다');
   });
 
   // ── NO-DDL / 회귀 가드 ─────────────────────────────────────────────────────
@@ -176,13 +192,13 @@ test.describe('T-20260629-foot-PROGRESSANALYSIS-RELOCATE-TREATBL', () => {
  *   1. admin 로그인 → 사이드바 [치료 테이블] → /admin/treatment-table
  *   2. [갱신] 최상위 탭 = 진료 / 소견서·진단서 / 균검사 / 피검사 / 경과분석(맨 끝, 5탭)
  *      — 구 "기존 2탭 뒤 3번째"는 TAB-ORDER-RENAME + LABTAB-SPLIT + DIAGDOC 로 확장됨.
- *   3. [경과분석] 탭 → 서브탭 '경과분석'(대상자)에서 당일 대상 환자가 리스트(테이블) 형태로 표시
- *   4. 각 행에 환자명·회차·예약시간·담당자 표시
+ *   3. [경과분석] 탭 → 서브탭 '경과분석'(대상자)에서 활성 패키지 6배수 도래 환자가 리스트(테이블) 형태로 표시
+ *   4. 각 행에 환자명·회차·다음 예약·담당자 표시(미예약 환자는 '미예약' 배지)
  *   5. 캘린더/일간보기 형태가 아님(리스트/테이블)
  *
- * [시나리오3] 엣지 — 당일 대상자 0명
- *   1. 오늘 경과분석 체크포인트 해당 예약이 없는 날짜 기준
- *   2. [경과분석] 탭 진입 → "오늘 경과분석 대상자가 없습니다" 빈 상태(에러 없음)
+ * [시나리오3] 엣지 — 6배수 도래 대상자 0명
+ *   1. 활성 패키지 6배수 회차 도래 환자가 없는 상태 기준
+ *   2. [경과분석] 탭 진입 → "6의 배수 회차 도래 경과분석 대상자가 없습니다" 빈 상태(에러 없음)
  *
  * 비고: NO-DDL. 신규 컬럼/테이블/enum/RLS/트리거 0(전부 기존 컬럼 read). DA CONSULT/supervisor DDL-diff 불요.
  *   db_change=false. ④경과분석 플랜(TAB-MOVE-TREATTABLE)은 문지은 대표원장 confirm 후 맨 뒤 독립 랜딩.
