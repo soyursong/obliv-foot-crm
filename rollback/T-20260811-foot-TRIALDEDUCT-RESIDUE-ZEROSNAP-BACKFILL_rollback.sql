@@ -1,0 +1,26 @@
+-- T-20260811-foot-TRIALDEDUCT-RESIDUE-ZEROSNAP-BACKFILL — ROLLBACK
+--
+-- 가역성(reversibility) 보장: apply 는 zero-snapshot(unit_price=0) 행을 부모 package
+-- type-matched 단가로 채운다. 롤백 = 정확히 그 대상 행을 다시 0 으로 되돌린다.
+--
+-- 대상 = rollback/T-20260811-...-RESIDUE-ZEROSNAP-BACKFILL_capture.csv 의 before-image
+--   (before_unit_price 는 전 행 0 — archive-first 스냅샷).
+-- 원장(payments/purchase/service_charges) 무접점. package_sessions.unit_price 스냅샷만.
+--
+-- ⚠ 사용법: capture.csv 의 package_session_id 를 아래 VALUES 에 붙여넣어 explicit PK 로만 실행.
+--   blanket/predicate UPDATE 절대 금지(freeze set 밖 무접촉).
+--
+-- 예시 (실제 id 는 capture.csv 참조):
+--
+-- BEGIN;
+-- UPDATE package_sessions AS ps
+--   SET unit_price = 0
+-- FROM (VALUES
+--   ('<package_session_id_1>'::uuid),
+--   ('<package_session_id_2>'::uuid)
+--   -- ... capture.csv 전 행
+-- ) AS f(id)
+-- WHERE ps.id = f.id
+--   AND ps.unit_price > 0;      -- 낙관적 락: apply 로 채워진 값만 되돌림
+-- -- 영향 행수 == capture.csv 행수 인지 확인 후:
+-- COMMIT;   -- (불일치 시 ROLLBACK;)

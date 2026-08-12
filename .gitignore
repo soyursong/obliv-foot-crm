@@ -85,6 +85,10 @@ rollback/T-20260702-foot-CODY-PKG-CREATE-PERM_rollback_*.sql
 # 리터럴만, name/phone 등 PHI 0건) → SOP §4-b 폴백자산 버전관리 위해 git-track 허용 (*backfill*.sql override)
 !db-gate/T-20260803-foot-REDPAY-0722-MISS-BACKFILL-SOP-ENVELOPE_rollback.sql
 
+# T-20260811 TRIALDEDUCT-RESIDUE-ZEROSNAP-BACKFILL rollback = PHI-clean 템플릿(placeholder UUID·로직만,
+# 실 PK/name/phone 0건, 실 before-image 는 apply 시 off-git _capture.csv 로만 영속) → SOP §4-b git-track 허용.
+!rollback/T-20260811-foot-TRIALDEDUCT-RESIDUE-ZEROSNAP-BACKFILL_rollback.sql
+
 # T-20260721-foot-CUSTOMER-NAME-NFD-NFC-BACKFILL (DA xfat §4 PHI 위생, blocking):
 #   rollback.sql = name-byte hex 보유 → off-git only (line 78 override 를 재-ignore).
 #   census/preflight/dryrun *.out.txt = 실행덤프(실명 포함 가능) → off-git only. (evidence md = masked 요약만 track)
