@@ -7,6 +7,18 @@
 set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# 0) shared-tree 점유 게이트 — 공유 canonical checkout 직접 커밋 = 단일점유 lease 필요.
+#    격리 worktree = 무조건 통과. T-20260724-infra-QADEPLOY-WORKTREE-ISOLATION-HARDEN #4
+#    (08-01 dev-vs-dev 편승 main-오염 재발방지). SSOT: ~/claude-sync/scripts/shared_tree_guard.sh
+#    (부재=fail-open+경고 · P0 탈출구: SHARED_TREE_OVERRIDE="사유")
+STG="$HOME/claude-sync/scripts/shared_tree_guard.sh"
+if [ -f "$STG" ]; then
+  bash "$STG" hook-precommit
+else
+  echo "⚠️  [pre-commit] shared_tree_guard.sh 부재 — shared-tree 점유 게이트 skip (fail-open)" >&2
+fi
+
+
 # 0) 핸드오프 유령 경로 차단 (先 실행, 우회: GHOST_HANDOFF_BYPASS=1)
 if [ "${GHOST_HANDOFF_BYPASS:-0}" != "1" ] && [ -f "$REPO_ROOT/scripts/ghost-handoff-guard.sh" ]; then
   bash "$REPO_ROOT/scripts/ghost-handoff-guard.sh"
