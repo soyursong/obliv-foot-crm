@@ -1,0 +1,85 @@
+/**
+ * DB-GATE GO-token 발행 (supervisor 전용) — foot postgres→anon public TABLES default-privilege forward-revoke
+ * ticket: T-20260813-foot-DEFAULTACL-ANON-FORWARD-REVOKE
+ * lane  : SQL-file 마이그 (ALTER DEFAULT PRIVILEGES … REVOKE ALL ON TABLES FROM anon)
+ *         content-binding = migration up.sql 전문 sha256 (apply_gate_lib.migrationSha256 산식과 동일).
+ * 서명   : ed25519 private (~/.config/medibuilder-secrets/supervisor-dbgate-go-ed25519.pem)
+ * 검증쌍 : db-gate/keys/supervisor_dbgate_go_ed25519.pub.pem (key_id supv-dbgate-2026a)
+ * 게이트 : DA CONSULT-REPLY MSG-20260813-010554-o1w6 Q2 path-(a) GO(CONDITIONAL) · planner approved(01:11) ·
+ *          supervisor DB-GATE PASS(2026-08-13). CONDITIONAL 조건 = 본 GO-token 물리 선행(apply_before_go 금지) — 충족.
+ * ⚠ 이 스크립트는 GO-token(.json+.sig) 파일만 쓴다(prod 무접촉). apply 는 db_apply_guard.sh 러너에서 GO-token 검증 후.
+ */
+import { readFileSync, writeFileSync } from 'node:fs';
+import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+
+const TICKET = 'T-20260813-foot-DEFAULTACL-ANON-FORWARD-REVOKE';
+const SQL_REL = 'supabase/migrations/20260813000000_foot_default_acl_anon_forward_revoke.sql';
+const EXPECTED_SHA = '6a5ac3b0d6a8f32d05873a2b26d0dd106c96dba6bdf09f884c0c1a212e2d1d1a';
+const PROD_REF = 'rxlomoozakkjesdqjtvd'; // foot prod
+
+// content-binding = 적용될 SQL 파일 전문 sha256 (apply_gate_lib.migrationSha256 == sha256(utf8 sql))
+const sql = readFileSync(new URL('../' + SQL_REL, import.meta.url), 'utf8');
+const sha = crypto.createHash('sha256').update(sql, 'utf8').digest('hex');
+if (sha !== EXPECTED_SHA) {
+  console.error(`❌ content-binding 불일치 — 실측 sha256=${sha} ≠ 사전합의 ${EXPECTED_SHA}. 서명 중단.`);
+  process.exit(1);
+}
+
+const now = new Date();
+const exp = new Date(now.getTime() + 90 * 60 * 1000); // TTL 90m (dev 즉시 apply 대기 중 · exposure-reducing·가역)
+
+const token = {
+  ticket_id: TICKET,
+  gate: 'DB-GATE-GO',
+  issued_by: 'supervisor',
+  issued_at: now.toISOString(),
+  expires_at: exp.toISOString(),
+  prod_ref: PROD_REF,
+  migration_sha256: sha, // = up.sql 전문 sha256 (content-binding)
+  migration_file: SQL_REL,
+  lane: 'migration-sql-file',
+  change_class:
+    'RESTRICTIVE (exposure-reducing) · 가역 · ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon · 데이터 mutation 0 · 컬럼/타입/enum/테이블 0 · CREATE-time only(기존 relacl 무접촉) · reversible=rollback GRANT 4-priv 정확 원복',
+  key_id: 'supv-dbgate-2026a',
+  nonce: crypto.randomBytes(8).toString('hex'),
+  da_consult_reply:
+    'DA CONSULT-REPLY MSG-20260813-010554-o1w6 (umbrella T-20260813-xcrm-DEFAULTACL-ANON-FORWARD-HARDEN · SSOT da_decision_xcrm_defaultacl_anon_forward_harden_20260813.md). ' +
+    'Q2 경로(a) postgres-grantor ADP anon {SELECT,MAINTAIN,REFERENCES,TRIGGER}=GO(CONDITIONAL): REVOKE ALL FROM anon. ' +
+    'dispositive=§15-3/§15-6-1 위반 아님(ADP=CREATE-time only→미래 default만·기존 relacl 무접촉·§15-6-1 SELECT-보존 rationale 와 직교). grant-provenance=postgres→우리 lane 실행가능(경로 b 42501 ceiling 부재). ' +
+    'Q3 경로(b) supabase_admin ADP FULL=§15-6-7 accepted-residual REAFFIRM(무액션·본 마이그 무접촉). ' +
+    'Q4 게이트=grant-tightening/exposure-reducing/가역→§3.1 CEO 파괴게이트 면제·CEO NOTIFY 불요·BUT DDL 실재→supervisor DDL-diff DB-GATE + 물리 GO-token 선행 REQUIRED(AC-1·apply_before_go 금지). = 본 GO-token 이 그 CONDITIONAL 조건 충족.',
+  ceo_gate:
+    'N/A — §3.1 CEO 파괴게이트 면제(exposure-reducing·가역·RESTRICTIVE grant-tightening·데이터 파괴 0·cross-product 계약 변경 0·DA Q4 REAFFIRM). CEO NOTIFY 불요. ⚠ DDL 존재(ALTER DEFAULT PRIVILEGES) → DDL-0 carve 아님 → 본 GO-token 물리 선행이 apply 전제.',
+  precheck:
+    'DB-GATE PASS(2026-08-13, supervisor). ' +
+    'introspect-first(정본 prod pg_default_acl, evidence db-gate/..._introspect_BEFORE.log): [1] TARGET PRESENT — grantor=postgres·schema=public·objtype=TABLE(r)·grantee=anon 잔존 default-grant {MAINTAIN,REFERENCES,SELECT,TRIGGER}(4-priv) → present 분기 REVOKE. [2] 경로(b) grantor=supabase_admin ADP FULL(anon)=§15-6-7 accepted-residual REAFFIRM(무액션). ctx: public base 201테이블 中 anon-SELECT 178=기존 explicit grant(default-ACL 상속 아님)→REVOKE 후 불변·정당 anon consumer(self-checkin/health-q)=명시 grant+SECDEF RPC+RLS 로 동작·신규 테이블 default-grant 자동상속 의존=0. ' +
+    'DDL-diff 재확인(실 SQL 대조): up = ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon (DDL 1문·데이터 0·멱등 미보유분 no-op). rollback = GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLES TO anon (실측 prior state 4-priv 정확 원복·ALL 아님·대칭). ' +
+    'No-Persistence dry-run PASS(dev, txn-control strip[BEGIN/COMMIT] + plpgsql exception-rollback + post-probe: anon default-grant 4-priv 여전히 present=prod 미변경 실증). ' +
+    'deploy-precheck matrix(active): C0 fresh(status approved·no prior NO-GO)·C2 db_only exempt VALID(artifact_class=db_only·no src/ diff·e2e_exempt=db_only)·C3 rollback 대칭 동봉(GRANT 4-priv before-image 완전복귀)·C4 no contract touch(default-ACL·customers/reservations/staff role/RPC 무접촉)·C11 apply-order=GO-token 후 dev apply(applied_at 공백·prod DDL 미집행)·C13 4aca1714=feat tip(db_only·apply=dev chokepoint)·C18/§2.8 DA HOLD/RETRACT CLEAR(signals 08-13 활성 HOLD 0·MQ 미처리 DA HOLD 0)·C20 apply_before_go 준수(HOLD·prod 미적용)·C21 RETRACT CLEAR(frontmatter fresh read: status=approved·block_reason 부재·deploy_hold 부재·qa_result 부재)·C24 sha-pin(content-binding=up.sql 전문 sha256). ' +
+    'C1/C5 N/A(FE touch 0)·C10/C19 N/A(CREATE FUNCTION 0·no OR REPLACE·§4-1c RPC 무접촉)·C23 N/A(SECDEF 함수 생성/재정의 0; 본건은 anon default-ACL REVOKE=C23-4 금지 대상 아님[REVOKE FROM authenticated 아님·FROM anon 하드닝 방향])·C12/C17/C26 N/A(참조컬럼/archive INSERT/ON CONFLICT 0)·C14/C16 N/A(db_only·deploy-order clean)·C25/C27/C28/C29/C30/C33/C35 N/A. ' +
+    'apply-후 POSTCHECK: introspection AFTER(grantor=postgres public TABLES→anon default-grant 잔존 0 = ∅ assert, DA drift-guard §5 ADP-state pin) = dev 첨부 → deploy-ready 마킹.',
+};
+
+const jsonPath = new URL(`../db-gate/${TICKET}_GO.token.json`, import.meta.url);
+writeFileSync(jsonPath, JSON.stringify(token, null, 1) + '\n');
+
+const priv = crypto.createPrivateKey(
+  readFileSync(path.join(os.homedir(), '.config', 'medibuilder-secrets', 'supervisor-dbgate-go-ed25519.pem')),
+);
+const sig = crypto.sign(null, readFileSync(jsonPath), priv);
+writeFileSync(new URL(`../db-gate/${TICKET}_GO.token.sig`, import.meta.url), sig.toString('base64'));
+
+const pub = crypto.createPublicKey(
+  readFileSync(new URL('../db-gate/keys/supervisor_dbgate_go_ed25519.pub.pem', import.meta.url)),
+);
+const ok = crypto.verify(null, readFileSync(jsonPath), pub, sig);
+console.log(
+  JSON.stringify(
+    { ticket: TICKET, issued: token.issued_at, expires: token.expires_at, migration_sha256: sha, prod_ref: PROD_REF, key_id: token.key_id, nonce: token.nonce, sig_selfverify: ok },
+    null,
+    1,
+  ),
+);
+if (!ok) process.exit(1);
