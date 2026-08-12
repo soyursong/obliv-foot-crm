@@ -870,11 +870,14 @@ ${COMMON_STYLE}
   }
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
-  /* T-20260731-foot-DOCFORM-URGENT-6FIX AC-D2: diag-grid 표 삭제에 따라 고아 CSS 규칙 제거(.bill-wrap .diag-grid). */
-  /* T-20260812-foot-DOCFEE-DIAGCODE-ADD: [상병코드]는 '표(diag-grid)' 복원이 아니라 '별도 한 줄'(.diag-line)로 삽입.
-     planner 명시 제약 — 6FIX AC-D 삭제분(상병 표 전체) blind 복원 금지, '결제 미니창 선택 상병코드 별도 줄'로만 착지. */
-  .bill-wrap .diag-line { margin: 3px 0 4px; font-size: 8.5pt; line-height: 1.3; }
-  .bill-wrap .diag-line .lbl { font-weight: bold; }
+  /* T-20260812-foot-DOCFEE-DIAGCODE-GRID-LAYOUT: [상병코드]를 .diag-line(텍스트 한 줄) → 칸(그리드/테이블) 재작업 (김주연 총괄 재요청).
+     ★6FIX AC-D 표 삭제 원인 대조(DOCPRINT-DIAGCODE-OVERFLOW-2PAGE 06e065bb): 상병 세로 4행이 A4 landscape 1페이지
+       박스(175mm) 밖으로 진료비 내역표·서명란을 밀어 2페이지 오버플로 → 6FIX AC-D 가 표 전체 삭제. 재발 방지 3중 대조:
+       (1)compact 스타일(8pt·line-height 1.15·padding 1px 4px = 2PAGE-era 압축값 계승)
+       (2)빈 코드 행은 diag_row_3/4_style=display:none 로 숨김 → 상병 1~2건(전형) 시 실제 1~2행만 렌더(.diag-line 높이 근사)
+       (3)@media print .bill-wrap overflow:hidden(하단) 이미 페이지2 파생 차단(클립).
+     .diag-line 규칙은 미사용 → 고아 CSS 제거(6FIX AC-D2 규약 계승). */
+  .bill-wrap .diag-grid td, .bill-wrap .diag-grid th { padding: 1px 4px; font-size: 8pt; line-height: 1.15; }
   @media print {
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
        콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
@@ -925,17 +928,47 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- T-20260812-foot-DOCFEE-DIAGCODE-ADD: 진료비 세부내역서에 [상병코드] **별도 한 줄** 삽입 (김주연 총괄 요청, 첨부 20260812_102243.png).
-       삽입값 = 결제 미니창(PaymentMiniWindow) ② 차트 코드 zone 에서 고객별로 선택·저장된 상병코드
-       (service_charges 상병 → check_in_services 폴백, 결제미니창 PATH-4). ★persist 위치 실확인 완료:
-       diag_code_N/diag_name_N 토큰이 이미 전 렌더 경로(autoBind + applyDiagCodesFromVisit + DocumentPrintPanel batchDiagItems
-       + PaymentMiniWindow buildCodeEnrichedValues)에서 채워짐 → 신규 write/바인딩 0, 순수 서류 렌더 변경(db_change=false).
-       ★★ planner 명시 제약(policy_superseded): T-20260731 AC-D 가 삭제한 상병 '표(diag-grid table)' 를 blind 복원하지 않는다.
-          요청 형태 = '선택 상병코드 별도 줄' → 아래 .diag-line 한 줄(코드+상병명 inline)로만 착지. 표 구조 재도입 금지.
-       값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 코드 없는 슬롯은 공백으로 collapse(상병 미선택 고객 = 빈 줄 graceful, 에러 없음, AC2).
-       복수 상병(≤4)은 한 줄에 inline 나열(잘림 없음, landscape 272mm 폭 여유). 소견서/진단서와 동일 단일 토큰 소스(정합).
-       금액·진료비 산정·수납/계산 로직 무접촉(읽기만). 아래 항목 테이블·계/합계 무변경. -->
-  <div class="diag-line"><span class="lbl">상병코드 : </span>{{diag_code_1}} {{diag_name_1}}&nbsp;&nbsp;{{diag_code_2}} {{diag_name_2}}&nbsp;&nbsp;{{diag_code_3}} {{diag_name_3}}&nbsp;&nbsp;{{diag_code_4}} {{diag_name_4}}</div>
+  <!-- T-20260812-foot-DOCFEE-DIAGCODE-GRID-LAYOUT: [상병코드]를 .diag-line(텍스트 한 줄 나열) → 칸(그리드/테이블) 재작업
+       (김주연 총괄 재요청, C0ATE5P6JTH thread 1786497795.379579 · before=F0BPR1WGZHS). 부모 DOCFEE-DIAGCODE-ADD 의 텍스트
+       한 줄 표기가 '성의없다' → 각 상병코드를 한 행씩 분리, 코드/명칭 칼럼 정렬(소견서/진단서 병명 블록과 동일 구조).
+       ★삽입값 = 결제 미니창에서 고객별 선택·저장된 상병코드(service_charges 상병 → check_in_services 폴백).
+       diag_code_N/diag_name_N/diag_row_3_style/diag_row_4_style 토큰은 이미 전 렌더 경로(autoBindContext +
+       PaymentMiniWindow + DocumentPrintPanel + printOpinionDoc)에서 채워짐 → 신규 write/바인딩 0(db_change=false, 순수 렌더).
+       ★★6FIX AC-D 표 삭제 원인(A4 landscape 세로 4행 → 2페이지 오버플로) 재발 방지: compact CSS(.diag-grid 8pt) +
+          빈 코드 행 diag_row_3/4_style=display:none 숨김 + @media print overflow:hidden 클립(위 CSS 주석 3중 대조).
+       값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 상병 미선택 고객 = 코드/명칭 공백 행(빈 표 graceful, 에러/깨짐 없음, AC2).
+       금액·진료비 산정·수납/계산·계산서·영수증 로직 무접촉(읽기만). 아래 항목 테이블·계/합계 무변경(AC4). -->
+  <table class="diag-grid" style="margin-bottom:4px; table-layout:fixed;">
+    <thead>
+      <tr>
+        <th style="width:60px;">번호</th>
+        <th style="width:130px;">상병코드</th>
+        <th>상병명</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:center;">1</td>
+        <td style="text-align:center;">{{diag_code_1}}</td>
+        <td>{{diag_name_1}}</td>
+      </tr>
+      <tr>
+        <td style="text-align:center;">2</td>
+        <td style="text-align:center;">{{diag_code_2}}</td>
+        <td>{{diag_name_2}}</td>
+      </tr>
+      <tr style="{{diag_row_3_style}}">
+        <td style="text-align:center;">3</td>
+        <td style="text-align:center;">{{diag_code_3}}</td>
+        <td>{{diag_name_3}}</td>
+      </tr>
+      <tr style="{{diag_row_4_style}}">
+        <td style="text-align:center;">4</td>
+        <td style="text-align:center;">{{diag_code_4}}</td>
+        <td>{{diag_name_4}}</td>
+      </tr>
+    </tbody>
+  </table>
 
   <!-- 항목 테이블 -->
   <!-- T-20260702-foot-DOCPRINT-RX-FEEBREAKDOWN-LAYOUT AC-2/AC-8: 참조양식(IMG_8778) 2단 헤더 정합.
