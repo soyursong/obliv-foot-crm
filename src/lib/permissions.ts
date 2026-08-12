@@ -509,3 +509,17 @@ export function canCancelOpinionRequest(role: UserRole | null | undefined): bool
   if (!role) return false;
   return OPINION_CANCEL_ROLES.includes(role);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260811-foot-SALESAGG-THERAPIST-TAB — 일마감 신규 '총매출(치료)' 탭 노출 role (SSOT).
+//   김주연 총괄 확정(reply ts=1786502240.795299): 신규 '총매출(치료)' 탭 = 관리자(admin)+치료사(therapist)만 노출.
+//   /sales route(RoleGuard[admin,manager,director]) 는 무변경 — therapist 를 매출집계 전체에 admit 하지 않고
+//     일마감(/admin/closing) 내부 이 신규 탭만 role 게이트로 좁힌다. manager/director 는 기존 /sales 경로로 열람.
+//   ★인라인 role=== ratchet(STEP6) 정합 — 신규 인라인 판정 대신 SSOT predicate 로 착지.
+export const THERAPIST_SALES_VIEW_ROLES: UserRole[] = ['admin', 'therapist'];
+
+/** 일마감 '총매출(치료)' 탭 노출 권한(admin+therapist 한정). null/unknown 안전 기본값 false. */
+export function canViewTherapistSales(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return THERAPIST_SALES_VIEW_ROLES.includes(role);
+}

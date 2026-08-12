@@ -24,7 +24,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { isStaffUnlockRole, canEditConfirmedClosing, hasOpsAuthority } from '@/lib/permissions';
+import { isStaffUnlockRole, canEditConfirmedClosing, hasOpsAuthority, canViewTherapistSales as canViewTherapistSalesRole } from '@/lib/permissions';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
@@ -349,7 +349,7 @@ export default function Closing() {
   //   ★ /sales route(RoleGuard[admin,manager,director]) 는 무변경 — therapist 를 매출집계 전체에 admit 하지 않음(worst-case
   //     blanket 노출 회피). 일마감(/admin/closing)은 이미 전직원 OPEN(AdminLayout)이라 이 신규 탭만 role 게이트로 좁힌다.
   //   manager/director 는 기존 매출집계(/sales) 열람 그대로 유지(본 탭 비노출이나 접근권 무영향).
-  const canViewTherapistSales = profile?.role === 'admin' || profile?.role === 'therapist';
+  const canViewTherapistSales = canViewTherapistSalesRole(profile?.role);
   // '총매출(치료)' 탭 전용 필터 상태 — 매출집계(Sales.tsx)와 동일 기본값(defaultSalesFilter: 이번 달). 독립 로컬 상태.
   const [therapistSalesFilter, setTherapistSalesFilter] = useState<SalesFilterState>(defaultSalesFilter());
   // T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY (부모 T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST AC-2 자식):
