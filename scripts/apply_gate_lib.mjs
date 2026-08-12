@@ -57,6 +57,7 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -78,6 +79,12 @@ export const PROD_REF = FOOT_PROD_REF;
 export const DEV_REF = FOOT_DEV_REF;
 
 export const DBGATE_DIR = path.join(REPO_ROOT, 'db-gate');
+// ── runtime refuse/grant evidence (R4, C20 사후감지 표면) ────────────────────
+export const DEFAULT_APPLY_EVIDENCE_LOG = path.join(
+  DBGATE_DIR,
+  '_apply_evidence',
+  'apply_evidence.jsonl',
+);
 export const DEFAULT_PUBKEY_PATH = path.join(
   DBGATE_DIR,
   'keys',
@@ -426,6 +433,230 @@ export function assertApplyGateForRunner(o) {
   return { ok: true, apply: true, lane, gated: true, targetRef, gate };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★ R4 evidence 공유 헬퍼 — refuse/grant 이벤트를 db-gate/_apply_evidence/ 에 append.
+//   append 실패는 게이트 판정에 절대 영향 없음(fail-open on evidence only).
+//   (scalp2 loci leg byte-identical — T-20260809 CONSULT-REPLY 불변조건 ①③)
+// ════════════════════════════════════════════════════════════════════════════
+export function appendApplyEvidence(evidenceLog, rec) {
+  if (!evidenceLog) return;
+  try {
+    fs.mkdirSync(path.dirname(evidenceLog), { recursive: true });
+    fs.appendFileSync(
+      evidenceLog,
+      JSON.stringify({ schema_version: 1, ...rec }) + '\n',
+    );
+  } catch {
+    /* evidence append 실패는 게이트 판정에 영향 없음 */
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★ R2 자격증명 매개화 (foot Class-A pg-pooler lane) — prod DB 커넥션 자격증명 해석을
+//   LIB 경유로만. from-scratch bare pg.Client 러너가 gate 우회로 prod 커넥션 문자열을
+//   직접 env/.env 에서 얻는 표면을 축소한다.
+//
+//   ── foot pooler 인증원 실측 (census 2026-08-12, `scripts/` 223 pg 러너 전수 균일) ──
+//     host     = aws-1-ap-southeast-1.pooler.supabase.com  (Singapore — scalp2 northeast-2 와 상이)
+//     port     = 5432 · database = postgres
+//     user     = postgres.<FOOT_PROD_REF>  (postgres.rxlomoozakkjesdqjtvd)
+//     password = process.env.SUPABASE_DB_PASSWORD  → 부재 시 repo-root `.env` 의
+//                `SUPABASE_DB_PASSWORD=` 라인 (514 refs = foot pg lane 지배 인증원).
+//     ★ foot 은 scalp2 와 달리 `~/.config/medibuilder-secrets/<crm>-supabase-db-pass`
+//       파일이 부재(`foot-supabase-db-pass` 없음 실측). 그러므로 scalp2
+//       `resolveScalp2ProdConn` 의 secrets-dir passFile 경로는 foot 에 이식 불가 —
+//       foot 전용 SUPABASE_DB_PASSWORD(env→.env) 해석으로 대체한다.
+//       (secrets-dir 의 foot-supabase-service-role/pat 파일들은 Class-B REST lane 소관,
+//        본 pg-pooler Class-A lane 인증원 아님.)
+//
+//   ⚠ 잔여 리스크(명시): 이 함수는 prod 자격증명 해석의 *권장 단일 경로*이지만,
+//   러너가 여전히 `.env` 를 직접 읽고 `new pg.Client(...)` 를 손수 작성하는 것을 언어
+//   차원에서 막지는 못한다. 그 잔여 표면은 (a) getGatedApplyClient 사용 강제(R1) +
+//   (b) check-apply-runner-gate.sh 정적 게이트(R3) 로 덮되, 완전 차단은 후속 leg 의
+//   DB-side 최소권한 롤 분리로만 달성된다. (scalp2 loci leg 주석 계승)
+//
+// @param {object} [o]
+// @param {string} [o.ref]        - 대상 ref (기본 FOOT_PROD_REF)
+// @param {string} [o.password]   - 명시 주입(테스트); 미제공 시 env→.env 해석
+// @param {string} [o.envFile]    - 폴백 .env 경로 (기본 repo-root .env)
+// @returns {{ref:string, config:{host,port,database,user,password,ssl}}}
+// ════════════════════════════════════════════════════════════════════════════
+export function resolveFootProdConn(o = {}) {
+  const {
+    ref = FOOT_PROD_REF,
+    host = 'aws-1-ap-southeast-1.pooler.supabase.com',
+    port = 5432,
+    database = 'postgres',
+    envFile = path.join(REPO_ROOT, '.env'),
+  } = o;
+
+  // password 해석: 명시 주입 > process.env.SUPABASE_DB_PASSWORD > repo-root .env.
+  let password = o.password;
+  if (!password) password = process.env.SUPABASE_DB_PASSWORD;
+  if (!password) {
+    try {
+      if (fs.existsSync(envFile)) {
+        for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
+          const m = line.match(/^SUPABASE_DB_PASSWORD=(.*)$/);
+          if (m) { password = m[1].trim(); break; }
+        }
+      }
+    } catch {
+      /* .env 접근 실패 → password 미해석 (커넥션 생성 시점에 pg 가 실패; gate 판정과 무관) */
+    }
+  }
+
+  return {
+    ref,
+    config: {
+      host,
+      port,
+      database,
+      user: `postgres.${ref}`,
+      password,
+      ssl: { rejectUnauthorized: false },
+    },
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★ R1 runtime 백스톱 본체 (foot Class-A) — 공유 pg 커넥션 팩토리.
+//
+//   getGatedApplyClient({ticketId, sqlContent}) 는 target ref 를 LIB 경유로 해석한
+//   뒤, **PROD ref 판정 시 assertDbGateGo() 통과 전에는 pg 커넥션 객체 자체를 만들지
+//   않는다**(fail-closed throw DbGateError → 러너 exit1, DB 무접점). dev ref = 면제.
+//
+//   ── CONSULT-REPLY(T-20260809, 2026-08-12) 불변조건 (전 class 공통) ──
+//     ① refuse 계약 = 기존 assertDbGateGo 단일 재사용 (포크 금지) ✔
+//     ② refuse 시점 = 커넥션/클라이언트 객체 생성 前 (clientFactory 0회 semantics) ✔
+//     ③ exit/refuse semantics = scalp2 loci leg 와 동일 ✔
+//     ④ P-A AC-4 synthetic = pg lane (gated-client-selftest CLI, 아래) ✔
+//
+//   ★ 핵심 불변식: prod 게이트 refuse 시 clientFactory 가 절대 호출되지 않는다
+//     = pg 커넥션 객체 미생성 = DB 무접점.
+//
+// @param {object} o
+// @param {string}  o.ticketId          - 이 apply 의 티켓
+// @param {string}  [o.sqlContent]      - 커밋될 SQL 전문(prod content-binding 필수)
+// @param {string}  [o.prodRef]         - 기본 FOOT_PROD_REF
+// @param {string|null} [o.devRef]      - 기본 FOOT_DEV_REF (foot=null)
+// @param {string}  [o.gateDir]         - 토큰 디렉터리
+// @param {string}  [o.pubKeyPath]      - pubkey PEM
+// @param {number}  [o.now]             - 현재시각 ms (테스트 주입)
+// @param {string|null} [o.evidenceLog] - refuse/grant evidence jsonl (기본 DEFAULT_APPLY_EVIDENCE_LOG)
+// @param {boolean} [o.autoConnect]     - true(기본)면 반환 전 client.connect() 수행
+// @param {function} [o.connResolver]   - () => {ref, config} (테스트 주입; 기본 resolveFootProdConn)
+// @param {function} [o.clientFactory]  - (config) => client (테스트 주입; 기본 dynamic import pg)
+// @returns {Promise<{client:object, lane:'dev'|'prod', gated:boolean, targetRef:string, gate:object|null}>}
+// ════════════════════════════════════════════════════════════════════════════
+export async function getGatedApplyClient(o) {
+  const {
+    ticketId,
+    sqlContent,
+    prodRef = FOOT_PROD_REF,
+    devRef = FOOT_DEV_REF,
+    gateDir = DBGATE_DIR,
+    pubKeyPath = DEFAULT_PUBKEY_PATH,
+    now = Date.now(),
+    evidenceLog = DEFAULT_APPLY_EVIDENCE_LOG,
+    autoConnect = true,
+    connResolver,
+    clientFactory,
+  } = o || {};
+
+  const refuse = (err, extra = {}) => {
+    appendApplyEvidence(evidenceLog, {
+      guard: 'getGatedApplyClient',
+      event: 'refuse',
+      ticket_id: ticketId ?? null,
+      code: err.code || 'unknown',
+      reason: err.message,
+      db_contact: false, // ★ refuse 는 항상 커넥션 생성 前 = DB 무접점
+      apply_ts: new Date(now).toISOString(),
+      ...extra,
+    });
+    return err;
+  };
+
+  if (!ticketId) throw refuse(new DbGateError('bad_args', 'ticketId 필수'));
+
+  // ── 1. 자격증명 + target ref 해석은 LIB 경유만 (R2) ─────────────────────────
+  let targetRef;
+  let config;
+  try {
+    const resolved = (connResolver || resolveFootProdConn)();
+    targetRef = resolved.ref;
+    config = resolved.config;
+  } catch (e) {
+    throw refuse(new DbGateError('conn_resolve_fail', `자격증명/ref 해석 실패(lib 경유): ${e.message}`));
+  }
+
+  // ── 2. lane 판정 (fail-closed: 미지 ref = prod 아님 간주 금지) ──────────────
+  let lane;
+  if (targetRef === prodRef) lane = 'prod';
+  else if (devRef && targetRef === devRef) lane = 'dev';
+  else {
+    throw refuse(
+      new DbGateError(
+        'unknown_ref',
+        `targetRef=${targetRef} 가 env-matrix pin(prod=${prodRef}` +
+          `${devRef ? `/dev=${devRef}` : ' · dev 부재(단일 prod DB)'}) 어디에도 없음 → fail-closed (DB 무접점).`,
+        { targetRef, prodRef, devRef },
+      ),
+      { target_ref: targetRef, lane: 'unknown' },
+    );
+  }
+
+  // ── 3. prod → GO-token 게이트를 커넥션 생성 前에 강제. dev → 면제. ──────────
+  let gate = null;
+  if (lane === 'prod') {
+    if (typeof sqlContent !== 'string' || !sqlContent.length) {
+      throw refuse(
+        new DbGateError(
+          'bad_args',
+          'prod apply content-binding: sqlContent(커밋될 SQL 전문) 필수. ' +
+            'ad-hoc 러너는 COMMIT 될 SQL 문 전문을 canonical 문자열로 바인딩해야 함.',
+        ),
+        { target_ref: targetRef, lane },
+      );
+    }
+    try {
+      gate = assertDbGateGo({ ticketId, migrationSql: sqlContent, prodRef, gateDir, pubKeyPath, now });
+    } catch (e) {
+      // R4: runtime refuse evidence append (C20 사후감지 표면). DB 무접점 상태에서 기록.
+      throw refuse(e, { target_ref: targetRef, lane });
+    }
+  }
+
+  // ── 4. 게이트 통과(prod) 또는 면제(dev) 후에만 pg client 생성 ───────────────
+  const factory =
+    clientFactory ||
+    (async (cfg) => {
+      const pgMod = await import('pg');
+      const PgClient = pgMod.default?.Client || pgMod.Client;
+      return new PgClient(cfg);
+    });
+  const client = await factory(config);
+  if (autoConnect && client && typeof client.connect === 'function') {
+    await client.connect();
+  }
+
+  appendApplyEvidence(evidenceLog, {
+    guard: 'getGatedApplyClient',
+    event: 'grant',
+    ticket_id: ticketId,
+    target_ref: targetRef,
+    lane,
+    gated: lane === 'prod',
+    go_issued_at: gate ? gate.issuedAt : null,
+    sql_sha256: gate ? gate.migrationSha256 : null,
+    apply_ts: new Date(now).toISOString(),
+  });
+
+  // config(비밀번호 포함)는 반환하지 않는다 — 러너는 client 만 필요.
+  return { client, lane, gated: lane === 'prod', targetRef, gate };
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 //   node scripts/apply_gate_lib.mjs sha256 <sql>
 //   node scripts/apply_gate_lib.mjs verify <ticketId> <sql> [--prod <ref>]
@@ -433,6 +664,8 @@ export function assertApplyGateForRunner(o) {
 //     → 성공 시 gate JSON 만 stdout(기계 파싱용; guard evidence 필드 추출). 실패 시 exit 1.
 //   node scripts/apply_gate_lib.mjs runner-gate <ticketId> <sql> --ref <ref> [--apply]
 //     → DML 러너 chokepoint 리허설. apply=true 이고 prod 면 GO-token 검증(부재=exit1).
+//   node scripts/apply_gate_lib.mjs gated-client-selftest <ticketId> <sqlFile> [--ref <ref>]
+//     → R1 fail-closed 실측: prod ref + GO-token 부재 → 커넥션 팩토리 미호출 증명(DB 무접점).
 const isMain =
   import.meta.url === `file://${process.argv[1]}` ||
   (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1])));
@@ -490,8 +723,47 @@ if (isMain) {
       console.error(`RUNNER-GATE 거부 [${e.code}]: ${e.message}`);
       process.exit(1);
     }
+  } else if (cmd === 'gated-client-selftest') {
+    // ★ R1 fail-closed 실측 (P-A AC-4, pg lane): prod ref + GO-token 부재 →
+    //   커넥션 팩토리 미호출 증명. 실 secrets/pg/DB 무접점 — connResolver·clientFactory 주입.
+    //   usage: node scripts/apply_gate_lib.mjs gated-client-selftest <ticketId> <sqlFile> [--ref <ref>]
+    const ticketId = rest[0];
+    const sqlPath = rest.find((a, i) => i > 0 && !a.startsWith('--'));
+    const refIdx = rest.indexOf('--ref');
+    const targetRef = refIdx >= 0 ? rest[refIdx + 1] : FOOT_PROD_REF;
+    if (!ticketId || !sqlPath) {
+      console.error('usage: node scripts/apply_gate_lib.mjs gated-client-selftest <ticketId> <sqlFile> [--ref <ref>]');
+      process.exit(64);
+    }
+    console.log(APPLY_GATE_BANNER);
+    let factoryCalls = 0;
+    const recordingFactory = () => {
+      factoryCalls += 1;
+      return { connect: async () => {}, query: async () => ({ rows: [] }), end: async () => {} };
+    };
+    (async () => {
+      try {
+        await getGatedApplyClient({
+          ticketId,
+          sqlContent: fs.readFileSync(sqlPath, 'utf8'),
+          connResolver: () => ({ ref: targetRef, config: { host: 'SELFTEST-NO-DB', user: `postgres.${targetRef}` } }),
+          clientFactory: recordingFactory,
+          evidenceLog: null, // 실측은 evidence 오염 방지 위해 미기록
+        });
+        console.log(`GATED-CLIENT 허용 → clientFactory 호출=${factoryCalls}회 (게이트 통과)`);
+        process.exit(0);
+      } catch (e) {
+        // fail-closed 검증: refuse 시 factoryCalls 반드시 0 (DB 무접점 = 커넥션 미생성)
+        const dbContactless = factoryCalls === 0;
+        console.error(
+          `GATED-CLIENT 거부 [${e.code}]: ${e.message}\n` +
+            `  clientFactory 호출=${factoryCalls}회 → DB 무접점=${dbContactless ? 'PASS ✔ (커넥션 객체 미생성)' : 'FAIL ★ (커넥션 생성됨!)'}`,
+        );
+        process.exit(dbContactless ? 1 : 2); // 1=정상 fail-closed, 2=불변식 위반(치명)
+      }
+    })();
   } else {
-    console.error('usage: node scripts/apply_gate_lib.mjs <sha256|verify|verify-json|runner-gate> ...');
+    console.error('usage: node scripts/apply_gate_lib.mjs <sha256|verify|verify-json|runner-gate|gated-client-selftest> ...');
     process.exit(64);
   }
 }

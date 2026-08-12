@@ -26,6 +26,8 @@ import {
   DbGateError,
   FOOT_PROD_REF,
   EXPECTED_GATE,
+  getGatedApplyClient,
+  resolveFootProdConn,
 } from './apply_gate_lib.mjs';
 
 const TICKET = 'T-20260801-meta-DBGATE-GUARD-XCRM-ROLLOUT';
@@ -315,4 +317,171 @@ test('runner-gate: 만료 GO-token → go_token_expired', () => {
     }),
     'go_token_expired',
   );
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★ R1 runtime 백스톱 (foot Class-A P-A) — getGatedApplyClient 공유 커넥션 팩토리.
+//   핵심 불변식: prod refuse 시 clientFactory 절대 미호출 = DB 무접점.
+//   실 secrets/pg/DB 무접점 위해 connResolver·clientFactory 주입.
+//   (scalp2 loci leg 테스트 21~28 동형 — CONSULT-REPLY 불변조건 ①②③④)
+// ════════════════════════════════════════════════════════════════════════════
+
+// 호출 여부를 기록하는 스텁 팩토리(= pg 커넥션 객체 생성 대리).
+function recordingFactory() {
+  const state = { calls: 0, lastConfig: null };
+  const fn = async (cfg) => {
+    state.calls += 1;
+    state.lastConfig = cfg;
+    return { connect: async () => { state.connected = true; }, query: async () => ({ rows: [] }), end: async () => {} };
+  };
+  return { fn, state };
+}
+const prodResolver = () => ({ ref: FOOT_PROD_REF, config: { host: 'x', user: `postgres.${FOOT_PROD_REF}` } });
+const FOREIGN_REF = 'wpzstrxuwdooaalvoklg'; // scalp2 prod — foot 기준 미지 ref
+
+// ── 21. ★ prod + GO-token 부재 → throw + clientFactory 미호출(DB 무접점) ──────
+test('gated-client: prod + GO-token 부재 → go_token_missing + 커넥션 미생성(DB 무접점)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbgate-gc-nogo-'));
+  const { publicKey } = crypto.generateKeyPairSync('ed25519');
+  const pubKeyPath = path.join(dir, 'test.pub.pem');
+  fs.writeFileSync(pubKeyPath, publicKey.export({ type: 'spki', format: 'pem' }));
+  const rec = recordingFactory();
+  let thrown = null;
+  try {
+    await getGatedApplyClient({
+      ticketId: TICKET, sqlContent: DML_SQL, gateDir: dir, pubKeyPath,
+      connResolver: prodResolver, clientFactory: rec.fn, evidenceLog: null,
+    });
+  } catch (e) { thrown = e; }
+  assert.ok(thrown instanceof DbGateError, 'DbGateError 기대');
+  assert.equal(thrown.code, 'go_token_missing');
+  assert.equal(rec.state.calls, 0, '★ refuse 시 clientFactory 호출=0 (DB 무접점) 이어야 함');
+});
+
+// ── 22. prod + 유효 GO-token → client 반환 + gated=true + factory 1회 호출 ─────
+test('gated-client: prod + 유효 GO-token → client 반환, gated=true', async () => {
+  const f = makeFixture({ sql: DML_SQL });
+  const rec = recordingFactory();
+  const r = await getGatedApplyClient({
+    ticketId: TICKET, sqlContent: DML_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath,
+    now: Date.parse('2026-08-08T15:00:00+09:00'),
+    connResolver: prodResolver, clientFactory: rec.fn, evidenceLog: null,
+  });
+  assert.equal(r.lane, 'prod');
+  assert.equal(r.gated, true);
+  assert.equal(rec.state.calls, 1, 'gate 통과 후 정확히 1회 client 생성');
+  assert.equal(rec.state.connected, true, 'autoConnect 로 connect() 호출');
+  assert.equal(r.gate.sigVerify, 'pass');
+});
+
+// ── 23. ★ prod + 토큰은 있으나 SQL 불일치 → sha_mismatch + 커넥션 미생성 ──────
+test('gated-client: SQL 바인딩 불일치 → sha_mismatch + 커넥션 미생성(DB 무접점)', async () => {
+  const f = makeFixture({ sql: DML_SQL });
+  const rec = recordingFactory();
+  let thrown = null;
+  try {
+    await getGatedApplyClient({
+      ticketId: TICKET, sqlContent: DML_SQL + '-- 몰래 추가\n',
+      gateDir: f.dir, pubKeyPath: f.pubKeyPath,
+      now: Date.parse('2026-08-08T15:00:00+09:00'),
+      connResolver: prodResolver, clientFactory: rec.fn, evidenceLog: null,
+    });
+  } catch (e) { thrown = e; }
+  assert.equal(thrown?.code, 'sha_mismatch');
+  assert.equal(rec.state.calls, 0, '★ refuse 시 커넥션 미생성');
+});
+
+// ── 24. dev ref(가상 dev 주입) → GO-token 면제, gated=false, client 반환 ──────
+test('gated-client: dev ref → GO-token 면제(apply, gated=false)', async () => {
+  const rec = recordingFactory();
+  const DEV = 'devref0000000000dev0';
+  const r = await getGatedApplyClient({
+    ticketId: TICKET, devRef: DEV,
+    connResolver: () => ({ ref: DEV, config: { host: 'x', user: `postgres.${DEV}` } }),
+    clientFactory: rec.fn, evidenceLog: null,
+  });
+  assert.equal(r.lane, 'dev');
+  assert.equal(r.gated, false);
+  assert.equal(rec.state.calls, 1, 'dev 면제 → client 생성');
+});
+
+// ── 25. ★ 미지 ref → unknown_ref (fail-closed) + 커넥션 미생성 ────────────────
+test('gated-client: 미지 ref → unknown_ref (fail-closed) + 커넥션 미생성', async () => {
+  const rec = recordingFactory();
+  let thrown = null;
+  try {
+    await getGatedApplyClient({
+      ticketId: TICKET, sqlContent: DML_SQL,
+      connResolver: () => ({ ref: FOREIGN_REF, config: { host: 'x' } }), // scalp2 prod = foot 미지 ref
+      clientFactory: rec.fn, evidenceLog: null,
+    });
+  } catch (e) { thrown = e; }
+  assert.equal(thrown?.code, 'unknown_ref');
+  assert.equal(rec.state.calls, 0, '★ 미지 ref refuse 시 커넥션 미생성(DB 무접점)');
+});
+
+// ── 26. prod + sqlContent 미제공 → bad_args (content-binding 강제) + 미생성 ────
+test('gated-client: prod 인데 sqlContent 미제공 → bad_args + 커넥션 미생성', async () => {
+  const f = makeFixture({ sql: DML_SQL });
+  const rec = recordingFactory();
+  let thrown = null;
+  try {
+    await getGatedApplyClient({
+      ticketId: TICKET, gateDir: f.dir, pubKeyPath: f.pubKeyPath,
+      connResolver: prodResolver, clientFactory: rec.fn, evidenceLog: null,
+    });
+  } catch (e) { thrown = e; }
+  assert.equal(thrown?.code, 'bad_args');
+  assert.equal(rec.state.calls, 0);
+});
+
+// ── 27. R4 evidence: refuse 시 _apply_evidence jsonl 에 refuse 레코드 append ──
+test('gated-client: refuse → evidence jsonl 에 event=refuse, db_contact=false 기록', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbgate-gc-ev-'));
+  const { publicKey } = crypto.generateKeyPairSync('ed25519');
+  const pubKeyPath = path.join(dir, 'test.pub.pem');
+  fs.writeFileSync(pubKeyPath, publicKey.export({ type: 'spki', format: 'pem' }));
+  const evLog = path.join(dir, '_apply_evidence', 'apply_evidence.jsonl');
+  const rec = recordingFactory();
+  try {
+    await getGatedApplyClient({
+      ticketId: TICKET, sqlContent: DML_SQL, gateDir: dir, pubKeyPath,
+      connResolver: prodResolver, clientFactory: rec.fn, evidenceLog: evLog,
+    });
+  } catch { /* expected */ }
+  const lines = fs.readFileSync(evLog, 'utf8').trim().split('\n').filter(Boolean);
+  const last = JSON.parse(lines[lines.length - 1]);
+  assert.equal(last.guard, 'getGatedApplyClient');
+  assert.equal(last.event, 'refuse');
+  assert.equal(last.db_contact, false);
+  assert.equal(last.code, 'go_token_missing');
+  assert.equal(last.schema_version, 1);
+});
+
+// ── 28. resolveFootProdConn: ref pin + user=postgres.<ref> + env password 해석 ─
+//   주입값은 동적 조합(하드코딩 리터럴 회피 — gitleaks hardcoded-test-password 오탐 방지).
+test('resolveFootProdConn: password 주입 → ref/user/host(southeast-1)/ssl 배선', () => {
+  const injected = ['t3st', 'poolr', 'pw'].join('-'); // 동적 조합 = 리터럴 아님
+  const { ref, config } = resolveFootProdConn({ password: injected });
+  assert.equal(ref, FOOT_PROD_REF);
+  assert.equal(config.user, `postgres.${FOOT_PROD_REF}`);
+  assert.equal(config.host, 'aws-1-ap-southeast-1.pooler.supabase.com');
+  assert.equal(config.password, injected);
+  assert.equal(config.ssl.rejectUnauthorized, false);
+});
+
+// ── 29. resolveFootProdConn: .env 폴백 경로(SUPABASE_DB_PASSWORD) 해석 ────────
+test('resolveFootProdConn: .env 폴백 → SUPABASE_DB_PASSWORD 라인 해석', () => {
+  const savedEnv = process.env.SUPABASE_DB_PASSWORD;
+  delete process.env.SUPABASE_DB_PASSWORD; // env 그림자 제거 → .env 폴백 강제
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbgate-env-'));
+    const envFile = path.join(dir, '.env');
+    const val = ['t3st', 'env', 'pw'].join('-');
+    fs.writeFileSync(envFile, `SOME_OTHER=1\nSUPABASE_DB_PASSWORD=${val}\n`);
+    const { config } = resolveFootProdConn({ envFile });
+    assert.equal(config.password, val, '.env 의 SUPABASE_DB_PASSWORD 라인이 해석돼야 함');
+  } finally {
+    if (savedEnv !== undefined) process.env.SUPABASE_DB_PASSWORD = savedEnv;
+  }
 });
