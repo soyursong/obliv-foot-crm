@@ -21,7 +21,8 @@
          SUPABASE_URL="https://rxlomoozakkjesdqjtvd.supabase.co"
          SUPABASE_SERVICE_ROLE_KEY="<foot service_role key>"
          REDPAY_API_KEY="<레드페이 파트너 키>"
-         REDPAY_BUSINESS_NO="511-60-00988"
+         # 07-23 RedPay flip 후 정본 = 457-23-00938 (구 511-60-00988 = dead band, 발송제외 — 재사용 금지)
+         REDPAY_BUSINESS_NO="457-23-00938"
          # ── 화이트리스트 (T-20260711-REDPAY-TERMINAL-REGISTRY-TABLE) ──────────────────────
          #   SSOT = DB 테이블 redpay_terminal_registry(domain=foot,active). 폴러가 자동 조회 → 아래 2줄은
          #   더 이상 필수 아님(생략 시 DB SSOT 파생). 아래를 설정하면 그 값이 DB보다 우선(비상 override 전용).
