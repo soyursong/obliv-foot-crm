@@ -190,6 +190,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
+        //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
+        //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
+        '**/critical-flow/_prod-write-ban-invariant.spec.ts',
         // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 경과분석 탭 나열기준 '예약일=오늘' → '활성 패키지 보유 +
         //   (used_sessions+1)%6==0 인 환자 전부'(미예약 포함). 순수 로직(anticipatedSession/isSixMultipleTarget/
         //   sessionCheckpointLabel/compareProgressTargets) 단언 — 6배수 판정·NULLS-LAST 정렬·tier0 배제·라벨.
@@ -767,6 +771,10 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN: 불변식/가드 유닛 spec 은 unit 전용
+        //   (순수 fs-grep+로직) → desktop-chrome(auth/webServer) 유입 차단. underscore-prefix 헬퍼도 제외.
+        '**/critical-flow/_prod-write-ban-invariant.spec.ts',
+        '**/critical-flow/_prodWriteGuard.ts',
         // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: unit 전용(6배수 판정·정렬 순수 함수) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER.spec.ts',

@@ -10,8 +10,12 @@
  *   6. 사용 회차 = 1 검증
  */
 import { test, expect } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
+// CF-PROD-WRITE-BAN(Axis-A): 가드된 createClient — PROD ref fail-closed 차단(직접 import 금지).
+import { createClient, assertCriticalFlowDbSafe } from './_prodWriteGuard';
 import { CLINIC_ID, seedCheckIn, seedPackage } from '../../fixtures';
+
+// CF-PROD-WRITE-BAN(Axis-A) primary 게이트: 어떤 write(fixtures 시더 포함)보다 먼저 fail-closed 검문.
+test.beforeAll(() => assertCriticalFlowDbSafe('CF-2-returning-package-session'));
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;

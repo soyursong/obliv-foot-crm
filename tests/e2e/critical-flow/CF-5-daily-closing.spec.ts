@@ -8,8 +8,16 @@
  *   4. 미수 (payment_waiting 상태) 카운트 별도 검증
  */
 import { test, expect } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
+// CF-PROD-WRITE-BAN(Axis-A · T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN):
+//   createClient 를 @supabase/supabase-js 가 아니라 가드 모듈에서 import 한다. 가드된
+//   팩토리가 client 생성 이전에 PROD ref 를 fail-closed 로 차단(진원 봉인). 직접 import 금지
+//   (불변식 spec _prod-write-ban-invariant.spec.ts 강제).
+import { createClient, cleanupClosingOutbox, assertCriticalFlowDbSafe } from './_prodWriteGuard';
 import { CLINIC_ID, seedCheckIn } from '../../fixtures';
+
+// CF-PROD-WRITE-BAN(Axis-A) primary 게이트: 어떤 write(fixtures 시더 포함)보다 먼저 실행돼
+//   target 이 PROD ref 면 spec 전체를 fail-closed abort. (guarded createClient 는 belt.)
+test.beforeAll(() => assertCriticalFlowDbSafe('CF-5-daily-closing'));
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -23,6 +31,8 @@ test.describe('CF-5 일마감', () => {
     });
     const sb = createClient(SUPA_URL, SERVICE_KEY);
     let closingId: string | null = null;
+    // AC2 outbox-inclusive cleanup 을 위해 close_date 를 try 밖으로 hoist(finally 접근).
+    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
     try {
       // 1) 단건 payment 시드
@@ -36,8 +46,6 @@ test.describe('CF-5 일마감', () => {
         memo: 'CF-5 단건',
         payment_type: 'payment',
       });
-
-      const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
       // 2) daily_closings INSERT (마감 시뮬)
       const { data: closing, error: closeErr } = await sb
@@ -84,6 +92,10 @@ test.describe('CF-5 일마감', () => {
       if (closingId) {
         await sb.from('daily_closings').delete().eq('id', closingId);
       }
+      // AC2 (belt): daily_closings status→closed 로 trg_enqueue_closing_confirmed 가 남긴
+      //   파생 outbox 행(누수 진원)을 close_date 스코프로 회수. 기존 teardown 은 daily_closings/
+      //   payments 만 지워 outbox 가 누수됐다. (실 fix 는 AC1 prod-write 금지 = phantom 미생성.)
+      await cleanupClosingOutbox(sb, CLINIC_ID, today);
       await sb.from('payments').delete().eq('check_in_id', ck.id);
       await ck.cleanup();
     }
