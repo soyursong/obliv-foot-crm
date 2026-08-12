@@ -68,6 +68,26 @@ bbbd001d 무좀체험권 trial       0→10,000  2026-08-08
 | `scripts/..._postcheck.mjs` | READ-ONLY 정합검증(전건 정정 + residue 0 + 대사) | 0 |
 | `rollback/..._rollback.sql` | 가역 롤백(대상 PK → unit_price=0 복원) | 되돌림 |
 
+## DA H8 + H3 CENSUS 증적 (supervisor GO-token 선결 2·3조건 · READ-ONLY, write 0 · 2026-08-12 실측)
+> 러너: `scripts/T-20260811-...-RESIDUE-ZEROSNAP-BACKFILL_census_h8h3.mjs` (SELECT only). seal = a224c81d authored 2026-08-08 21:55:52 +0900, deploy ~21:57 KST(=2026-08-08T12:57:00Z).
+
+### H8 — source-closure (각 행 record **created_at 실측** vs seal · session_date 아님)
+- **freeze 31행 전건 PRE-SEAL** (created_at < 2026-08-08 21:57 KST). **post-seal(BLOCK)=0 · ambiguous(commit~deploy)=0** → re-contamination 0건, freeze 축소 불요(31행 유지).
+- supervisor 플래그 3행(session_date 08-03/08-06/08-08) 실측 created_at:
+  - `6b2873e2` (unheated_laser, HL+NL, sd 08-03) — created **2026-08-03 10:35:38 KST** = seal −5일 → **PRE(편입 OK)**
+  - `0dc185d8` (unheated_laser, 24회, sd 08-06) — created **2026-08-06 18:40:03 KST** = seal −2일 → **PRE(편입 OK)**
+  - `bbbd001d` (trial, 무좀체험권, F-5787, sd 08-08) — created **2026-08-08 18:44:04 KST** = seal −3h13m → **PRE(편입 OK)**
+  - ※ 3행 모두 session_date 는 seal 근방이나 record created_at 은 seal 이전 = forward-fix 이전 저장된 legacy 오염(재오염 아님). ∴ 편입 정당.
+
+### H3 — discriminant-validity (`unit_price=0 ∧ pkg.<type>_unit_price>0` = 오직 snapshot 버그 기원 확증)
+- **H3-a (구조)**: `package_sessions` 금액축 = `unit_price`(스냅샷) + `surcharge`(가산). **comp/discount/free/reason 컬럼 부재** → unit_price=0 을 '정당하게' 세팅하는 구조적 경로(플래그·사유) 없음. 0 = insert-time 미채움(버그) 단일 기원.
+- **H3-b (post-seal 재오염 전수조사, freeze 밖 포함)**: seal 이후 생성된 trial|unheated 세션 **92건 중 unit_price>0(부모>0)=89(forward-fix positive control) · unit_price=0∧부모>0=0**. → forward-fix seal = 유일 0-생성원 봉인 확증(재오염 0).
+- **H3-c (memo 스캔)**: freeze 31행 memo/surcharge_memo 非공백 **0/31**, 무상·서비스·할인 등 정당-0-의도 텍스트 **0건**.
+- **H3-d (술어집합 재대조)**: 현 술어집합(used·부모>0·unit_price=0) = **31행 == freeze 31행 정확 일치** (extra 0 · missing/DRIFT 0).
+- **결론**: 정당 comp/무상/할인 0-경로 부재 확증 → EXCLUDE 대상 0건. 31행 전건 진성 snapshot-버그 잔여.
+
+> **CENSUS 종합**: H8·H3 전건 PASS → freeze **31행 / 1,039,000원 불변**(축소 없음). apply−1 최종 re-freeze(4조건④)는 GO-token 후 _apply.mjs 가 재검증(DRIFT ABORT + rows-affected==31). ★본 census 는 READ-ONLY 증적 — prod UPDATE 미실행(GO-token 前 apply 금지 유지).
+
 ## 가드 요약
 - 원장(payments/purchase/service_charges) 무접점 — package_sessions.unit_price 스냅샷만.
 - blanket/predicate UPDATE 금지 — freeze.json 의 explicit PK VALUES 로만.
