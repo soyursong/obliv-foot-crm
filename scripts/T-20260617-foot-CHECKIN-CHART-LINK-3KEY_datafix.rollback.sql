@@ -1,6 +1,6 @@
 -- ROLLBACK: T-20260617-foot-CHECKIN-CHART-LINK-3KEY AC-4 데이터 정정
 -- check_in 4b091fa7 의 customer_id 를 정정 전(오배정) 값으로 되돌린다.
--- guard: 현재값이 정정 값(김사비)일 때만.
+-- guard: 현재값이 정정 값(김OO)일 때만.
 
 BEGIN;
 

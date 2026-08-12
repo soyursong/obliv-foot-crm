@@ -33,7 +33,7 @@ async function main(){
     console.log(`  ${c.id} | ${c.customer_name} ${c.customer_phone||''} vt=${c.visit_type} chkin=${T(c.checked_in_at)} created=${T(c.created_at)} cust_sim=${cu?cu.is_simulation:'ORPHAN'} cust_created=${cu?T(cu.created_at):'-'}`);
   }
 
-  // 안전성: 이 키가 진짜 현장 체크인(reservation_id 연결)·힐러·김사비 등을 절대 안 잡는지 교차 확인
+  // 안전성: 이 키가 진짜 현장 체크인(reservation_id 연결)·힐러·김OO 등을 절대 안 잡는지 교차 확인
   const { count: realCnt } = await sb.from('check_ins')
     .select('id',{count:'exact',head:true})
     .eq('clinic_id',CLINIC).not('reservation_id','is',null)

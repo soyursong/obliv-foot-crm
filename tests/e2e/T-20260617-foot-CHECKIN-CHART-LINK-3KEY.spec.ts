@@ -3,7 +3,7 @@
  * 체크인↔차트 연결을 복합키(성함 AND 연락처)로 강제 — 단일키(연락처) 오배정 재발 차단.
  *
  * 배경: 대시보드 체크인 카드 클릭 시 customer_id 가 SET 이어도 연락처 중복으로 타 환자 차트가
- *   열렸다(6/17 김사비→문자테스트 / 6/3 동일 축). 직전 RES-NAME-MISMATCH-WARN 은 비차단 토스트뿐.
+ *   열렸다(6/17 김OO→문자테스트 / 6/3 동일 축). 직전 RES-NAME-MISMATCH-WARN 은 비차단 토스트뿐.
  *   본 티켓은 (AC-3) 오픈 직전 성함/연락처 교차검증 → 성함 불일치 시 window.confirm 차단형,
  *   (AC-2) customer_id=null 시 성함 단독 fallback → 성함 AND 연락처 복합으로 좁힘.
  *
@@ -182,7 +182,7 @@ test.describe('T-20260617-foot-CHECKIN-CHART-LINK-3KEY — 복합키 오배정 �
   });
 
   // ── S5 (AC-1 ①): 셀프접수 체크인 생성 경로 — phone 단독 해소 제거 + 복합키 적용(정적) ──
-  //   실제 6/17 김사비 오배정은 '셀프접수' 경로였다(datafix: 4b091fa7 김사비 셀프접수). b8e0e33c 는
+  //   실제 6/17 김OO 오배정은 '셀프접수' 경로였다(datafix: 4b091fa7 김OO 셀프접수). b8e0e33c 는
   //   self_checkin_with_reservation_link RPC 만 고쳤으나 SelfCheckIn.tsx 는 그 RPC 를 호출하지 않고
   //   FE 가 phone 단독으로 선해소한 customer_id 로 직접 check_ins INSERT → 서버 가드 우회였다.
   //   본 가드는 SelfCheckIn.tsx 가 성함+연락처(phoneCanonDigits) 복합키로 고객을 해소하는지 확인.

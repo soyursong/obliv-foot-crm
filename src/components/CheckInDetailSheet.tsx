@@ -599,7 +599,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   //
   // 문제: 아래 auto-open useEffect 는 checkIn.customer_id 로 2번차트를 '무조건' 열어
   //   Dashboard.openChartFor 의 verifyChartLinkOrConfirm 게이트를 우회했다. 체크인 카드에서
-  //   confirm 을 취소해도 디테일시트 경로로 타 환자 차트가 열릴 수 있었다(6/17 김사비→문자테스트).
+  //   confirm 을 취소해도 디테일시트 경로로 타 환자 차트가 열릴 수 있었다(6/17 김OO→문자테스트).
   //
   // CHART_UNIFORMITY_LOCK 양립(옵션 A, planner 권고): 본 게이트는 '정상 동작에서 고객별로
   //   열리고/안 열리는 UX 분기'가 아니라, '데이터 무결성 오류 상태(성함 불일치)에서만' 차단하는
@@ -692,7 +692,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setLinkSearching(false);
     // T-20260516-foot-CHART-OPEN-UNIFY AC-5: 칸반 슬롯 간 동일 열림 방식 통일
     // 기존: visit_type === 'new' 조건 → 초진만 2번차트 자동 오픈 (상담대기/치료대기/진료대기 불일치)
-    // 변경: customer_id 있으면 visit_type 무관 2번차트 자동 오픈 (김사비 방식 = 전체 통일 기준)
+    // 변경: customer_id 있으면 visit_type 무관 2번차트 자동 오픈 (김OO 방식 = 전체 통일 기준)
     // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: 무조건 openChart → guardedAutoOpenChart 로 교체.
     //   정상 매칭은 종전대로 무조건 오픈(LOCK 보존), 성함 불일치일 때만 차단+확인(균일 에러 가드).
     if (checkIn?.customer_id) {
@@ -715,7 +715,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
 
   // T-20260516-foot-CHART-UNIFORM-LOCK AC-1: resolvedCustomerId 확정 후 2번차트 자동 오픈
   // customer_id=null 케이스(초진/워크인)에서 phone 해석 완료 시점에 2번차트 열기
-  // → 모든 고객 클릭 시 customer 식별만 되면 2번차트가 동일하게 열림 (김사비 기준 통일)
+  // → 모든 고객 클릭 시 customer 식별만 되면 2번차트가 동일하게 열림 (김OO 기준 통일)
   // CHART_UNIFORMITY_LOCK: 이 동작을 조건부로 만들면 고객별 불일치 재발. 제거·분기 금지.
   // T-20260617-foot-CHKINSHEET-AUTOOPEN-AC3-LOCK: phone 해석 고객도 동일 교차검증 게이트 경유.
   //   resolvedCustomerId 는 phone 매칭(last-8 ilike)으로 찾은 고객 → last-8 충돌로 타 환자일 수

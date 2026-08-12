@@ -120,3 +120,20 @@ _wt-*
 #   AC4 stuck-set freeze 스냅샷(fixture 행에 실환자형 오분류 가능 e164 잔존) → off-git backup(~/phi-redaction-backup/…/phaseA6_20260813/obliv-foot-crm/)으로만 보존.
 #   git rm --cached 로 tracking 해제 + 재-track 차단(anchored exact-path). history rewrite 미수행(Phase B).
 /evidence/T-20260713-foot-CHECKIN-DELETE-RESV-RESTORE_ac4_freeze.json
+
+# T-20260628-ops-PHI-IN-GIT-AUDIT Phase A-6 2차 straggler (2026-08-13) — 6월분 재축적 straggler off-git.
+#   6/17 DUMMY-CLEANUP stage3 덤프(실환자 phone HIGH) + CHECKIN-CHART-LINK-3KEY 실명(김OO) datafix set(기능리터럴 WHERE/LIKE/assert)
+#   + 데이터 캡처(pathC/visittype) + AC6_dbgate(실환자 phone+결제 dense PHI) → off-git backup으로만 보존
+#   (~/phi-redaction-backup/T-20260628-ops-PHI-IN-GIT-AUDIT/phaseA6_20260813/obliv-foot-crm/straggler2_20260813/, SHA256SUMS + REGENERATION_MATRIX).
+#   git rm --cached 로 tracking 해제 + 재-track 차단(anchored exact-path). history rewrite 미수행(Phase B).
+db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_dbgate.md
+db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_dryrun.json
+db-gate/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3_runlog.txt
+scripts/T-20260617-foot-DUMMY-CLEANUP-MAYJUN_stage3.mjs
+scripts/diag_sender_number_audit_20260617.mjs
+scripts/T-20260617-foot-CHECKIN-CHART-LINK-3KEY_apply.mjs
+scripts/T-20260617-foot-CHECKIN-CHART-LINK-3KEY_datafix.sql
+scripts/T-20260617-foot-CHECKIN-CHART-LINK-3KEY_phase1.mjs
+scripts/T-20260629-foot-DUMMY-CHECKIN-RESV-LINK_pathC_charge.out.json
+scripts/visittype_backfill_capture_2026-06-02T1057.json
+db-gate/T-20260617-foot-CHECKIN-CHART-LINK-3KEY_AC6_dbgate.md

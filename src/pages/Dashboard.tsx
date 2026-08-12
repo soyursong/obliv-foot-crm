@@ -5733,7 +5733,7 @@ export default function Dashboard() {
 
   // T-20260617-foot-CHECKIN-CHART-LINK-3KEY (AC-3 + AC-7): 차트 오픈 직전 교차검증 — 차단형 격상.
   //   customer_id 가 SET 이어도 연결된 고객의 성함/연락처가 카드 denormalized 값과 다르면
-  //   타 환자 차트일 수 있다(6/17 김사비→문자테스트). 직전 RES-NAME-MISMATCH-WARN 은 비차단
+  //   타 환자 차트일 수 있다(6/17 김OO→문자테스트). 직전 RES-NAME-MISMATCH-WARN 은 비차단
   //   토스트뿐이라 오배정을 못 막았다 → 본 헬퍼는 성함 불일치 시 window.confirm 으로 차단(staff
   //   확인 시에만 오픈). 연락처만 다르면(번호 변경 가능) 비차단 경고로 남긴다(false-block 회피).
   //   조회 실패 시 차단하지 않음(가용성 우선 — read-only 차트 오픈 불변식과 정합).

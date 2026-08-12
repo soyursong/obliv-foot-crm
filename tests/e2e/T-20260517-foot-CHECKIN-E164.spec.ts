@@ -32,8 +32,8 @@ test('AC-1: NewCheckInDialog — 전화번호 입력 필드 존재 확인', asyn
   await expect(phoneInput).toBeVisible();
 
   // 010 형식 입력 가능 확인
-  await phoneInput.fill('010-9846-2575');
-  await expect(phoneInput).toHaveValue('010-9846-2575');
+  await phoneInput.fill('010-1234-5678');
+  await expect(phoneInput).toHaveValue('010-1234-5678');
 
   // 다이얼로그 닫기
   await page.getByRole('button', { name: '취소' }).click();
@@ -50,11 +50,11 @@ test('AC-1: NewCheckInDialog — 이름 + 전화번호 입력 후 체크인 버�
 
   // 이름 입력
   const nameInput = page.getByPlaceholder('홍길동');
-  await nameInput.fill('김사비');
+  await nameInput.fill('김OO');
 
   // 전화번호 입력
   const phoneInput = page.getByPlaceholder('010-1234-5678');
-  await phoneInput.fill('010-9846-2575');
+  await phoneInput.fill('010-1234-5678');
 
   // 체크인 버튼이 활성화되어야 함
   const submitBtn = page.getByRole('button', { name: '체크인' });
@@ -98,7 +98,7 @@ test('AC-4: NewCheckInDialog — 하이픈 없이 숫자만 입력 가능', asyn
 
   // 하이픈 없는 입력 (InlinePatientSearch는 raw 입력 허용)
   const phoneInput = page.getByPlaceholder('010-1234-5678');
-  await phoneInput.fill('01098462575');
+  await phoneInput.fill('01012345678');
   // 입력값이 수용됨
   await expect(phoneInput).not.toBeEmpty();
 
@@ -141,10 +141,10 @@ test.skip('AC-5: SelfCheckIn — 이름+번호 입력 시 접수하기 버튼 �
   ).toBeVisible({ timeout: 15000 });
 
   // 이름 입력
-  await page.getByPlaceholder('홍길동').fill('김사비');
+  await page.getByPlaceholder('홍길동').fill('김OO');
 
   // 숫자패드로 전화번호 입력 (0-1-0-...)
-  const numKeys = ['0', '1', '0', '9', '8', '4', '6', '2', '5', '7', '5'];
+  const numKeys = ['0', '1', '0', '1', '2', '3', '4', '5', '6', '7', '8'];
   for (const key of numKeys) {
     await page.getByRole('button', { name: key, exact: true }).click();
   }

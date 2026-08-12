@@ -172,7 +172,7 @@ test.describe('T-20260516-foot-CHART-OPEN-UNIFY AC-5 — 칸반 슬롯별 동일
   });
 
   // 진료대기 슬롯 카드 클릭 → 동일 열림 방식
-  test('AC-5 진료대기: 카드 클릭 → CheckInDetailSheet 열림 (김사비 방식 = 기준)', async ({ page }) => {
+  test('AC-5 진료대기: 카드 클릭 → CheckInDetailSheet 열림 (김OO 방식 = 기준)', async ({ page }) => {
     const examCol = page.locator('[id="exam_waiting"]').or(
       page.locator('[data-column="exam_waiting"]')
     );

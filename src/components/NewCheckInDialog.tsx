@@ -261,7 +261,7 @@ export function NewCheckInDialog({ open, onOpenChange, clinicId, onCreated }: Pr
     if (!customerId && phone.trim()) {
       // ── 고객 해소: 복합키(성함 AND 연락처) — T-20260617-foot-CHECKIN-CHART-LINK-3KEY AC-1 ② ──
       //   스태프 수동 체크인(예약/인라인검색 미선택 walk-in)에서 기존엔 phone 단독(.eq + ilike fallback)
-      //   으로 조회 → 연락처 중복 시 동명이인/타 고객('문자테스트') 임의 연결(6/17 김사비 오배정 클래스).
+      //   으로 조회 → 연락처 중복 시 동명이인/타 고객('문자테스트') 임의 연결(6/17 김OO 오배정 클래스).
       //   성함=eq 정확매칭 + 연락처 canonical(포맷 무관) 비교.
       //   AC-7 (차트번호 1급 권위 키): 차트번호로 정확히 찍는 경로는 인라인검색(InlinePatientSearch)으로
       //   선택 → selectedCustomerId 직결(UNIQUE 차트번호 = 1급 권위, 이 복합키 fallback 자체를 안 탐).

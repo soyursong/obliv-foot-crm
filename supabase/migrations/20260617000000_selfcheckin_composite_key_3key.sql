@@ -3,7 +3,7 @@
 -- 배경: self_checkin_with_reservation_link 는 FE 가 customer_id 를 미전달(NULL)하면
 --   서버에서 phone 단독으로 기존 고객을 재해소했다(원본 20260602210000 §1, lines 92-103).
 --   연락처가 중복이면 동명이인/타 고객(예: '문자테스트')을 임의 1건 픽 → 체크인 오배정.
---   (6/17 김사비→문자테스트 재발 / 6/3 DASH-SLOT-CHART-MISMAP 동일 축).
+--   (6/17 김OO→문자테스트 재발 / 6/3 DASH-SLOT-CHART-MISMAP 동일 축).
 --   FE(SelfCheckIn.tsx)는 본 티켓에서 복합키로 선해소하나, RPC NULL-path 가 살아있으면
 --   FE 가 의도적으로 NULL(성함+연락처 동시중복=ambiguous)을 보낼 때 서버가 phone 단독으로
 --   되살려 오배정을 재현한다 → 서버 권위 경로도 복합키로 막는다.

@@ -23,7 +23,7 @@ const service = createClient(SUPABASE_URL, SERVICE_KEY, {
 
 // ── 픽스처 ──────────────────────────────────────────────────────────────────
 let clinicId: string;
-// 고객 A (customer_id가 check_in에 설정된 케이스 — 김사비 유형)
+// 고객 A (customer_id가 check_in에 설정된 케이스 — 김OO 유형)
 let customerAId: string;
 let customerAResvId: string;
 let customerACheckInId: string;
@@ -73,7 +73,7 @@ test.describe('T-20260516-foot-CHART-UNIFORM-LOCK — 고객별 차트 동작 �
       .from('check_ins')
       .insert({
         clinic_id: clinicId,
-        customer_id: customerAId,         // ← customer_id 연결됨 (김사비 유형)
+        customer_id: customerAId,         // ← customer_id 연결됨 (김OO 유형)
         reservation_id: customerAResvId,
         customer_name: `LOCK테스트A_${sfx.slice(-4)}`,
         customer_phone: `DUMMY-${sfx}`,

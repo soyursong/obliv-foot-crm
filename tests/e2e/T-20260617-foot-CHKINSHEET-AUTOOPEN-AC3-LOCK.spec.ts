@@ -5,7 +5,7 @@
  * 배경(모티켓 AC-3 잔여): CheckInDetailSheet.tsx 의 auto-open useEffect 가 checkIn.customer_id 로
  *   2번차트(고객차트)를 '무조건' 열어 Dashboard.openChartFor 의 verifyChartLinkOrConfirm 게이트를
  *   우회했다 → 체크인 카드에서 confirm 을 취소해도 디테일시트 경로로 타 환자 차트가 열릴 수 있었다
- *   (6/17 김사비→문자테스트류 오배정 표시 재현).
+ *   (6/17 김OO→문자테스트류 오배정 표시 재현).
  *
  * 수정(옵션 A, CHART_UNIFORMITY_LOCK 양립): auto-open 을 guardedAutoOpenChart 로 교체.
  *   - 정상 매칭(성함 일치) → 종전대로 '무조건' 오픈(LOCK 보존, 회귀0).

@@ -9,7 +9,7 @@
 --
 -- ── DA SCOPED 스펙 (현 FE 1:1 미러 아님 — 의도된 확장/축소 명시) ──
 --   (1) 매칭 narrowing: phone 단독 → 복합키 [성함 AND 연락처 canonical] AND 매칭.
---       gap#1 오배정(T-20260617 김사비→문자테스트 재발) 해소. 동명이인+연락처중복 임의연결 차단.
+--       gap#1 오배정(T-20260617 김OO→문자테스트 재발) 해소. 동명이인+연락처중복 임의연결 차단.
 --   (2) ambiguousLink sentinel: 2건↑ 매칭 시 자동연결·신규생성 **동시 보류** → customer_id NULL +
 --       link_status='ambiguous' 반환. FE 는 check_in 을 customer_id=NULL + denormalized 성함/연락처로
 --       기록(native 동작 보존). 현장(대시보드)에서 복합키 재해소.
