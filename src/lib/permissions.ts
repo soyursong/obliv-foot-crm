@@ -424,6 +424,31 @@ export function canViewPhraseManagement(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP (AC3 PHI 게이트) — 진료대시보드>서류작성
+//   탭의 '경과분석지(원장 최종발행 서류) 발행 대상' 리스트업 노출 게이트.
+//   노출 대상 = 원장(director) + 운영최고권한(admin/manager/has_ops_authority).
+//   ★director escape = canEditClinicMgmt/canViewPhraseManagement 와 동일 stopgap(동형 패턴):
+//     has_ops_authority 컬럼 미적재(DDL_DIFF_HOLD) 동안 대표원장(문지은, role='director')이
+//     hasOpsAuthority=false 로 평가돼 lock-out 되는 것을 방지(prod director=문지은 1명뿐 → 무회귀).
+//   ★STEP6(T-20260725-foot-PERMISSION-PARITY-PLAYBOOK): 인라인 role=== 을 SSOT predicate 로 이관
+//     (DoctorTools.tsx 인라인 `role === 'director'` 제거). null-safe(subject 없으면 false).
+//   ★마이그(20260619220000_..._has_ops_authority_additive.sql) landing + 문지은 has_ops_authority=true
+//     set 후 이 director escape 1줄 제거 → converged model(has_ops_authority 단독) 복귀.
+// ─────────────────────────────────────────────────────────────────────────────
+export function canSeeProgressDocs(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  if (!s) return false;
+  // 운영최고권한(대표원장 flag·admin·manager) → 노출.
+  if (hasOpsAuthority(s)) return true;
+  // ── STOPGAP (canViewPhraseManagement 동일 사유) — director escape(lock-out 가드) ──
+  if (s.role === 'director') return true;
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260730-foot-DAYCLOSE-CONFIRMED-EDIT-NO-UNLOCK — 일마감 확정(closed) 후 '해제 없이 수정' 권한.
 //   현장 확정(김다인, MSG-8f6s): 수정 권한 = payment(수납) 권한 보유자 + admin/manager 역할. 전 직원 X.
 //   ★payment(수납) 권한 = 일마감/수납 접근(closing) — admin/manager/director 전원 보유(PERM_MATRIX.closing).
