@@ -629,6 +629,13 @@ function buildCodeEnrichedValues(
     });
   }
   // 행 가시성: 코드 없는 행은 display:none으로 숨김 (AC-3 regression 방지)
+  // T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL(AC7 fold): 세부내역서 상병코드 균일-칸막이 레이아웃용 2번째 칸 가시성.
+  //   ⚠ diagItems 비었을 때(이번 미니창에서 상병 미재선택)는 base(autobind 차트상병) 값 기준으로 판정 —
+  //   diagItems.length 직접 사용 시 base 에 있던 diag_code_2 가 부당하게 숨겨지는 회귀 방지. 코드 <2건이면 접기(빈 칸막이 방지).
+  const diagCount2 = diagItems.length > 0
+    ? diagItems.length
+    : (values.diag_code_2 ? 2 : values.diag_code_1 ? 1 : 0);
+  values['diag_row_2_style'] = diagCount2 >= 2 ? '' : 'display:none';
   values['diag_row_3_style'] = diagItems.length >= 3 ? '' : 'display:none';
   values['diag_row_4_style'] = diagItems.length >= 4 ? '' : 'display:none';
   // diag_opinion_v2 전용: 코드 3,4를 <br>로 이어붙인 extras

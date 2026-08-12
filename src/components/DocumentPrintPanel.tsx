@@ -415,6 +415,9 @@ function applyDiagTokens(
   const count = diagItems.length > 0
     ? diagItems.length
     : (values.diag_code_2 ? 2 : values.diag_code_1 ? 1 : 0);
+  // T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL(AC7 fold): 세부내역서 상병코드 균일-칸막이 레이아웃용 2번째 칸 가시성.
+  //   코드 <2건이면 2번째 .diag-item 접기(빈 칸막이 방지, graceful). row_3/4 와 동일 count 기준.
+  values['diag_row_2_style'] = count >= 2 ? '' : 'display:none';
   values['diag_row_3_style'] = count >= 3 ? '' : 'display:none';
   values['diag_row_4_style'] = count >= 4 ? '' : 'display:none';
   const extra = diagItems.slice(2).map((i) => i.code).filter(Boolean);
