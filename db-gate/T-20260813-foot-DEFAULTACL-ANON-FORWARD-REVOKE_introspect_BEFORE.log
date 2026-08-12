@@ -1,0 +1,2646 @@
+{
+  "all_default_acl": [
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "authenticated",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "service_role",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "FUNCTION",
+      "grantee": "anon",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "FUNCTION",
+      "grantee": "authenticated",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "FUNCTION",
+      "grantee": "service_role",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "storage",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "cron",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "extensions",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": true
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "FUNCTION",
+      "grantee": "anon",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "FUNCTION",
+      "grantee": "authenticated",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "FUNCTION",
+      "grantee": "service_role",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "FUNCTION",
+      "grantee": "anon",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "FUNCTION",
+      "grantee": "authenticated",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "FUNCTION",
+      "grantee": "service_role",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "anon",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "authenticated",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "FUNCTION",
+      "grantee": "service_role",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "anon",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "authenticated",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "SEQUENCE",
+      "grantee": "service_role",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "anon",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "authenticated",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "objtype": "TABLE",
+      "grantee": "service_role",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "FUNCTION",
+      "grantee": "dashboard_user",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "SEQUENCE",
+      "grantee": "dashboard_user",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "SEQUENCE",
+      "grantee": "dashboard_user",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "SEQUENCE",
+      "grantee": "dashboard_user",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "realtime",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "FUNCTION",
+      "grantee": "dashboard_user",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "FUNCTION",
+      "grantee": "postgres",
+      "privilege_type": "EXECUTE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "SEQUENCE",
+      "grantee": "dashboard_user",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "SEQUENCE",
+      "grantee": "dashboard_user",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "SEQUENCE",
+      "grantee": "dashboard_user",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "SEQUENCE",
+      "grantee": "postgres",
+      "privilege_type": "USAGE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "dashboard_user",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_auth_admin",
+      "schema": "auth",
+      "objtype": "TABLE",
+      "grantee": "postgres",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    }
+  ],
+  "target_postgres_public_tables_anon": [
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "postgres",
+      "schema": "public",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    }
+  ],
+  "pathb_supabase_admin_tables_anon": [
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "graphql_public",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "DELETE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "INSERT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "MAINTAIN",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "REFERENCES",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "SELECT",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "TRIGGER",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "TRUNCATE",
+      "is_grantable": false
+    },
+    {
+      "grantor": "supabase_admin",
+      "schema": "public",
+      "privilege_type": "UPDATE",
+      "is_grantable": false
+    }
+  ],
+  "ctx_anon_select_tables": [
+    {
+      "n": 178
+    }
+  ],
+  "ctx_public_base_total": [
+    {
+      "n": 201
+    }
+  ]
+}
+
+──────── VERDICT ────────
+[1] TARGET PRESENT: grantor=postgres public TABLES→anon 잔존 = MAINTAIN,REFERENCES,SELECT,TRIGGER → REVOKE 경로
+[2] path(b) supabase_admin TABLES→anon = DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE,DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE,DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE → §15-6-7 accepted-residual REAFFIRM(무액션)

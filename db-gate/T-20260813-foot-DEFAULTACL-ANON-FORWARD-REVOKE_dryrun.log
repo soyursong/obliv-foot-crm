@@ -1,0 +1,7 @@
+== dry-run 20260813000000_foot_default_acl_anon_forward_revoke.sql ==
+   stripped top-level txn-control (INV-5): ["BEGIN;","COMMIT;"]
+   harness response: []
+   post-probe [postgres→anon public TABLES default SELECT still present (revoke not persisted)] absent? -> [{"absent":true}]
+   post-probe [postgres→anon public TABLES default {MAINTAIN,REFERENCES,SELECT,TRIGGER}=4 still present] absent? -> [{"absent":true}]
+
+== DRY-RUN PASS == (txn-control stripped · plpgsql exception-rollback · post-probe absent) (REVOKE 무영속: anon default-grant 4-priv 여전히 present = prod 미변경 실증)
