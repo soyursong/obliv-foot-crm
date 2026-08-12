@@ -63,10 +63,6 @@ import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSectio
 // T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: 통계>MTM매출 [이번달 목표매출]·[실장별 일별매출] 뷰 재사용(신규 산식 창작 0).
 import MonthlyTargetSection from '@/components/stats/MonthlyTargetSection';
 import { fetchMonthlyComparison, fetchStaffDailyBreakdown, type MonthlyComparison, type StaffDailyBreakdown } from '@/lib/mtmSales';
-// T-20260811-foot-SALESAGG-THERAPIST-TAB: 매출집계>담당치료사별(SalesStaffTab)을 일마감 신규 탭으로 미러(내용 그대로 연동).
-//   기존 컴포넌트/산식/필터 그대로 재사용 — 신규 산식/쿼리 창작 0. 필터바도 매출집계와 동일 UX(기간·검색).
-import { SalesStaffTab } from '@/components/sales/SalesStaffTab';
-import { SalesFilterBar, defaultSalesFilter, type SalesFilterState } from '@/components/sales/SalesFilterBar';
 import { cn } from '@/lib/utils';
 
 // ──────────────────────────────────────────────────────────────
@@ -344,14 +340,6 @@ export default function Closing() {
   //   ★lock-out-safe: DB 역배정 전(전원 admin)엔 admin escape 로 inert(전원 통과) — 역배정 시점에 비로소 실효.
   const canViewTotalRevenue = hasOpsAuthority(profile);
 
-  // ── T-20260811-foot-SALESAGG-THERAPIST-TAB (권한, C2/V2 최소노출) ──
-  //   김주연 총괄 확정(reply ts=1786502240.795299): 신규 '총매출(치료)' 탭 = 관리자(admin)+치료사(therapist)만 노출.
-  //   ★ /sales route(RoleGuard[admin,manager,director]) 는 무변경 — therapist 를 매출집계 전체에 admit 하지 않음(worst-case
-  //     blanket 노출 회피). 일마감(/admin/closing)은 이미 전직원 OPEN(AdminLayout)이라 이 신규 탭만 role 게이트로 좁힌다.
-  //   manager/director 는 기존 매출집계(/sales) 열람 그대로 유지(본 탭 비노출이나 접근권 무영향).
-  const canViewTherapistSales = profile?.role === 'admin' || profile?.role === 'therapist';
-  // '총매출(치료)' 탭 전용 필터 상태 — 매출집계(Sales.tsx)와 동일 기본값(defaultSalesFilter: 이번 달). 독립 로컬 상태.
-  const [therapistSalesFilter, setTherapistSalesFilter] = useState<SalesFilterState>(defaultSalesFilter());
   // T-20260809-foot-CLOSING-PAYSUBTAB-PERSIST-HASHUNIFY (부모 T-20260808-foot-CRM-REFRESH-ROUTE-PERSIST AC-2 자식):
   //   [RC] 주탭(summary/payments/compare)은 구 URL hash(#payments/#compare) 기반, 서브탭(paySubTab)은 useState 만
   //     관리 → 서브탭이 새로고침(F5)에 첫 탭으로 리셋. hash 와 query(?paytab=) 를 병행하면 react-router
@@ -359,11 +347,9 @@ export default function Closing() {
   //   [Fix] 주탭 라우팅 mechanism 을 hash → query(?tab=) 로 통일(useTabParam 재사용, 부모 티켓의 서브탭 훅과 동일 축).
   //     이로써 서브탭도 같은 query 축(?paytab=)에 실어 stomp 를 제거하고 새로고침/딥링크에 함께 유지된다.
   //     기존 #payments/#compare 딥링크·북마크는 아래 레거시 호환 리다이렉트(1회 이관)로 회귀 방지.
-  // T-20260811-foot-SALESAGG-THERAPIST-TAB: 신규 최상위 탭 'therapist_sales'(총매출(치료)) 추가.
-  //   매출집계>담당치료사별(SalesStaffTab) 미러(내용 그대로 연동). admin+therapist 한정 노출(아래 canViewTherapistSales).
-  const [tab, setTab] = useTabParam<'summary' | 'payments' | 'compare' | 'therapist_sales'>({
+  const [tab, setTab] = useTabParam<'summary' | 'payments' | 'compare'>({
     key: 'tab',
-    valid: ['summary', 'payments', 'compare', 'therapist_sales'],
+    valid: ['summary', 'payments', 'compare'],
     fallback: 'summary',
   });
   // T-20260708-foot-REDPAY-CLOSING-TAB / T-20260710-foot-OCR-RECEIPT-REDPAY-MATCH-BUILD:
@@ -400,12 +386,6 @@ export default function Closing() {
   useEffect(() => {
     if (tab === 'compare' && !canViewTotalRevenue) setTab('summary');
   }, [tab, canViewTotalRevenue, setTab]);
-
-  // T-20260811-foot-SALESAGG-THERAPIST-TAB: '총매출(치료)' 탭도 동일 NAV-BOUNCE 패리티 —
-  //   트리거 숨김 + 직접 URL(?tab=therapist_sales) 딥링크 차단(권한 없는 계정은 요약 탭으로 바운스).
-  useEffect(() => {
-    if (tab === 'therapist_sales' && !canViewTherapistSales) setTab('summary');
-  }, [tab, canViewTherapistSales, setTab]);
 
   const [date, setDate] = useState(todayStr());
   const [actualCard, setActualCard] = useState(0);
@@ -1770,12 +1750,6 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               총 매출
             </TabsTrigger>
           )}
-          {/* T-20260811-foot-SALESAGG-THERAPIST-TAB: 신규 '총매출(치료)' 탭 트리거 — admin+therapist 만 노출. */}
-          {canViewTherapistSales && (
-            <TabsTrigger value="therapist_sales" className="flex-1 sm:flex-none">
-              총매출(치료)
-            </TabsTrigger>
-          )}
         </TabsList>
 
         {/* ════════════════════════ 탭 1: 총 합계 ════════════════════════ */}
@@ -2784,18 +2758,6 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             hideTitle={true}
           />
         </TabsContent>
-
-        {/* ════════════════════════ 탭 4: 총매출(치료) ════════════════════════ */}
-        {/* T-20260811-foot-SALESAGG-THERAPIST-TAB (김주연 총괄 확정, reply ts=1786502240.795299):
-            매출집계 > [담당치료사별](SalesStaffTab) '내용 그대로 연동/미러'. 기존 컴포넌트·산식·grain·drill-down
-            재사용 — 신규 산식/쿼리 창작 0. 필터바(기간·검색)도 매출집계와 동일 UX 로 병기.
-            권한: admin+therapist(canViewTherapistSales) 한정 — 트리거 숨김 + NAV-BOUNCE(위 useEffect). */}
-        {canViewTherapistSales && (
-          <TabsContent value="therapist_sales" className="space-y-4">
-            <SalesFilterBar value={therapistSalesFilter} onChange={setTherapistSalesFilter} />
-            <SalesStaffTab filter={therapistSalesFilter} />
-          </TabsContent>
-        )}
       </Tabs>
 
       {/* 수기 추가/수정 다이얼로그 */}
