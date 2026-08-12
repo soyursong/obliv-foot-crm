@@ -190,6 +190,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 경과분석 탭 나열기준 '예약일=오늘' → '활성 패키지 보유 +
+        //   (used_sessions+1)%6==0 인 환자 전부'(미예약 포함). 순수 로직(anticipatedSession/isSixMultipleTarget/
+        //   sessionCheckpointLabel/compareProgressTargets) 단언 — 6배수 판정·NULLS-LAST 정렬·tier0 배제·라벨.
+        //   auth/DB/server 불요·결정론(read-only 필터, db_change=false). 실 목록/스크롤 UX = supervisor field-soak(갤탭).
+        '**/T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER.spec.ts',
         // T-20260812-foot-DOCFEE-DIAGCODE-ADD (alias SUSU-DETAIL-SANGBYEONG-CODE-INSERT): 진료비 세부내역서(bill_detail)에
         //   [상병코드]를 **별도 한 줄**(.diag-line)로 삽입(김주연 총괄 요청). ★planner 제약: T-20260731 AC-D가 삭제한 상병 '표(diag-grid)'
         //   blind 복원 금지 — '결제 미니창 선택 상병코드 별도 줄'로만 착지(표 재도입 회귀가드 포함). diag_code_N/diag_name_N 토큰은
@@ -758,6 +763,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: unit 전용(6배수 판정·정렬 순수 함수) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER.spec.ts',
         // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: unit 전용(토큰 파서/마스터 인덱스/교차검증
         //   순수 함수 + fail-open 가드). 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)
         //   유입 차단. unit 에서만 실행(브라우저 스모크는 로그인 실패 시 graceful skip).

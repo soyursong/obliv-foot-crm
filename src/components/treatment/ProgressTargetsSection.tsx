@@ -52,6 +52,13 @@ import ProgressAnalyticsWidgets, { parseProgressSession } from '@/components/tre
 //   CSV-export(위)로 내보낸 뒤 외부에서 분석한 결과이미지를 되받아 차트번호 단독조인으로 자동첨부.
 //   admin/manager(운영권한, canExportCsv 동일 게이트)에서만 노출. DA-20260718-...-AUTOMATCH 계약.
 import ProgressResultBulkUploadDialog from '@/components/treatment/ProgressResultBulkUploadDialog';
+// T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준(6배수 도래) 순수 로직 — 필터/라벨/정렬 결정.
+import {
+  isSixMultipleTarget,
+  anticipatedSession,
+  sessionCheckpointLabel,
+  compareProgressTargets,
+} from '@/lib/progressSixMultiple';
 
 // T-20260701-foot-PROGRESS-LIST-ICON-LABEL-CLEAN: 경과분석 리스트 '회차' 표시 정리(FE-only, DDL0).
 //   회차 숫자는 기존 label(progress_check_label) 그대로 매핑 — 표시 문자열만 '{N}회차'로 통일.
@@ -64,74 +71,133 @@ function formatSessionLabel(label: string | null | undefined): string {
 }
 
 interface ProgressTargetRow {
-  reservationId: string;
+  rowKey: string;                     // 고유 행 키(=packageId). 예약 grain 아님(선택·다운로드용 식별자).
+  packageId: string;
   customerId: string | null;
   customerName: string;
   chartNumber: string | null;
   phone: string | null;
-  label: string | null;          // 회차 (progress_check_label, 예: "6회 경과분석")
-  reservationTime: string;       // HH:mm
-  registrarName: string | null;  // 담당자(예약등록자 스냅샷)
+  label: string | null;              // 회차 (anticipatedSession 기반, 예: "6회 경과분석")
+  anticipatedSession: number;        // used_sessions + 1 (6의 배수)
+  nextReservationDate: string | null; // 다음 예약일 yyyy-MM-dd (오늘 이후 미취소 최이른). 미예약=null.
+  nextReservationTime: string | null; // HH:mm
+  registrarName: string | null;       // 다음 예약 등록자 스냅샷
 }
 
-// reservations(progress_check_required=true, 당일, 취소 제외) → 당일 경과분석 대상자 목록(read-only).
-function useProgressTargets(clinicId: string | null | undefined, date: string) {
+// T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준 변경.
+//   FROM: reservations(progress_check_required=true, 예약일=오늘) → 당일 대상자.
+//   TO:   활성 패키지 보유 + (used_sessions + 1) % 6 == 0 인 환자 전부 (오늘 예약 여부 무관·미예약 포함).
+//   판정 로직 기존 그대로(Reservations.tsx anticipatedSession = used_sessions + 1; 6배수: % 6 == 0).
+//   자매 SONGDO-FORM-DOWNLOAD(deployed) 다운로드 버튼 트리거 모집단과 동일 모집단(정합).
+//   read-only 조회만 — 신규 스키마/트리거/write 0 (db_change=false).
+function useProgressTargets(clinicId: string | null | undefined) {
   return useQuery<ProgressTargetRow[]>({
-    queryKey: ['progress_targets', clinicId, date],
+    queryKey: ['progress_targets_6multiple', clinicId],
     enabled: !!clinicId,
     queryFn: async () => {
       if (!clinicId) return [];
-      const SEL =
-        'id, customer_id, customer_name, reservation_time, registrar_name, ' +
-        'progress_check_required, progress_check_label, status';
-      const { data, error } = await supabase
-        .from('reservations')
-        .select(SEL)
+
+      // 1) 활성 패키지 (경과분석 대상 tier = total_sessions>0; 체험/Re:Born tier 0 배제 — 기존 진행판정 가드 동일).
+      const { data: pkgData, error: pkgErr } = await supabase
+        .from('packages')
+        .select('id, customer_id, total_sessions')
         .eq('clinic_id', clinicId)
-        .eq('reservation_date', date)
-        .eq('progress_check_required', true)
-        .neq('status', 'cancelled')
-        .order('reservation_time', { ascending: true });
-      if (error) {
-        // ADDITIVE 컬럼 미적용 prod(42703/PGRST204) → 빈 목록 폴백(페이지 무파손).
-        if (/progress_check_required|progress_check_label|42703|PGRST204/.test(error.message ?? '')) return [];
-        throw error;
+        .eq('status', 'active');
+      if (pkgErr) throw pkgErr;
+      const packages = ((pkgData ?? []) as Array<{ id: string; customer_id: string | null; total_sessions: number | null }>)
+        .filter((p) => p.id && p.customer_id && (p.total_sessions ?? 0) > 0);
+      if (packages.length === 0) return [];
+
+      // 2) 사용 세션 수(status='used') per package — Reservations.tsx anticipatedSession 카운트 로직과 동일.
+      const pkgIds = packages.map((p) => p.id);
+      const usedMap = new Map<string, number>();
+      const { data: sessData, error: sessErr } = await supabase
+        .from('package_sessions')
+        .select('package_id')
+        .in('package_id', pkgIds)
+        .eq('status', 'used');
+      if (sessErr) throw sessErr;
+      for (const s of (sessData ?? []) as Array<{ package_id: string }>) {
+        usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
       }
 
-      const rows: ProgressTargetRow[] = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((r) => ({
-        reservationId: String(r['id'] ?? ''),
-        customerId: r['customer_id'] ? String(r['customer_id']) : null,
-        customerName: String(r['customer_name'] ?? '—'),
-        chartNumber: null,
-        phone: null,
-        label: r['progress_check_label'] ? String(r['progress_check_label']) : null,
-        reservationTime: String(r['reservation_time'] ?? '').slice(0, 5),
-        registrarName: r['registrar_name'] ? String(r['registrar_name']) : null,
-      }));
-      if (rows.length === 0) return [];
+      // 3) 6배수 도래 필터: anticipatedSession = used + 1, anticipatedSession % 6 == 0 (tier 0 배제).
+      const targets = packages
+        .map((p) => {
+          const used = usedMap.get(p.id) ?? 0;
+          return {
+            packageId: p.id,
+            customerId: p.customer_id as string,
+            usedSessions: used,
+            totalSessions: p.total_sessions,
+            anticipatedSession: anticipatedSession(used),
+          };
+        })
+        .filter((t) => isSixMultipleTarget({ usedSessions: t.usedSessions, totalSessions: t.totalSessions }));
+      if (targets.length === 0) return [];
 
-      // 차트번호·연락처 보강(read-only). 실패해도 목록은 표시(이름·회차·시간은 정상).
+      // 4) 고객 메타(이름·차트번호·연락처) 보강(read-only).
+      const customerIds = [...new Set(targets.map((t) => t.customerId))];
+      const custMap = new Map<string, { name: string; chart: string | null; phone: string | null }>();
       try {
-        const ids = [...new Set(rows.map((r) => r.customerId).filter(Boolean) as string[])];
-        if (ids.length > 0) {
-          const { data: custs } = await supabase
-            .from('customers')
-            .select('id, chart_number, phone')
-            .in('id', ids);
-          const metaMap = new Map<string, { chart: string | null; phone: string | null }>();
-          for (const c of (custs ?? []) as Array<{ id: string; chart_number: string | null; phone: string | null }>) {
-            if (c.id) metaMap.set(c.id, { chart: c.chart_number ?? null, phone: c.phone ?? null });
-          }
-          for (const r of rows) {
-            if (!r.customerId) continue;
-            const meta = metaMap.get(r.customerId);
-            r.chartNumber = meta?.chart ?? null;
-            r.phone = meta?.phone ?? null;
-          }
+        const { data: custs } = await supabase
+          .from('customers')
+          .select('id, name, chart_number, phone')
+          .in('id', customerIds);
+        for (const c of (custs ?? []) as Array<{ id: string; name: string | null; chart_number: string | null; phone: string | null }>) {
+          if (c.id) custMap.set(c.id, { name: c.name ?? '—', chart: c.chart_number ?? null, phone: c.phone ?? null });
         }
       } catch {
-        // 보강 실패 — 무시.
+        // 보강 실패 — 무시(회차/식별자는 정상 표시).
       }
+
+      // 5) 다음 예약(오늘 이후 미취소 최이른) per customer — 정렬/표시용(미예약=null). read-only.
+      const today = seoulISODate(new Date());
+      const nextResvMap = new Map<string, { date: string; time: string | null; registrar: string | null }>();
+      try {
+        const { data: resvs } = await supabase
+          .from('reservations')
+          .select('customer_id, reservation_date, reservation_time, registrar_name, status')
+          .eq('clinic_id', clinicId)
+          .in('customer_id', customerIds)
+          .gte('reservation_date', today)
+          .neq('status', 'cancelled')
+          .order('reservation_date', { ascending: true })
+          .order('reservation_time', { ascending: true });
+        for (const rv of (resvs ?? []) as Array<Record<string, unknown>>) {
+          const cid = rv['customer_id'] ? String(rv['customer_id']) : '';
+          if (!cid || nextResvMap.has(cid)) continue; // 정렬상 첫 매칭 = 최이른.
+          nextResvMap.set(cid, {
+            date: String(rv['reservation_date'] ?? ''),
+            time: rv['reservation_time'] ? String(rv['reservation_time']).slice(0, 5) : null,
+            registrar: rv['registrar_name'] ? String(rv['registrar_name']) : null,
+          });
+        }
+      } catch {
+        // 다음 예약 보강 실패 — 미예약 취급(목록은 유지).
+      }
+
+      // 6) row 조립.
+      const rows: ProgressTargetRow[] = targets.map((t) => {
+        const meta = custMap.get(t.customerId);
+        const nr = nextResvMap.get(t.customerId);
+        return {
+          rowKey: t.packageId,
+          packageId: t.packageId,
+          customerId: t.customerId,
+          customerName: meta?.name ?? '—',
+          chartNumber: meta?.chart ?? null,
+          phone: meta?.phone ?? null,
+          label: sessionCheckpointLabel(t.anticipatedSession),
+          anticipatedSession: t.anticipatedSession,
+          nextReservationDate: nr?.date ?? null,
+          nextReservationTime: nr?.time ?? null,
+          registrarName: nr?.registrar ?? null,
+        };
+      });
+
+      // 7) 정렬: 다음 예약일 오름차순(NULLS LAST) → 이름순(가나다).
+      rows.sort(compareProgressTargets);
 
       return rows;
     },
@@ -152,9 +218,9 @@ interface Props {
 export default function ProgressTargetsSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
   const { profile } = useAuth();
-  const { data: rows = [], isLoading, isError, error } = useProgressTargets(clinic?.id, date);
-  const today = seoulISODate(new Date());
-  const isToday = date === today;
+  // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준이 예약일(date) 독립으로 변경(활성 패키지 6배수 도래 전부).
+  //   date prop 은 하단 위젯(ProgressAnalyticsWidgets)에만 전달 — 리스트 모집단에는 미사용.
+  const { data: rows = [], isLoading, isError, error } = useProgressTargets(clinic?.id);
 
   // T-20260702-foot-PROGRESS-CSV-EXPORT: PHI 반출 게이트 — admin/manager(운영권한, 대표원장 포함)만 노출/동작.
   //   경과분석 탭 열람권과 동일 계층. 치료사/일반직원에게는 CSV 버튼 미노출.
@@ -168,7 +234,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const rowIds = useMemo(() => rows.map((r) => r.reservationId), [rows]);
+  const rowIds = useMemo(() => rows.map((r) => r.rowKey), [rows]);
   // 현재 rows 에 존재하는 선택만 유효 개수로 카운트(코호트 변경 후 stale 선택 제외).
   const selectedCount = useMemo(
     () => rowIds.filter((id) => selectedIds.has(id)).length,
@@ -212,7 +278,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   const handleCsvExport = async () => {
     if (!canExportCsv) return; // 방어(버튼 미노출이지만 이중 가드).
     // 현재 리스트에서 선택된 예약 row → 대상 고객 id 집합(유효 선택만).
-    const selectedRows = rows.filter((r) => selectedIds.has(r.reservationId) && r.customerId);
+    const selectedRows = rows.filter((r) => selectedIds.has(r.rowKey) && r.customerId);
     const customerIds = [...new Set(selectedRows.map((r) => r.customerId as string))];
     if (customerIds.length === 0) {
       toast.warning('먼저 CSV로 내보낼 환자를 선택해 주세요.');
@@ -350,7 +416,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
       return;
     }
     if (!clinic?.id) return;
-    setTxtBusyId(row.reservationId);
+    setTxtBusyId(row.rowKey);
     try {
       // 1) 고객 메타(차트번호·이름) — 헤더/파일명용. 실패 시 리스트 스냅샷 폴백.
       let chartNumber = row.chartNumber;
@@ -512,8 +578,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
             경과분석
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {dateLabel(date)} {isToday && '(오늘) '}경과분석 체크포인트 회차에 해당하는 예약 환자를 한눈에
-            보여줍니다. 예약 생성 시 패키지 경과분석 플랜에 따라 자동 표시됩니다.
+            활성 패키지 보유 환자 중 <span className="font-medium text-foreground">다음 회차가 6의 배수(6·12·18·24…)</span>에
+            도래하는 환자 전부를 보여줍니다. 오늘 예약 여부와 무관하며, 미예약 환자도 포함됩니다.
           </p>
         </div>
         {(canExportCsv || rows.length > 0) && (
@@ -598,19 +664,14 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
           data-testid="progress-targets-empty"
         >
           <TrendingUp className="h-5 w-5 text-muted-foreground/40" />
-          {isToday ? '오늘 경과분석 대상자가 없습니다.' : '해당 날짜에 경과분석 대상자가 없습니다.'}
+          6의 배수 회차 도래 경과분석 대상자가 없습니다.
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-background">
           <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-2.5 py-1.5">
             <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
               <CalendarDays className="h-3.5 w-3.5 text-teal-600" />
-              {dateLabel(date)}
-              {isToday && (
-                <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  오늘
-                </span>
-              )}
+              6배수 회차 도래 대상자
             </span>
             <span className="text-[11px] font-medium text-muted-foreground" data-testid="progress-targets-group-count">
               {rows.length}명
@@ -634,7 +695,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                   <th className="px-2 py-1 whitespace-nowrap">#</th>
                   <th className="px-2 py-1 whitespace-nowrap">환자</th>
                   <th className="px-2 py-1 whitespace-nowrap">회차</th>
-                  <th className="px-2 py-1 whitespace-nowrap">예약시간</th>
+                  <th className="px-2 py-1 whitespace-nowrap">다음 예약</th>
                   <th className="px-2 py-1 whitespace-nowrap">담당자</th>
                   {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행 열 */}
                   <th className="px-2 py-1 whitespace-nowrap text-right">발행</th>
@@ -643,7 +704,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
               <tbody>
                 {rows.map((r, idx) => (
                   <tr
-                    key={r.reservationId}
+                    key={r.rowKey}
                     className="border-b last:border-0 transition-colors hover:bg-muted/30"
                     data-testid="progress-targets-row"
                   >
@@ -652,8 +713,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                       <input
                         type="checkbox"
                         className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
-                        checked={selectedIds.has(r.reservationId)}
-                        onChange={() => toggleRow(r.reservationId)}
+                        checked={selectedIds.has(r.rowKey)}
+                        onChange={() => toggleRow(r.rowKey)}
                         aria-label={`${r.customerName} 선택`}
                         data-testid="progress-row-checkbox"
                       />
@@ -688,8 +749,21 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                         {formatSessionLabel(r.label)}
                       </span>
                     </td>
-                    <td className="px-2 py-1 tabular-nums whitespace-nowrap" data-testid="progress-time-cell">
-                      {r.reservationTime || '—'}
+                    {/* T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: '예약시간' → '다음 예약(오늘 이후 최이른)'.
+                        미예약(다음 예약 없음) 환자는 '미예약' 배지로 표시(정렬상 하단). */}
+                    <td className="px-2 py-1 whitespace-nowrap" data-testid="progress-nextresv-cell">
+                      {r.nextReservationDate ? (
+                        <span className="tabular-nums">
+                          {dateLabel(r.nextReservationDate)}
+                          {r.nextReservationTime && (
+                            <span className="ml-1 text-[11px] text-muted-foreground">{r.nextReservationTime}</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-500">
+                          미예약
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1 whitespace-nowrap text-muted-foreground" data-testid="progress-registrar-cell">
                       {r.registrarName ? `@${r.registrarName}` : '—'}
@@ -704,11 +778,11 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                             size="xs"
                             variant="outline"
                             onClick={() => handleTxtExport(r)}
-                            disabled={txtBusyId === r.reservationId || !r.customerId}
+                            disabled={txtBusyId === r.rowKey || !r.customerId}
                             title="날짜별 치료이력(예약/접수메모)을 txt 파일로 내려받기"
                             data-testid="progress-txt-download-btn"
                           >
-                            {txtBusyId === r.reservationId ? (
+                            {txtBusyId === r.rowKey ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
                               <FileText className="h-3 w-3" />
