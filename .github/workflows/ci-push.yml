@@ -80,8 +80,15 @@ jobs:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       VITE_DISABLE_AUTH_LOCK: "1"
-      TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
-      TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      # ── T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (Axis-A FIX, dev-meta lane) ──
+      #   supervisor QA(08-12) C14 fail-closed: 이 job 이 지금까지 실환자 PROD(rxlomoozakkjesdqjtvd)
+      #   에 critical-flow 를 실행해온 오배선 = CF-5 phantom 80k 진원의 CI 재생산 경로였고, AC1 가드
+      #   (_prodWriteGuard)가 이를 최초로 loud-fail 표면화했다. 처분 = 가드 완화 금지, CI env 를
+      #   dev/격리 DB 로 컷오버. women ci-push CF/chart-gate 컷오버(MSG-20260811-005123-g9m0) 와
+      #   동일 canonical 패턴(FOOT_E2E_DEV_ISOLATION + secrets→.env.dev-isolation.local 기록).
+      #   TEST_USER 도 obliv-foot-dev(kcdqtyivtqcjmcrdjkqi) 전용 계정으로 override.
+      TEST_USER_EMAIL: ${{ secrets.DEV_TEST_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.DEV_TEST_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
       # T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN QA#3 (CI-RED-MAIN-RESOLVE 미머지분 흡수):
@@ -92,6 +99,12 @@ jobs:
       #   타임아웃 하드 RED(= supervisor 가 관측한 "동일 signature", 실은 cleanup race 아닌 TZ 경계).
       #   운영 태블릿과 동일 KST 로 정렬해 봉합(회귀검출 무력화 아님 — 시드 카드가 실제로 떠야 GREEN).
       TZ: "Asia/Seoul"
+      # ── DEV DB 격리 상시주입 (Axis-A FIX) ──
+      #   FOOT_E2E_DEV_ISOLATION=1 → playwright.config 부팅 블록이 .env.dev-isolation.local(아래
+      #   단계에서 GitHub secrets 로부터 기록)을 로드, DEV_SUPABASE_* → 하네스 표준 키(VITE_SUPABASE_URL/
+      #   _ANON_KEY/SUPABASE_SERVICE_ROLE_KEY)로 override 매핑 + EXPECT_DEV_DB_REF 세팅 → PRODREF-
+      #   HARDGUARD(global-setup/teardown assertExpectedDbTarget) 활성. defense-in-depth(가드 + 하드가드).
+      FOOT_E2E_DEV_ISOLATION: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +114,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+
+      # dev-isolation env 기록 (women ci-push 와 동일 패턴·fail-closed). prod 무접촉.
+      #   .env.dev-isolation.local 은 gitignored → GitHub secrets 로부터 기록. 미등록/오배선 시 값이
+      #   비어 mapDevIsolationEnv 즉시 throw(silent prod-flow 금지). GitHub 가 로그 자동 마스킹.
+      #   DEV_SUPABASE_PROJECT_REF = obliv-foot-dev 공개 project ref(=tests/devIsolationEnv.ts
+      #   DEV_ISOLATION_REF 상수, non-secret·DEV_SUPABASE_URL 에 이미 포함) → mapDevIsolationEnv 가
+      #   URL 대조로 재검문(불일치 시 fail-closed).
+      - name: Write dev-isolation env (E2E→obliv-foot-dev 격리, prod 무접촉·fail-closed)
+        run: |
+          {
+            echo "DEV_SUPABASE_URL=${{ secrets.DEV_SUPABASE_URL }}"
+            echo "DEV_SUPABASE_PROJECT_REF=kcdqtyivtqcjmcrdjkqi"
+            echo "DEV_SUPABASE_ANON_KEY=${{ secrets.DEV_SUPABASE_ANON_KEY }}"
+            echo "DEV_SUPABASE_SERVICE_ROLE_KEY=${{ secrets.DEV_SUPABASE_SERVICE_ROLE_KEY }}"
+          } > .env.dev-isolation.local
 
       - name: Run Critical Flow specs
         run: npx playwright test tests/e2e/critical-flow/ --project=desktop-chrome
