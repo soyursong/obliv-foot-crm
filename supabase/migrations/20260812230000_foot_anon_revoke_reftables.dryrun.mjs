@@ -1,6 +1,6 @@
 /**
  * DRY-RUN (No-Persistence): T-20260812-foot-ANON-REVOKE-REFTABLES
- *   20260812230000_foot_anon_revoke_reftables.sql  (DESTRUCTIVE grant-axis: REVOKE ALL x8)
+ *   20260812230000_foot_anon_revoke_reftables.sql  (DESTRUCTIVE grant-axis: REVOKE ALL x5 — INERT subset, 8→5 re-scope)
  *
  * canonical 러너 scripts/dryrun_lib.mjs(migration_dryrun_no_persistence_standard.md v1.0) 위임:
  *   ① txn-control strip  ② plpgsql exception-handler 무영속 실행  ③ post-probe.
