@@ -1,0 +1,182 @@
+=== T-20260812-foot-TESTDATA-PRE0713-ISTEST-BACKFILL — 1단계 CENSUS (READ-ONLY) ===
+DB: https://rxlomoozakkjesdqjtvd.supabase.co
+컷오프(KST): 대상 = 기준일 < 2026-07-13T00:00:00+09:00  (= 7/12 23:59:59 까지 생성분)
+7/13 경계행 스캔: [2026-07-13T00:00:00+09:00, 2026-07-14T00:00:00+09:00)
+
+
+── check_ins (total=1112) canonical_date=created_at
+   flags: {"is_test":false,"is_simulation":false}
+   date_cols: {"created_at":true,"visit_date":false,"checked_in_at":true}
+   pre_cutoff: {"by_is_test":"N/A(is_test 컬럼 부재 또는 기준컬럼 부재)","all_rows":153}
+   boundary(7/13): {"rows_on_0713":17}
+
+── payments (total=958) canonical_date=created_at
+   flags: {"is_test":false,"is_simulation":true}
+   date_cols: {"created_at":true,"accounting_date":true,"paid_at":false}
+   pre_cutoff: {"by_is_test":"N/A(is_test 컬럼 부재 또는 기준컬럼 부재)","by_is_sim":25,"sim_already_true":0,"all_rows":25}
+   boundary(7/13): {"rows_on_0713":3}
+
+── packages (total=652) canonical_date=created_at
+   flags: {"is_test":false,"is_simulation":false}
+   date_cols: {"created_at":true,"purchased_at":false,"start_date":false}
+   pre_cutoff: {"by_is_test":"N/A(is_test 컬럼 부재 또는 기준컬럼 부재)","all_rows":33}
+   boundary(7/13): {"rows_on_0713":9}
+
+── package_payments (total=199) canonical_date=created_at
+   flags: {"is_test":false,"is_simulation":true}
+   date_cols: {"created_at":true,"accounting_date":true,"paid_at":false}
+   pre_cutoff: {"by_is_test":"N/A(is_test 컬럼 부재 또는 기준컬럼 부재)","by_is_sim":0,"sim_already_true":0,"all_rows":0}
+   boundary(7/13): {"rows_on_0713":2}
+
+── service_charges (total=477) canonical_date=null
+   flags: {"is_test":false,"is_simulation":true}
+   date_cols: {"created_at":false,"accounting_date":false}
+   pre_cutoff: {"by_is_test":"N/A(is_test 컬럼 부재 또는 기준컬럼 부재)"}
+   boundary(7/13): {}
+
+── customers (total=1899) canonical_date=created_at
+   flags: {"is_test":true,"is_simulation":true}
+   date_cols: {"created_at":true}
+   pre_cutoff: {"by_is_test":215,"already_true":3,"by_is_sim":214,"sim_already_true":4,"all_rows":218}
+   boundary(7/13): {"rows_on_0713":81}
+
+
+=== CENSUS JSON ===
+{
+  "generated_axis": "READ-ONLY",
+  "tables": {
+    "check_ins": {
+      "table": "check_ins",
+      "table_exists": true,
+      "flags": {
+        "is_test": false,
+        "is_simulation": false
+      },
+      "date_cols": {
+        "created_at": true,
+        "visit_date": false,
+        "checked_in_at": true
+      },
+      "total": 1112,
+      "pre_cutoff": {
+        "by_is_test": "N/A(is_test 컬럼 부재 또는 기준컬럼 부재)",
+        "all_rows": 153
+      },
+      "boundary": {
+        "rows_on_0713": 17
+      },
+      "canonical_date": "created_at"
+    },
+    "payments": {
+      "table": "payments",
+      "table_exists": true,
+      "flags": {
+        "is_test": false,
+        "is_simulation": true
+      },
+      "date_cols": {
+        "created_at": true,
+        "accounting_date": true,
+        "paid_at": false
+      },
+      "total": 958,
+      "pre_cutoff": {
+        "by_is_test": "N/A(is_test 컬럼 부재 또는 기준컬럼 부재)",
+        "by_is_sim": 25,
+        "sim_already_true": 0,
+        "all_rows": 25
+      },
+      "boundary": {
+        "rows_on_0713": 3
+      },
+      "canonical_date": "created_at"
+    },
+    "packages": {
+      "table": "packages",
+      "table_exists": true,
+      "flags": {
+        "is_test": false,
+        "is_simulation": false
+      },
+      "date_cols": {
+        "created_at": true,
+        "purchased_at": false,
+        "start_date": false
+      },
+      "total": 652,
+      "pre_cutoff": {
+        "by_is_test": "N/A(is_test 컬럼 부재 또는 기준컬럼 부재)",
+        "all_rows": 33
+      },
+      "boundary": {
+        "rows_on_0713": 9
+      },
+      "canonical_date": "created_at"
+    },
+    "package_payments": {
+      "table": "package_payments",
+      "table_exists": true,
+      "flags": {
+        "is_test": false,
+        "is_simulation": true
+      },
+      "date_cols": {
+        "created_at": true,
+        "accounting_date": true,
+        "paid_at": false
+      },
+      "total": 199,
+      "pre_cutoff": {
+        "by_is_test": "N/A(is_test 컬럼 부재 또는 기준컬럼 부재)",
+        "by_is_sim": 0,
+        "sim_already_true": 0,
+        "all_rows": 0
+      },
+      "boundary": {
+        "rows_on_0713": 2
+      },
+      "canonical_date": "created_at"
+    },
+    "service_charges": {
+      "table": "service_charges",
+      "table_exists": true,
+      "flags": {
+        "is_test": false,
+        "is_simulation": true
+      },
+      "date_cols": {
+        "created_at": false,
+        "accounting_date": false
+      },
+      "total": 477,
+      "pre_cutoff": {
+        "by_is_test": "N/A(is_test 컬럼 부재 또는 기준컬럼 부재)"
+      },
+      "boundary": {},
+      "canonical_date": null
+    },
+    "customers": {
+      "table": "customers",
+      "table_exists": true,
+      "flags": {
+        "is_test": true,
+        "is_simulation": true
+      },
+      "date_cols": {
+        "created_at": true
+      },
+      "total": 1899,
+      "pre_cutoff": {
+        "by_is_test": 215,
+        "already_true": 3,
+        "by_is_sim": 214,
+        "sim_already_true": 4,
+        "all_rows": 218
+      },
+      "boundary": {
+        "rows_on_0713": 81
+      },
+      "canonical_date": "created_at"
+    }
+  }
+}
