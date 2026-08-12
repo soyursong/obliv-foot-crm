@@ -1,19 +1,20 @@
 /**
- * E2E spec — T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT
- * 진료비 세부내역서(bill_detail) 서류에 [상병코드] 별도 표기 복원 (문원장 요청, 첨부 20260812_102243.png).
+ * E2E spec — T-20260812-foot-DOCFEE-DIAGCODE-ADD
+ *   (responder triage alias: T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT)
+ * 진료비 세부내역서(bill_detail) 서류에 [상병코드]를 **별도 한 줄**로 삽입 (김주연 총괄 요청, 첨부 20260812_102243.png).
  *
- * 배경: 세부내역서의 상병(상병코드·상병명) 2열 컴팩트 그리드는 T-20260721 로 추가되어
- *   T-20260724-OVERFLOW-2PAGE 에서 1페이지 보장으로 검증됐으나, T-20260731 AC-D(팀장 정리)에서
- *   표+CSS 가 함께 삭제됐다. 본 티켓은 문원장 요청으로 그 검증된 컴팩트 그리드를 원 위치에 복원한다.
+ * ★★ planner 명시 제약(policy_superseded): T-20260731 AC-D 가 삭제한 상병 '표(diag-grid table)' 를 blind 복원 금지.
+ *    요청 형태 = '결제 미니창 선택 상병코드 별도 줄' → .diag-line 한 줄(코드+상병명 inline)로만 착지. 표 구조 재도입 금지.
  *
- * 데이터 소스(신규 write 0): 결제 미니창(PaymentMiniWindow) ② 차트 코드 zone 에서 고객별로 선택·저장된 상병코드
- *   = service_charges 상병 → check_in_services 폴백(결제미니창 PATH-4). 이미 diag_code_N/diag_name_N
- *   토큰이 전 렌더 경로에서 채워짐 → 순수 서류 렌더 변경(금액/계산 무접촉).
+ * 데이터 소스(신규 write 0): 결제 미니창 ② 차트 코드 zone 선택·저장 상병코드 = service_charges 상병 → check_in_services
+ *   폴백(PATH-4). diag_code_N/diag_name_N 토큰이 이미 전 렌더 경로에서 채워짐 → 순수 서류 렌더 변경(금액/계산 무접촉).
  *
  * 첨부 스크린샷(20260812_102243.png) ② 차트 코드 zone 실측 상병 3건: 사마귀피부염 B430 / 체부백선 B354 / 발백선 B353.
  *
- * 시나리오 1(정상): 세부내역서에 [상병코드] 항목이 별도 표기 + 선택된 상병코드 값 일치 + 금액/산정 무변화.
- * 시나리오 2(엣지): 상병 미선택 → 공란 graceful(에러 없음) / 복수 상병 → 전부 표기(잘림·누락 없음).
+ * AC1: 세부내역서에 결제 미니창 선택 상병코드가 별도 줄로 표기.
+ * AC2: 상병코드 미선택 시 빈 줄 graceful(에러/리터럴 토큰 없음).
+ * AC3: 실제 발급(bindHtmlTemplate 렌더)에도 동일 반영.
+ * AC4: 계산서·영수증·금액/계산 로직 무접촉.
  */
 import { test, expect } from '@playwright/test';
 import { bindHtmlTemplate, getHtmlTemplate } from '../../src/lib/htmlFormTemplates';
@@ -52,8 +53,6 @@ const withNone = (): Record<string, string> => {
     v[`diag_code_${n}`] = '';
     v[`diag_name_${n}`] = '';
   });
-  v.diag_row_3_style = 'display:none';
-  v.diag_row_4_style = 'display:none';
   return v;
 };
 
@@ -61,50 +60,49 @@ const withNone = (): Record<string, string> => {
 const with4 = (): Record<string, string> => ({
   ...baseBillValues(),
   diag_code_4: 'K297', diag_name_4: '상세불명의 위염',
-  diag_row_4_style: '',
 });
 
-/** bill_detail 내 상병 2열 그리드(table.diag-grid) 블록만 추출. */
-function extractDiagGrid(html: string): string {
-  const start = html.indexOf('class="diag-grid"');
+/** bill_detail 내 [상병코드] 별도 줄(.diag-line) 블록만 추출. */
+function extractDiagLine(html: string): string {
+  const start = html.indexOf('class="diag-line"');
   expect(start).toBeGreaterThan(-1);
-  const tableStart = html.lastIndexOf('<table', start);
-  const tableEnd = html.indexOf('</table>', start);
-  expect(tableEnd).toBeGreaterThan(tableStart);
-  return html.slice(tableStart, tableEnd + '</table>'.length);
+  const divStart = html.lastIndexOf('<div', start);
+  const divEnd = html.indexOf('</div>', start);
+  expect(divEnd).toBeGreaterThan(divStart);
+  return html.slice(divStart, divEnd + '</div>'.length);
 }
 
-/** tbody 안의 물리 데이터행 <tr> 개수. */
-function bodyRowCount(gridHtml: string): number {
-  const body = gridHtml.slice(gridHtml.indexOf('<tbody>'), gridHtml.indexOf('</tbody>'));
-  return (body.match(/<tr/g) || []).length;
-}
-
-// ── 시나리오 1: [상병코드]가 세부내역서에 별도 항목으로 복원 표기 ───────────────
-test('S1 세부내역서에 [상병코드] 전용 그리드가 별도 표기됨 (헤더 상병코드·상병명)', () => {
+// ── AC1: [상병코드]가 별도 '한 줄'로 표기 (표 아님) ────────────────────────────
+test('AC1 세부내역서에 [상병코드] 별도 줄(.diag-line) — 라벨 "상병코드" 포함', () => {
   const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, baseBillValues());
-  const grid = extractDiagGrid(html);
-  expect(grid).toContain('상병코드');
-  expect(grid).toContain('상병명');
-  // 진료비 항목 테이블/합계와 분리된 별도 그리드 (계·합계 셀은 diag-grid 밖)
-  expect(grid).not.toContain('끝처리 조정금액');
-  expect(grid).not.toContain('detail_total');
+  const line = extractDiagLine(html);
+  expect(line).toContain('상병코드');
 });
 
-test('S1 선택된 상병코드 값(첨부 ② 차트 코드 zone)이 세부내역서에 그대로 삽입', () => {
+// ── planner 제약 회귀가드: 삭제된 상병 '표(diag-grid)' blind 복원 금지 ───────────
+test('AC1(제약) 상병 표(diag-grid) 재도입 안 함 — 별도 줄 형태만 (blind 복원 금지)', () => {
   const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, baseBillValues());
-  // 코드 + 상병명 모두 일치 (결제 미니창에서 선택된 값 == 세부내역서 표기값)
+  // 삭제된 2열 그리드 표의 실제 렌더 지문(table.diag-grid·'연번' 헤더 셀)이 재등장하지 않아야 함
+  // (주석 문자열은 무시하고 실 마크업 요소만 검사 — blind 복원 방지)
+  expect(html).not.toContain('class="diag-grid"');
+  expect(html).not.toContain('<th>연번</th>');
+});
+
+test('AC1/AC3 선택된 상병코드 값(첨부 ② 차트 코드 zone)이 별도 줄에 그대로 삽입', () => {
+  const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, baseBillValues());
+  const line = extractDiagLine(html);
+  // 코드 + 상병명 모두 같은 줄에 일치 (결제 미니창 선택값 == 세부내역서 표기값)
   for (const [code, name] of [['B430', '사마귀피부염'], ['B354', '체부백선'], ['B353', '발백선']]) {
-    expect(html).toContain(code);
-    expect(html).toContain(name);
+    expect(line).toContain(code);
+    expect(line).toContain(name);
   }
   // 미치환 리터럴 토큰 없음
   expect(html).not.toMatch(/\{\{[a-z_0-9]+\}\}/);
 });
 
-test('S1 금액·진료비 산정·합계 영역 종전과 동일 (무접촉 — 읽기만)', () => {
+// ── AC4: 금액·진료비 산정·합계 영역 무접촉 (읽기만) ───────────────────────────
+test('AC4 금액·진료비 산정·합계 영역 종전과 동일 (무접촉)', () => {
   const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, baseBillValues());
-  // 상병코드 복원이 금액/계산 영역을 건드리지 않음 (기존 값 그대로)
   expect(html).toContain('진료비 세부산정내역');
   expect(html).toContain('요양기관기호');
   expect(html).toContain('초진진찰료');
@@ -113,33 +111,25 @@ test('S1 금액·진료비 산정·합계 영역 종전과 동일 (무접촉 —
   expect(html).toContain('12,330');  // subtotal_fund (공단부담금 표시 유지)
 });
 
-// ── 오버플로우 회귀 가드: 상병 다건도 최대 2 물리행(1페이지 보장 유지) ─────────────
-test('S1 상병 3건이어도 tbody 물리행 2개 이하 (OVERFLOW-2PAGE 회귀 0)', () => {
-  const grid = extractDiagGrid(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, baseBillValues()));
-  expect(bodyRowCount(grid)).toBeLessThanOrEqual(2);
-  expect((grid.match(/연번/g) || []).length).toBe(2); // 2열 배치
-});
-
-// ── 시나리오 2-1: 상병 미선택 → 공란 graceful (에러·리터럴 토큰 없음) ────────────
-test('S2-1 상병 미선택 고객 — 공란 표기 graceful (헤더 유지·에러 없음)', () => {
+// ── AC2: 상병 미선택 → 빈 줄 graceful (에러·리터럴 토큰 없음) ───────────────────
+test('AC2 상병 미선택 고객 — 빈 줄 graceful (라벨 유지·에러 없음·리터럴 토큰 미노출)', () => {
   const html = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, withNone());
-  expect(html).toContain('상병코드'); // 헤더 유지
-  expect(html).toContain('상병명');
+  const line = extractDiagLine(html);
+  expect(line).toContain('상병코드'); // 라벨 유지
   expect(html).not.toContain('{{diag_code_1}}'); // 리터럴 토큰 미노출
-  expect(html).not.toContain('B430');
+  expect(line).not.toContain('B430');
   // 금액/합계 회귀 0
   expect(html).toContain('진료비 세부산정내역');
 });
 
-// ── 시나리오 2-2: 복수 상병(4건) 전부 표기 (잘림·누락 없음) ──────────────────────
-test('S2-2 복수 상병 4건 — 전부 표기(잘림·누락 없음), 최대 2 물리행', () => {
-  const grid = extractDiagGrid(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, with4()));
-  ['B430', 'B354', 'B353', 'K297'].forEach((c) => expect(grid).toContain(c));
-  expect(bodyRowCount(grid)).toBeLessThanOrEqual(2);
+// ── 복수 상병(4건) 전부 표기 (잘림·누락 없음, 한 줄 inline) ──────────────────────
+test('AC1 복수 상병 4건 — 전부 한 줄에 표기(잘림·누락 없음)', () => {
+  const line = extractDiagLine(bindHtmlTemplate(getHtmlTemplate('bill_detail')!, with4()));
+  ['B430', 'B354', 'B353', 'K297'].forEach((c) => expect(line).toContain(c));
 });
 
-// ── 단일 소스 정합: 소견서/진단서와 동일 상병 토큰 (레이아웃만 상이) ──────────────
-test('S1 상병 토큰 단일 소스 정합 — 소견서/진단서와 동일 값', () => {
+// ── 단일 소스 정합: 소견서/진단서와 동일 상병 토큰 ────────────────────────────
+test('AC1 상병 토큰 단일 소스 정합 — 소견서/진단서와 동일 값', () => {
   const values = baseBillValues();
   const bill = bindHtmlTemplate(getHtmlTemplate('bill_detail')!, values);
   for (const formKey of ['diagnosis', 'diag_opinion']) {

@@ -190,10 +190,11 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
-        // T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT: 진료비 세부내역서(bill_detail)에 [상병코드] 별도 표기 복원(문원장 요청).
-        //   T-20260731 AC-D에서 삭제됐던 검증된 2열 컴팩트 그리드를 원 위치에 복원 — diag_code_N/diag_name_N 토큰은
-        //   이미 전 렌더 경로에서 채워짐(결제미니창 ② 차트 코드 zone = service_charges 상병 → check_in_services 폴백). 순수 서류 렌더 변경.
-        //   getHtmlTemplate/bindHtmlTemplate 실렌더 가드(별도 표기·값 일치·금액 무접촉·미선택 graceful·복수 전량·OVERFLOW 회귀0).
+        // T-20260812-foot-DOCFEE-DIAGCODE-ADD (alias SUSU-DETAIL-SANGBYEONG-CODE-INSERT): 진료비 세부내역서(bill_detail)에
+        //   [상병코드]를 **별도 한 줄**(.diag-line)로 삽입(김주연 총괄 요청). ★planner 제약: T-20260731 AC-D가 삭제한 상병 '표(diag-grid)'
+        //   blind 복원 금지 — '결제 미니창 선택 상병코드 별도 줄'로만 착지(표 재도입 회귀가드 포함). diag_code_N/diag_name_N 토큰은
+        //   이미 전 렌더 경로에서 채워짐(② 차트 코드 zone = service_charges 상병 → check_in_services 폴백). 순수 서류 렌더 변경.
+        //   getHtmlTemplate/bindHtmlTemplate 실렌더 가드(별도 줄·값 일치·금액 무접촉·미선택 graceful·복수 전량·grid-복원 금지).
         //   auth/DB/server 불요·결정론(db_change=false). 실 인쇄 관측 = supervisor field-soak(갤탭 실기기).
         '**/T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT.spec.ts',
         // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: 진찰료 30% 가산 service_charges 영속(Option B) FE call-site 재배선.
