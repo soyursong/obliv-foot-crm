@@ -196,7 +196,7 @@ export default defineConfig({
         //   이미 전 렌더 경로에서 채워짐(② 차트 코드 zone = service_charges 상병 → check_in_services 폴백). 순수 서류 렌더 변경.
         //   getHtmlTemplate/bindHtmlTemplate 실렌더 가드(별도 줄·값 일치·금액 무접촉·미선택 graceful·복수 전량·grid-복원 금지).
         //   auth/DB/server 불요·결정론(db_change=false). 실 인쇄 관측 = supervisor field-soak(갤탭 실기기).
-        '**/T-20260812-foot-SUSU-DETAIL-SANGBYEONG-CODE-INSERT.spec.ts',
+        '**/T-20260812-foot-DOCFEE-DIAGCODE-ADD.spec.ts',
         // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: 진찰료 30% 가산 service_charges 영속(Option B) FE call-site 재배선.
         //   수납 grain(computeConsultationSurchargeBase + surchargeRate)이 서버 RPC 모델(calc_copayment=copayFromBase
         //   미러, base×(1+rate) grade-keyed)과 divergence 0 임을 순수함수로 실증(AC-1/AC-3/AC-4) + 회귀(rate=0 byte-identical)
