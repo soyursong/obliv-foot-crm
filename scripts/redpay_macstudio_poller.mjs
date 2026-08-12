@@ -95,6 +95,18 @@ const REDPAY_API_KEY = cfg("REDPAY_API_KEY");
 const REDPAY_BUSINESS_NO = cfg("REDPAY_BUSINESS_NO"); // 종로 풋 (457=롱레+풋 공유 merchant, 07-23 flip; merchant_id 격리) — ★하드값 폴백 없음
 // fail-closed 판정: bizno env 유실/공란 = read-fail(경보) — '실제 0건 수집(정상)' 과 구분되는 별도 신호.
 function isBiznoReadFail(bizno) { return !bizno || String(bizno).trim().length === 0; }
+// ── ★ present-but-dead bizno 가드(T-20260812-foot-REDPAY-POLLER-DEADBAND-VERIFY) ──────────────
+//   워치독 REDPAY_DEAD_BIZNO_BANDS(redpay_terminal_watchdog.mjs:124) 패턴을 폴러로 이식.
+//   7/23 flip 으로 죽은 band(0건) — env(REDPAY_BUSINESS_NO)가 값은 있으나(=read-fail 아님) 이 죽은 band 이면
+//   폴러가 200 OK + 0행을 받아 '정상 clean'으로 조용해질 위험(FALSE-CLEAN). 이 신호는 read-fail(값 부재)과
+//   별개의 '눈먼 수집' 신호다: bizno 는 present 인데 그 band 자체가 죽어서 매출이 조용히 미적재된다.
+//   ★불변식(3-값 구분): (a) bizno 부재 = read-fail(fetch 이전 fail-closed 경보) / (b) bizno=dead band + 200+0행
+//   = present-but-dead 경보(본건, 수집 후) / (c) bizno=live band + 0행 = 정상 clean(무경보). (b)만 신규 신호.
+const REDPAY_DEAD_BIZNO_BANDS = new Set(
+  (cfg("REDPAY_DEAD_BIZNO_BANDS", "511-60-00988") || "511-60-00988")
+    .split(",").map((s) => s.trim()).filter(Boolean)
+);
+function isDeadBiznoBand(bizno) { return !!bizno && REDPAY_DEAD_BIZNO_BANDS.has(String(bizno).trim()); }
 // REDPAY_TID_WHITELIST_ENV / REDPAY_MERCHANT_WHITELIST_ENV 는 도메인 스코프 해석이 필요하므로
 // REDPAY_DOMAIN 정의 이후로 이동(아래 domainScopedOverride 참조 — T-20260714 FIX phase2 결함2).
 const REDPAY_API_URL_ENV = cfg("REDPAY_API_URL");
@@ -777,6 +789,39 @@ function sendSlack(channel, text) {
     return false;
   }
 }
+// ── ★ present-but-dead bizno + 200 OK + 0행 경보(T-20260812-...-DEADBAND-VERIFY, best-effort) ──
+//   수집 사이클이 정상 완료(fetch throw 없음 = 레드페이 200 OK 확정)했는데 totalFetched===0 이고
+//   bizno 가 죽은 band 이면 → 'silent dead ingestion'(매출 미적재) 경보. read-fail(값 부재)과 별개 신호.
+//   채널 = 기존 BIZNO-READFAIL 경로(TID_ALARM_CHANNEL) 재사용. dedup = 공유 상태파일 하루 1회
+//   (last_dead_bizno_alarm_date) — 5분 폴러 주기 슬랙 폭격 방지. 적재 본업 무영향(best-effort).
+//   판정은 순수함수 shouldFireDeadBiznoAlarm 로 분리(self-test 대상).
+function shouldFireDeadBiznoAlarm(bizno, totalFetched, http200 = true) {
+  if (!isDeadBiznoBand(bizno)) return { fire: false, reason: "live_band" };
+  if (!http200) return { fire: false, reason: "not_200" };            // 비200 = 별도 HTTP 오류 경로 소관
+  if (Number(totalFetched) > 0) return { fire: false, reason: "rows_present" }; // dead band 인데 행 있으면 dead 아님
+  return { fire: true, reason: "dead_band_200_zero_rows" };
+}
+async function fireDeadBiznoZeroRowAlarm(totalFetched, http200 = true) {
+  const d = shouldFireDeadBiznoAlarm(REDPAY_BUSINESS_NO, totalFetched, http200);
+  if (!d.fire) return { alerted: false, reason: d.reason };
+  const { date: todayKST } = kstDateHour();
+  const state = loadAlarmStateSafe();
+  if (state == null) return { alerted: false, reason: "state_unreadable" };            // 다음 사이클 재시도
+  if (state.last_dead_bizno_alarm_date === todayKST) return { alerted: false, reason: "already_sent_today" };
+  const alarm =
+    `🚨 [레드페이 수집] 사업자번호가 '죽은 번호'로 설정됨 — 결제가 조용히 안 쌓이는 중\n` +
+    `• 설정된 사업자번호(${REDPAY_BUSINESS_NO})는 7/23 이후 거래가 발생하지 않는 옛 번호입니다. (domain=${REDPAY_DOMAIN})\n` +
+    `• 조회는 정상 응답(200)했지만 결과가 0건 — '거래가 없어 0건'이 아니라 '엉뚱한 번호라 0건'입니다(정상 아님).\n` +
+    `• 이 상태가 지속되면 매출이 조용히 누락됩니다. ~/.env.redpay-foot 의 REDPAY_BUSINESS_NO 를 라이브 번호(457-23-00938)로 확인해 주세요.`;
+  const sent = sendSlack(TID_ALARM_CHANNEL, alarm);
+  errlog(`[DEAD-BIZNO-ZEROROW] business_no=${REDPAY_BUSINESS_NO} = dead band + 200 OK + 0행 = silent dead ingestion 경보 발송(${sent}). ` +
+         `★read-fail 아님(값 present) — env stale-dead. ch=${TID_ALARM_CHANNEL}`);
+  if (sent) {
+    try { state.last_dead_bizno_alarm_date = todayKST; saveAlarmStateAtomic(state); }
+    catch (e) { warn(`[DEAD-BIZNO-ZEROROW] dedup 날짜 저장 실패(비치명 — 다음 사이클 재발송 가능): ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  return { alerted: sent, reason: sent ? "sent" : "slack_failed" };
+}
 // 실시간 알람 실행부 — drift 누적본을 받아 미등록 TID 즉시 알람(현장 친화 문안, dedup).
 async function fireRealtimeTidAlarms(driftItems) {
   if (!TID_ALARM_ENABLED) { log("[TID-ALARM] 킬스위치 OFF(REDPAY_POLLER_TID_ALARM_ENABLED=false) — 스킵"); return { alerted: 0, suppressed: 0, skipped: 0 }; }
@@ -1325,6 +1370,14 @@ async function main() {
     sendSlack(TID_ALARM_CHANNEL, alarm);
     process.exit(1);
   }
+  // ── ★ present-but-dead bizno 기동 경고(T-20260812-...-DEADBAND-VERIFY, 워치독 L644 병렬) ──
+  //   bizno 는 present(read-fail 아님)이나 값이 죽은 band(511 등)면 fetch=200+0행 → FALSE-CLEAN 위험.
+  //   기동 시 loud warn 으로 표면화(수집 후 실제 200+0행이면 아래 fireDeadBiznoZeroRowAlarm 이 슬랙 경보).
+  if (isDeadBiznoBand(REDPAY_BUSINESS_NO)) {
+    warn(`[FALSE-CLEAN-GUARD] business_no=${REDPAY_BUSINESS_NO} = 7/23 flip 후 죽은 band(0건 예상). ` +
+         `폴러가 '수집 0건=정상'으로 조용해질 위험(FALSE-CLEAN). 라이브 band(457-23-00938) env 확인 필요. ` +
+         `★read-fail(값 부재) 아님 — 값은 있으나 band 자체가 죽음. 200+0행 확인 시 슬랙 경보(별개 신호).`);
+  }
 
   // ── 화이트리스트 확정: env override → DB registry SSOT → 하드코딩 DEFAULT (T-20260711) ──
   //   filterToFootScope 가 확정된 merchantWhitelist(admit 권위) 및 tidWhitelist(belt-and-suspenders
@@ -1494,6 +1547,11 @@ async function main() {
     page++;
   }
 
+  // ── ★ present-but-dead bizno + 200 OK + 0행 경보(T-20260812-...-DEADBAND-VERIFY, best-effort) ──
+  //   여기 도달 = fetch 루프가 throw 없이 완료 = 레드페이 200 OK 확정(fetchRedpayPage 는 비2xx 시 throw).
+  //   그 상태에서 bizno 가 죽은 band 이고 totalFetched===0 이면 silent dead ingestion → 슬랙 경보(하루 1회).
+  const deadBiznoRes = await fireDeadBiznoZeroRowAlarm(totalFetched, true);
+
   // ── poller_state heartbeat (foot 전용 — body 는 singleton id=1 격리 위해 무접촉) ──
   if (STATE_ENABLED) {
     await updatePollerState(POLL_MODE, nowIso, totalFetched, totalUpserted);
@@ -1525,7 +1583,8 @@ async function main() {
       `autoseed_seeded=${seedRes.seeded} autoseed_noop=${seedRes.noop} autoseed_failed=${seedRes.failed} ` +
       `unreg_mode=${UNREG_ALARM_MODE} tid_alarm_new=${alarmRes.alerted} unreg_accumulated=${alarmRes.accumulated ?? 0} tid_alarm_suppressed=${alarmRes.suppressed} tid_alarm_skipped=${alarmRes.skipped} ` +
       `unreg_digest_sent=${digestRes.sent} unreg_digest_reason=${digestRes.reason ?? "-"} ` +
-      `unscopable_quarantined=${quarantineRes.quarantined} unscopable_suppressed=${quarantineRes.suppressed} unscopable_skipped=${quarantineRes.skipped}`);
+      `unscopable_quarantined=${quarantineRes.quarantined} unscopable_suppressed=${quarantineRes.suppressed} unscopable_skipped=${quarantineRes.skipped} ` +
+      `dead_bizno_alarm=${deadBiznoRes.alerted}/${deadBiznoRes.reason}`);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1818,6 +1877,27 @@ function runSelfTest() {
     const collapsed = page.filter((r) => { const k = rawTrxDedupKey(r); if (seen.has(k)) return false; seen.add(k); return true; });
     assert(collapsed.length === 2,
       `resweep 멱등: 4행(승인×3 재fetch + 취소×1) → 2 distinct 행(승인1·취소1)으로 collapse (실제=${collapsed.length})`);
+  }
+
+  // ── T-20260812-...-DEADBAND-VERIFY: present-but-dead bizno 경보 판정 순수로직 self-test ──────
+  //   워치독 L971-978 병렬 + 폴러 신규 신호(200+0행) 판정. 3-값 신호 구분 불변식 검증.
+  {
+    // Path C 병렬(워치독 L971-972): 511=dead band 목록, 457=라이브(dead 아님).
+    assert(REDPAY_DEAD_BIZNO_BANDS.has("511-60-00988"), `deadband: 511 은 dead band 목록에 존재(FALSE-CLEAN 대상)`);
+    assert(!REDPAY_DEAD_BIZNO_BANDS.has("457-23-00938"), `deadband: 457(라이브)은 dead band 아님`);
+    // isDeadBiznoBand vs isBiznoReadFail 직교(3-값 신호 구분 불변식):
+    assert(isDeadBiznoBand("511-60-00988") === true, `deadband: 511 = present-but-dead(값 있음 + 죽은 band)`);
+    assert(isDeadBiznoBand("457-23-00938") === false, `deadband: 457(라이브) = dead 아님`);
+    assert(isDeadBiznoBand("") === false, `deadband: 공란 = dead 아님(그건 read-fail 소관, 별개 축)`);
+    assert(isDeadBiznoBand(undefined) === false, `deadband: undefined = dead 아님(read-fail 소관)`);
+    assert(isBiznoReadFail("511-60-00988") === false, `직교: 죽은 band 여도 값 present → read-fail 아님`);
+    // shouldFireDeadBiznoAlarm — 신규 신호(b)만 발화, (a)read-fail·(c)live-clean 무발화:
+    assert(shouldFireDeadBiznoAlarm("511-60-00988", 0, true).fire === true, `alarm: dead band + 200 + 0행 → 발화(신규 신호 b)`);
+    assert(shouldFireDeadBiznoAlarm("457-23-00938", 0, true).fire === false, `alarm: 라이브 band + 0행 → 무발화(정상 clean 신호 c)`);
+    assert(shouldFireDeadBiznoAlarm("511-60-00988", 14, true).fire === false, `alarm: dead band 인데 행 존재(14) → 무발화(dead 아님 경계)`);
+    assert(shouldFireDeadBiznoAlarm("511-60-00988", 0, false).fire === false, `alarm: 200 아님 → 무발화(HTTP 오류 별도 경로 소관)`);
+    assert(shouldFireDeadBiznoAlarm("", 0, true).fire === false, `alarm: bizno 부재 → 무발화(read-fail 경로 소관, 별개 신호 a)`);
+    assert(shouldFireDeadBiznoAlarm("511-60-00988", 0, true).reason === "dead_band_200_zero_rows", `alarm: 발화 사유 라벨 정확`);
   }
 
   console.log(`[redpay-macstudio][${REDPAY_DOMAIN}] ✅ self-test 전체 통과`);
