@@ -1,0 +1,5 @@
+[POSTCHECK-1] postgres·public·TABLE·anon ADP = 0 rows [] ✅ PASS (anon 잔존 0)
+[POSTCHECK-2] supabase_admin·public·TABLE·anon ADP = 8 (expect 8·무접촉) ✅ unchanged
+[POSTCHECK-3] postgres·public·SEQUENCE·anon ADP = 3 (expect 3·out-of-scope 무접촉) ✅ unchanged
+[POSTCHECK-4] 기존 anon SELECT relacl(public) = 194 (§15-3/§15-6-1 무저촉·기존 explicit grant 불변)
+server_now = 2026-08-12 17:29:50.172042+00
