@@ -37,8 +37,12 @@
 
 guard.ts / index.ts 가 기대하는 **정확한 env 키명**과 값. `supabase secrets set` 대상:
 
+> ⚠ **라이브 값 = `457-23-00938`** (07-23 RedPay flip 정본, 런타임 secret `~/.env.redpay-foot`).
+> **구 `511-60-00988` = dead band** — RedPay 가 07-23 부터 457 로만 발송·511 발송제외 확정.
+> 구 511 로 secret 을 set 하면 200 OK + 0행(silent dead ingestion) 위험. 반드시 457 사용.
+
 ```
-REDPAY_BUSINESS_NO   = 511-60-00988
+REDPAY_BUSINESS_NO   = 457-23-00938
 REDPAY_TID_WHITELIST = 1047479483,1047479476,1047479477,1047479478,1047479479,1047479480,1047479481,1047479482,1047479153,1047479148,1047479155,1047479158,1047479157
 REDPAY_DRY_RUN       = false
 ```
@@ -52,7 +56,7 @@ REDPAY_DRY_RUN       = false
 - `REDPAY_BUSINESS_NO` 비거나 `REDPAY_API_KEY` 비면 → **G4 BLOCKED**(status:blocked, 알림 미발사). 둘 다 채워야 폴러 진입.
 
 ### 2.2 ⚠ AC-4 공유 merchant 혼입 방지 (필수 검증)
-- business_no `511-60-00988` = **공유 merchant**(롱레 8 TID + 풋 13 TID 동거, 계약 §519). business_no 단독 스코프 시 롱레 거래가 풋 탭에 섞임.
+- business_no `457-23-00938`(07-23 flip 정본, 구 `511-60-00988`=dead band) = **공유 merchant**(롱레 8 TID + 풋 13 TID 동거, 계약 §519). business_no 단독 스코프 시 롱레 거래가 풋 탭에 섞임.
 - 위 13 TID = `obliv_origin_env.md`(F0BFXCWLGQ2) '풋' 섹션 **정확 전건**(멀티 8 + 무선 5). committed migration `20260708230000_redpay_recon_daily_view.sql`(뷰 서버권위 하드코딩) + E2E spec `FOOT_TIDS` 와 **3자 일치**.
 - **롱레 8 TID 교집합 = 0 검증(dev 실측):** 롱레={1047479465,455,456,143,138,144,146,145} ∩ 풋 13 = **∅**. 혼입 원천 차단.
 
@@ -100,7 +104,7 @@ SELECT cron.schedule('foot-redpay-reconcile', '*/5 * * * *',
 5. 화면: `/admin/closing#payments` → '레드페이' 하위탭/대조뷰(`v_redpay_reconciliation_daily`)에 표시.
 
 ### 4.1 ⚠ supervisor precheck (실측 게이트)
-- **clinic 행 존재:** `SELECT id,business_no FROM clinics WHERE business_no='511-60-00988';` → 1행이어야 EF clinic_id 조회 성공(index.ts:297-305, 부재 시 "clinic_id 조회 실패" throw). **부재 시 배포 보류 → planner FOLLOWUP.**
+- **clinic 행 존재:** `SELECT id,business_no FROM clinics WHERE business_no='457-23-00938';` → 1행이어야 EF clinic_id 조회 성공(index.ts:297-305, 부재 시 "clinic_id 조회 실패" throw. prod clinics=457 정본, 구 511 매칭 시 0행). **부재 시 배포 보류 → planner FOLLOWUP.**
 - **기존 검증키 라이브 동작:** REDPAY_API_KEY가 비-테스트모드로 실 API 반환하는지 1틱 확인(risk-2 '테스트모드 잠김' 우려). `SELECT public.trigger_redpay_reconcile();` 후 EF 로그 확인.
 - **raw.tid 포맷:** DRY_RUN=false 첫 폴링 로그에서 실제 반환된 `raw.tid`가 `1047479…`(whitelist 정합)인지 표본 확인. 다른 네임스페이스면 → whitelist 재산정 FOLLOWUP(롱레 457 케이스 §4.2 교훈).
 

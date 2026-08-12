@@ -10,7 +10,9 @@
 --   redpay-reconcile EF 를 net.http_post 로 5분마다 호출(mode=incremental) →
 --   EF 가 redpay_poller_state.last_incremental_to 기반 슬라이딩 윈도로 RedPay 파트너 API
 --   를 pull, redpay_raw_transactions upsert + 4-tier 매처로 payments 대조.
---   윈도 오버랩 2분 + 멱등키 (clinic_id, external_trxid) → 재실행/중복 무해.
+--   윈도 오버랩 2분 + 멱등키 (external_trxid, external_status, amount) → 재실행/중복 무해.
+--   (배포 폴러 실 on_conflict = redpay_raw_transactions(external_trxid,external_status,amount)
+--    = redpay_macstudio_poller.mjs:1268 / matcher.ts:195. 승인(Y,+)/취소(N,−)는 status+부호로 별행.)
 --
 --   ⚠ 활성화 트리거 = EF secrets 3종(REDPAY_BUSINESS_NO / REDPAY_TID_WHITELIST /
 --     REDPAY_DRY_RUN=false). 이 잡이 돌아도 DRY_RUN=true 면 EF 는 픽스처 시뮬레이션만
@@ -96,11 +98,13 @@ COMMIT;
 -- POST-DEPLOY CHECKLIST (supervisor)
 -- ============================================================
 -- [ ] 0. EF 배포     : supabase functions deploy redpay-reconcile --project-ref rxlomoozakkjesdqjtvd
--- [ ] 1. secrets     : REDPAY_BUSINESS_NO=511-60-00988 / REDPAY_TID_WHITELIST=<foot 13 TID CSV>
+-- [ ] 1. secrets     : REDPAY_BUSINESS_NO=457-23-00938 / REDPAY_TID_WHITELIST=<foot 13 TID CSV>
+--                       (⚠ 라이브 값=457-23-00938. 구 511-60-00988 = 07-23 RedPay flip 前 dead band —
+--                        RedPay 가 07-23 부터 457 로만 발송·511 발송제외 확정. 511 로 재배포 시 silent 0행 적재.)
 --                       / REDPAY_DRY_RUN=false (기존 REDPAY_API_KEY / INTERNAL_CRON_SECRET 유지)
 -- [ ] 2. vault       : SELECT public.get_vault_secret('supabase_project_url') , get_vault_secret('internal_cron_secret')  → non-null
 --                       (INTERNAL_CRON_SECRET(EF env) == vault internal_cron_secret 값 일치 필수)
--- [ ] 3. clinic 행   : SELECT id,business_no FROM clinics WHERE business_no='511-60-00988';  -- 1행(EF clinic_id 조회 근거)
+-- [ ] 3. clinic 행   : SELECT id,business_no FROM clinics WHERE business_no='457-23-00938';  -- 1행(EF clinic_id 조회 근거. prod clinics=457 정본, 구 511 매칭 시 0행)
 -- [ ] 4. 함수 생성   : SELECT proname FROM pg_proc WHERE proname='trigger_redpay_reconcile';
 -- [ ] 5. cron 등록   : SELECT jobname,schedule,active FROM cron.job WHERE jobname='foot-redpay-reconcile';  -- */5 active
 -- [ ] 6. 수동 1틱    : SELECT public.trigger_redpay_reconcile();  → EF 200 (DRY_RUN=false 시 실 pull)
