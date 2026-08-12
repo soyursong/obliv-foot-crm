@@ -1,0 +1,81 @@
+{
+  "ticket": "T-20260811-foot-CONSULTANT-REVENUE-FIX2B-SOFTVOID",
+  "phase": "post-verify",
+  "ref": "rxlomoozakkjesdqjtvd",
+  "ts": "2026-08-12T05:53:26.312Z",
+  "checks": {
+    "a_targets": [
+      {
+        "id": "2dedc31e-109d-46c6-b592-afe25b8d46b0",
+        "status": "cancelled",
+        "cancelled_by": "dev-foot:T-20260811-foot-CONSULTANT-REVENUE-FIX2B-SOFTVOID",
+        "cancelled_at": "2026-08-12 05:46:44.0125+00",
+        "amount": 3100,
+        "service_charge_id": null
+      },
+      {
+        "id": "1799c939-a810-481d-ae41-1d50937e180b",
+        "status": "cancelled",
+        "cancelled_by": "dev-foot:T-20260811-foot-CONSULTANT-REVENUE-FIX2B-SOFTVOID",
+        "cancelled_at": "2026-08-12 05:46:44.0125+00",
+        "amount": 5600,
+        "service_charge_id": null
+      },
+      {
+        "id": "ea1f5000-b48c-4ddd-9faa-23925a27d40f",
+        "status": "cancelled",
+        "cancelled_by": "dev-foot:T-20260811-foot-CONSULTANT-REVENUE-FIX2B-SOFTVOID",
+        "cancelled_at": "2026-08-12 05:46:44.0125+00",
+        "amount": 261700,
+        "service_charge_id": null
+      }
+    ],
+    "b_vrev_0804": [
+      {
+        "single_revenue": 3851000,
+        "package_revenue": 22070000,
+        "net_revenue": 25921000
+      }
+    ],
+    "c_groupb": [
+      {
+        "id": "5c642195-251e-47c2-bd31-392bf0b057cf",
+        "status": "active",
+        "amount": 260000,
+        "cancelled_by": null,
+        "created_at": "2026-08-03 11:15:14.058207+00"
+      },
+      {
+        "id": "88e504d0-ffe6-446d-b54b-da0e594e2019",
+        "status": "active",
+        "amount": 10400,
+        "cancelled_by": null,
+        "created_at": "2026-08-03 12:00:00+00"
+      }
+    ],
+    "d_phantoms": [
+      {
+        "id": "4385ba22-be39-48f4-9386-ddcc7086c22a",
+        "status": "cancelled",
+        "cancelled_by": "dev-foot:T-20260804-MATAEMIN-ROLLBACK"
+      },
+      {
+        "id": "d05b5a95-4de3-4f71-a018-932e1ef11adf",
+        "status": "cancelled",
+        "cancelled_by": "dev-foot:T-20260804-MATAEMIN-ROLLBACK"
+      },
+      {
+        "id": "9d8c6f77-dbe0-40c1-a024-5b33b23fb035",
+        "status": "cancelled",
+        "cancelled_by": "dev-foot:T-20260804-MATAEMIN-ROLLBACK"
+      }
+    ],
+    "schema_migrations": [
+      {
+        "version": "20260812150000",
+        "name": "foot_fix2b_crmerror_refund_softvoid"
+      }
+    ]
+  },
+  "verdict": "PASS — soft-void terminal state 확정"
+}
