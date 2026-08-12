@@ -197,6 +197,12 @@ export default defineConfig({
         //   getHtmlTemplate/bindHtmlTemplate 실렌더 가드(별도 줄·값 일치·금액 무접촉·미선택 graceful·복수 전량·grid-복원 금지).
         //   auth/DB/server 불요·결정론(db_change=false). 실 인쇄 관측 = supervisor field-soak(갤탭 실기기).
         '**/T-20260812-foot-DOCFEE-DIAGCODE-ADD.spec.ts',
+        // T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL: 부모 DOCFEE-DIAGCODE-ADD/직전 GRID-LAYOUT 의 [상병코드] 표기를
+        //   표 구조와 어울리는 '테두리 칸(table.diag-cell) 1개 + 한 줄(single row)'로 시각 정돈(김주연 총괄 재요청, 색박스 근거).
+        //   ★회귀 가드(AC6): 6FIX AC-D 가 삭제한 다행 표(diag-grid, 세로 4행 → 2페이지 오버플로) 재도입 금지 — 항상 1행 높이.
+        //   getHtmlTemplate/bindHtmlTemplate 실렌더 가드(단일 행·라벨 칸·값/순서 보존·미선택 graceful·복수 inline·grid 부재·금액 무접촉).
+        //   auth/DB/server 불요·결정론(db_change=false, 순수 서류 렌더). 실 인쇄 관측 = supervisor field-soak(갤탭 실기기).
+        '**/T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL.spec.ts',
         // T-20260810-foot-SURCHARGE-SC-FE-REWIRE-PHASEB: 진찰료 30% 가산 service_charges 영속(Option B) FE call-site 재배선.
         //   수납 grain(computeConsultationSurchargeBase + surchargeRate)이 서버 RPC 모델(calc_copayment=copayFromBase
         //   미러, base×(1+rate) grade-keyed)과 divergence 0 임을 순수함수로 실증(AC-1/AC-3/AC-4) + 회귀(rate=0 byte-identical)

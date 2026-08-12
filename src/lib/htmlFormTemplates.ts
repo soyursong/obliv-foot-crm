@@ -870,14 +870,15 @@ ${COMMON_STYLE}
   }
   .bill-wrap .header-note { font-size: 8pt; margin-bottom: 3px; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
-  /* T-20260812-foot-DOCFEE-DIAGCODE-GRID-LAYOUT: [상병코드]를 .diag-line(텍스트 한 줄) → 칸(그리드/테이블) 재작업 (김주연 총괄 재요청).
-     ★6FIX AC-D 표 삭제 원인 대조(DOCPRINT-DIAGCODE-OVERFLOW-2PAGE 06e065bb): 상병 세로 4행이 A4 landscape 1페이지
-       박스(175mm) 밖으로 진료비 내역표·서명란을 밀어 2페이지 오버플로 → 6FIX AC-D 가 표 전체 삭제. 재발 방지 3중 대조:
-       (1)compact 스타일(8pt·line-height 1.15·padding 1px 4px = 2PAGE-era 압축값 계승)
-       (2)빈 코드 행은 diag_row_3/4_style=display:none 로 숨김 → 상병 1~2건(전형) 시 실제 1~2행만 렌더(.diag-line 높이 근사)
-       (3)@media print .bill-wrap overflow:hidden(하단) 이미 페이지2 파생 차단(클립).
-     .diag-line 규칙은 미사용 → 고아 CSS 제거(6FIX AC-D2 규약 계승). */
-  .bill-wrap .diag-grid td, .bill-wrap .diag-grid th { padding: 1px 4px; font-size: 8pt; line-height: 1.15; }
+  /* T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL: [상병코드] 줄을 표 위 플레인 텍스트/다행 그리드 → 표 구조와 어울리는
+     '테두리 칸(bordered cell) 1개 + 한 줄(single row)'로 시각 정돈 (김주연 총괄 재요청, C0ATE5P6JTH thread 1786497795.379579 · before=F0BPR1WGZHS).
+     ★부모 DOCFEE-DIAGCODE-ADD 의 상병코드 표기를 '칸에 담아 한 줄'로 refine 하는 순수 레이아웃 손질(데이터/값/순서 불변, AC2).
+     ★★회귀 가드(부모 계승, AC6): 6FIX AC-D(DOCPRINT-DIAGCODE-OVERFLOW-2PAGE 06e065bb) 가 삭제한 상병 '다행 표(diag-grid, 세로 4행)'
+        를 blind 복원하지 않는다 — 세로 4행 = A4 landscape 1페이지 박스(175mm) 밖 2페이지 오버플로 원인. 직전 GRID-LAYOUT(diag-grid 4행)
+        착지를 '테두리 칸 1개 + 한 줄(single row)'로 교정. 검증: diag-grid 테이블 0개, diag-cell 테이블 1개.
+     ★삽입값 = 결제 미니창에서 고객별 선택·저장된 상병코드(diag_code_N/diag_name_N 토큰, 전 렌더 경로에서 이미 채워짐 → 신규 write/바인딩 0, db_change=false). */
+  .bill-wrap .diag-cell th { width: 80px; white-space: nowrap; }
+  .bill-wrap .diag-cell td, .bill-wrap .diag-cell th { padding: 3px 6px; font-size: 8.5pt; line-height: 1.3; }
   @media print {
     /* T-20260629-foot-DOCOUTPUT-PRINT-CENTER-LAYOUT: 가로(A4 landscape) — 인쇄창 @page margin:12mm 10mm 가
        콘텐츠박스(297-20 × 210-24 = 277×186mm)를 엔진 차원에서 중앙 배치. bill-wrap 은 그 박스를 채움
@@ -928,44 +929,21 @@ ${COMMON_STYLE}
     </tbody>
   </table>
 
-  <!-- T-20260812-foot-DOCFEE-DIAGCODE-GRID-LAYOUT: [상병코드]를 .diag-line(텍스트 한 줄 나열) → 칸(그리드/테이블) 재작업
-       (김주연 총괄 재요청, C0ATE5P6JTH thread 1786497795.379579 · before=F0BPR1WGZHS). 부모 DOCFEE-DIAGCODE-ADD 의 텍스트
-       한 줄 표기가 '성의없다' → 각 상병코드를 한 행씩 분리, 코드/명칭 칼럼 정렬(소견서/진단서 병명 블록과 동일 구조).
+  <!-- T-20260812-foot-DOCFEE-DIAGCODE-LAYOUT-CELL: [상병코드] 줄을 표 구조와 어울리는 '테두리 칸(bordered cell) 1개 + 한 줄(single row)'로 정돈
+       (김주연 총괄 재요청, C0ATE5P6JTH thread 1786497795.379579 · before=F0BPR1WGZHS). 부모 DOCFEE-DIAGCODE-ADD 의 상병코드 표기가
+       '성의없다' → 라벨 칸(상병코드) + 내용 칸 1개짜리 단일 행(single row)으로, 복수 상병코드는 내용 칸 안에 inline 나열(코드 상병명).
        ★삽입값 = 결제 미니창에서 고객별 선택·저장된 상병코드(service_charges 상병 → check_in_services 폴백).
-       diag_code_N/diag_name_N/diag_row_3_style/diag_row_4_style 토큰은 이미 전 렌더 경로(autoBindContext +
-       PaymentMiniWindow + DocumentPrintPanel + printOpinionDoc)에서 채워짐 → 신규 write/바인딩 0(db_change=false, 순수 렌더).
-       ★★6FIX AC-D 표 삭제 원인(A4 landscape 세로 4행 → 2페이지 오버플로) 재발 방지: compact CSS(.diag-grid 8pt) +
-          빈 코드 행 diag_row_3/4_style=display:none 숨김 + @media print overflow:hidden 클립(위 CSS 주석 3중 대조).
-       값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 상병 미선택 고객 = 코드/명칭 공백 행(빈 표 graceful, 에러/깨짐 없음, AC2).
-       금액·진료비 산정·수납/계산·계산서·영수증 로직 무접촉(읽기만). 아래 항목 테이블·계/합계 무변경(AC4). -->
-  <table class="diag-grid" style="margin-bottom:4px; table-layout:fixed;">
-    <thead>
-      <tr>
-        <th style="width:60px;">번호</th>
-        <th style="width:130px;">상병코드</th>
-        <th>상병명</th>
-      </tr>
-    </thead>
+       diag_code_N/diag_name_N 토큰은 이미 전 렌더 경로(autoBindContext + PaymentMiniWindow + DocumentPrintPanel + printOpinionDoc)에서
+       채워짐 → 신규 write/바인딩 0(db_change=false, 순수 렌더). diag_row_3/4_style(다행 숨김) 토큰은 단일 칸 구조에서 불필요 → 미사용.
+       ★★6FIX AC-D 표 삭제 원인(A4 landscape 세로 4행 → 2페이지 오버플로) 재발 방지 = 다행 표(diag-grid) 재도입 금지(AC6).
+          '테두리 칸 1개 + 한 줄'은 항상 1행 높이 → 세로 확장 없음(오버플로 위험 부재). diag-grid 테이블 0개, diag-cell 테이블 1개.
+       값 미도달 시 bindHtmlTemplate 미매칭 토큰='' → 상병 미선택 고객 = 내용 칸 공백(빈 칸 graceful, 에러/깨짐 없음, AC4).
+       금액·진료비 산정·수납/계산·계산서·영수증 로직 무접촉(읽기만). 아래 항목 테이블·계/합계 무변경(AC3). -->
+  <table class="diag-cell" style="margin-bottom:4px; table-layout:fixed;">
     <tbody>
       <tr>
-        <td style="text-align:center;">1</td>
-        <td style="text-align:center;">{{diag_code_1}}</td>
-        <td>{{diag_name_1}}</td>
-      </tr>
-      <tr>
-        <td style="text-align:center;">2</td>
-        <td style="text-align:center;">{{diag_code_2}}</td>
-        <td>{{diag_name_2}}</td>
-      </tr>
-      <tr style="{{diag_row_3_style}}">
-        <td style="text-align:center;">3</td>
-        <td style="text-align:center;">{{diag_code_3}}</td>
-        <td>{{diag_name_3}}</td>
-      </tr>
-      <tr style="{{diag_row_4_style}}">
-        <td style="text-align:center;">4</td>
-        <td style="text-align:center;">{{diag_code_4}}</td>
-        <td>{{diag_name_4}}</td>
+        <th>상병코드</th>
+        <td>{{diag_code_1}} {{diag_name_1}}&nbsp;&nbsp;{{diag_code_2}} {{diag_name_2}}&nbsp;&nbsp;{{diag_code_3}} {{diag_name_3}}&nbsp;&nbsp;{{diag_code_4}} {{diag_name_4}}</td>
       </tr>
     </tbody>
   </table>
