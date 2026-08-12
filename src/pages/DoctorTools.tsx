@@ -23,12 +23,39 @@ import KohReportTab from '@/components/doctor/KohReportTab';
 import OpinionDocTab from '@/components/doctor/OpinionDocTab';
 // T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK (AC-9/11/12): 서류작성 큐 — 데스크 발행요청(실장→원장)
 import DocRequestQueue from '@/components/doctor/DocRequestQueue';
+// T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 경과분석지(원장 최종발행 서류) 발행 대상을 서류작성 탭에도 리스트업.
+//   ★SSOT 재사용 — 치료테이블 §③ 경과분석의 ProgressTargetsSection 을 그대로 렌더(모집단/필터/발행 동선 병렬 신설 금지).
+import ProgressTargetsSection from '@/components/treatment/ProgressTargetsSection';
+import type { NameInteraction } from '@/pages/TreatmentTable';
+import { useAuth } from '@/lib/auth';
+import { useChart } from '@/lib/chartContext';
+import { canSeeProgressDocs } from '@/lib/permissions';
+import { seoulISODate } from '@/lib/format';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Users, Stethoscope, FlaskConical, FileText } from 'lucide-react';
+import { Users, Stethoscope, FlaskConical, FileText, TrendingUp } from 'lucide-react';
 
 export default function DoctorTools() {
   // 모든 역할이 진료 알림판(진료부 통합 대시보드)을 기본 화면으로 — 상시 켜놓는 단일 창 동선.
   const [activeTab, setActiveTab] = useState('call_dashboard');
+
+  // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 서류작성(opinion_doc) 탭 경과분석지 발행 대상 리스트업.
+  //   ★AC3 PHI 게이트: 원장(director) + 운영권한(admin/manager)만 노출. 판정 = SSOT predicate
+  //     canSeeProgressDocs(permissions.ts) — canViewPhraseManagement/canEditClinicMgmt 와 동일 stopgap
+  //     (has_ops_authority 미적재 동안 대표원장 lock-out 방지). STEP6 인라인 role=== 이관(SSOT 사용).
+  //   ★AC2 모집단 정합: ProgressTargetsSection(치료테이블 §③ 경과분석) 그대로 재사용 → PROGCHK 필터(활성 패키지 &
+  //     (used+1)%6==0)와 by-construction 동일. read-only(db_change=false, AC5).
+  const { profile } = useAuth();
+  const { openChart } = useChart();
+  const showProgressDocs = canSeeProgressDocs(profile);
+  // 이름 인터랙션(치료테이블과 동일 계약): 좌클릭=2번차트 open(useChart 단일 게이트) / 우클릭=진료대시보드에선 no-op.
+  const nameInteraction: NameInteraction = {
+    onLeftClick: (customerId) => {
+      if (customerId) openChart(customerId);
+    },
+    onContextMenu: (e) => {
+      e.preventDefault();
+    },
+  };
 
   // T-20260612-foot-DOCDASH-FULLWIDTH-INLINE-EMOJI AC-1 (문지은 대표원장):
   //   max-w-5xl(너비 제한) 해제 → 컨테이너 가로 100% 풀폭. 페이지 여백 p-4/md:p-6 → p-2/md:p-3 축소(화면 꽉).
@@ -82,6 +109,23 @@ export default function DoctorTools() {
         <TabsContent value="opinion_doc">
           {/* AC-9/11: 데스크(실장) 발행요청 큐(9컬럼+작성하기) — 상단. */}
           <DocRequestQueue />
+          {/* T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 경과분석지 발행 대상 리스트업(6배수 도래).
+              발행 동선 일원화 — 원장 동선(서류작성 탭)에서도 대상 확인·발행. SSOT=ProgressTargetsSection 재사용.
+              PHI 게이트(AC3): 원장/admin/manager 만 노출. */}
+          {showProgressDocs && (
+            <div className="mt-6 border-t pt-5" data-testid="docdash-progress-form-section">
+              <div className="mb-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <TrendingUp className="h-4 w-4 text-teal-600" />
+                  경과분석지 발행 대상
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  6의 배수 회차(6·12·18·24…)에 도래한 경과분석지 발행 대상 환자입니다. 치료테이블 '경과분석' 목록과 동일 기준입니다.
+                </p>
+              </div>
+              <ProgressTargetsSection date={seoulISODate(new Date())} nameInteraction={nameInteraction} />
+            </div>
+          )}
           {/* 금일 내방객 소견서 작성(원장 자발) — 기존 동선 보존(AC-5 회귀0). */}
           <div className="mt-6 border-t pt-5">
             <OpinionDocTab />

@@ -195,6 +195,10 @@ export default defineConfig({
         //   sessionCheckpointLabel/compareProgressTargets) 단언 — 6배수 판정·NULLS-LAST 정렬·tier0 배제·라벨.
         //   auth/DB/server 불요·결정론(read-only 필터, db_change=false). 실 목록/스크롤 UX = supervisor field-soak(갤탭).
         '**/T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER.spec.ts',
+        // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 경과분석지 발행 대상을 진료대시보드 '서류작성' 탭에 리스트업
+        //   (ProgressTargetsSection SSOT 재사용·병렬 신설 금지). 순수 로직(PROGCHK 6배수 필터 정합) + 정적 소스 가드
+        //   (SSOT 재사용·PHI 게이트·DocRequestQueue/OpinionDocTab 무접촉·read-only). auth/DB/server 불요·결정론.
+        '**/T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP.spec.ts',
         // T-20260812-foot-DOCFEE-DIAGCODE-ADD (alias SUSU-DETAIL-SANGBYEONG-CODE-INSERT): 진료비 세부내역서(bill_detail)에
         //   [상병코드]를 **별도 한 줄**(.diag-line)로 삽입(김주연 총괄 요청). ★planner 제약: T-20260731 AC-D가 삭제한 상병 '표(diag-grid)'
         //   blind 복원 금지 — '결제 미니창 선택 상병코드 별도 줄'로만 착지(표 재도입 회귀가드 포함). diag_code_N/diag_name_N 토큰은
@@ -766,6 +770,9 @@ export default defineConfig({
         // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: unit 전용(6배수 판정·정렬 순수 함수) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER.spec.ts',
+        // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: unit 전용(PROGCHK 필터 순수 함수 + 정적 소스 가드) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP.spec.ts',
         // T-20260809-foot-RXHIST-DRUGLIST-PRESCRIBED-ONLY-FILTER: unit 전용(토큰 파서/마스터 인덱스/교차검증
         //   순수 함수 + fail-open 가드). 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)
         //   유입 차단. unit 에서만 실행(브라우저 스모크는 로그인 실패 시 graceful skip).
