@@ -35,6 +35,7 @@ import { recordManualPayment, type ManualPayAttribution, type ManualPayCheckIn, 
 import type { CheckIn, CheckInStatus, Clinic, Staff, VisitType } from '@/lib/types';
 // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3) — 플랜A(단말기 직결) 환불 버튼 + 짝맞춤 판별자.
 import CbandTerminalCancelButton, { isPlanACardPayment } from '@/components/CbandTerminalCancelButton';
+import CbandPayInfoButton from '@/components/CbandPayInfoButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -2335,12 +2336,16 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       {/* ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 기존 [환불] 컬럼 오른쪽 신규 컬럼(플랜A 환불 BETA).
                           ★T-20260810-foot-CONSULTROOM-PAYBTN-ADD-REFUNDCOL-RENAME(AC-2): 컬럼 헤더 표기 '플랜A 환불'→'CRM 환불 BETA'로 rename(현장 직관성·'플랜A'는 내부명칭). 버튼 내부문구 '단말기 취소' 및 짝맞춤 로직(VG-4) 무변경. */}
                       <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-20">CRM 환불 BETA</th>
+                      {/* ★T-20260813-foot-PLANA-PAYINFO-CONFIRM-COLUMN: [CRM 환불 BETA] 컬럼 오른쪽 신규 [결제정보 확인] 컬럼.
+                          플랜A(코밴 CAT 단말기 직결결제) 승인응답(cband_payment_attempts.raw_response) 상세 열람 → 플랜A 강점 현장 노출.
+                          활성=플랜A행(payment_attempt_id ∧ external_approval_no) / 비활성=기존·현금·이체행(회색+안내문구). 조회 전용. */}
+                      <th className="whitespace-nowrap border-b px-2 py-1.5 text-center font-medium text-muted-foreground w-20">결제정보 확인</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredEnrichedRows.length === 0 && (
                       <tr>
-                        <td colSpan={15} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={16} className="py-8 text-center text-sm text-muted-foreground">
                           결제내역이 없습니다
                         </td>
                       </tr>
@@ -2604,6 +2609,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             />
                           )}
                         </td>
+                        {/* ★T-20260813-foot-PLANA-PAYINFO-CONFIRM-COLUMN — 신규 컬럼: [결제정보 확인] (조회 전용).
+                            활성/비활성 분기는 CbandPayInfoButton 내부(isPayInfoAvailable = payment_attempt_id ∧ external_approval_no).
+                            비활성 행(기존·현금·이체)은 회색 버튼 + 안내 문구("CRM 결제로 진행한 건만 확인할 수 있습니다"). 환불행은 셀 비움. */}
+                        <td className="px-1 py-1.5 text-center" data-testid={`payinfo-cell-${r.payment_id ?? r.pkg_payment_id ?? r.sort_key}`}>
+                          {r.payment_type !== 'refund' && (r.source === 'payment' || r.source === 'package') && (
+                            <CbandPayInfoButton
+                              payment={{
+                                external_approval_no: r.external_approval_no ?? null,
+                                payment_attempt_id: r.payment_attempt_id ?? null,
+                              }}
+                              rowKey={r.payment_id ?? r.pkg_payment_id ?? r.sort_key}
+                            />
+                          )}
+                        </td>
                       </tr>
                       );
                     })}
@@ -2635,8 +2654,8 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                             return n > 0 ? `${n}건` : '-';
                           })()}
                         </td>
-                        {/* 결제수단 · 구분 · 환불 · 플랜A 환불 4개 컬럼(T-20260807 AC-3 컬럼 추가로 3→4). */}
-                        <td colSpan={4}></td>
+                        {/* 결제수단 · 구분 · 환불 · CRM 환불 BETA · 결제정보 확인 5개 컬럼(T-20260813 컬럼 추가로 4→5). */}
+                        <td colSpan={5}></td>
                       </tr>
                     </tfoot>
                   )}
