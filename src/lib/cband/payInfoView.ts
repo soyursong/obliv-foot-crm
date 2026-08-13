@@ -16,6 +16,27 @@ import { formatInstallmentKo } from './protocol';
 /** 비활성(기존 결제·현금·이체) 행 안내 문구 — 현장 명시(회색 only 금지). */
 export const PAYINFO_INACTIVE_MESSAGE = 'CRM 결제로 진행한 건만 확인할 수 있습니다';
 
+/**
+ * [결제정보 확인] 버튼 className — 활성(플랜A)/비활성 시각 구분 SSOT.
+ * ────────────────────────────────────────────────────────────────────────────
+ * ★T-20260813-foot-PAYINFO-CONFIRM-ROWGATE-VISUAL(①): 옆 [단말기 취소 BETA]
+ *   (CbandTerminalCancelButton)의 플랜A-행 구분 스타일과 **동형** 적용.
+ *   참조 컬럼 실렌더: 활성 = `font-medium text-rose-600 hover:bg-rose-50`(채도 높은 accent),
+ *   비활성 = `text-gray-400 cursor-not-allowed`(gray). → "플랜A 행만 색 다름".
+ *
+ *   본 컬럼은 '조회'(benign) 액션이라 참조 컬럼의 rose(위험/취소 의미)를 그대로 쓰지 않고,
+ *   기존 테마(teal-emerald)의 accent 로 매핑한다(색 값 발명 0 · 기존 토큰만 참조).
+ *   단, teal-700 text-only 는 테마 상시색과 겹쳐 현장에서 '모든 행 같은 색'으로 인지됨
+ *   → 활성행에 상시 bg tint(chip: bg-teal-50)를 부여해 참조 컬럼의 pop 효과를 등가 달성.
+ *   활성/비활성이 반드시 상이한 클래스를 산출(색 구분 불변식) — 스펙 테스트로 고정.
+ */
+export function payInfoButtonClass(active: boolean): string {
+  const base = 'rounded px-1.5 py-0.5 text-[10px] transition';
+  return active
+    ? `${base} font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100`
+    : `${base} text-gray-400 cursor-not-allowed`;
+}
+
 export interface CbandPayInfoPayment {
   /** CAT-origin 판별자(FK) = cband_payment_attempts.id. NOT NULL ∧ external_approval_no 존재 = 플랜A. */
   payment_attempt_id?: string | null;

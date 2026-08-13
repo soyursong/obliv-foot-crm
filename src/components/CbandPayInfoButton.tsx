@@ -44,7 +44,7 @@ import { Button } from '@/components/ui/button';
 import { formatAmount } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import {
-  PAYINFO_INACTIVE_MESSAGE, isPayInfoAvailable, maskCardNo,
+  PAYINFO_INACTIVE_MESSAGE, isPayInfoAvailable, maskCardNo, payInfoButtonClass,
   fmtTranDate, fmtTranTime, fmtTranType, fmtHalbu, projectRawResponse,
   type CbandPayInfoPayment, type RawResponseView,
 } from '@/lib/cband/payInfoView';
@@ -98,7 +98,7 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
         <button
           type="button"
           disabled
-          className="rounded px-1 py-0.5 text-[10px] text-gray-400 cursor-not-allowed"
+          className={payInfoButtonClass(false)}
         >
           결제정보 확인
         </button>
@@ -195,7 +195,7 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
         data-testid={`btn-payinfo-${key}`}
         title="이 결제의 카드 단말기 승인 상세 정보를 확인합니다"
         onClick={openDialog}
-        className="rounded px-1 py-0.5 text-[10px] font-medium text-teal-700 hover:bg-teal-50 transition"
+        className={payInfoButtonClass(true)}
       >
         결제정보 확인
       </button>
