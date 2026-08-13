@@ -105,6 +105,17 @@ jobs:
       #   _ANON_KEY/SUPABASE_SERVICE_ROLE_KEY)로 override 매핑 + EXPECT_DEV_DB_REF 세팅 → PRODREF-
       #   HARDGUARD(global-setup/teardown assertExpectedDbTarget) 활성. defense-in-depth(가드 + 하드가드).
       FOOT_E2E_DEV_ISOLATION: "1"
+      # ── obliv-foot-dev 스키마 parity 전제 (T-20260813-foot-DEVDB-CF-SEED-PARITY) ──
+      #   격리 컷오버(FOOT_E2E_DEV_ISOLATION) 후 CF-1 "칸반 카드 발견(초진대기 진입)" 은 dev-DB
+      #   (obliv-foot-dev kcdqtyivtqcjmcrdjkqi)의 check_ins soft-hide 컬럼(deleted_at/deleted_by)에
+      #   의존한다. 대시보드 칸반 read-path 가 `WHERE deleted_at IS NULL` 로 live 카드를 필터하므로,
+      #   dev-DB 에 해당 컬럼이 없으면(=prod 마이그 20260725160000_foot_check_ins_soft_hide 미동기)
+      #   read 가 42703 로 실패 → 카드 미표시 → CF-1 timeout(=08-12 run 31615711643 시그니처).
+      #   해소 = supervisor DB-GATE 로 위 마이그를 obliv-foot-dev 에 parity apply(ADDITIVE·멱등,
+      #   POST-VERIFY: deleted_at+deleted_by=2·idx_check_ins_live_clinic_checkedin·foot_stats view 2종).
+      #   실증 = 08-13 run 31666620590 🧪 Critical Flow 23/23 PASS (CF-1 timeout×3 → 0, red→green).
+      #   ※ 이 job 은 dev-DB 스키마가 prod 마이그 tip 에 parity 유지됨을 전제로 green 이다
+      #     (신규 prod 마이그 착지 시 dev-DB 동기가 CF green 의 선행조건).
 
     steps:
       - uses: actions/checkout@v4
