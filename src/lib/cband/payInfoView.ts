@@ -11,7 +11,7 @@
  *   → QR_DATA_256(미마스킹 개인정보 13자리) 등은 구조적으로 표시 불가.
  */
 
-import { formatInstallmentKo } from './protocol';
+import { formatInstallmentKo, TRANTYPE_APPROVE, TRANTYPE_CANCEL } from './protocol';
 
 /** 비활성(기존 결제·현금·이체) 행 안내 문구 — 현장 명시(회색 only 금지). */
 export const PAYINFO_INACTIVE_MESSAGE = 'CRM 결제로 진행한 건만 확인할 수 있습니다';
@@ -125,4 +125,62 @@ export function projectRawResponse(raw: Record<string, unknown> | null | undefin
     cardNoMasked: (r.cardNoMasked as string | null) ?? null,
     cardName: (r.cardName as string | null) ?? null,
   };
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * 승인+취소 동시표시 (기획서 3-2) — T-20260813-foot-PAYINFO-MODAL-CANCELPAIR-DISPLAY
+ * ────────────────────────────────────────────────────────────────────────────
+ * 배경(현장): 플랜A 결제가 취소된 경우 결제내역/모달이 승인 응답만 보여줘 '취소됨'이
+ *   드러나지 않음 → 실장이 취소건을 승인건으로 오인. 모달에서 승인(0210)과 취소(0430)를
+ *   ★동일 원거래 기준 함께 노출해 정산 정합을 눈으로 확인.
+ * 매칭 키 = AUTHNO(auth_no · 원거래 동일) · 승인/취소 구분 = TRANTYPE(0210/0430)+TRANSERIAL(msg_trace).
+ * ★조회 전용(write-path 무접촉) · PII 화이트리스트 투영·마스킹은 부모 로직(projectRawResponse/maskCardNo) 계승.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/** 모달 표시용 단일 거래(승인 or 취소) 정규화 행. raw 는 화이트리스트 subset(projectRawResponse). */
+export interface PayInfoAttempt {
+  tran_type: string | null;
+  auth_no: string | null;
+  /** TRANSERIAL(거래고유번호, msg_trace 12자리) — 유실 시 단말기 승인내역조회 유일 키 + 승인/취소 행 구분자. */
+  msg_trace: string | null;
+  merno: string | null;
+  cat_tid: string | null;
+  response_code: string | null;
+  requested_amount: number | null;
+  raw: RawResponseView;
+}
+
+/** 동일 AUTHNO 원거래를 승인 leg + 취소 leg 로 분리한 결과. */
+export interface PayInfoLegs {
+  /** 승인(0210) — 원거래. 정상적으로 1건. */
+  approval: PayInfoAttempt | null;
+  /** 취소(0430) — 부분/전체 취소. 통상 0~1건이나 다건 방어(TRANSERIAL 별 분리). */
+  cancels: PayInfoAttempt[];
+  /** 동일 AUTHNO 에 취소가 존재 = 승인이 취소로 상쇄됨('취소됨' 명시 트리거). */
+  cancelled: boolean;
+}
+
+/**
+ * ★승인/취소 페어링(순수) — 동일 AUTHNO(원거래)로 묶인 거래들을 승인(0210) 1건 + 취소(0430) N건으로 분리.
+ *   입력 rows 는 호출측이 auth_no 로 조회한 집합. tran_type 으로 leg 를 가르고 msg_trace(TRANSERIAL)로 취소 행을 정렬.
+ *   승인이 없고 취소만 있는 비정상 케이스도 안전 반환(approval=null, cancels 유지) → UI 가 '승인건 미확인' 안내.
+ */
+export function pairApprovalCancel(rows: PayInfoAttempt[]): PayInfoLegs {
+  const list = Array.isArray(rows) ? rows : [];
+  const approval = list.find((r) => (r.tran_type ?? '').trim() === TRANTYPE_APPROVE) ?? null;
+  const cancels = list
+    .filter((r) => (r.tran_type ?? '').trim() === TRANTYPE_CANCEL)
+    .sort((a, b) => (a.msg_trace ?? '').localeCompare(b.msg_trace ?? ''));
+  return { approval, cancels, cancelled: cancels.length > 0 };
+}
+
+/** 최종상태 배지 문구 — 취소 존재 시 '취소됨', 그 외 '정상 승인'. */
+export function payInfoNetStatusLabel(legs: PayInfoLegs): string {
+  return legs.cancelled ? '취소됨' : '정상 승인';
+}
+
+/** 승인금액 = 응답 TAMT(raw.amount) 우선, 없으면 요청금액(requested_amount). 부모 모달과 동일 축. */
+export function attemptAmount(a: PayInfoAttempt | null | undefined): number | null {
+  if (!a) return null;
+  return a.raw?.amount ?? a.requested_amount ?? null;
 }
