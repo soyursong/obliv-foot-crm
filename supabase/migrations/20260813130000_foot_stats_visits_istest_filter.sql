@@ -2,7 +2,7 @@
 -- T-20260812-foot-TESTDATA-PRE0713-ISTEST-BACKFILL — STEP2 (ADDITIVE·통계뷰 is_test 필터)
 -- DB: rxlomoozakkjesdqjtvd (obliv-foot-crm, foot 단일 Supabase / prod)
 -- 작성: dev-foot / 2026-08-13
--- 롤백: 20260813120000_foot_stats_visits_istest_filter.rollback.sql
+-- 롤백: 20260813130000_foot_stats_visits_istest_filter.rollback.sql
 -- 게이트: ★supervisor DDL-diff + DB-GATE GO-token 선행 필수. GO-token 前 prod apply 금지(apply_before_go).
 --
 -- ─── 무엇을 바꾸나 (변경의 전부 = 통계뷰 2종에 테스트고객 제외 필터 추가) ─────────────
