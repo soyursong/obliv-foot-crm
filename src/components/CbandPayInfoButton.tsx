@@ -24,14 +24,17 @@
  *   · QR_DATA_256(현금영수증 응답, 미마스킹 개인정보 13자리) 은 **표시하지 않는다**.
  *     본 모달은 raw_response 를 순회하지 않고 화이트리스트 필드만 명시 read → 구조적으로 QR 유출 불가.
  *
- * ⏸ 영수증 출력 버튼(재발행)은 본 티켓 scope 제외(동작 방식 미결) — 모달 하단 슬롯 여지만 확보,
- *   동작 미구현. TICKET-UPDATE 수신 후 별도 보완.
+ * ── ★ 영수증 재출력(전표출력, 1번 단말기) — T-20260813-foot-PAYHIST-RECEIPT-REPRINT-TERMINAL1 ──
+ *   본 모달 하단 [영수증 출력] 버튼 = 이미 승인된 이 결제의 영수증을 **이 PC에 연결된 1번 단말기
+ *   (카운터/퍼시트)로 다시 뽑는다**(전표출력 TCODE=XP, 금전 무이동). 벤더 스펙 = 재출력 전용 명령
+ *   (신규 결제/승인/취소 아님) → 구조적으로 중복 매출 유발 불가(AC3). DB write 0(감사/매출 레코드 생성 없음).
+ *   단말 미연결/오프라인/미설정 시 명확한 실패 메시지(무반응 금지·AC4). 순수 로직 = @/lib/cband/receiptReprint.
  *
  * 태블릿 UX: teal-emerald · 큰 버튼 · 천단위 콤마 · 한국어. (풋센터 표준)
  */
 
 import { useState } from 'react';
-import { Receipt, Loader2, AlertTriangle } from 'lucide-react';
+import { Receipt, Loader2, AlertTriangle, Printer, CheckCircle2 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -43,6 +46,8 @@ import {
   fmtTranDate, fmtTranTime, fmtTranType, fmtHalbu, projectRawResponse,
   type CbandPayInfoPayment, type RawResponseView,
 } from '@/lib/cband/payInfoView';
+import { runReceiptReprint } from '@/lib/cband/receiptReprint';
+import { getTerminalConfigRaw } from '@/lib/cband/config';
 
 // 재노출(하위호환·기존 import 경로 안정). 순수 로직 SSOT = @/lib/cband/payInfoView.
 export { PAYINFO_INACTIVE_MESSAGE, isPayInfoAvailable, maskCardNo };
@@ -71,6 +76,9 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<AttemptDetail | null>(null);
+  // ★영수증 재출력(전표출력) 상태 — 금전 무이동·DB write 0. 실패는 명확한 메시지(무반응 금지·AC4).
+  const [reprintState, setReprintState] = useState<'idle' | 'printing' | 'printed' | 'failed'>('idle');
+  const [reprintMsg, setReprintMsg] = useState<string>('');
 
   const active = isPayInfoAvailable(payment);
   const key = rowKey ?? payment.payment_attempt_id ?? 'na';
@@ -107,6 +115,8 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
     setOpen(true);
     setDetail(null);
     setError(null);
+    setReprintState('idle');
+    setReprintMsg('');
     setLoading(true);
     try {
       // ★조회 전용: payment_attempt_id(=attempt.id)로 기존 행 1건 read (raw_response 기존 데이터). write 없음.
@@ -143,6 +153,38 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
   // 승인금액 = 응답 TAMT(raw.amount) 우선, 없으면 요청금액(requested_amount).
   const approvedAmount = detail?.raw.amount ?? detail?.requested_amount ?? null;
   const maskedCard = maskCardNo(detail?.raw.cardNoMasked);
+
+  /**
+   * ★영수증 재출력 — 이 결제의 저장된 승인데이터를 1번 단말기(이 PC 로컬 단말, CAT_PORT)로 다시 출력.
+   *   전표출력(TCODE=XP)·금전 무이동 → 신규 결제/재승인/중복 매출 절대 발생 안 함(AC3). DB write 0.
+   *   단말 미설정/미연결/오프라인은 runReceiptReprint 이 명확한 실패 메시지로 반환(무반응 금지·AC4).
+   */
+  async function onReprint() {
+    if (!detail) return;
+    setReprintState('printing');
+    setReprintMsg('');
+    // ★1번 단말기 라우팅 = 이 PC에 물린 로컬 단말의 시리얼 포트(CAT_PORT). 재출력은 시리얼 물리연결로
+    //   로컬 프린터에만 인쇄 → 다른 좌석 오출력 여지 없음. 원거래 TID/승인번호는 '인쇄 내용'에 실린다.
+    const catPort = getTerminalConfigRaw().catPort;
+    const r = await runReceiptReprint({
+      data: {
+        tranType: detail.tran_type,
+        authNo: detail.auth_no,
+        amount: approvedAmount,
+        halbu: detail.raw.halbu,
+        cardNoMasked: maskedCard,
+        cardName: detail.raw.cardName,
+        tranDate: detail.raw.tranDate,
+        tranTime: detail.raw.tranTime,
+        tid: detail.cat_tid,
+        merno: detail.merno,
+        msgTrace: detail.msg_trace,
+      },
+      catPort: catPort || null,
+    });
+    setReprintState(r.outcome === 'PRINTED' ? 'printed' : 'failed');
+    setReprintMsg(r.userMessage);
+  }
 
   return (
     <>
@@ -203,7 +245,39 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
                 <Row label="거래고유번호 (TRANSERIAL)" value={detail.msg_trace ?? '—'} mono strong testid="payinfo-transerial" />
                 <Row label="응답코드" value={detail.response_code ?? '—'} mono testid="payinfo-response-code" />
               </dl>
-              {/* ⏸ 영수증 출력 버튼 슬롯 — 본 티켓 scope 제외(동작 방식 미결). TICKET-UPDATE 수신 후 보완. */}
+
+              {/* ★영수증 재출력(전표출력, 1번 단말기) — 금전 무이동·DB write 0. 실패는 명확한 안내(AC4). */}
+              <div className="mt-3 space-y-2 border-t border-gray-100 pt-3" data-testid="payinfo-reprint">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 w-full gap-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+                  disabled={reprintState === 'printing'}
+                  data-testid="btn-payinfo-reprint"
+                  onClick={onReprint}
+                >
+                  {reprintState === 'printing' ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> 단말기로 출력 중…</>
+                  ) : (
+                    <><Printer className="h-4 w-4" /> 영수증 출력 (1번 단말기)</>
+                  )}
+                </Button>
+                {reprintState === 'printed' && (
+                  <div className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-sm text-emerald-800" data-testid="payinfo-reprint-ok">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>{reprintMsg || '영수증을 단말기로 다시 출력했습니다.'}</span>
+                  </div>
+                )}
+                {reprintState === 'failed' && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-800" data-testid="payinfo-reprint-fail">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                    <span>{reprintMsg || '영수증을 재출력하지 못했습니다. 단말기 연결 상태를 확인해 주세요.'}</span>
+                  </div>
+                )}
+                <p className="text-center text-[11px] text-gray-400">
+                  이미 승인된 결제의 영수증을 다시 출력합니다. 새로 결제되지 않습니다.
+                </p>
+              </div>
             </div>
           )}
 
