@@ -1,0 +1,152 @@
+#################### RCA READ-ONLY ####################
+
+=== [1a] schema_migrations columns ===
+[
+  {
+    "column_name": "version",
+    "data_type": "text"
+  },
+  {
+    "column_name": "statements",
+    "data_type": "ARRAY"
+  },
+  {
+    "column_name": "name",
+    "data_type": "text"
+  },
+  {
+    "column_name": "created_by",
+    "data_type": "text"
+  },
+  {
+    "column_name": "idempotency_key",
+    "data_type": "text"
+  },
+  {
+    "column_name": "rollback",
+    "data_type": "ARRAY"
+  },
+  {
+    "column_name": "content_checksum",
+    "data_type": "text"
+  }
+]
+
+=== [1b] ROW version=20260813120000 (name, created_by, statements preview) ===
+[
+  {
+    "version": "20260813120000",
+    "name": "foot_closing_enqueue_inv1_splitsign_guard_decouple",
+    "created_by": "supervisor-INV1-SPLITSIGN-DECOUPLE",
+    "statements_preview": "",
+    "stmt_count": null
+  }
+]
+
+=== [1c] recent ledger rows (>= 20260812000000) ===
+[
+  {
+    "version": "20260812080000",
+    "name": "foot_testacct8_legB2_istest_flag_2acct",
+    "created_by": null
+  },
+  {
+    "version": "20260812150000",
+    "name": "foot_fix2b_crmerror_refund_softvoid",
+    "created_by": null
+  },
+  {
+    "version": "20260812180000",
+    "name": "foot_closing_enqueue_divergence_loudfail",
+    "created_by": "supervisor-dbgate-apply-T-20260812-foot-CLOSING-HERALD-EMIT-TIMING-DRIFT-REEMIT"
+  },
+  {
+    "version": "20260812234000",
+    "name": "foot_anonrevoke_reftables_eff3_seal",
+    "created_by": "supervisor:T-20260812-foot-ANONREVOKE-REFTABLES-EFF3"
+  },
+  {
+    "version": "20260813120000",
+    "name": "foot_closing_enqueue_inv1_splitsign_guard_decouple",
+    "created_by": "supervisor-INV1-SPLITSIGN-DECOUPLE"
+  }
+]
+
+=== [1d] duplicate-version scan (collision in ledger) ===
+[]
+
+=== [2a] v_daily_visits viewdef (is_test filter?) ===
+ SELECT (checked_in_at AT TIME ZONE 'Asia/Seoul'::text)::date AS dt,
+    clinic_id,
+    count(*)::integer AS visit_count,
+    sum(
+        CASE
+            WHEN visit_type = 'new'::text THEN 1
+            ELSE 0
+        END)::integer AS new_count,
+    sum(
+        CASE
+            WHEN visit_type = 'returning'::text THEN 1
+            ELSE 0
+        END)::integer AS returning_count,
+    sum(
+        CASE
+            WHEN visit_type = 'experience'::text THEN 1
+            ELSE 0
+        END)::integer AS experience_count
+   FROM check_ins ci
+  WHERE status <> 'cancelled'::text AND checked_in_at IS NOT NULL
+  GROUP BY ((checked_in_at AT TIME ZONE 'Asia/Seoul'::text)::date), clinic_id;
+  -> contains is_test: false
+
+=== [2b] v_daily_visit_rate viewdef (is_test filter?) ===
+ WITH res AS (
+         SELECT reservations.reservation_date AS dt,
+            reservations.clinic_id,
+            count(*)::integer AS total_reservations
+           FROM reservations
+          WHERE reservations.status <> 'cancelled'::text
+          GROUP BY reservations.reservation_date, reservations.clinic_id
+        ), ck AS (
+         SELECT (check_ins.checked_in_at AT TIME ZONE 'Asia/Seoul'::text)::date AS dt,
+            check_ins.clinic_id,
+            count(*)::integer AS checkin_count
+           FROM check_ins
+          WHERE check_ins.status <> 'cancelled'::text AND check_ins.checked_in_at IS NOT NULL
+          GROUP BY ((check_ins.checked_in_at AT TIME ZONE 'Asia/Seoul'::text)::date), check_ins.clinic_id
+        )
+ SELECT COALESCE(r.dt, c.dt) AS dt,
+    COALESCE(r.clinic_id, c.clinic_id) AS clinic_id,
+    COALESCE(r.total_reservations, 0) AS total_reservations,
+    COALESCE(c.checkin_count, 0) AS checkin_count,
+        CASE
+            WHEN COALESCE(r.total_reservations, 0) > 0 THEN round(COALESCE(c.checkin_count, 0)::numeric / r.total_reservations::numeric * 100::numeric, 1)
+            ELSE 0::numeric
+        END AS visit_rate_pct
+   FROM res r
+     FULL JOIN ck c ON
+  -> contains is_test: false
+
+=== [2c] customers.is_test counts ===
+[
+  {
+    "is_test_true": 5,
+    "is_test_false": 1975,
+    "is_test_null": 0,
+    "pre_0713_total": 218
+  }
+]
+
+=== [3a] backfill_audit_20260812_istest table existence (orphan check) ===
+[]
+
+=== [3b] enqueue_closing_confirmed marker (did the COLLIDING closing_enqueue mig apply?) ===
+[
+  {
+    "proname": "enqueue_closing_confirmed",
+    "has_decouple_marker": true,
+    "has_split_sign_ok": true
+  }
+]
+
+#################### END RCA ####################
