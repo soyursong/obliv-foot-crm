@@ -115,3 +115,10 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 
 # git worktrees (isolation dirs — never track)
 _wt-*
+
+# PHI axis-C redaction (T-20260813-ops-PHI-AXISC) — dump-form evidence off-git (Phase A)
+db-gate/T-20260728-foot-PAYMENT-WAITING-STUCK-PROMOTION-CLASS_probe_evidence.json
+scripts/T-20260629-foot-DUMMY-CHECKIN-RESV-LINK_pathC_charge.out.json
+scripts/visittype_backfill_capture_2026-06-02T1057.json
+evidence/T-20260810-foot-ARCHE-BABSENT34_roster.json
+scripts/T-20260701-foot-STAFF-ROSTER-DEDUP_apply_resolve.out.json

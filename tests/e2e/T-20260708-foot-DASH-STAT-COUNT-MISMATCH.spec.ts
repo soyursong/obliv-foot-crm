@@ -18,7 +18,7 @@
  *   B. 분류 로직 재현(순수) — prod 당일 실데이터 스냅샷(2026-07-08 KST) 대조 3종 시나리오.
  *
  * prod 실데이터 스냅샷(2026-07-08 KST, Management API 조회):
- *   done/new 15, payment_waiting/new 1(접수테스트2), payment_waiting/returning 1(김민경) → 전체 17 / 신규 16 / 재진 1
+ *   done/new 15, payment_waiting/new 1(접수테스트2), payment_waiting/returning 1(김OO) → 전체 17 / 신규 16 / 재진 1
  *
  * READ-ONLY — DB 변경 없음.
  */
@@ -77,7 +77,7 @@ type Row = { id: string; status: string; visit_type: 'new' | 'returning' | 'expe
 const PROD_SNAPSHOT: Row[] = [
   ...Array.from({ length: 15 }, (_, i) => ({ id: `done-${i}`, status: 'done', visit_type: 'new' as const })),
   { id: 'pw-new-접수테스트2', status: 'payment_waiting', visit_type: 'new' },
-  { id: 'pw-ret-김민경', status: 'payment_waiting', visit_type: 'returning' },
+  { id: 'pw-ret-김OO', status: 'payment_waiting', visit_type: 'returning' },
 ];
 
 // ── 정정된 카운트 로직 (Dashboard.tsx SSOT 복제) ──

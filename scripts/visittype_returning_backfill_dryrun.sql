@@ -3,7 +3,7 @@
 -- supervisor SQL 게이트 선행 필수. 본 스크립트는 SELECT만 수행(변경 없음).
 --   (0) 영향 건수: 백필로 'new'→'returning' 전환될 고객 수
 --   (1) 변경 대상 customer_id 목록: 롤백 추적용으로 결과를 반드시 별도 보존
---   (2) 검증 샘플: 김민경 F-0177 등 방문이력 다수 고객의 현재 라벨 확인
+--   (2) 검증 샘플: 김OO F-01XX 등 방문이력 다수 고객의 현재 라벨 확인
 --
 -- ticket: T-20260602-foot-VISITTYPE-RETURNING-AUTOSET / author: dev-foot 2026-06-02
 

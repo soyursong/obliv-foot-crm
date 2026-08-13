@@ -19,7 +19,7 @@
 2. **컬럼 실재 검증** = 위 POST 3건 nullable ✓.
 3. **FE co-deploy** — branch→main merge(clean, conflict 0) + `npm run build` exit 0 → `git push origin main` (f3afaa8e→**60095458**) → CF Pages `obliv-foot-crm.pages.dev/version.json` commit==60095458 DEPLOYED 확인(polling attempt 12, ~3min). 컬럼 선행 apply 완료 후 ship = PostgREST column-not-exist 회피.
 4. **`_04` freeze dry-run(rows=4) → --apply(voided=4)** — baseline 4행 exact(b81521e2 287,000·aaec854c 42,000·81682cf7 42,000·31ea7f5e 15,000, 전건 voided_at NULL), SENTINEL rows=4·post-probe 무영속 → apply voided=4 영속 확인. voided_by='T-20260804-foot-COSMETIC-CORRECTION-CRM'.
-- **freeze POSTCHECK (voided_at IS NULL 필터 = FE 배포후 동작)**: 미상제외 638,000/19 → **252,000/15**. 델타 정확히 **−386,000 / −4건**(=4 voided 라인 합). 김규리 404,000→75,000(−329,000, #1a+#1b 김민경)·최다혜 42,000→0(#2b)·윤시하 15,000→0(#4).
+- **freeze POSTCHECK (voided_at IS NULL 필터 = FE 배포후 동작)**: 미상제외 638,000/19 → **252,000/15**. 델타 정확히 **−386,000 / −4건**(=4 voided 라인 합). 김규리 404,000→75,000(−329,000, #1a+#1b 김OO)·최다혜 42,000→0(#2b)·윤시하 15,000→0(#4).
 - **Tier-F 무접촉** 확인(footBilling/planbExpected changeset 부재, 방화벽 by-construction intact).
 
 ## #3 김정숙 F-4872 — sub-HOLD 유지 (미apply)

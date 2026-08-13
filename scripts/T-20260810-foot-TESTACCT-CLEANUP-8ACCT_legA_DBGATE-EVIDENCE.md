@@ -19,7 +19,7 @@
 
 ## 2. 재검증 (freeze-set + identity re-bind)
 - 6행 customers 잔존·이름 일치·is_simulation=false·created_by=NULL 확인(_legA_reverify.mjs).
-- 동명이인 실고객 배제: NFC exact-match. 송지현 F-4451·엄경은 F-4623 별개행 자동배제. KEEP(김민경/박민석) id충돌 0.
+- 동명이인 실고객 배제: NFC exact-match. 송지현 F-4451·엄경은 F-4623 별개행 자동배제. KEEP(김OO/박민석) id충돌 0.
 - **LEDGER/MEDICAL GUARD PASS**: payments/service_charges/package_payments/package_credit_ledger/insurance_*/consultation_notes/medical_charts/prescriptions/clinical_images/treatment_photos/consent_forms/patient_file_records/patient_past_history = 전건 0 (closure 전체 깊이).
 
 ## 3. FK closure (재귀 resolver, _legA_closure.mjs) — 19 tables / 212 rows

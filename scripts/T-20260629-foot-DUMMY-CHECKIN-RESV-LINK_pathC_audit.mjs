@@ -79,7 +79,7 @@ const unsafe = rows.filter((r) => r.cls === 'UNTAGGED' || r.cls === 'NO_CUSTOMER
 console.log('\n=== 안전(명확 더미) vs 위험(실고객/스태프 배제불가) ===');
 console.log(`SAFE   고객 ${safe.length}명 / 빈 check_ins ${safe.reduce((s, r) => s + r.emptyc, 0)}건`);
 console.log(`UNSAFE 고객 ${unsafe.length}명 / 빈 check_ins ${unsafe.reduce((s, r) => s + r.emptyc, 0)}건`);
-console.log(`\n지정 타겟 83ab4fe1(김민경) 분류 = ${rows.find((r) => r.id.startsWith('83ab4fe1'))?.cls}`);
-console.log('  → migrate_hfq_to_foot_20260531.sql L26/L66: 김민경 = "⭕ 유일 실가능"(실고객 가능), is_simulation=false, memo:null');
-console.log('  → fix_staff_profiles_20260517.mjs: 김민경 = 스태프 프로필(alsrud102938@naver.com)');
+console.log(`\n지정 타겟 83ab4fe1(김OO) 분류 = ${rows.find((r) => r.id.startsWith('83ab4fe1'))?.cls}`);
+console.log('  → migrate_hfq_to_foot_20260531.sql L26/L66: 김OO = "⭕ 유일 실가능"(실고객 가능), is_simulation=false, memo:null');
+console.log('  → fix_staff_profiles_20260517.mjs: 김민경 = 스태프 프로필(a***@naver.com)');
 console.log('\n[READ-ONLY] write 0. 실고객 혼입 0 미충족 시 planner FOLLOWUP 에스컬레이션.');

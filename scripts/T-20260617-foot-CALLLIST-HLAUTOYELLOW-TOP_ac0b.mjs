@@ -1,16 +1,16 @@
-/** AC-0b — 문제 케이스(김민경) 전체 status_transitions 여정 + 전이 로그 구조 정밀 확인 (READ-ONLY) */
+/** AC-0b — 문제 케이스(김OO) 전체 status_transitions 여정 + 전이 로그 구조 정밀 확인 (READ-ONLY) */
 import { createClient } from '@supabase/supabase-js';
 const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',
   (process.env.SUPABASE_SERVICE_ROLE_KEY || (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required (no plaintext fallback)'); })()),
   { auth: { persistSession: false } });
 
-// 김민경 (yellow + preconditioning) 풀 레코드
+// 김OO (yellow + preconditioning) 풀 레코드
 const { data: cis } = await sb.from('check_ins')
   .select('*')
-  .eq('customer_name', '김민경')
+  .eq('customer_name', '김OO')
   .gte('checked_in_at', '2026-06-13T00:00:00+09:00').lte('checked_in_at', '2026-06-13T23:59:59+09:00');
 for (const ci of cis ?? []) {
-  console.log('=== 김민경 check_in', ci.id, '===');
+  console.log('=== 김OO check_in', ci.id, '===');
   console.log('  status:', ci.status, '| status_flag:', ci.status_flag, '| doctor_status:', ci.doctor_status);
   console.log('  checked_in_at:', ci.checked_in_at);
   console.log('  status_flag_history:', JSON.stringify(ci.status_flag_history));

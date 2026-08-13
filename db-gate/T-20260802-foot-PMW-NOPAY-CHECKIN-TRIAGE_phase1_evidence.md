@@ -8,24 +8,24 @@
 
 | # | 고객 | 차트 | 방문 | 체크인일 | 경과 | 마지막 상태전이 | 예약상태 | 동일자결제 | disposition 후보 |
 |---|------|------|------|----------|------|------------------|----------|-----------|------------------|
-| 1 | 김민경 | F-0177 | returning | 2026-06-02 | 61일 | preconditioning→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
-| 2 | 김민경 | F-0177 | returning | 2026-06-15 | 48일 | laser→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
-| 3 | 김민경 | F-0177 | returning | 2026-06-16 | 47일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
-| 4 | 김민경 | F-0177 | returning | 2026-06-23 | 40일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
-| 5 | 김민경 | F-0177 | returning | 2026-06-25 | 38일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
-| 6 | 김민경 | F-0177 | returning | 2026-06-27 | 36일 | laser_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
+| 1 | 김OO | F-01XX | returning | 2026-06-02 | 61일 | preconditioning→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
+| 2 | 김OO | F-01XX | returning | 2026-06-15 | 48일 | laser→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
+| 3 | 김OO | F-01XX | returning | 2026-06-16 | 47일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
+| 4 | 김OO | F-01XX | returning | 2026-06-23 | 40일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
+| 5 | 김OO | F-01XX | returning | 2026-06-25 | 38일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
+| 6 | 김OO | F-01XX | returning | 2026-06-27 | 36일 | laser_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 7 | 풋테스트1 | F-4427 | new | 2026-06-30 | 33일 | receiving→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 8 | 풋테스트3 | F-4425 | new | 2026-06-30 | 33일 | receiving→payment_waiting | checked_in | 0 | **c·판단불가** |
-| 9 | 김민경 | F-0177 | returning | 2026-07-01 | 32일 | exam_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
+| 9 | 김OO | F-01XX | returning | 2026-07-01 | 32일 | exam_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 10 | Daniel | F-4444 | new | 2026-07-01 | 32일 | consult_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
-| 11 | 김민경 | F-0177 | returning | 2026-07-03 | 30일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
-| 12 | 김민경 | F-0177 | returning | 2026-07-04 | 29일 | receiving→payment_waiting | checked_in | 0 | **c·판단불가** |
-| 13 | 김민경 | F-0177 | returning | 2026-07-06 | 27일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
+| 11 | 김OO | F-01XX | returning | 2026-07-03 | 30일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
+| 12 | 김OO | F-01XX | returning | 2026-07-04 | 29일 | receiving→payment_waiting | checked_in | 0 | **c·판단불가** |
+| 13 | 김OO | F-01XX | returning | 2026-07-06 | 27일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 14 | 풋 서류 테스트 입니다 | F-4468 | new | 2026-07-06 | 27일 | receiving→payment_waiting | checked_in | 0 | **c·판단불가** |
-| 15 | 김민경 | F-0177 | returning | 2026-07-08 | 25일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
+| 15 | 김OO | F-01XX | returning | 2026-07-08 | 25일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 16 | 총괄테스트중 | F-4574 | returning | 2026-07-10 | 23일 | receiving→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 17 | [재수집필요] | F-4621 | new | 2026-07-13 | 20일 | receiving→payment_waiting | - | 0 | **c·판단불가** |
-| 18 | 김민경 | F-4452 | returning | 2026-07-13 | 20일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
+| 18 | 김OO | F-4452 | returning | 2026-07-13 | 20일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
 | 19 | 총괄테스트2 | F-4755 | returning | 2026-07-14 | 19일 | done→payment_waiting | checked_in | 0 | **a·완료수납누락?** |
 | 20 | 총괄테스트 | F-4714 | returning | 2026-07-16 | 17일 | treatment_waiting→payment_waiting | checked_in | 0 | **c·판단불가** |
 | 21 | 르람 | F-4856 | new | 2026-07-17 | 16일 | preconditioning→payment_waiting | - | 0 | **a·완료수납누락?** |

@@ -21,19 +21,19 @@ UPDATE reservations
    AND customer_id = '1e867904-8f08-4212-9b2d-bbe652f74374'  -- 현재 F-0174 빈혜린(오연결) 일 때만
    AND customer_name = '인도네시아 메가인플루언서';
 
--- (2) 예약 fb3a6e6f '김민경테스트'(noshow): 올바른 고객 미상 → customer_id NULL 처리(오연결 제거)
+-- (2) 예약 fb3a6e6f '김OO테스트'(noshow): 올바른 고객 미상 → customer_id NULL 처리(오연결 제거)
 UPDATE reservations
    SET customer_id = NULL
  WHERE id = 'fb3a6e6f-5461-4ae7-b5de-e18476c23b60'
    AND customer_id = '1e867904-8f08-4212-9b2d-bbe652f74374'
-   AND customer_name = '김민경테스트';
+   AND customer_name = '김OO테스트';
 
--- (3) 체크인 2fc1ab99 '김민경테스트'(cancelled): 오연결 → customer_id NULL 처리
+-- (3) 체크인 2fc1ab99 '김OO테스트'(cancelled): 오연결 → customer_id NULL 처리
 UPDATE check_ins
    SET customer_id = NULL
  WHERE id = '2fc1ab99-25c1-4ed0-81e0-acb269e9702f'
    AND customer_id = '1e867904-8f08-4212-9b2d-bbe652f74374'
-   AND customer_name = '김민경테스트';
+   AND customer_name = '김OO테스트';
 
 -- 확인: F-0174 에는 본인('빈혜린(원내촬영)' done 체크인) 1건만 남아야 함
 -- SELECT id, customer_name, status FROM check_ins WHERE customer_id='1e867904-8f08-4212-9b2d-bbe652f74374';

@@ -64,7 +64,7 @@ L219  INSERT INTO check_ins(clinic_id, customer_id, customer_name, customer_phon
 
 ### "방문이력 0건"의 진짜 원인 (적재 아님 — 기 진단 티켓 환원)
 1. **더미**: 더미 시드는 셀프접수 RPC 경로를 안 타고 check_ins를 독립 INSERT(또는 미생성)하며 `reservation_id` NULL. (LINKAGE-AUDIT RC-4)
-2. **진료관리 탭 렌더 필터(RC-2)**: 진료내용(treatment_kind/memo/doctor_note)이 빈 행을 `visibleVisitHistory`가 숨김. 실고객에서도 재현(LINKAGE-AUDIT 2-B: 김민경 28방문→방문이력 노출 0). **이건 원장이 의도한 동작**(T-20260609-VISITLOG-EMPTYROW-HIDE)이다.
+2. **진료관리 탭 렌더 필터(RC-2)**: 진료내용(treatment_kind/memo/doctor_note)이 빈 행을 `visibleVisitHistory`가 숨김. 실고객에서도 재현(LINKAGE-AUDIT 2-B: 김OO 28방문→방문이력 노출 0). **이건 원장이 의도한 동작**(T-20260609-VISITLOG-EMPTYROW-HIDE)이다.
 
 ---
 

@@ -9,7 +9,7 @@
 
 BEGIN;
 
--- Tier 1 원복 — 김민경 6425a5c8 의 status 를 백업 원본값(='done')으로 복원
+-- Tier 1 원복 — 김OO 6425a5c8 의 status 를 백업 원본값(='done')으로 복원
 UPDATE public.check_ins ci
    SET status = bk.status
   FROM public._datafix_bk_T20260607_checkin_dup bk

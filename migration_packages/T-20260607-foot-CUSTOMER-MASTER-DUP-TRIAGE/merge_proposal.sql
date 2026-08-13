@@ -18,7 +18,7 @@
 --
 -- 케이스 요약:
 --   ① 김규리  dup_pair  KEEP 7fa5dff1(실 phone,자산19) ← MERGE ← ERR 7cef3be8(test phone,자산4)  [clear GO 후보]
---   ② 김민경  MISLINK   check_in 10f10231(name=김민경,phone test9999)이 test고객 김구번 3da2d8ef 에 오연결
+--   ② 김OO  MISLINK   check_in 10f10231(name=김OO,phone test9999)이 test고객 김구번 3da2d8ef 에 오연결
 --                       → 신원 혼입. 자동 병합/재연결 금지. SQL 없음(HOLD). 대표원장 신원확인 필수.
 --   ③ 김승현  dup_pair  KEEP fcdcd44f(실 phone,자산1) ← MERGE ← ERR 53661ce0(test phone,자산2)  [clear GO 후보]
 --
@@ -145,22 +145,22 @@ END $$;
 COMMIT;
 
 -- ───────────────────────────────────────────────────────────────────────────
--- 케이스 ② 김민경 — MISLINK (신원 혼입) · HOLD · 실행 SQL 없음
+-- 케이스 ② 김OO — MISLINK (신원 혼입) · HOLD · 실행 SQL 없음
 -- ----------------------------------------------------------------------------
 --   check_in 10f10231-8e63-4002-bbfe-e353fd9a6a0e
---     name=김민경 · phone=+821099999999(test 9999) · status=consult_waiting · visit=new
+--     name=김OO · phone=[phone-redacted](test 9999) · status=consult_waiting · visit=new
 --     현 customer_id = 3da2d8ef(김구번, test 고객)  ← name 불일치 = 신원 혼입
---   진짜 김민경 = 83ab4fe1 · phone=+821043160981(F-0177)
---   ⚠️ check_in phone(9999) ≠ 진짜 김민경 phone(4316-0981) → 동일인 확증 불가.
+--   진짜 김OO = 83ab4fe1 · phone=+8210XXXXXXXX(F-01XX)
+--   ⚠️ check_in phone(9999) ≠ 진짜 김OO phone(XXXX-XXXX) → 동일인 확증 불가.
 --
 --   ❌ 어떤 옵션도 자동 진행 금지. 대표원장(문지은) 신원 확인 후에만 1개 선택.
---   옵션 A) check_in.customer_id 를 진짜 김민경(83ab4fe1)로 재연결  ← 동일인 확증 시에만
+--   옵션 A) check_in.customer_id 를 진짜 김OO(83ab4fe1)로 재연결  ← 동일인 확증 시에만
 --           -- (확증 전 실행 금지. 참고용 골격, 주석 유지)
 --           -- UPDATE public.check_ins SET customer_id='83ab4fe1-0bbc-4dfc-ab3b-f01378144707'
 --           --  WHERE id='10f10231-8e63-4002-bbfe-e353fd9a6a0e'
 --           --    AND customer_id='3da2d8ef-97bc-4bc7-a55f-cd9bf8bc4251';  -- 1 row
 --   옵션 B) 김구번(test)·본 check_in 이 QA 잔재면 → 테스트 정리(별도 datafix)에서 처리.
---   옵션 C) 김민경 신규 의도였다면 → 신규 customers row 생성 후 연결.
+--   옵션 C) 김OO 신규 의도였다면 → 신규 customers row 생성 후 연결.
 -- ───────────────────────────────────────────────────────────────────────────
 
 -- ============================================================================

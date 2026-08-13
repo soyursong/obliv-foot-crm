@@ -9,7 +9,7 @@
  *
  * 6건 분류:
  *  - 재귀속(seller UPDATE, zero-sum) 2건: #2a 김현수, #5 김영웅 → target seller = 3a0c6774 (therapist 김규리, HARD-PIN)
- *  - 제외(라인레벨 test/오귀속) 3건: #1 김민경(2라인), #2b 오렌지족, #4 정가언 — 메커니즘=CONSULT 대기(no-DDL 레버 없음)
+ *  - 제외(라인레벨 test/오귀속) 3건: #1 김OO(2라인), #2b 오렌지족, #4 정가언 — 메커니즘=CONSULT 대기(no-DDL 레버 없음)
  *  - 누락 INSERT 1건: #3 김정숙 F-4872 풋샴푸 42,000 — 원장 접점 판별 → supervisor gate
  */
 import { readFileSync } from 'node:fs';
@@ -37,14 +37,14 @@ const REATTR = [
   { tag: '#5',  line_id: '3a8ed9f3-f55f-4afd-a110-72c24eeab5e3', cust: '김영웅 F-4959', from: '최민지(seller 직접기록)', amt: 15000, date: '2026-07-25', basis: '단순 seller 정정(7/25 seller 직접)' },
 ];
 const EXCLUDE = [ // 메커니즘 CONSULT 대기 — 라인레벨 제외 플래그 부재
-  { tag: '#1a', line_id: 'b81521e2-3e4f-4d41-8c63-971d78f08482', cust: '김민경 F-0177', svc: '안티펑거스500ml', amt: 287000, bucket: '김규리(therapist)', reason: '총괄:테스트' },
-  { tag: '#1b', line_id: 'aaec854c-31e2-4071-b2d8-535cfed6c55d', cust: '김민경 F-0177', svc: '풋샴푸200ml', amt: 42000, bucket: '김규리(therapist)', reason: '총괄:테스트' },
+  { tag: '#1a', line_id: 'b81521e2-3e4f-4d41-8c63-971d78f08482', cust: '김OO F-01XX', svc: '안티펑거스500ml', amt: 287000, bucket: '김규리(therapist)', reason: '총괄:테스트' },
+  { tag: '#1b', line_id: 'aaec854c-31e2-4071-b2d8-535cfed6c55d', cust: '김OO F-01XX', svc: '풋샴푸200ml', amt: 42000, bucket: '김규리(therapist)', reason: '총괄:테스트' },
   { tag: '#2b', line_id: '81682cf7-317a-4e55-98c5-eeafdda0d605', cust: '오렌지족 F-4628', svc: '풋샴푸200ml', amt: 42000, bucket: '최다혜(therapist)', reason: '총괄:테스트' },
   { tag: '#4',  line_id: '76... 정가언은 재귀속아님', cust: '정가언 F-4981', svc: 'CTB', amt: 15000, bucket: '윤시하(therapist)', reason: '총괄:명단에없음(오귀속)' },
 ];
 // #4 정가언 CTB line_id 정정
 EXCLUDE[3].line_id = '31ea7f5e-fad9-406f-9d50-5bf116b51d23';
-// NOTE: 김민경 7/4 42,000 라인(99cdf75b, therapist NULL, seller NULL)=bucket NULL → 이미 집계 제외됨(정정 불요). 참고만.
+// NOTE: 김OO 7/4 42,000 라인(99cdf75b, therapist NULL, seller NULL)=bucket NULL → 이미 집계 제외됨(정정 불요). 참고만.
 
 async function main() {
   console.log('════════ FREEZE SET 재검증 (apply 직전 지문 대조용 baseline) ════════');
@@ -95,7 +95,7 @@ async function main() {
 
   console.log('\n════════ C) 제외 3건(#1a/#1b/#2b/#4) — 메커니즘 CONSULT 대기 ════════');
   console.log('  라인레벨 제외 플래그 부재(check_in_services 컬럼 census). customers.is_simulation 재사용 = 고객전체 blast:');
-  console.log('    · 김민경 F-0177 = 실환자(39방문/213라인/₩6,921,690) → is_simulation 시 ~₩7M 실매출 은닉 = 파괴적 오류.');
+  console.log('    · 김OO F-01XX = 실환자(39방문/213라인/₩6,921,690) → is_simulation 시 ~₩7M 실매출 은닉 = 파괴적 오류.');
   console.log('    · 오렌지족(₩626,740)·정가언(₩30,000)도 payment 有 → is_simulation 부적합.');
   console.log('  → 신규 라인레벨 boolean(ADDITIVE) + FE 집계 필터 반영 필요 = data-architect CONSULT 1차게이트 대상.');
   console.table(EXCLUDE.map(({tag,cust,svc,amt,bucket,reason})=>({tag,cust,svc,amt,bucket,reason})));

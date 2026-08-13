@@ -104,7 +104,7 @@ target ps  = package_sessions ps
 ### B-absent = 34 (★per-row §2-F · under≫over)
 - **check_in 상 매칭 package_session 0건** — 회차 소진(draw-down) 행 자체가 미생성. (cand_all=0 전건).
 - 2차 앵커도 실패: 동일 고객·동종 session 中 **check_in_id=NULL 0건 / 동일일자 0건 / (타 check_in claim 포함) any 2건뿐**. → 32/34 는 해당 고객에 **동종 회차 session 자체가 전무** = date-match 등 완화 앵커로도 구제 불가.
-- **집중/오염**: 김민경(83ab4fe1) **17건** · 박민석 3건 · 나머지 1건씩(16 distinct 고객). **다수가 테스트/더미 고객**("총괄테스트중","서류테스트","서류테스트2","풋 서류 테스트 입니다","풋테스트1","풋테스트3","송지현2","엄경은2" 등). is_simulation=false 이나 명백 테스트명.
+- **집중/오염**: 김OO(83ab4fe1) **17건** · 박민석 3건 · 나머지 1건씩(16 distinct 고객). **다수가 테스트/더미 고객**("총괄테스트중","서류테스트","서류테스트2","풋 서류 테스트 입니다","풋테스트1","풋테스트3","송지현2","엄경은2" 등). is_simulation=false 이나 명백 테스트명.
 - **⟹ 34/62 = 55% = partition B material** → DA §Q1 "B 비중 material 시 현장확정 배치·라우팅 계획 동반"(재-CONSULT #5 = 운영·재판정 아님) 조건 충족. 단 상당수 테스트-데이터 → 재-결선이 아니라 **테스트데이터 정리/void 라우팅** 후보(per-row 판정 시 분기 필요).
 
 ---

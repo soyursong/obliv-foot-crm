@@ -28,7 +28,7 @@ reservation_memo_history · reservations · service_charges · customers.unified
 | 항목 | KEEP(정본) | ERR(중복) |
 |---|---|---|
 | id | `7fa5dff1-85c0-4f60-88a1-103fca36fdd5` | `7cef3be8-211f-4685-8c80-5141240328cf` |
-| phone | +821023682507 ✅실 | +821012345679 🧪test |
+| phone | [phone-redacted] ✅실 | [phone-redacted] 🧪test |
 | chart | F-0800 | F-0994 |
 | visit_type | returning | new |
 | created | 2026-05-30 14:23 KST | 2026-06-02 19:46 KST |
@@ -39,10 +39,10 @@ reservation_memo_history · reservations · service_charges · customers.unified
 ERR 재귀속 대상: `check_ins`×1(c0084c15:payment_waiting) · `health_q_results`×1 · `health_q_tokens`×2.
 충돌: 없음(phone/chart 동일 아님, ERR DELETE → 신규 unique 충돌 없음).
 
-## ② 김민경 — MISLINK (신원 혼입) · **HOLD · 자동금지 · 최우선 보고**
-- check_in `10f10231` name=**김민경** phone=+821099999999(test 9999) status=consult_waiting visit=new (06-06)
+## ② 김OO — MISLINK (신원 혼입) · **HOLD · 자동금지 · 최우선 보고**
+- check_in `10f10231` name=**김OO** phone=[phone-redacted](test 9999) status=consult_waiting visit=new (06-06)
 - 현 customer_id=`3da2d8ef`(김구번, **test 고객**) — name 불일치 = **신원 혼입**
-- 진짜 김민경=`83ab4fe1` phone=+821043160981(F-0177) → **check_in phone(9999) ≠ 진짜 phone(4316-0981) → 동일인 확증 불가**
+- 진짜 김OO=`83ab4fe1` phone=+8210XXXXXXXX(F-01XX) → **check_in phone(9999) ≠ 진짜 phone(XXXX-XXXX) → 동일인 확증 불가**
 - 김구번(test 3da2d8ef) 보유 자산: `check_ins`×2(10f10231, 536706fa:healer_waiting) · `health_q_tokens`×1
 - **옵션 A/B/C 어느 것도 자동 진행 불가 → 대표원장(문지은) 신원 확인 필수.** `merge_proposal.sql` 에 실행 SQL 없음(주석 골격만).
 
@@ -50,7 +50,7 @@ ERR 재귀속 대상: `check_ins`×1(c0084c15:payment_waiting) · `health_q_resu
 | 항목 | KEEP(정본) | ERR(중복) |
 |---|---|---|
 | id | `fcdcd44f-51f0-4dd0-87f9-9e6b2fd90f5b` | `53661ce0-5d3a-4da6-8459-121c36860d45` |
-| phone | +821028490209 ✅실 | +821111111111 🧪test |
+| phone | [phone-redacted] ✅실 | [phone-redacted] 🧪test |
 | chart | F-0360 | F-0897 |
 | visit_type | returning | returning |
 | created | 2026-05-22 16:20 KST | 2026-06-02 02:25 KST |
@@ -68,6 +68,6 @@ ERR 재귀속 대상: `check_ins`×1(2b774003:done) · `health_q_tokens`×1. 충
 
 ### supervisor 게이트 체크포인트
 - [ ] 대표원장 김규리·김승현 병합 방향 GO 확인됨
-- [ ] 김민경 = 별건 HOLD(병합 SQL 미포함) 인지 확인됨
+- [ ] 김OO = 별건 HOLD(병합 SQL 미포함) 인지 확인됨
 - [ ] STEP 0 백업 2테이블 생성·행수 확인(customers 2행) 후에만 STEP 1 진행
 - [ ] 실행 후: 동명 실명 중복 0(김규리=1·김승현=1) + ERR 재귀속 자산 무손실 + 부모 check_in 정합

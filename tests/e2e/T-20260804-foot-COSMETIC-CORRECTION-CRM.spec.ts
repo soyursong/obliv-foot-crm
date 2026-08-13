@@ -62,7 +62,7 @@ test('[A-3] 일마감>시술별 통계(Tier-C site3) — procedureServicesRaw vo
 
 /*
  * [B] POST-FREEZE 완전검증 (supervisor co-deploy + _04_freeze_apply.mjs --apply 후 활성):
- *   - 4-PK 라인(김민경 안티펑거스 287,000 / 김민경·오렌지족 풋샴푸 42,000 / 정가언 CTB 15,000)이
+ *   - 4-PK 라인(김OO 안티펑거스 287,000 / 김OO·오렌지족 풋샴푸 42,000 / 정가언 CTB 15,000)이
  *     담당치료사별 화장품 매출·시술별 '풋화장품' 버킷·마감 시술별 통계에서 사라짐.
  *   - Tier-F(footBilling copay/bill 재구성) 표시는 불변(soft-void flag 미read = firewall intact).
  *   현재 apply HELD(voided 행 부재)로 skip. freeze 데이터 착지 후 이 블록을 test() 로 승격.

@@ -11,7 +11,7 @@ Tier1/FE 집계가 유일하게 쓰는 제외 레버 = `customers.is_simulation`
 
 | 제외대상 | 실체 | is_simulation 시 blast |
 |---|---|---|
-| #1 김민경 F-0177 | **실환자** — 39방문·213라인·payment 19건 **₩6,921,690**·5~8월 활동 | ~₩7M 실매출/39방문 전면 은닉 = 파괴적 |
+| #1 김OO F-01XX | **실환자** — 39방문·213라인·payment 19건 **₩6,921,690**·5~8월 활동 | ~₩7M 실매출/39방문 전면 은닉 = 파괴적 |
 | #2b 오렌지족 F-4628 | 1방문·8라인·payment 2건 ₩626,740 | ₩626k 은닉 |
 | #4 정가언 F-4981 | 1방문·1라인(=문제 CTB)·payment 3건 ₩30,000 | 실고객, "명단에없음"=오귀속(테스트 아님) |
 
@@ -23,14 +23,14 @@ Tier1/FE 집계가 유일하게 쓰는 제외 레버 = `customers.is_simulation`
 |---|---|---|---|---|---|---|
 | #2a | 재귀속 | `76199926-9be6-44a5-a5dd-fa77bc6c2e33` | 김현수 F-4789 | CTB 15,000 (7/23) | seller NULL→therapist 최다혜 | seller→김규리(3a0c6774) |
 | #5 | 재귀속 | `3a8ed9f3-f55f-4afd-a110-72c24eeab5e3` | 김영웅 F-4959 | CTB 15,000 (7/25) | seller 최민지(03642b85) | seller→김규리(3a0c6774) |
-| #1a | 제외 | `b81521e2-3e4f-4d41-8c63-971d78f08482` | 김민경 F-0177 | 안티펑거스500ml 287,000 (7/3) | therapist 김규리 | 라인레벨 제외(CONSULT) |
-| #1b | 제외 | `aaec854c-31e2-4071-b2d8-535cfed6c55d` | 김민경 F-0177 | 풋샴푸200ml 42,000 (7/14) | therapist 김규리 | 라인레벨 제외(CONSULT) |
+| #1a | 제외 | `b81521e2-3e4f-4d41-8c63-971d78f08482` | 김OO F-01XX | 안티펑거스500ml 287,000 (7/3) | therapist 김규리 | 라인레벨 제외(CONSULT) |
+| #1b | 제외 | `aaec854c-31e2-4071-b2d8-535cfed6c55d` | 김OO F-01XX | 풋샴푸200ml 42,000 (7/14) | therapist 김규리 | 라인레벨 제외(CONSULT) |
 | #2b | 제외 | `81682cf7-317a-4e55-98c5-eeafdda0d605` | 오렌지족 F-4628 | 풋샴푸200ml 42,000 (7/13) | therapist 최다혜 | 라인레벨 제외(CONSULT) |
 | #4 | 제외 | `31ea7f5e-fad9-406f-9d50-5bf116b51d23` | 정가언 F-4981 | CTB 15,000 (7/23) | therapist 윤시하 | 라인레벨 제외(CONSULT) |
 | #3 | INSERT | (신규) | 김정숙 F-4872 | 풋샴푸200ml 42,000 | 임별 | line+원장접점 판별(supervisor) |
 
 **disambiguation — 김규리 2명**: `3a0c6774`(therapist, active, 6 seller_lines/50 therapist_checkins) = **재귀속 target(HARD-PIN)** · `d26717cb`(admin, 7/20 생성, 판매 0) = 대상 아님. 이름기준 UPDATE 금지.
-**김민경 7/4 라인**(`99cdf75b`, 42,000, therapist·seller NULL) = bucket NULL → 이미 집계 제외. 정정 불요(참고).
+**김OO 7/4 라인**(`99cdf75b`, 42,000, therapist·seller NULL) = bucket NULL → 이미 집계 제외. 정정 불요(참고).
 
 ## 재귀속 dry-run (#2a,#5) — No-Persistence 확인 완료
 - DO..UPDATE..RAISE(DRYRUN_SENTINEL)..ROLLBACK: **각 rows=1** (#2a NULL→3a0c6774 / #5 03642b85→3a0c6774).

@@ -71,11 +71,11 @@ async function main() {
     order by chart_number;`);
   console.log('\n대상 고객(F-4628 오렌지족/F-4789 김현수/F-4872 김정숙/F-4959 김영웅/F-4981 정가언):', J(custs));
 
-  // 김민경(#1) — 차트번호 미상, 이름+김규리 seller 로 조회
+  // 김OO(#1) — 차트번호 미상, 이름+김규리 seller 로 조회
   const kmk = await runSQL(`
     select c.id, c.name, c.chart_number, c.is_simulation from customers c
-    where c.clinic_id='${clinicId}' and c.name='김민경' order by c.chart_number;`);
-  console.log('\n김민경(#1) 고객 후보:', J(kmk));
+    where c.clinic_id='${clinicId}' and c.name='김OO' order by c.chart_number;`);
+  console.log('\n김OO(#1) 고객 후보:', J(kmk));
 
   // staff 이름 → id
   const staff = await runSQL(`

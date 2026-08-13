@@ -13,7 +13,7 @@
 --   · 티켓 AC2 판정(planner, 2026-06-07 23:42 KST)
 --
 -- AC2 확정 분류 (planner):
---   Tier 1  실 mutation 1건 : 김민경 중복 6425a5c8 → **논리 cancel(물리삭제 금지)**.
+--   Tier 1  실 mutation 1건 : 김OO 중복 6425a5c8 → **논리 cancel(물리삭제 금지)**.
 --   Tier 2  no-op           : NULL 고아 14건 전부 테스트패밀리 → 정비 불필요(손대지 않음).
 --   Tier 3  범위 밖         : 동명 customer master 중복 → spinoff 티켓
 --                             T-20260607-foot-CUSTOMER-MASTER-DUP-TRIAGE (대표원장 확인).
@@ -36,7 +36,7 @@ BEGIN;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- Tier 1 — 실명 운영자오류 중복 정비 (clear GO · 논리 cancel)
---   김민경 (customer_id=83ab4fe1-0bbc-4dfc-ab3b-f01378144707), KST 2026-06-02 'new' 2건.
+--   김OO (customer_id=83ab4fe1-0bbc-4dfc-ab3b-f01378144707), KST 2026-06-02 'new' 2건.
 --     KEEP : 207bf234-8851-4a38-8c56-c0191bea96b8 (최초 생성 04:57:56Z, 정본)
 --     CXL  : 6425a5c8-8fb7-46d6-a762-93d9922eeb48 (06:12:48Z 중복, 차트·결제·서비스·패키지 전무)
 --   방식: planner AC2 지시 — **물리 DELETE 금지, status='cancelled' 논리 취소(역연산 가능)**.
@@ -47,7 +47,7 @@ UPDATE public.check_ins ci
    SET status = 'cancelled'
  WHERE ci.id = '6425a5c8-8fb7-46d6-a762-93d9922eeb48'
    AND ci.customer_id = '83ab4fe1-0bbc-4dfc-ab3b-f01378144707'
-   AND ci.customer_name = '김민경'
+   AND ci.customer_name = '김OO'
    AND ci.status = 'done'
    AND NOT EXISTS (SELECT 1 FROM public.payments         p  WHERE p.check_in_id  = ci.id)
    AND NOT EXISTS (SELECT 1 FROM public.package_sessions ps WHERE ps.check_in_id = ci.id)
@@ -77,7 +77,7 @@ COMMIT;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- Tier 3 — 동명 customer master 중복 : **범위 밖 (spinoff 분리)**
---   김규리(7fa5dff1↔7cef3be8) / 김민경(83ab4fe1↔김구번 오연결 10f10231) / 김승현(fcdcd44f↔53661ce0).
+--   김규리(7fa5dff1↔7cef3be8) / 김OO(83ab4fe1↔김구번 오연결 10f10231) / 김승현(fcdcd44f↔53661ce0).
 --   동일 customer_id 패턴 아님 = customer master 동명이인 중복.
 --   → T-20260607-foot-CUSTOMER-MASTER-DUP-TRIAGE 에서 dry-run 트리아지, 병합은 대표원장 확인 후.
 --   본 datafix 에서 자동 실행 금지.

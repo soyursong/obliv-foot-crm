@@ -30,34 +30,34 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 // 상담(5명) / 코디(2명) / 치료사(11명) — 전원 role='staff'
 const STAFF_LIST = [
   // 상담
-  { name: '송지현', email: 'marissong@naver.com',     job: '상담' },
-  { name: '정연주', email: 'joo4442@naver.com',        job: '상담' },
-  { name: '엄경은', email: 'a1208789@naver.com',       job: '상담' },
-  { name: '김수린', email: 'ksl5777@naver.com',        job: '상담' },
-  { name: '정혜인', email: 'jhy314631@naver.com',      job: '상담' },
+  { name: '송지현', email: 'm***@naver.com',     job: '상담' },
+  { name: '정연주', email: 'j***@naver.com',        job: '상담' },
+  { name: '엄경은', email: 'a***@naver.com',       job: '상담' },
+  { name: '김수린', email: 'k***@naver.com',        job: '상담' },
+  { name: '정혜인', email: 'j***@naver.com',      job: '상담' },
   // 코디
-  { name: '박민석', email: 'jungs5322@naver.com',      job: '코디'  }, // ✅ .com 확정 (김주연 확인)
-  { name: '김민경', email: 'alsrud102938@naver.com',   job: '코디'  },
+  { name: '박민석', email: 'j***@naver.com',      job: '코디'  }, // ✅ .com 확정 (김주연 확인)
+  { name: '김민경', email: 'a***@naver.com',   job: '코디'  },
   // 치료사
-  { name: '김규리', email: 'angelgrgr12@gmail.com',    job: '치료사' },
-  { name: '백민영', email: 'baekmy1004@naver.com',     job: '치료사' },
-  { name: '임별',   email: 'byulim12@gmail.com',       job: '치료사' },
-  { name: '조선미', email: 'gkdlt609@gmail.com',       job: '치료사' },
-  { name: '김성우', email: 'say093092@naver.com',      job: '치료사' },
-  { name: '강혜인', email: 'kanghyein1477@naver.com',  job: '치료사' },
-  { name: '최다혜', email: 'chxmrrmqxn@naver.com',    job: '치료사' },
-  { name: '최민지', email: 'minji9336@naver.com',      job: '치료사' },
-  { name: '윤시하', email: 'miso3295@naver.com',       job: '치료사' },
-  { name: '김유리', email: '0195958397@hanmail.net',   job: '치료사' },
-  { name: '서은정', email: 'bonny_31@naver.com',       job: '치료사' },
+  { name: '김규리', email: 'a***@gmail.com',    job: '치료사' },
+  { name: '백민영', email: 'b***@naver.com',     job: '치료사' },
+  { name: '임별',   email: 'b***@gmail.com',       job: '치료사' },
+  { name: '조선미', email: 'g***@gmail.com',       job: '치료사' },
+  { name: '김성우', email: 's***@naver.com',      job: '치료사' },
+  { name: '강혜인', email: 'k***@naver.com',  job: '치료사' },
+  { name: '최다혜', email: 'c***@naver.com',    job: '치료사' },
+  { name: '최민지', email: 'm***@naver.com',      job: '치료사' },
+  { name: '윤시하', email: 'm***@naver.com',       job: '치료사' },
+  { name: '김유리', email: '0***@hanmail.net',   job: '치료사' },
+  { name: '서은정', email: 'b***@naver.com',       job: '치료사' },
 ];
 
 // 기존 admin 4계정 — 무영향 확인용
 const ADMIN_EMAILS = [
-  'baekseungmin@obliv.kr',   // 백승민 (예시 — 실제 이메일은 DB 확인)
-  'osebin@obliv.kr',          // 오세빈
-  'kimdain@obliv.kr',         // 김다인
-  'jeongyonghyeon@obliv.kr',  // 정용현
+  'b***@obliv.kr',   // 백승민 (예시 — 실제 이메일은 DB 확인)
+  'o***@obliv.kr',          // 오세빈
+  'k***@obliv.kr',         // 김다인
+  'j***@obliv.kr',  // 정용현
 ];
 
 // ─────────────────────────────────────────────

@@ -54,6 +54,6 @@
 - 매핑 오류 시 downside = **non-match(B_absent)** 이지 mis-link 아님 + 완전 reversible → auto-link 허용 판단.
 
 ## 잔여/후속 (비-blocking)
-- **B-absent 34**: 재-결선 대상 아님(매칭 package_session 부재). 다수 테스트/더미고객 void 후보(김민경 17·박민석 3 등) → planner confirm-gate 라우팅 대기(본 apply 미포함). **auto void 금지.**
+- **B-absent 34**: 재-결선 대상 아님(매칭 package_session 부재). 다수 테스트/더미고객 void 후보(김OO 17·박민석 3 등) → planner confirm-gate 라우팅 대기(본 apply 미포함). **auto void 금지.**
 - **FINDING-1** (citation-gap): DA SSOT doc `agents/docs/da_replies/da_decision_foot_arche_porphan_correction_spec_20260810.md` 파일 미작성 — script/prep/ticket 인용하나 disk 부재. 판정 자체는 MQ MSG-20260810-015024-v8dg + signals L85 + ticket changelog 3중 실재. → DA 백필 통지.
 - **FINDING-2** (runner 정렬): 러너가 canonical `scripts/apply_gate_lib.mjs` `assertApplyGateForRunner()`(ed25519 verify+binding+TTL) 대신 inline `existsSync` 게이트 사용. 본건은 supervisor 집행 + signed token + lease guard + C20 독립검증으로 backstop. → dev-foot 향후 correction 러너 정렬 권고.

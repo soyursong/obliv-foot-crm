@@ -27,13 +27,13 @@
 
 | 이름 | email | approved | active | clinic | 패키지 생성 |
 |------|-------|:---:|:---:|--------|:---:|
-| 김민경 | alsrud102938@naver.com | ✅ | ✅ | jongno-foot | **가능(코드상)** |
-| 김지혜 | wlgp3907@naver.com | ✅ | ✅ | jongno-foot | 가능 |
-| 박민석 | jungs5322@naver.com | ✅ | ✅ | jongno-foot | 가능 |
-| 장예지 | jangyeji1242@naver.com | ✅ | ✅ | jongno-foot | 가능 |
-| 김연희 | kyh3858@hanmail.net | ❌ | ❌ | jongno-foot | **불가(미승인)** |
-| 김은지 | kim@oblivseoul.kr | ❌ | ❌ | jongno-foot | **불가(미승인)** |
-| 송지현 | marissong@oblivseoul.kr | ❌ | ❌ | jongno-foot | **불가(미승인)** |
+| 김민경 | a***@naver.com | ✅ | ✅ | jongno-foot | **가능(코드상)** |
+| 김지혜 | w***@naver.com | ✅ | ✅ | jongno-foot | 가능 |
+| 박민석 | j***@naver.com | ✅ | ✅ | jongno-foot | 가능 |
+| 장예지 | j***@naver.com | ✅ | ✅ | jongno-foot | 가능 |
+| 김연희 | k***@hanmail.net | ❌ | ❌ | jongno-foot | **불가(미승인)** |
+| 김은지 | k***@oblivseoul.kr | ❌ | ❌ | jongno-foot | **불가(미승인)** |
+| 송지현 | m***@oblivseoul.kr | ❌ | ❌ | jongno-foot | **불가(미승인)** |
 
 - 최근 14일 check_ins 41건 전부 jongno-foot → 유효 coordinator 4명은 clinic predicate 도 일치. clinic mismatch 가설 기각.
 - **7명 중 3명(김연희·김은지·송지현)이 approved=false + active=false** → 이들은 패키지 생성뿐 아니라 앱 대부분 기능이 정상적으로 차단됨(is_approved_user 게이트). 만약 현장이 이 계정들로 시도했다면 "코디팀 전체 안 됨" 체감과 정합.

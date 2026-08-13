@@ -8,9 +8,9 @@
  * 절차:
  *   STEP 0  dry-run count (트랜잭션 외부, read-only)
  *   STEP 1  대상 customer_id 목록 캡처 (롤백 추적 — 파일 보존)
- *   STEP 2  김민경 F-0177 적용 전 상태 캡처
+ *   STEP 2  김OO F-01XX 적용 전 상태 캡처
  *   STEP 3  UPDATE (멱등 + EXISTS 가드) → 변경 건수
- *   STEP 4  김민경 F-0177 적용 후 실증 (visit_type='returning')
+ *   STEP 4  김OO F-01XX 적용 후 실증 (visit_type='returning')
  *   STEP 5  진짜 초진 보존 카운트 재확인
  *
  * author: dev-foot 2026-06-02
@@ -69,14 +69,14 @@ try {
     console.log(`    ${r.chart_number} ${r.name} (done ${r.done_count}회) id=${r.customer_id}`));
   console.log();
 
-  // STEP 2 — 김민경 F-0177 적용 전 상태
+  // STEP 2 — 김OO F-01XX 적용 전 상태
   const before = await client.query(`
     SELECT id, chart_number, name, visit_type,
            (SELECT count(*)::int FROM public.check_ins ci
             WHERE ci.customer_id = customers.id AND ci.status='done') AS done_count
-    FROM public.customers WHERE chart_number = 'F-0177';
+    FROM public.customers WHERE chart_number = 'F-01XX';
   `);
-  console.log('STEP 2 [김민경 F-0177 적용 전]:', JSON.stringify(before.rows), '\n');
+  console.log('STEP 2 [김OO F-01XX 적용 전]:', JSON.stringify(before.rows), '\n');
 
   // STEP 3 — UPDATE (멱등 + EXISTS 가드)
   const upd = await client.query(`
@@ -88,14 +88,14 @@ try {
   `);
   console.log(`STEP 3 [UPDATE] 변경 건수: ${upd.rowCount}건 (dry-run ${affected}건과 일치 여부: ${upd.rowCount === affected ? 'OK' : 'MISMATCH⚠️'})\n`);
 
-  // STEP 4 — 김민경 F-0177 적용 후 실증
+  // STEP 4 — 김OO F-01XX 적용 후 실증
   const after = await client.query(`
     SELECT id, chart_number, name, visit_type,
            (SELECT count(*)::int FROM public.check_ins ci
             WHERE ci.customer_id = customers.id AND ci.status='done') AS done_count
-    FROM public.customers WHERE chart_number = 'F-0177';
+    FROM public.customers WHERE chart_number = 'F-01XX';
   `);
-  console.log('STEP 4 [김민경 F-0177 적용 후]:', JSON.stringify(after.rows));
+  console.log('STEP 4 [김OO F-01XX 적용 후]:', JSON.stringify(after.rows));
   const kmk = after.rows[0];
   console.log(`  → visit_type = '${kmk?.visit_type}' ${kmk?.visit_type === 'returning' ? '✅ 재진 전환 확인' : '⚠️ 미전환'}\n`);
 
@@ -110,7 +110,7 @@ try {
   console.log(`STEP 5 [진짜 초진 보존] done 0건이면서 'new' 유지 고객: ${genuine.rows[0].genuine_new_count}건 (정상 보존)\n`);
 
   console.log('=== 요약 ===');
-  console.log(`백필 변경: ${upd.rowCount}건 | 김민경 F-0177: ${kmk?.visit_type} | 진짜 초진 보존: ${genuine.rows[0].genuine_new_count}건`);
+  console.log(`백필 변경: ${upd.rowCount}건 | 김OO F-01XX: ${kmk?.visit_type} | 진짜 초진 보존: ${genuine.rows[0].genuine_new_count}건`);
   console.log(`캡처 파일: ${captureFile}`);
 } catch (e) {
   console.error('❌ 실패:', e.message);

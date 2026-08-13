@@ -9,7 +9,7 @@
 --
 -- 배경: customers.visit_type DEFAULT 'new'(initial_schema.sql L.30) → 등록 시 '초진' 고착.
 --   체크인 완료(check_ins.status='done') 시 'returning' 승격 로직이 코드 전체에 부재
---   → 방문이력(done 1건+)이 쌓여도 영구히 '초진' 배지 노출(김민경 F-0177 11회 = 오노출).
+--   → 방문이력(done 1건+)이 쌓여도 영구히 '초진' 배지 노출(김OO F-01XX 11회 = 오노출).
 -- 본 마이그레이션: 이미 잘못 라벨된 기존 고객을 일괄 정정(트랙1).
 --   앞으로의 신규 완료건은 코드(트랙2: lib/visitType.ts promoteVisitTypeToReturning)가 자동 승격.
 --

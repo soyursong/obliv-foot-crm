@@ -1,6 +1,6 @@
 /**
  * T-20260629-foot-DUMMYDATA-LINKAGE-AUDIT — Phase 0c (READ-ONLY)
- * 실고객 호소 패턴 재현: 김민경류 — 방문이력(visibleVisitHistory) 충진율 + chart 바인딩 날짜.
+ * 실고객 호소 패턴 재현: 김OO류 — 방문이력(visibleVisitHistory) 충진율 + chart 바인딩 날짜.
  */
 import { createClient } from '@supabase/supabase-js';
 const sb = createClient('https://rxlomoozakkjesdqjtvd.supabase.co',
@@ -10,7 +10,7 @@ const L = (s = '') => console.log(s);
 const nonEmpty = (v) => !!(typeof v === 'string' ? v.trim() : v);
 const details = (m) => (m && typeof m === 'object' ? (m.details ?? '') : '');
 
-for (const nm of ['김민경', '장예지', '김지혜']) {
+for (const nm of ['김OO', '장예지', '김지혜']) {
   const { data: c } = await sb.from('customers').select('id').eq('name', nm).eq('is_simulation', false).limit(1);
   if (!c?.[0]) { L(`${nm}: 없음`); continue; }
   const id = c[0].id;

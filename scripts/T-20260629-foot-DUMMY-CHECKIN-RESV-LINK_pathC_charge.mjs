@@ -2,7 +2,7 @@
  * T-20260629-foot-DUMMY-CHECKIN-RESV-LINK · Path C — 빈 check_ins 진료필드 충전 (UPDATE only, INSERT 0)
  *
  * 인가: planner MSG-20260630-100539-2vm0 (Path C 재인가). 정체성 게이트 해소 — 김주연 총괄 직접 확인
- *   (thread 1782668379.879889 / ts 1782780910.890729): 김민경(83ab4fe1 등) = 원내 직원/테스트 계정,
+ *   (thread 1782668379.879889 / ts 1782780910.890729): 김OO(83ab4fe1 등) = 원내 직원/테스트 계정,
  *   서류출력·예약 테스트 활용. 실제 환자 아님 확정.
  *
  * 스코프(화이트리스트 한정 — 잔여 PHI 가드):
@@ -113,7 +113,7 @@ function classifyCustomer(c) {
   // EXCLUDE override: 실환자성 마커
   if (REALPATIENT_MEMO.test(memo)) return { wl: false, reason: `EXCLUDE_REALPATIENT_MEMO("${memo.slice(0, 24)}")` };
   // WHITELIST 양성 신호
-  if (c.id.startsWith(KIM_MINKYUNG_PREFIX)) return { wl: true, reason: 'STAFF_총괄확인(김민경 83ab4fe1)' };
+  if (c.id.startsWith(KIM_MINKYUNG_PREFIX)) return { wl: true, reason: 'STAFF_총괄확인(김OO 83ab4fe1)' };
   if (c.is_simulation) return { wl: true, reason: 'IS_SIMULATION' };
   if (staffNames.has(name)) return { wl: true, reason: `STAFF_MATCH(${name})` };
   if (TESTNAME.test(name)) return { wl: true, reason: `TESTNAME(${name})` };
@@ -195,11 +195,11 @@ console.log(`  INSERT 0 (UPDATE only)     : ✅ (구조상 INSERT 경로 없음)
 console.log(`  status 변경 0              : ✅ (status 컬럼 미터치)`);
 console.log(`  GUARD 종합                 : ${guardOk ? '✅ PASS' : '❌ FAIL'}`);
 
-// 김민경 데모 계정 강조
+// 김OO 데모 계정 강조
 const km = whitelist.find((w) => w.id.startsWith(KIM_MINKYUNG_PREFIX));
 if (km) {
   const dates = [...new Set(km.rows.map((r) => d(r.checked_in_at)))].sort();
-  console.log(`\n── 김민경(${KIM_MINKYUNG_PREFIX}) 데모 계정: 충전 ${km.count}건, 방문일 ${dates.length}일 ──`);
+  console.log(`\n── 김OO(${KIM_MINKYUNG_PREFIX}) 데모 계정: 충전 ${km.count}건, 방문일 ${dates.length}일 ──`);
   console.log(`   방문일: ${dates.join(', ')}`);
 }
 

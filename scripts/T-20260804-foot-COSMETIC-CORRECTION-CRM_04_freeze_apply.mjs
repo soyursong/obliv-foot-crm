@@ -38,8 +38,8 @@ const J = (x) => JSON.stringify(x, null, 2);
 // ── FREEZE SET — 정확히 4 PK (VERIFYGATE_EVIDENCE 확정, net cash-in 0 = 전량 비진성) ──
 const VOID_BY = 'T-20260804-foot-COSMETIC-CORRECTION-CRM';
 const FREEZE = [
-  { tag: '#1a', line_id: 'b81521e2-3e4f-4d41-8c63-971d78f08482', cust: '김민경 F-0177', svc: '안티펑거스500ml', amt: 287000, reason: 'non-genuine: 방문 payment 0 (총괄:테스트)' },
-  { tag: '#1b', line_id: 'aaec854c-31e2-4071-b2d8-535cfed6c55d', cust: '김민경 F-0177', svc: '풋샴푸200ml',   amt: 42000,  reason: 'non-genuine: net-0 phantom pay+refund pair (총괄:테스트)' },
+  { tag: '#1a', line_id: 'b81521e2-3e4f-4d41-8c63-971d78f08482', cust: '김OO F-01XX', svc: '안티펑거스500ml', amt: 287000, reason: 'non-genuine: 방문 payment 0 (총괄:테스트)' },
+  { tag: '#1b', line_id: 'aaec854c-31e2-4071-b2d8-535cfed6c55d', cust: '김OO F-01XX', svc: '풋샴푸200ml',   amt: 42000,  reason: 'non-genuine: net-0 phantom pay+refund pair (총괄:테스트)' },
   { tag: '#2b', line_id: '81682cf7-317a-4e55-98c5-eeafdda0d605', cust: '오렌지족 F-4628', svc: '풋샴푸200ml',   amt: 42000,  reason: 'non-genuine: net-0 phantom pay+refund pair (총괄:테스트)' },
   { tag: '#4',  line_id: '31ea7f5e-fad9-406f-9d50-5bf116b51d23', cust: '정가언 F-4981',  svc: 'CTB',          amt: 15000,  reason: 'non-genuine: 고객 pay_total 0 전기간 (총괄:명단에없음/오귀속)' },
 ];

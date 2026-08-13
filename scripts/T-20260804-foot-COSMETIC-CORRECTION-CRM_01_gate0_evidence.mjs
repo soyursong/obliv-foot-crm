@@ -1,7 +1,7 @@
 /**
  * T-20260804-foot-COSMETIC-CORRECTION-CRM — STEP 1: Gate0 판정 근거 + 재귀속 대상 disambiguation
  * READ-ONLY.
- *  1) is_simulation 재사용 blast-radius: 제외대상 3고객(F-0177 김민경/F-4628 오렌지족/F-4981 정가언)의
+ *  1) is_simulation 재사용 blast-radius: 제외대상 3고객(F-01XX 김OO/F-4628 오렌지족/F-4981 정가언)의
  *     전체 활동량(check_ins·비화장품 라인·payments·service_charges) 실측 → 고객전체 flag 적합성 판정.
  *  2) 중복 staff 김규리 2건(d26717cb / 3a0c6774) disambiguation — 어느 id 가 재귀속 target 인지.
  *  3) #3 김정숙 F-4872 7월 check_ins (INSERT host 후보) + 화장품 판매의 payment 동반 관행 샘플(원장 접점 판별).
@@ -29,7 +29,7 @@ const CLINIC = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 async function main() {
   console.log('======== 1) is_simulation blast-radius (제외대상 3고객 전체활동) ========');
   const cust = {
-    'F-0177 김민경 (83ab4fe1)': '83ab4fe1-0bbc-4dfc-ab3b-f01378144707',
+    'F-01XX 김OO (83ab4fe1)': '83ab4fe1-0bbc-4dfc-ab3b-f01378144707',
     'F-4628 오렌지족 (82a06353)': '82a06353-8b36-418f-9435-7e58304a3939',
     'F-4981 정가언 (4dfd32c8)': '4dfd32c8-8ba5-45cd-8c7e-5e7da2d87c1e',
   };
@@ -52,7 +52,7 @@ async function main() {
       (select count(*) from check_ins ci where ci.therapist_id=s.id) as therapist_checkins
     from staff s where s.clinic_id='${CLINIC}' and s.name='김규리' order by s.created_at;`);
   console.log(J(kr));
-  console.log('  NOTE: 김민경 대상라인의 therapist_id = 3a0c6774 (=김규리). 재귀속 target 은 이 id 로 통일 검토.');
+  console.log('  NOTE: 김OO 대상라인의 therapist_id = 3a0c6774 (=김규리). 재귀속 target 은 이 id 로 통일 검토.');
 
   console.log('\n======== 3) #3 김정숙 F-4872 INSERT host 후보 + 화장품 payment 동반 관행 ========');
   const kjs = '(select id from customers where clinic_id=\'' + CLINIC + '\' and chart_number=\'F-4872\')';

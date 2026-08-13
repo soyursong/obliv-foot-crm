@@ -26,8 +26,8 @@ const TOKEN=process.env.SUPABASE_ACCESS_TOKEN||(()=>{throw new Error('SUPABASE_A
 const GO = process.env.CONFIRM_GO === 'YES';
 async function sql(q){const r=await fetch(`https://api.supabase.com/v1/projects/${PROJ_REF}/database/query`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${TOKEN}`},body:JSON.stringify({query:q})});const b=await r.json();if(!r.ok){console.error('SQL ERR',r.status,JSON.stringify(b).slice(0,800));throw new Error('SQL failed');}return b;}
 
-// 2차 pass 최종 보존 = 28 (실고객 26 + 김민경 F-0177 + 정명희 F-4270). F-4323/F-4352 는 보존목록에서 제외 → 삭제대상.
-const PRESERVE=['F-1190','F-0155','F-0156','F-0154','F-0187','F-0158','F-0157','F-0455','F-1089','F-0896','F-0521','F-1236','F-1237','F-3904','F-4067','F-4271','F-4272','F-4273','F-4310','F-4328','F-4343','F-4344','F-4365','F-4391','F-4380','F-4421','F-0177','F-4270'];
+// 2차 pass 최종 보존 = 28 (실고객 26 + 김OO F-01XX + 정명희 F-4270). F-4323/F-4352 는 보존목록에서 제외 → 삭제대상.
+const PRESERVE=['F-1190','F-0155','F-0156','F-0154','F-0187','F-0158','F-0157','F-0455','F-1089','F-0896','F-0521','F-1236','F-1237','F-3904','F-4067','F-4271','F-4272','F-4273','F-4310','F-4328','F-4343','F-4344','F-4365','F-4391','F-4380','F-4421','F-01XX','F-4270'];
 const inList=PRESERVE.map(c=>`'${c}'`).join(',');
 const L=s=>console.log(s);
 

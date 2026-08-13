@@ -5,7 +5,7 @@
  * 게이트 순서 step1 = dev-foot BLOCKING verify-gate. 전부 READ-ONLY. prod write 0.
  *
  * Q1-5 목표:
- *   (a) 제외 4라인(#1a·#1b 김민경 / #2b 오렌지족 / #4 정가언)이 "단일 사유(real sale·화장품집계 오계상)"를 공유하는가?
+ *   (a) 제외 4라인(#1a·#1b 김OO / #2b 오렌지족 / #4 정가언)이 "단일 사유(real sale·화장품집계 오계상)"를 공유하는가?
  *   (b) 각 제외 라인이 매출-진성(real money moved) vs non-genuine(test) 인가?
  *       → real  = metric-scoped flag(is_excluded_from_sales, v_daily_revenue 무접촉)
  *       → non-genuine = is_test/is_simulation 트랙(매출 제외·payment 동반) → 재-CONSULT
@@ -32,8 +32,8 @@ async function runSQL(query) {
 const J = (x) => JSON.stringify(x, null, 2);
 
 const EXCLUDE_IDS = {
-  '#1a': 'b81521e2-3e4f-4d41-8c63-971d78f08482', // 김민경 안티펑거스 287,000
-  '#1b': 'aaec854c-31e2-4071-b2d8-535cfed6c55d', // 김민경 풋샴푸 42,000
+  '#1a': 'b81521e2-3e4f-4d41-8c63-971d78f08482', // 김OO 안티펑거스 287,000
+  '#1b': 'aaec854c-31e2-4071-b2d8-535cfed6c55d', // 김OO 풋샴푸 42,000
   '#2b': '81682cf7-317a-4e55-98c5-eeafdda0d605', // 오렌지족 풋샴푸 42,000
   '#4':  '31ea7f5e-fad9-406f-9d50-5bf116b51d23', // 정가언 CTB 15,000
 };

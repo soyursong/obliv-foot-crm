@@ -7,7 +7,7 @@
  *
  * 대상 (QA가명 135건 제외, 실명 3건):
  *   ① 김규리   keep 7fa5dff1 vs dup 7cef3be8
- *   ② 김민경   check_in 10f10231(name=김민경)이 test고객 김구번 3da2d8ef 에 오연결 → 신원 혼입(최우선)
+ *   ② 김OO   check_in 10f10231(name=김OO)이 test고객 김구번 3da2d8ef 에 오연결 → 신원 혼입(최우선)
  *   ③ 김승현   keep fcdcd44f vs dup 53661ce0
  *
  * 케이스별 산출:
@@ -50,12 +50,12 @@ const CASES = [
     note: '정본 2368-2507(returning,F-0800,05-30) vs 중복 1234-5679 test(new,F-0994,06-02)',
   },
   {
-    key: '김민경',
+    key: '김OO',
     type: 'mislink_checkin',
-    real_customer: '83ab4fe1-0bbc-4dfc-ab3b-f01378144707', // 진짜 김민경 (4316-0981, F-0177)
+    real_customer: '83ab4fe1-0bbc-4dfc-ab3b-f01378144707', // 진짜 김OO (XXXX-XXXX, F-01XX)
     wrong_customer: '3da2d8ef-97bc-4bc7-a55f-cd9bf8bc4251', // test 김구번 (9999-9999, F-0009) — 오연결 대상
     checkin: '10f10231-8e63-4002-bbfe-e353fd9a6a0e',
-    note: 'check_in name=김민경 이나 customer_id=김구번(test). 신원 혼입 — 최우선 보고. 단순 병합 금지',
+    note: 'check_in name=김OO 이나 customer_id=김구번(test). 신원 혼입 — 최우선 보고. 단순 병합 금지',
   },
   {
     key: '김승현',
@@ -189,11 +189,11 @@ const CASES = [
         wrong_customer: wrongInv,
         real_customer: realCore,
         verdict: {
-          summary: 'check_in name=김민경 ↔ customer=김구번(test) 신원 불일치. 자동 병합 금지.',
+          summary: 'check_in name=김OO ↔ customer=김구번(test) 신원 불일치. 자동 병합 금지.',
           options: [
-            'A) check_in.customer_id 를 진짜 김민경(83ab4fe1)로 재연결 — 단 check_in.customer_phone=+821099999999(test 9999)가 진짜 김민경 phone(+821043160981)과 불일치 → 동일인 확증 필요',
+            'A) check_in.customer_id 를 진짜 김OO(83ab4fe1)로 재연결 — 단 check_in.customer_phone=[phone-redacted](test 9999)가 진짜 김OO phone(+8210XXXXXXXX)과 불일치 → 동일인 확증 필요',
             'B) 김구번(test 3da2d8ef) 자체가 QA/테스트 고객이면 본 check_in 은 테스트 잔재 → 폐기 후보',
-            'C) 김민경 신규 고객 의도였다면 신규 customers row 생성 후 연결',
+            'C) 김OO 신규 고객 의도였다면 신규 customers row 생성 후 연결',
           ],
           requires: '대표원장(문지은) 신원 확인 필수 — 어느 옵션도 자동 진행 불가',
         },
@@ -289,10 +289,10 @@ const CASES = [
       const ci = cs.checkin;
       md += `- \`${ci.id}\` name=**${ci.customer_name}** phone=${ci.customer_phone} status=${ci.status} visit=${ci.visit_type} checked_in=${ci.checked_in_at}\n`;
       md += `- 현 customer_id=\`${ci.customer_id}\` → 이 고객은 **김구번(test)** 임 (name 불일치 = 신원 혼입)\n\n`;
-      md += `### 진짜 김민경 customer (재연결 후보)\n`;
+      md += `### 진짜 김OO customer (재연결 후보)\n`;
       const r = cs.real_customer;
       md += `- \`${r.id}\` ${r.name} phone=${r.phone} chart=${r.chart_number} created=${r.created_at}\n`;
-      md += `- ⚠️ check_in phone(${ci.customer_phone}) ≠ 진짜 김민경 phone(${r.phone}) → 동일인 확증 불가\n\n`;
+      md += `- ⚠️ check_in phone(${ci.customer_phone}) ≠ 진짜 김OO phone(${r.phone}) → 동일인 확증 불가\n\n`;
       md += `### 오연결 대상 김구번(test \`${cs.wrong_customer.customer_id}\`) 현 보유 자산 (영향 범위)\n`;
       md += renderRefs(cs.wrong_customer.refs);
       md += `\n### 판정\n- ${cs.verdict.summary}\n`;

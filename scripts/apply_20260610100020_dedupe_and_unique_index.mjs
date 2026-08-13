@@ -32,11 +32,11 @@ const CANCEL_IDS = [
   '7f14bf4f-5e1c-448b-ab33-5f5fd482e86a', // 장예지 06-09 checked_in
   '549b131a-0dc6-4b1e-badd-71da4b74174b', // 장예지 06-07 checked_in
   '65c601fe-b45a-49aa-8b75-d5da39f9d3b2', // 김규리 06-01 checked_in 동시간
-  '9041191a-e1c0-41da-bd8c-a1b5f4f539a4', // 김민경 06-01 checked_in 15:00
-  'ea1aed6e-d1a9-475b-bcaf-7e9e7bdd3914', // 김민경 06-01 checked_in 14:30
+  '9041191a-e1c0-41da-bd8c-a1b5f4f539a4', // 김OO 06-01 checked_in 15:00
+  'ea1aed6e-d1a9-475b-bcaf-7e9e7bdd3914', // 김OO 06-01 checked_in 14:30
   '65ef70ff-17e8-430c-9dbb-0a3ac51d6201', // 김사비 05-24 noshow 14:30
   'e061d191-ac07-4bfa-886f-f66cfe1c62ce', // 류복화 05-24 noshow 13:30  ← OVERRIDE(KEEP=7dba8647 checked_in)
-  'cd4c3681-66eb-452f-846a-8ed01dab444b', // 김민경 05-24 noshow 14:00
+  'cd4c3681-66eb-452f-846a-8ed01dab444b', // 김OO 05-24 noshow 14:00
   'f733755e-bf93-4cfe-a4e1-4b3fa280e446', // 엄지원 05-20 noshow 19:00
   '422f364e-f1e7-41d3-b271-a0206193d5bf', // 김창재 05-20 checked_in 동시간중복
   '19e8a530-ad1c-4fc7-bd34-f5ef59ac047f', // 신규 05-19 checked_in

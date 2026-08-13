@@ -1,7 +1,7 @@
 /**
  * T-20260713-foot-RECEIPT-ITEMIZED-INSURANCE-SPLIT — reopen(diagnose-first) 재현 아티팩트.
  *
- * 목적: field-soak 재보고(김민경 F-4452, check_in c284b0d9, 2026-07-13)에서
+ * 목적: field-soak 재보고(김OO F-4452, check_in c284b0d9, 2026-07-13)에서
  *   계산서·영수증 진찰료 행 공단 18,840 이 '빈칸'이라는 잔존갭이 **현행 배포 코드에서 재현되는지**를
  *   prod 실데이터 + 실 SSOT 함수(computeFootBilling → buildFootBillDetailItems → buildBillReceiptFeeGridHtml)로
  *   end-to-end 재현한다.
@@ -22,7 +22,7 @@ const env = fs.readFileSync('.env.local', 'utf8');
 const get = (k: string) => (env.match(new RegExp('^' + k + '=(.*)$', 'm')) || [])[1]?.trim();
 const sb = createClient(get('VITE_SUPABASE_URL')!, get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 
-const CHECK_IN = 'c284b0d9-3dfb-485d-99dc-db0d1437f6b9'; // F-4452 김민경 2026-07-13
+const CHECK_IN = 'c284b0d9-3dfb-485d-99dc-db0d1437f6b9'; // F-4452 김OO 2026-07-13
 const { data: rows } = await sb.from('check_in_services').select('service_id, price').eq('check_in_id', CHECK_IN);
 const ids = [...new Set((rows ?? []).map((r: any) => r.service_id))];
 const { data: sd } = await sb.from('services').select('id,name,service_code,hira_code,hira_category,is_insurance_covered,category_label,price,vat_type').in('id', ids);

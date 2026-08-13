@@ -8,13 +8,13 @@
 
 | tag | 라인 | 방문 payment(gross) | **refund 상쇄 후 net** | 진성판정 | 총괄 사유 |
 |---|---|---|---|---|---|
-| #1a | 김민경 안티펑거스 287,000 (7/3) | **0건** | **0** | 매출-**비진성** | "테스트" |
-| #1b | 김민경 풋샴푸 42,000 (7/14) | 290,900 pay **+ 290,900 refund** | **0 (phantom pair)** | 매출-**비진성** | "테스트" |
+| #1a | 김OO 안티펑거스 287,000 (7/3) | **0건** | **0** | 매출-**비진성** | "테스트" |
+| #1b | 김OO 풋샴푸 42,000 (7/14) | 290,900 pay **+ 290,900 refund** | **0 (phantom pair)** | 매출-**비진성** | "테스트" |
 | #2b | 오렌지족 풋샴푸 42,000 (7/13) | 313,370 pay **+ 313,370 refund** | **0 (phantom pair)** | 매출-**비진성** | "테스트" |
 | #4 | 정가언 CTB 15,000 (7/23) | **0건** (고객 pay_total=0 전기간) | **0** | 매출-**비진성** | "명단에없음/오귀속" |
 
 ### 핵심 발견 — Gate-0 raw sum이 refund를 상쇄하지 않았음
-- Gate-0 evidence는 payment **gross sum**(오렌지족 626,740·김민경 방문 581,800)을 읽어 "payment 有"로 판정했으나, **type=payment / type=refund 동일액·동일일 phantom 자기상쇄쌍**을 net하면 **4라인 전부 net cash-in = 0**.
+- Gate-0 evidence는 payment **gross sum**(오렌지족 626,740·김OO 방문 581,800)을 읽어 "payment 有"로 판정했으나, **type=payment / type=refund 동일액·동일일 phantom 자기상쇄쌍**을 net하면 **4라인 전부 net cash-in = 0**.
 - #1b/#2b의 gross payment는 **의료(레이저+진찰료) 금액**이지 화장품(샴푸 42,000)이 아님 (오렌지족: 300,000 laser + 13,370 재진 = 313,370, 샴푸 42,000 미포함). 그마저 전액 refund → 순현금 0.
 - #1a(287,000)·#4(15,000)는 방문 payment 자체가 0.
 - ∴ **제외 4라인은 전량 "화장품 라인이 등록됐으나 실제 판매/수금 없음"(오등록/샘플/test)** — DA가 가정한 "real money moved, metric-miscounted"가 **아님**.
@@ -26,7 +26,7 @@
 
 ### dev 권고 (DA 최종판단 보조 — 뉘앙스)
 - **단일 사유는 성립**(4라인 균질: cash-in 0/오등록). 사유 혼재로 인한 트랙 분리는 불요 — 단 방향이 non-genuine.
-- **payment 은닉 리스크 부재**: 이 라인들은 애초 `v_daily_revenue` 밖(FE client-side 집계) + cash-in 0. line-grain flag는 김민경 ₩7M(OTHER 방문) 무접촉 → is_simulation 재사용 REJECT 근거(₩7M 은닉)는 line-grain flag엔 미적용.
+- **payment 은닉 리스크 부재**: 이 라인들은 애초 `v_daily_revenue` 밖(FE client-side 집계) + cash-in 0. line-grain flag는 김OO ₩7M(OTHER 방문) 무접촉 → is_simulation 재사용 REJECT 근거(₩7M 은닉)는 line-grain flag엔 미적용.
 - **동반 payment 처리 대상 없음**: void할 cosmetic cash 자체가 없음. #1b/#2b의 phantom pay+refund는 **이미 net-zero 의료결제**로 본 화장품 정정과 무관(별개 데이터품질 이슈 = body 7월 phantom-refund 계열).
 - ∴ 저장 메커니즘은 여전히 **line-grain check_in_services boolean flag(정확히 이 4 PK)**로 동일하게 안전. 남는 결정 = **semantic/naming**: cash-in 0을 반영하면 `is_excluded_from_sales`(real-but-excluded)보다 **"판매 아님/void/test"** semantic이 정직. **DA 최종 확정 요청**(naming + read-path 계약 재확정).
 

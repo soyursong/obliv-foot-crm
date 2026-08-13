@@ -22,26 +22,26 @@
 | 8 | `6d54c7b0-a0e6-4ed0-8f33-84e377bd76d1` | 서류테스트 | `78975d00…` | NULL | 2026-07-22 | unheated_laser | false | - | 테스트·더미 명백 | 고객명에 명시적 테스트 키워드(테스트/서류테스트) |
 | 9 | `74ac3114-65c7-44fe-95cc-0064103c6b32` | 박경수 | `8020be04…` | NULL | 2026-07-23 | podologue | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 2건·package 1건·활동 2026-07-23~2026-07-23 → 실환자/스태프연습 판별 불가 |
 | 10 | `c06fbe1d-4340-4150-bcd5-b40a9d4c57d2` | 서류테스트2 | `80df7a6b…` | NULL | 2026-07-24 | unheated_laser | false | - | 테스트·더미 명백 | 고객명에 명시적 테스트 키워드(테스트/서류테스트) |
-| 11 | `5d55c4da-9033-48b2-b277-7bc81af5a1ad` | 김민경 | `83ab4fe1…` | NULL | 2026-05-27 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 12 | `e8b692bb-17ca-4e29-ac61-7f1b55482a25` | 김민경 | `83ab4fe1…` | NULL | 2026-05-29 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 13 | `196c54db-17c2-48b0-8818-ed2d0a844518` | 김민경 | `83ab4fe1…` | NULL | 2026-06-06 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 14 | `afa1997d-b048-4d59-947c-b93f25320507` | 김민경 | `83ab4fe1…` | NULL | 2026-06-08 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 15 | `aad454d5-7104-452b-9267-efeb051c6d07` | 김민경 | `83ab4fe1…` | NULL | 2026-06-09 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 16 | `18ea0df8-03f3-42a8-978a-1c6be3457935` | 김민경 | `83ab4fe1…` | NULL | 2026-06-10 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 17 | `a0cbc4ef-bf11-4cc9-af4a-e123ad117598` | 김민경 | `83ab4fe1…` | NULL | 2026-06-12 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 18 | `8fea9012-a0e6-4b99-b2e8-ee4099d0ce19` | 김민경 | `83ab4fe1…` | NULL | 2026-06-16 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 19 | `5c2f69b0-4dc7-4d28-9167-980fccd3dcb8` | 김민경 | `83ab4fe1…` | NULL | 2026-06-17 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 20 | `9e0bb3ee-6ff1-48f5-93a2-65fdeb85079a` | 김민경 | `83ab4fe1…` | NULL | 2026-06-23 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 21 | `df4310f7-3872-4243-963d-0097100d5bbe` | 김민경 | `83ab4fe1…` | NULL | 2026-06-25 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 22 | `e28dffa5-2262-4825-acc2-df2c26b56eaf` | 김민경 | `83ab4fe1…` | NULL | 2026-06-26 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 23 | `0e8f84c8-29b9-4d8f-96b2-7bf8fb076eb6` | 김민경 | `83ab4fe1…` | NULL | 2026-06-27 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 24 | `ecd6cb45-64f9-4cfe-8e7c-42b22aea3bc3` | 김민경 | `83ab4fe1…` | NULL | 2026-06-30 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 25 | `b4959728-a6f4-4803-89d9-7a3d77508f64` | 김민경 | `83ab4fe1…` | NULL | 2026-07-04 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 26 | `76b533ad-2218-4871-829a-302a701456c5` | 김민경 | `83ab4fe1…` | NULL | 2026-07-06 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
-| 27 | `fa4e86d0-b951-4eb4-a298-9f405d730539` | 김민경 | `83ab4fe1…` | NULL | 2026-07-14 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 11 | `5d55c4da-9033-48b2-b277-7bc81af5a1ad` | 김OO | `83ab4fe1…` | NULL | 2026-05-27 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 12 | `e8b692bb-17ca-4e29-ac61-7f1b55482a25` | 김OO | `83ab4fe1…` | NULL | 2026-05-29 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 13 | `196c54db-17c2-48b0-8818-ed2d0a844518` | 김OO | `83ab4fe1…` | NULL | 2026-06-06 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 14 | `afa1997d-b048-4d59-947c-b93f25320507` | 김OO | `83ab4fe1…` | NULL | 2026-06-08 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 15 | `aad454d5-7104-452b-9267-efeb051c6d07` | 김OO | `83ab4fe1…` | NULL | 2026-06-09 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 16 | `18ea0df8-03f3-42a8-978a-1c6be3457935` | 김OO | `83ab4fe1…` | NULL | 2026-06-10 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 17 | `a0cbc4ef-bf11-4cc9-af4a-e123ad117598` | 김OO | `83ab4fe1…` | NULL | 2026-06-12 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 18 | `8fea9012-a0e6-4b99-b2e8-ee4099d0ce19` | 김OO | `83ab4fe1…` | NULL | 2026-06-16 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 19 | `5c2f69b0-4dc7-4d28-9167-980fccd3dcb8` | 김OO | `83ab4fe1…` | NULL | 2026-06-17 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 20 | `9e0bb3ee-6ff1-48f5-93a2-65fdeb85079a` | 김OO | `83ab4fe1…` | NULL | 2026-06-23 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 21 | `df4310f7-3872-4243-963d-0097100d5bbe` | 김OO | `83ab4fe1…` | NULL | 2026-06-25 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 22 | `e28dffa5-2262-4825-acc2-df2c26b56eaf` | 김OO | `83ab4fe1…` | NULL | 2026-06-26 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 23 | `0e8f84c8-29b9-4d8f-96b2-7bf8fb076eb6` | 김OO | `83ab4fe1…` | NULL | 2026-06-27 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 24 | `ecd6cb45-64f9-4cfe-8e7c-42b22aea3bc3` | 김OO | `83ab4fe1…` | NULL | 2026-06-30 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 25 | `b4959728-a6f4-4803-89d9-7a3d77508f64` | 김OO | `83ab4fe1…` | NULL | 2026-07-04 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 26 | `76b533ad-2218-4871-829a-302a701456c5` | 김OO | `83ab4fe1…` | NULL | 2026-07-06 | heated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
+| 27 | `fa4e86d0-b951-4eb4-a298-9f405d730539` | 김OO | `83ab4fe1…` | NULL | 2026-07-14 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 40건·package 4건·활동 2026-05-20~2026-08-07 → 실환자/스태프연습 판별 불가 |
 | 28 | `261d6aad-8cb2-4767-8170-dcc288e28c09` | 김지혜 | `9200573f…` | NULL | 2026-07-02 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 7건·package 1건·활동 2026-06-30~2026-08-06 → 실환자/스태프연습 판별 불가 |
 | 29 | `c3125286-638b-4463-859b-34ecaf4ee79f` | 풋 서류 테스트 입니다 | `c074025b…` | NULL | 2026-07-06 | unheated_laser | false | - | 테스트·더미 명백 | 고객명에 명시적 테스트 키워드(테스트/서류테스트) |
-| 30 | `8cdbb847-1c03-480f-bdfa-98ea98c28423` | 김민경 | `c59a2600…` | NULL | 2026-07-13 | podologue | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 2건·package 2건·활동 2026-07-02~2026-07-13 → 실환자/스태프연습 판별 불가 |
+| 30 | `8cdbb847-1c03-480f-bdfa-98ea98c28423` | 김OO | `c59a2600…` | NULL | 2026-07-13 | podologue | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 2건·package 2건·활동 2026-07-02~2026-07-13 → 실환자/스태프연습 판별 불가 |
 | 31 | `72d97156-5a80-4ca4-ac5d-cacb9ac40b8d` | 김설아 | `ca8975d4…` | NULL | 2026-07-07 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 2건·package 1건·활동 2026-07-07~2026-07-14 → 실환자/스태프연습 판별 불가 |
 | 32 | `bdc08d55-5d36-40f9-9e45-43f1dd155ad4` | 김연희 | `d2b849b3…` | NULL | 2026-07-07 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명 패턴·is_simulation=false·check-in 2건·package 1건·활동 2026-07-01~2026-07-07 → 실환자/스태프연습 판별 불가 |
 | 33 | `40fbd98b-439e-433d-8c1e-31eb164c7c30` | 송지현2 | `d7faae9b…` | NULL | 2026-07-13 | unheated_laser | false | - | 판단보류(실데이터 가능) | 실명+숫자접미(2) = 테스트 재등록 dupe 가능성 높음(실재 여부 field confirm 필요) |
@@ -51,7 +51,7 @@
 
 | n_rows | 고객명 | customer_id | is_sim | total_checkins | total_packages | 활동기간 |
 |--------|--------|-------------|--------|----------------|----------------|----------|
-| 17 | 김민경 | `83ab4fe1…` | false | 40 | 4 | 2026-05-20~2026-08-07 |
+| 17 | 김OO | `83ab4fe1…` | false | 40 | 4 | 2026-05-20~2026-08-07 |
 | 3 | 박민석 | `1c61bad2…` | false | 12 | 1 | 2026-07-23~2026-08-05 |
 | 1 | 총괄테스트중 | `351d34c5…` | false | 2 | 1 | 2026-07-10~2026-07-18 |
 | 1 | 기은서 | `4151cc2b…` | false | 1 | 1 | 2026-07-07~2026-07-07 |
@@ -60,7 +60,7 @@
 | 1 | 서류테스트2 | `80df7a6b…` | false | 1 | 1 | 2026-07-24~2026-07-24 |
 | 1 | 김지혜 | `9200573f…` | false | 7 | 1 | 2026-06-30~2026-08-06 |
 | 1 | 풋 서류 테스트 입니다 | `c074025b…` | false | 1 | 1 | 2026-07-06~2026-07-06 |
-| 1 | 김민경 | `c59a2600…` | false | 2 | 2 | 2026-07-02~2026-07-13 |
+| 1 | 김OO | `c59a2600…` | false | 2 | 2 | 2026-07-02~2026-07-13 |
 | 1 | 김설아 | `ca8975d4…` | false | 2 | 1 | 2026-07-07~2026-07-14 |
 | 1 | 김연희 | `d2b849b3…` | false | 2 | 1 | 2026-07-01~2026-07-07 |
 | 1 | 송지현2 | `d7faae9b…` | false | 1 | 1 | 2026-07-13~2026-07-13 |

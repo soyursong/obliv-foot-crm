@@ -21,12 +21,12 @@ const db=createClient(URL,SRK,{auth:{persistSession:false}});
 // ── AC-3 confirm (2026-07-02T16:44, 김주연 총괄) canonical = email ──
 // #6 정혜인은 AC-3 5계정 밖 — reconcile 게이트(PASS)로 별도 처분: CANON=정연주(fallback).
 const CONFIRM = [
-  { n: 1, name: '박소예', dup: '5c17e4bc-e948-4dc4-a8cf-37904873edeb', canon_email: 'yoonha62@gmail.com', mode: 'email' },
-  { n: 2, name: '장예지', dup: 'a8ffcea8-bbfc-46e7-841b-8192d1d8a3cd', canon_email: 'jangyeji1242@naver.com', mode: 'email' },
-  { n: 3, name: '김지혜', dup: '5f741eba-7397-46ac-979b-11c31fc72eb4', canon_email: 'wlgp3907@naver.com', mode: 'email' },
-  { n: 4, name: '서은정', dup: '42ca1057-06c8-4183-91ab-b9ab5a7c3a26', canon_email: 'bonny_31@naver.com', mode: 'email' },
-  { n: 5, name: '김민경', dup: '3d881cff-40e1-4a1a-9310-5f1482cdd1b8', canon_email: 'alsrud102938@naver.com', mode: 'email' },
-  { n: 6, name: '정혜인', dup: '5f141f76-7f72-4560-8a67-bbcdf4938cad', canon_id: 'c851fbb1-31ce-4714-b91c-03e9cb8af566', canon_label: '정연주(joo4442@naver.com)', mode: 'reconcile' },
+  { n: 1, name: '박소예', dup: '5c17e4bc-e948-4dc4-a8cf-37904873edeb', canon_email: 'y***@gmail.com', mode: 'email' },
+  { n: 2, name: '장예지', dup: 'a8ffcea8-bbfc-46e7-841b-8192d1d8a3cd', canon_email: 'j***@naver.com', mode: 'email' },
+  { n: 3, name: '김지혜', dup: '5f741eba-7397-46ac-979b-11c31fc72eb4', canon_email: 'w***@naver.com', mode: 'email' },
+  { n: 4, name: '서은정', dup: '42ca1057-06c8-4183-91ab-b9ab5a7c3a26', canon_email: 'b***@naver.com', mode: 'email' },
+  { n: 5, name: '김민경', dup: '3d881cff-40e1-4a1a-9310-5f1482cdd1b8', canon_email: 'a***@naver.com', mode: 'email' },
+  { n: 6, name: '정혜인', dup: '5f141f76-7f72-4560-8a67-bbcdf4938cad', canon_id: 'c851fbb1-31ce-4714-b91c-03e9cb8af566', canon_label: '정연주(j***@naver.com)', mode: 'reconcile' },
 ];
 
 // 재귀속 대상 FK 컬럼 (DA 런북 + reconcile 실측)
