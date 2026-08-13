@@ -40,7 +40,7 @@
 - **(c) CANON 활성 상태 판단**: CANON 5fb3e3b1 은 `staff.active=false`(up.active=true). 순수 dedup(5c17e4bc soft-delete + 12 재귀속)만 하면 **박소예의 활성 staff 행이 0개** → 활성 로스터에서 사라짐. 로그인은 up.active 로 동작하나 로스터 존치를 위해 **5fb3e3b1.active=true 재활성 여부는 supervisor+DA 판단 필요.** dev-foot 는 추정하지 않음.
 
 ### FLAG-2 (#5 김민경 — canonical email 미해소, 단 dedup 무관)
-- confirm email `a***@naver.com` = staff 매칭 0행(활성 김민경 ca0e8887 은 up.email=test@medibuilder.com = 별개/테스트 계정). 실 로그인(alsrud102938) 이 staff 미링크 → **부모 티켓 STAFF-AUTH-LINK-BACKFILL 스코프**.
+- confirm email `a***@naver.com` = staff 매칭 0행(활성 김민경 ca0e8887 은 up.email=test@medibuilder.com = 별개/테스트 계정). 실 로그인(a***) 이 staff 미링크 → **부모 티켓 STAFF-AUTH-LINK-BACKFILL 스코프**.
 - 단 본 티켓 dedup 액션 = **DUP 3d881cff(참조 0) soft-delete** 로 canonical 링크와 **독립·안전**. 재귀속 없음. canonical email 링크는 본 티켓 처분과 무관(별건).
 
 ### FLAG-3 (기대행수 fresh 재조회)
