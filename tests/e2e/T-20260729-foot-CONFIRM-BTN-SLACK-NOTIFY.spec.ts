@@ -62,7 +62,10 @@ test('변경1(QA-FIX A안): 신규 실장(consultant) 등록 시에만 name 에 
   const src = read(STAFF);
   expect(src).toMatch(/import \{ withSiljangSuffix \} from '@\/lib\/siljangSlack'/);
   // A안: suffix 는 name 에 저장(consultant 한정). display_name insert 금지(foot prod 부재 42703).
-  expect(src).toMatch(/name: role === 'consultant' \? withSiljangSuffix\(name\) : name\.trim\(\)/);
+  // finalName(withSiljangSuffix) 리팩터(Staff.tsx save): consultant → suffix, 그 외 → name.trim().
+  expect(src).toMatch(/const finalName = role === 'consultant' \? withSiljangSuffix\(name\) : name\.trim\(\)/);
+  // insertRow 의 name 은 finalName(=suffix 반영값) 으로 저장 — display_name 아님(불변식 준수)
+  expect(src).toMatch(/name: finalName/);
   // insertRow 에 display_name 키 부재(불변식 준수)
   expect(src).not.toMatch(/insertRow\.display_name/);
   expect(src).not.toMatch(/display_name\?: string/);
