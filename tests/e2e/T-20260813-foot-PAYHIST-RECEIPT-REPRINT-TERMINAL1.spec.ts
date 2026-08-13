@@ -11,6 +11,7 @@ import {
   type Sender,
 } from '../../src/lib/cband/receiptReprint';
 import { normalize, safeParse } from '../../src/lib/cband/protocol';
+import { CbandBusyError } from '../../src/lib/cband/catClient';
 
 /**
  * T-20260813-foot-PAYHIST-RECEIPT-REPRINT-TERMINAL1 — 결제내역 영수증 재출력(1번 단말기, 전표출력 XP)
@@ -138,4 +139,32 @@ test('시나리오2c — 송신 예외(연결 불가)도 무반응 없이 명확
   expect(r.outcome).toBe('FAIL');
   expect(r.userMessage).toBeTruthy();
   expect(r.userMessage).toMatch(/단말기/);
+});
+
+// ── AC7: [CASHOPEN1][CASHOPEN2] 태그 미사용(풋센터 금전함 없음) — 벤더 구현주의 ①──
+//   재발행 본문(P_ECSPOS_CMD1)에도, 조립된 전문 어디에도 금전함 개방 태그가 실려선 안 된다.
+test('AC7 — 영수증 본문/전문에 금전함 개방 태그(CASHOPEN)가 절대 포함되지 않는다', () => {
+  const content = buildReceiptContent(REAL_APPROVAL_DATA);
+  expect(content.toUpperCase()).not.toContain('CASHOPEN');
+  // ESC/POS 실제 금전함 개방 펄스(ESC p = 0x1B 0x70)도 부재여야 함(방어).
+  expect(content).not.toContain('\x1Bp');
+  const { message, body } = buildReprintMsg({ content, catPort: 3, msgTrace: '235112000001' });
+  expect(message.toUpperCase()).not.toContain('CASHOPEN');
+  expect(body.P_ECSPOS_CMD1.toUpperCase()).not.toContain('CASHOPEN');
+});
+
+// ── AC8: 결제(S0/S1) in-flight 중 XP 전송 금지 — 데몬 소켓 단일연결 불변식 ──────
+//   재출력은 결제와 동일한 catClient.send(공유 _inFlight 락)를 사용한다. 결제가 진행 중이면
+//   send 가 CbandBusyError 를 던지고, 재출력은 XP 를 내보내지 않고 '진행 중' 안내로 명확히 실패한다.
+//   (구조적: 락이 payment/reprint 간 공유되므로 동시 XP 전송이 원천 불가 — silent 진행 없음.)
+test('AC8 — 결제 진행 중(단말 busy)이면 XP 전송을 하지 않고 진행중 안내로 실패한다', async () => {
+  let xpSent = false;
+  const busySender: Sender = async () => { xpSent = true; throw new CbandBusyError(); };
+  const r = await runReceiptReprint({ data: REAL_APPROVAL_DATA, catPort: 3 }, busySender);
+  expect(r.outcome).toBe('FAIL');
+  // busy 는 명확한 '진행 중' 안내로 분기(무반응 금지) — 데몬 소켓 단일연결 불변식 표면화.
+  expect(r.userMessage).toMatch(/다른 요청|진행|잠시/);
+  expect(r.response).toBeNull();
+  // CbandBusyError 는 catClient(결제와 동일 모듈)의 공유 락에서 던져진다 = 결제/재출력 락 공유 실증.
+  expect(new CbandBusyError().name).toBe('CbandBusyError');
 });
