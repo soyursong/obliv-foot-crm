@@ -189,7 +189,8 @@ $$;
 
 COMMENT ON FUNCTION public.enqueue_consult_notify(UUID, UUID, TEXT, TEXT, UUID) IS
   'T-20260806-DECOUPLE-HARDEN VG1: claim(check_ins NULL→sending) + consult_notify_outbox 적재를 단일 txn 원자 영속. '
-  'claimed=false 면 이미 확정(멱등). INSERT 예외 시 claim 동반 롤백([확정] 동반 실패, silent gap 미생성).';
+  'claimed=false 면 이미 확정(멱등). INSERT 예외 시 claim 동반 롤백([확정] 동반 실패, silent gap 미생성). '
+  'intended-caller-tier: backend-only(send-consult-notify EF/service_role 전용, PUBLIC/anon/authenticated 봉인·§6 C23).';
 
 -- ══════════════════════════════════════════════════════════════════
 -- VG4-b: DLQ 신규 → 슬랙 #infra-alerts 알람 (alert_dopamine_callback_dlq 미러)
@@ -266,7 +267,8 @@ $$;
 
 COMMENT ON FUNCTION public.alert_consult_notify_dlq() IS
   'T-20260806-DECOUPLE-HARDEN VG4: consult_notify_outbox DLQ 신규(dlq_alerted=false) 건 슬랙 #infra-alerts 배치 알람. '
-  'webhook=vault slack_infra_alerts_webhook_url → slack_ops_webhook_url fallback. silent DLQ 축적 방지.';
+  'webhook=vault slack_infra_alerts_webhook_url → slack_ops_webhook_url fallback. silent DLQ 축적 방지. '
+  'intended-caller-tier: backend-only(worker/service_role EF 전용, PUBLIC/anon/authenticated 봉인·§6 C23).';
 
 -- ══════════════════════════════════════════════════════════════════
 -- VG2: pg_cron worker — claim + dispatch + backoff (process_dopamine_callback_outbox 미러)
@@ -343,7 +345,8 @@ $$;
 
 COMMENT ON FUNCTION public.process_consult_notify_outbox() IS
   'T-20260806-DECOUPLE-HARDEN VG2: consult_notify_outbox worker(분당). due/stuck claim → attempts++/backoff 선반영 '
-  '→ consult-notify-dispatch EF 호출 → DLQ 알람. backoff 1·2·4·8·16·32·60min.';
+  '→ consult-notify-dispatch EF 호출 → DLQ 알람. backoff 1·2·4·8·16·32·60min. '
+  'intended-caller-tier: backend-only(pg_cron/service_role EF 전용, PUBLIC/anon/authenticated 봉인·§6 C23).';
 
 -- pg_cron 등록 (재실행 안전)
 SELECT cron.unschedule('foot-consult-notify-worker')
@@ -354,5 +357,26 @@ SELECT cron.schedule(
   '* * * * *',  -- 분당 1회
   $$ SELECT public.process_consult_notify_outbox() $$
 );
+
+-- ══════════════════════════════════════════════════════════════════
+-- grant-seal (C23 — intended-caller-tier: backend-only, §15-5-10)
+--   FIX-REQUEST MSG-20260813-173403-23uv: 신규 SECDEF 함수 3종이 grant-seal 절 부재 →
+--   foot postgres-owner default-priv 상속으로 authenticated EXECUTE 잔차(실측 미러
+--   process_dopamine_callback_outbox proacl={postgres,authenticated,service_role}).
+--   anon EXECUTE=0(급성 RLS-우회 없음·C23-2 PASS)이나 신규/재정의 backend-only SECDEF =
+--   C23-1(tier 선언)+C23-3(authenticated 봉인) 의무 대상.
+--   3종 전부 backend-only 확증: 호출자 = send-consult-notify EF(service_role) +
+--   consult-notify-dispatch EF(service_role) + pg_cron worker. authenticated/anon-context
+--   직접 caller 0건(repo grep 실측). FE 는 EF 엔드포인트만 invoke(RPC 직접호출 없음).
+--   ∴ service_role 단독 봉인이 어떤 caller 도 깨지 않음.
+--   intended-caller-tier: backend-only (service_role EF + pg_cron worker only)
+--   per-fn targeted 봉인만(blanket ALTER DEFAULT PRIVILEGES ... REVOKE FROM authenticated 금지·C23-4).
+-- ══════════════════════════════════════════════════════════════════
+REVOKE EXECUTE ON FUNCTION public.enqueue_consult_notify(uuid,uuid,text,text,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.process_consult_notify_outbox()                  FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.alert_consult_notify_dlq()                       FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.enqueue_consult_notify(uuid,uuid,text,text,uuid) TO service_role;
+GRANT  EXECUTE ON FUNCTION public.process_consult_notify_outbox()                  TO service_role;
+GRANT  EXECUTE ON FUNCTION public.alert_consult_notify_dlq()                       TO service_role;
 
 COMMIT;

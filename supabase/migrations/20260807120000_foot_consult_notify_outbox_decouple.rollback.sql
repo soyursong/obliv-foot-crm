@@ -15,6 +15,8 @@ SELECT cron.unschedule('foot-consult-notify-worker')
   WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'foot-consult-notify-worker');
 
 -- worker / 알람 / enqueue 함수 제거
+--   C23 grant-seal 대칭: DROP FUNCTION 이 함수 ACL(REVOKE PUBLIC/anon/authenticated + GRANT service_role)을
+--   동반 제거하므로 별도 REVOKE 불요. (부분 롤백으로 함수를 남길 경우에만 grant-seal 절 복원 필요.)
 DROP FUNCTION IF EXISTS public.process_consult_notify_outbox();
 DROP FUNCTION IF EXISTS public.alert_consult_notify_dlq();
 DROP FUNCTION IF EXISTS public.enqueue_consult_notify(UUID, UUID, TEXT, TEXT, UUID);
