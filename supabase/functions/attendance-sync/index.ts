@@ -1,6 +1,12 @@
 // attendance-sync — 구글시트 근무캘린더 → staff_attendance(SSOT) 자동 동기화 EF
 // T-20260618-foot-STAFF-ATTENDANCE-SSOT-CRM (AC-3)
 //
+// ★ T-20260813-foot-SOFTDELETE-REACTIVATION-LOCK (CARVE-B): reconcile 의 시트제거 근태행 제거를
+//   물리 hard-DELETE → soft-delete(deleted_at UPDATE)로 전환(Tier-1 근태 감사 보존·근로기준법§42).
+//   시트 재등장 시 deleted_at→NULL in-place 재활성화(UNIQUE 무충돌). hard-DELETE 콜사이트 = 0.
+//   ⚠ 본 EF 는 staff_attendance.deleted_at/deleted_by/deleted_reason 3컬럼(별 마이그
+//     20260814010000)에 의존 → 배포는 그 envelope DDL apply 와 원자적(선-apply/후-deploy, supervisor GO-token).
+//
 // ── 역할 ─────────────────────────────────────────────────────────────
 //   구글시트(오리진점 상담&코디 등 gid)를 서버에서 read → 날짜별 출근자 이름 파싱
 //   → CRM staff.name 매핑 → staff_attendance 로 멱등 upsert(reconcile).
@@ -374,7 +380,8 @@ Deno.serve(async (req: Request) => {
   const nowIso = new Date().toISOString();
   let inserted = 0;
   let updated = 0;
-  let deleted = 0;
+  let deleted = 0; // = soft-delete(deleted_at UPDATE) 건수. 물리 hard-DELETE 아님(Tier-1 근태 감사 보존).
+  let reactivated = 0; // soft-delete 됐다가 시트에 다시 나타나 deleted_at→NULL 복원된 건수.
 
   // 날짜별 reconcile — google_sheet source 만 대상, manual/crm 무접촉.
   for (const date of windowDates) {
@@ -389,39 +396,56 @@ Deno.serve(async (req: Request) => {
     // 기존 행 로드(해당 date, clinic)
     const { data: existing, error: exErr } = await supabase
       .from("staff_attendance")
-      .select("id, staff_id, source, status")
+      .select("id, staff_id, source, status, deleted_at")
       .eq("clinic_id", clinicId)
       .eq("date", date);
     if (exErr) {
       gidErrors.push(`load ${date}: ${exErr.message}`);
       continue;
     }
-    const existingSheet = new Map<string, { id: string }>(); // staff_id → row
+    // ★ soft-delete 인지: 물리행이 남아있으므로(UNIQUE(clinic_id,date,staff_id)) soft-delete 된 행도 로드해
+    //   재활성화(reactivate)/멱등 판정에 쓴다. deleted 여부를 함께 추적.
+    const existingSheet = new Map<string, { id: string; deleted: boolean }>(); // staff_id → row
     const manualStaff = new Set<string>();
     for (const r of existing ?? []) {
-      if (r.source === "google_sheet") existingSheet.set(r.staff_id, { id: r.id });
-      else manualStaff.add(r.staff_id); // manual/crm — 보존
+      if (r.source === "google_sheet") {
+        existingSheet.set(r.staff_id, { id: r.id, deleted: r.deleted_at != null });
+      } else {
+        manualStaff.add(r.staff_id); // manual/crm — 보존
+      }
     }
 
-    // 1) DELETE: google_sheet 인데 desired 에서 빠진 사람
-    const toDelete: string[] = [];
+    // 1) SOFT-DELETE: google_sheet 인데 desired 에서 빠진 사람 (출근→미출근)
+    //    ★ Tier-1 근태 감사 보존(근로기준법§42): 물리 hard-DELETE 대신 deleted_at UPDATE(비활성 마킹).
+    //    이미 soft-delete 된 행은 재-스탬프 안 함(멱등). exact-dup 은 UNIQUE 제약으로 구조적 부재 → distinct stale 만.
+    const toSoftDelete: string[] = [];
     for (const [staffId, row] of existingSheet) {
-      if (!desiredIds.has(staffId)) toDelete.push(row.id);
+      if (!desiredIds.has(staffId) && !row.deleted) toSoftDelete.push(row.id);
     }
-    if (toDelete.length) {
-      const { error: dErr } = await supabase.from("staff_attendance").delete().in("id", toDelete);
-      if (dErr) gidErrors.push(`delete ${date}: ${dErr.message}`);
-      else deleted += toDelete.length;
+    if (toSoftDelete.length) {
+      const { error: dErr } = await supabase
+        .from("staff_attendance")
+        .update({
+          deleted_at: nowIso,
+          deleted_reason: "attendance-sync: 라이브 시트에서 제거(출근→미출근)",
+          updated_at: nowIso,
+        })
+        .in("id", toSoftDelete);
+      if (dErr) gidErrors.push(`softdelete ${date}: ${dErr.message}`);
+      else deleted += toSoftDelete.length;
     }
 
-    // 2) INSERT/UPDATE desired
+    // 2) INSERT/UPDATE/REACTIVATE desired
     const toInsert: Array<Record<string, unknown>> = [];
-    const toTouch: string[] = [];
+    const toTouch: string[] = []; // 활성 google_sheet 행 갱신(status/synced_at)
+    const toReactivate: string[] = []; // soft-delete 됐다가 시트에 다시 나타난 행 → deleted_at NULL 복원(UNIQUE 무충돌 in-place)
     for (const staffId of desiredIds) {
       if (manualStaff.has(staffId)) continue; // 수기 override 보존(재적재 안 함)
       const cur = existingSheet.get(staffId);
-      if (cur) toTouch.push(cur.id);
-      else {
+      if (cur) {
+        if (cur.deleted) toReactivate.push(cur.id); // 재활성화: 물리 INSERT 대신 in-place 복원(UNIQUE 충돌 회피)
+        else toTouch.push(cur.id);
+      } else {
         toInsert.push({
           clinic_id: clinicId,
           date,
@@ -445,6 +469,21 @@ Deno.serve(async (req: Request) => {
       if (uErr) gidErrors.push(`update ${date}: ${uErr.message}`);
       else updated += toTouch.length;
     }
+    if (toReactivate.length) {
+      // 재활성화: soft-delete 된 출근행이 시트에 재등장 → deleted_at NULL 복원 + present 갱신.
+      const { error: rErr } = await supabase
+        .from("staff_attendance")
+        .update({
+          deleted_at: null,
+          deleted_reason: null,
+          status: "present",
+          synced_at: nowIso,
+          updated_at: nowIso,
+        })
+        .in("id", toReactivate);
+      if (rErr) gidErrors.push(`reactivate ${date}: ${rErr.message}`);
+      else reactivated += toReactivate.length;
+    }
   }
 
   const ok = gidErrors.length === 0;
@@ -460,7 +499,8 @@ Deno.serve(async (req: Request) => {
     staff_active: staffList.length,
     inserted,
     updated,
-    deleted,
+    deleted, // soft-delete(deleted_at UPDATE) 건수 — 물리 hard-DELETE 아님.
+    reactivated,
     unmatched: [...unmatched],
     errors: gidErrors,
     synced_at: nowIso,
