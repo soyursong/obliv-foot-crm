@@ -8,7 +8,46 @@
 
 ---
 
-## ★ 핵심 발견 (planner/DA 회신 요망 논점 2건)
+## ★★ REWORK ADDENDUM (DA REPLY MSG-20260814-002921-lb8f · planner MSG-20260814-003808-jc5c · 2026-08-14)
+
+pending 4-question(Q3/Q4/Q5/Q6) 병합 해소 → HOLD 해제. 아래가 하위 표(발견1·Tier분류)를 **supersede**한다.
+
+### Q3 canonical flag = (c′) domain-uniform **`deleted_at` BINDING** — 발견1 해소
+- envelope = `deleted_at TIMESTAMPTZ NULL + deleted_by + deleted_reason` **ADDITIVE**. 술어 = **`deleted_at IS NULL`**.
+- **`is_deleted` stored 컬럼 추가 = HARD REJECT**(신설 금지). → staged 마이그(80898829) REWORK 완료: 6종 전건 is_deleted 컬럼 제거, deleted_at 3컬럼 envelope 로 재작성(up/dryrun/rollback).
+- **발견1 판정**: 나의 (b) dual-predicate 권고 → DA 는 그 위 (c′) **domain-uniform deleted_at** 로 확정. foot 지배 라이브 패턴(`deleted_at IS NULL`)에 정합. is_deleted 라우팅했던 `insurance_receipts`/KOH 는 firsthand census 상 **standalone stored is_deleted 부재**(view/jsonb 층) 확인 = foot two-dialect 없음.
+- landed is_deleted(`medical_charts`·`form_submissions`) = **tolerate**(기존 유지·retrofit 금지). 신규 6종엔 deleted_at 만.
+- **Q6**: `deleted_by` = foot incumbent **plain UUID**(FK 미설정·grain별 incumbent-resolution·mirror-not-invent). `deleted_reason` 철자 = DA canonical(확정).
+
+### Q4 CLASS C = Tier-N/A carve CONFIRM (hard-DELETE 유지·FOR DELETE grant KEEP)
+- discriminant = "이 delete 가 authoritative HISTORY 파괴? NO=carve". **별 census 문서**: `..._q4-subcarve-census.md`.
+- 2 sub-carve 재판정 요지: reservation_registrars=CARVE(스냅샷 registrar_name+FK ON DELETE SET NULL) · assignment_leadsource_policy=CARVE(incoming FK 부재) · duty_roster/staff_temp_off=CARVE(date effective-dated) · check_in_services=carve-FROM-Q4→voided_at · daily_room_status=config-toggle carve.
+
+### CLASS A REAFFIRM (재-adjudication 금지)
+- service_charges = Tier-0 via **voided_at**(CARVE-A 병렬 브랜치 STAGED 유지) · staff_attendance = census-split(dup=reconcile grant KEEP / stale=Tier-1). → `..._carve-census.md`.
+
+### GAP3 — 기존 flag UPDATE 라우팅 (mirror-not-invent · 신규 flag 신설 금지)
+Leg2 FE 라우팅(hard-DELETE→soft) 시 **기존 canonical flag 로 UPDATE 라우팅**. 신규 컬럼/테이블 신설 0. (FE behavior 배포는 supervisor code-gate·현재 write0=미배포.)
+
+| 테이블 | 기존 flag (실재 마이그) | 라우팅 술어 |
+|--------|------------------------|-------------|
+| `check_ins` | deleted_at + deleted_by (20260725160000) | `deleted_at IS NULL` |
+| `check_in_services` | voided_at (20260805110000) | `voided_at IS NULL` (매출 line) |
+| `closing_manual_payments` | voided_at (20260714190000/20260802160001) | `voided_at IS NULL` |
+
+### customers Tier-0 GAP
+- deleted_at view-hide(envelope 포함) + **FOR DELETE grant REVOKE**(co-atomic) → staged 마이그 `20260813220500_foot_customers_tier0_fordelete_revoke.sql`(authenticated REVOKE DELETE · anon 멱등 재확인). per-table census 선결(CLASS A customers Tier-0) + supervisor 게이트.
+- RLS FOR DELETE grant REVOKE sub-doctrine: **Tier-0/1=REVOKE co-atomic / CLASS C junction=KEEP**.
+
+### §11 medical_confirm_gate
+- 임상 객체(chart_treatment_requests·patient_file_records) **Leg2 behavior 배포** = 문지은 대표원장 컨펌 선행. envelope DDL(ADDITIVE 컬럼추가) 자체는 gate 前 선행 가능.
+
+### 게이트 (write0)
+- Gate-B(DA) 판정 ≠ apply 허가. 현재 DA 대기 없음 = **REWORK/census/authoring(STAGED)만** 완료. apply 요청 시점 아님. deleted_at conversion+ADDITIVE / REVOKE = supervisor DDL-diff + 물리 GO-token 선행(apply_before_go 금지).
+
+---
+
+## ★ 핵심 발견 (planner/DA 회신 요망 논점 2건) — ⚠ 아래 발견1 은 REWORK ADDENDUM Q3 로 해소됨(역사적 기록)
 
 ### 발견 1 — 기존 canonical soft-delete flag 이 **혼재**(DA §2-1 단일-boolean 요구와 긴장)
 foot 는 이미 배포된 soft-delete 관례가 **2종 병존**:
