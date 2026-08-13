@@ -22,8 +22,8 @@ const ref = new URL(SB).hostname.split('.')[0];
 const storageKey = `sb-${ref}-auth-token`;
 
 const CUSTOMERS = [
-  { id: '83ab4fe1-0bbc-4dfc-ab3b-f01378144707', label: '83ab4fe1(김민경)' },
-  { id: '16434582-50cf-46c6-81f7-13d1c959a25e', label: '16434582(박민석)' },
+  { id: '83ab4fe1-0bbc-4dfc-ab3b-f01378144707', label: '83ab4fe1(김OO)' },
+  { id: '16434582-50cf-46c6-81f7-13d1c959a25e', label: '16434582(박OO)' },
 ];
 
 const sb = createClient(SB, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
