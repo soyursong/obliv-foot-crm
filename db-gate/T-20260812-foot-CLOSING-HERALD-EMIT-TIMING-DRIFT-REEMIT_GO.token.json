@@ -1,0 +1,23 @@
+{
+ "ticket_id": "T-20260812-foot-CLOSING-HERALD-EMIT-TIMING-DRIFT-REEMIT",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-12T11:53:04.342Z",
+ "expires_at": "2026-08-12T13:23:04.342Z",
+ "ttl_sec": 5400,
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "05457bad3c79f8d11ba0b00244a37d66d59773a7cbb9cddc1890a5af39f75386",
+ "migration_version": "20260812180000",
+ "migration_name": "foot_closing_enqueue_divergence_loudfail",
+ "migration_file": "supabase/migrations/20260812180000_foot_closing_enqueue_divergence_loudfail.sql",
+ "lane": "migration-sql-file (B-narrow · enqueue divergence-aware loud-fail)",
+ "deploy_commit": "24159f45745837e6bf3fa681d1d19c0b4bc8644e",
+ "change_class": "ADDITIVE/CORRECTIVE — CREATE OR REPLACE FUNCTION enqueue_closing_confirmed (signature 불변·테이블/컬럼/enum/데이터 0·rollback 대칭 verbatim 806150000). §3.1 파괴게이트 면제이나 DDL 실재→MIG-GATE+GO-token 선행.",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "e730e4be71db2df66905e42c",
+ "reissue_of": "expired token issued_at=2026-08-12T09:14:52.140Z (TTL 경과·未apply — 만료 토큰 재사용 금지 규율에 따른 fresh 재발행)",
+ "da_consult_reply": "DA CONSULT-REPLY MSG-20260812-171235-6uje (CONDITIONAL-GO 병행). Axis-B-narrow=RECOMMENDED non-blocking. Axis-B(supersede+rev bump)=REJECT-as-mechanism→미구현 확인.",
+ "precheck": "FRESH 재검증 (supervisor 2026-08-12 20:5x KST, RESPAWN 후 신코드 lane): ①18:09 MIG-GATE PASS 아티팩트 무변조 재확인 — worktree /private/tmp/foot-emit-timing-drift @ 24159f45·mig sha256 정확일치(drift 0) ②No-Persistence dry-run 라이브 실행 PASS(dryrun_lib: txn-strip+exception-rollback·post-probe LOUDFAIL marker absent=true·$verify$ 8-assert 통과) ③C10/C19 prod md5 fresh: enqueue_closing_confirmed md5=d1694c4ae5e13dd8ab5a90ab75c5c690·TOTALS-RECOMPUTE-PORT marker present·LOUDFAIL absent·prosecdef=true(OOB stomp 0) ④§2.8/C18/C21 GO직전 fresh 재확인: signals+frontmatter+MQ — DA HOLD/RETRACT/BINDING 0·deploy-ready 유지 ⑤conductor KICK 해소 실증: supervisor_derm_v2 RESPAWN 완료(MSG-20260812-202221-e27s, PID 18143 신코드) — 20:07 defer 사유(2) 소멸 ⑥Axis-A seal 발효: foot canonical main live(4f50d3e4) + scalp2 belt f0bbf110 merge 완료(20:49) — B-narrow 는 seal 무관이나 coordinated 창 정합.",
+ "ceo_gate": "N/A — §3.1 CEO 파괴게이트 면제(ADDITIVE function-diff·파괴 스키마 0). DDL 존재→GO-token 물리 선행이 apply 전제.",
+ "apply_constraint": "C24-applyguard: apply 는 반드시 pinned-commit(24159f45) 격리 worktree 에서(공유 checkout 금지). apply 후 C20+C34(bus deploy_exec_done + schema_migrations 20260812180000 원장 등재) 의무."
+}

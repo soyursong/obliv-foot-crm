@@ -24,9 +24,11 @@
  *   · QR_DATA_256(현금영수증 응답, 미마스킹 개인정보 13자리) 은 **표시하지 않는다**.
  *     본 모달은 raw_response 를 순회하지 않고 화이트리스트 필드만 명시 read → 구조적으로 QR 유출 불가.
  *
- * ── ★ 영수증 재출력(전표출력, 1번 단말기) — T-20260813-foot-PAYHIST-RECEIPT-REPRINT-TERMINAL1 ──
- *   본 모달 하단 [영수증 출력] 버튼 = 이미 승인된 이 결제의 영수증을 **이 PC에 연결된 1번 단말기
- *   (카운터/퍼시트)로 다시 뽑는다**(전표출력 TCODE=XP, 금전 무이동). 벤더 스펙 = 재출력 전용 명령
+ * ── ★ 영수증 재출력(전표출력) — T-20260813-foot-PAYHIST-RECEIPT-REPRINT-TERMINAL1 ──
+ *   본 모달 하단 [영수증 출력] 버튼 = 이미 승인된 이 결제의 영수증을 **이 PC에 연결된 카드 단말기
+ *   (프린터)로 다시 뽑는다**(전표출력 TCODE=XP, 금전 무이동). 벤더 스펙 = 재출력 전용 명령
+ *   ※ "단말기 번호"(1번 등) 라우팅 개념 없음 — 전표출력은 이 PC 로컬 시리얼(CAT_PORT)로만 인쇄
+ *     (벤더 XP 스펙에 TID 라우팅 필드 부재). 결제 단말기와 무관(terminal-agnostic).
  *   (신규 결제/승인/취소 아님) → 구조적으로 중복 매출 유발 불가(AC3). DB write 0(감사/매출 레코드 생성 없음).
  *   단말 미연결/오프라인/미설정 시 명확한 실패 메시지(무반응 금지·AC4). 순수 로직 = @/lib/cband/receiptReprint.
  *
@@ -155,7 +157,7 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
   const maskedCard = maskCardNo(detail?.raw.cardNoMasked);
 
   /**
-   * ★영수증 재출력 — 이 결제의 저장된 승인데이터를 1번 단말기(이 PC 로컬 단말, CAT_PORT)로 다시 출력.
+   * ★영수증 재출력 — 이 결제의 저장된 승인데이터를 이 PC 로컬 단말(CAT_PORT)로 다시 출력.
    *   전표출력(TCODE=XP)·금전 무이동 → 신규 결제/재승인/중복 매출 절대 발생 안 함(AC3). DB write 0.
    *   단말 미설정/미연결/오프라인은 runReceiptReprint 이 명확한 실패 메시지로 반환(무반응 금지·AC4).
    */
@@ -163,8 +165,8 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
     if (!detail) return;
     setReprintState('printing');
     setReprintMsg('');
-    // ★1번 단말기 라우팅 = 이 PC에 물린 로컬 단말의 시리얼 포트(CAT_PORT). 재출력은 시리얼 물리연결로
-    //   로컬 프린터에만 인쇄 → 다른 좌석 오출력 여지 없음. 원거래 TID/승인번호는 '인쇄 내용'에 실린다.
+    // ★라우팅 = 이 PC에 물린 로컬 단말의 시리얼 포트(CAT_PORT). "단말기 번호" 선택 개념 없음(terminal-agnostic).
+    //   재출력은 시리얼 물리연결로 로컬 프린터에만 인쇄 → 원거래 TID/승인번호는 '인쇄 내용'에만 실린다(라우팅 키 아님).
     const catPort = getTerminalConfigRaw().catPort;
     const r = await runReceiptReprint({
       data: {
@@ -246,7 +248,7 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
                 <Row label="응답코드" value={detail.response_code ?? '—'} mono testid="payinfo-response-code" />
               </dl>
 
-              {/* ★영수증 재출력(전표출력, 1번 단말기) — 금전 무이동·DB write 0. 실패는 명확한 안내(AC4). */}
+              {/* ★영수증 재출력(전표출력) — 금전 무이동·DB write 0. 실패는 명확한 안내(AC4). */}
               <div className="mt-3 space-y-2 border-t border-gray-100 pt-3" data-testid="payinfo-reprint">
                 <Button
                   type="button"
@@ -259,7 +261,7 @@ export default function CbandPayInfoButton({ payment, rowKey }: Props) {
                   {reprintState === 'printing' ? (
                     <><Loader2 className="h-4 w-4 animate-spin" /> 단말기로 출력 중…</>
                   ) : (
-                    <><Printer className="h-4 w-4" /> 영수증 출력 (1번 단말기)</>
+                    <><Printer className="h-4 w-4" /> 영수증 출력</>
                   )}
                 </Button>
                 {reprintState === 'printed' && (

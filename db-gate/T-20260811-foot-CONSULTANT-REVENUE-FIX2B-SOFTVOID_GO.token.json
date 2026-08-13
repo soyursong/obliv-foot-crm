@@ -1,0 +1,14 @@
+{
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "ticket_id": "T-20260811-foot-CONSULTANT-REVENUE-FIX2B-SOFTVOID",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "0f2b011d38569ddac3e1144f2f7e63c8e2d604dcfc3c284888e3f2ee449f9407",
+ "migration_version": "20260812150000",
+ "migration_name": "foot_fix2b_crmerror_refund_softvoid",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "309dbf5a6f396429b2e028ac",
+ "ttl_sec": 5400,
+ "issued_at_epoch": 1786513449.200662,
+ "issued_at": "2026-08-12T14:44:09+09:00"
+}
