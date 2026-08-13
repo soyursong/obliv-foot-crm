@@ -109,6 +109,21 @@ verify_jwt = false
 [functions.redpay-planb-match]
 verify_jwt = false
 
+# T-20260813-foot-SENDNOTIF-VERIFYJWT-REGRESSION (P0 hotfix · 라이브 알림 outage):
+#   send-notification 은 pg_cron(notify_reminders_batch / notify_retry_failed / keep_warm_send_notification
+#   → net.http_post)이 X-Internal-Cron 헤더(=vault internal_cron_secret)만 실어 호출한다(Supabase JWT 아님).
+#   게이트웨이 기본 verify_jwt=true 면 EF 코드 도달 전 401 → 예약 리마인더/확정 알림이 매번 거부되어 미발송.
+#   ★사고: config 블록 부재 상태에서 send-notification 이 v43(2026-08-13 06:30Z)로 plain 재배포되며
+#     게이트웨이 verify_jwt 가 false→true 로 flip(CLI 기본값) → 06:17Z 이후 전 알림 발송 중단(pending 적체).
+#     정상 200 을 받는 형제 cron EF(redpay-reconcile / attendance-sync / closing-confirmed-publisher 등)는
+#     전부 verify_jwt=false. send-notification 만 config 미등록으로 재배포 시 true 회귀 = 반복 landmine.
+#   verify_jwt=false 로 게이트웨이 JWT 검사를 끄고 인증은 EF 내부(index.ts: X-Internal-Cron==CRON_SECRET,
+#   불일치/누락 → 401)에 위임 → secret 검증이 인증의 단일 관문이므로 unauth hole 없음(형제 EF 동일 컨벤션).
+#   keep-warm anon ping(T-20260813-KEEPWARM-SENDNOTIF-WARMPING-NON401)은 auth 게이트 이전 200 no-op 이므로
+#   verify_jwt=false 와 무충돌.
+[functions.send-notification]
+verify_jwt = false
+
 # T-20260803-foot-STAFF-PROVISION-ATOMIC-EF-INV6-PORT (P2, body pilot 15d18d00 이식):
 #   admin-register-staff 는 직원 계정 등록을 원자화하는 오케스트레이터 EF 다. FE(Accounts.tsx)가
 #   현재 로그인 세션의 실제 Supabase JWT(Bearer)를 실어 invoke 하고, EF 는 그 JWT 를
