@@ -29,7 +29,12 @@
  * db_change=false (스키마 변경 없음 — 테스트 데이터 임시 INSERT/DELETE 뿐).
  */
 import { test, expect } from '@playwright/test';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+// T-20260813-meta-CHART-OPEN-GATE-PRODSECRET-DEVDB-CUTOVER (CF-5 AC3 후속): raw
+//   @supabase/supabase-js createClient 대신 critical-flow 의 가드된 createClient 를 쓴다 →
+//   client 생성 이전에 assertCriticalFlowDbSafe() 가 PROD-target(KNOWN_PROD_REFS)을 fail-closed
+//   차단(defense-in-depth: env 격리 컷오버 + 가드 belt). 가드 완화·KNOWN_PROD_REFS 축소 = 0.
+import { createClient, assertCriticalFlowDbSafe } from '../critical-flow/_prodWriteGuard';
 import { loginAndWaitForDashboard } from '../../helpers';
 import { runMarker } from '../../fixtures';
 import * as fs from 'fs';
@@ -41,7 +46,12 @@ const DASH = path.resolve(__dirname, '../../../src/pages/Dashboard.tsx');
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
+// T-20260813-meta-CHART-OPEN-GATE-PRODSECRET-DEVDB-CUTOVER: dev-isolation(FOOT_E2E_DEV_ISOLATION=1)
+//   컷오버 시 playwright.config 부팅 블록이 process.env.FIXTURE_CLINIC_ID 를 DEV clinic(jongno-foot
+//   DEV, 4478bdb0)로 세팅한다. hardcode 유지 시 DEV DB 엔 이 prod clinic 이 없어 seedCustomer/
+//   seedReservation 이 FK(23503)로 깨진다 → fixtures/index.ts CLINIC_ID 와 동일 env-aware 패턴으로
+//   정합(격리 OFF 이면 종전 prod clinic 상수 그대로 = 회귀 0).
+const CLINIC_ID = (process.env.FIXTURE_CLINIC_ID ?? '74967aea-a60b-4da3-a0e7-9c997a930bc8').trim();
 // T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN: bare '[QA-FIXTURE]' 대신 run-scoped
 //   마커(`[QA-FIXTURE]|<token>|<ts>`)를 쓴다 → 동시 CI run 의 cleanupAll() bare-exact 전수
 //   스윕이 이 run 의 G3/G4 in-flight 시드를 지우지 못한다(cross-run cleanup race 원천 차단).
@@ -49,6 +59,12 @@ const CLINIC_ID = '74967aea-a60b-4da3-a0e7-9c997a930bc8';
 
 let _sb: SupabaseClient | null = null;
 const svc = (): SupabaseClient => (_sb ??= createClient(SUPA_URL, SERVICE_KEY));
+
+// T-20260813-meta-CHART-OPEN-GATE-PRODSECRET-DEVDB-CUTOVER: primary beforeAll 게이트 —
+//   어떤 시더(svc().from(...).insert)보다 먼저 target DB 가 PROD ref(KNOWN_PROD_REFS)이면
+//   fail-closed abort. dev-isolation 컷오버(dev DB)에선 통과, prod 오배선 시에만 hard-fail
+//   (critical-flow CF-1..5 와 동일 belt). UNCONDITIONAL — EXPECT_DEV_DB_REF opt-in 과 무관.
+test.beforeAll(() => assertCriticalFlowDbSafe('CHART-OPEN-GATE'));
 
 // ── 날짜 헬퍼 (브라우저=노드 동일 TZ 가정 — CI 단일 머신) ─────────────────────
 function localDateStr(d: Date = new Date()): string {

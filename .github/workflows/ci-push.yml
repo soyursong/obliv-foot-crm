@@ -183,8 +183,17 @@ jobs:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       VITE_DISABLE_AUTH_LOCK: "1"
-      TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
-      TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      # ── T-20260813-meta-CHART-OPEN-GATE-PRODSECRET-DEVDB-CUTOVER (dev-meta lane, CF-5 AC3 후속) ──
+      #   supervisor 재QA(08-13) 관측: 이 job 은 critical-flow(0aa6d3c4 컷오버 완료)와 달리 아직
+      #   실환자 PROD(rxlomoozakkjesdqjtvd) secrets 로 seed/write(customers/reservations/check_ins
+      #   INSERT·DELETE, service_role) = CF-5 PROD-WRITE-BAN 이 다루지 않은 잔여 prod-write 경로.
+      #   G4(box2 dnd-kit 재진 과거날짜 카드) timeout 은 flaky(동일 config 에서 run별 pass/fail flip:
+      #   e3cb6223/7182c302=green · 0aa6d3c4/1e4f79c3=red = 비단조 = prod-drift 아님) — 근인은 heavy
+      #   shared-prod day(초진 52·재진 7) 의 초기 fetch↔seed commit 레이스 + auto-noshow. 근본해소=
+      #   dev-DB 컷오버(spec RCA 주석 명문). critical-flow 와 동일 canonical 패턴 이식(가드 완화 0).
+      #   TEST_USER 도 obliv-foot-dev(kcdqtyivtqcjmcrdjkqi) 전용 계정으로 override.
+      TEST_USER_EMAIL: ${{ secrets.DEV_TEST_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.DEV_TEST_PASSWORD }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       CI: "true"
       # T-20260720-foot-CHART-OPENGATE-SEED-ISOLATION-HARDEN QA#3 (RC 실증, trace run 29761362646):
@@ -196,6 +205,13 @@ jobs:
       #   node+chromium 을 운영 태블릿과 동일 Asia/Seoul 로 정렬해 봉합. 격리 디커플(needs:[build])은
       #   유지 — CI-RED-MAIN-RESOLVE 미머지분의 재직렬화(needs:critical-flow)는 QA#2 가 금지한 구조.
       TZ: "Asia/Seoul"
+      # ── DEV DB 격리 상시주입 (CF-5 AC3 컷오버) ──
+      #   FOOT_E2E_DEV_ISOLATION=1 → playwright.config 부팅 블록이 .env.dev-isolation.local(아래
+      #   단계에서 GitHub secrets 로부터 기록)을 로드, DEV_SUPABASE_* → 하네스 표준 키(VITE_SUPABASE_URL/
+      #   _ANON_KEY/SUPABASE_SERVICE_ROLE_KEY)로 override + EXPECT_DEV_DB_REF + FIXTURE_CLINIC_ID(=dev
+      #   clinic) 세팅 → PRODREF-HARDGUARD(global-setup/teardown assertExpectedDbTarget) 활성.
+      #   defense-in-depth(guarded createClient + assertCriticalFlowDbSafe belt + 하드가드).
+      FOOT_E2E_DEV_ISOLATION: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -205,6 +221,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+
+      # dev-isolation env 기록 (critical-flow 컷오버와 동일 패턴·fail-closed). prod 무접촉.
+      #   .env.dev-isolation.local 은 gitignored → GitHub secrets 로부터 기록. 미등록/오배선 시 값이
+      #   비어 mapDevIsolationEnv 즉시 throw(silent prod-flow 금지). GitHub 가 로그 자동 마스킹.
+      #   DEV_SUPABASE_PROJECT_REF = obliv-foot-dev 공개 project ref(=tests/devIsolationEnv.ts
+      #   DEV_ISOLATION_REF 상수, non-secret) → mapDevIsolationEnv 가 URL 대조로 재검문(불일치 fail-closed).
+      - name: Write dev-isolation env (E2E→obliv-foot-dev 격리, prod 무접촉·fail-closed)
+        run: |
+          {
+            echo "DEV_SUPABASE_URL=${{ secrets.DEV_SUPABASE_URL }}"
+            echo "DEV_SUPABASE_PROJECT_REF=kcdqtyivtqcjmcrdjkqi"
+            echo "DEV_SUPABASE_ANON_KEY=${{ secrets.DEV_SUPABASE_ANON_KEY }}"
+            echo "DEV_SUPABASE_SERVICE_ROLE_KEY=${{ secrets.DEV_SUPABASE_SERVICE_ROLE_KEY }}"
+          } > .env.dev-isolation.local
 
       - name: Run Chart Open Gate specs
         run: npm run test:chart-gate
