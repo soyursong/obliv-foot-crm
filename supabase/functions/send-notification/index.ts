@@ -462,6 +462,23 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── keep-warm warm-ping (T-20260813-foot-KEEPWARM-SENDNOTIF-WARMPING-NON401) ──
+  // pg_cron jobid6 `foot-ef-send-notification-keep-warm` 이 5분마다 anon key Bearer 로
+  //   body `{"keep_warm":true}` 를 POST (keep_warm_send_notification() SECDEF fn, 마이그 20260525030000 §10).
+  // 목적 = 컨테이너 cold-start 방지(warming)일 뿐 실제 발송·PHI 접근 0.
+  // 과거엔 anon Bearer 가 아래 auth 게이트(service_role/X-Internal-Cron)에 걸려 **by-design 401** 을
+  //   초당 노이즈로 남겨 edge_logs 401 raw-oracle 를 오염시켰다. → auth 게이트 **이전에** 200 no-op 로 응답해
+  //   jobid6 유래 401 raw noise 를 소거한다. rotation 인증축(X-Internal-Cron dual-accept accept-set)과
+  //   orthogonal — isCronCall/INTERNAL_CRON_SECRET 로직 무접촉(기능 caller jobid5/9/10 경로 불변).
+  //   본 warm-ping 은 부작용 없는 순수 no-op 이므로 인증 불요(PHI/발송/DB write 0).
+  if (bodyJson.keep_warm === true) {
+    console.log("[send-notification] keep-warm warm-ping (no-op 200) at", new Date().toISOString());
+    return new Response(
+      JSON.stringify({ ok: true, warmed_at: new Date().toISOString() }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   // ── Auth 결정 ─────────────────────────────────────────────────
   const isServiceRole = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
   const isCronCall    = INTERNAL_CRON_SECRET !== "" && cronSecret === INTERNAL_CRON_SECRET;
