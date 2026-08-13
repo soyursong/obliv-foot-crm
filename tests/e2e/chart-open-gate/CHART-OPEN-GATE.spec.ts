@@ -214,8 +214,14 @@ async function clickPastCardOrSkipOnAutoNoshow(
   // 문제 커밋은 read-only diag 로 앱코드 무변경 → 순수 flakiness 확증).
   // → (visible 대기 → click) 한 사이클을 매번 locator 재해석하며 예산 소진까지 재시도한다.
   //   각 시도가 노드를 새로 잡으므로 detach 된 stale 핸들을 물지 않는다. 총 예산은
-  //   test-timeout(60s) 안에서 콜드스타트+과거날짜 재조회+재시도를 흡수하도록 40s.
-  const budgetDeadline = Date.now() + 40000;
+  //   test-timeout 안에서 콜드스타트+과거날짜 재조회+재시도를 흡수하도록 여유를 둔다.
+  // T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE(run 31610775698): heavy shared-prod day
+  //   (초진 52·재진 7)에 40s 예산이 reload 재조회 1~2 cycle 밖에 못 돌려 box2(재진) 과거날짜
+  //   카드가 끝내 미render → G4 하드 RED(3 retry 전패). 예산을 60s 로 늘려 reload 재조회를
+  //   ~3 cycle 확보(정상경로는 즉시 render → 조기 종료라 무영향). 60s×3retry 로도 job
+  //   timeout-minutes:10 헤드룸 안(G3+G4 동시 max 여도 여유). 근본해소는 dev-DB 컷오버
+  //   (T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER) — 그 전까지 flake 흡수 하드닝.
+  const budgetDeadline = Date.now() + 60000;
   let lastErr: unknown = null;
   while (Date.now() < budgetDeadline) {
     try {
@@ -315,9 +321,10 @@ test.describe('CHART-OPEN-GATE · G2 타임라인 초진(box1) click→open (tod
 // ════════════════════════════════════════════════════════════════════════════
 test.describe('CHART-OPEN-GATE · G3 타임라인 초진 과거날짜 click→open [역회귀 게이트]', () => {
   test('G3: 어제 초진 예약 카드 클릭 → 차트 오픈 (read-only 무관)', async ({ page }) => {
-    // 콜드스타트 + 카드 미render 시 reload 재조회 1 cycle(≈reload 8s + waitFor)를 60s 안에
-    // 흡수하도록 헤드룸 확보. 정상경로(즉시 render)는 조기 종료라 영향 없음.
-    test.setTimeout(90_000);
+    // 콜드스타트 + 카드 미render 시 reload 재조회를 헤드룸 안에 흡수. 정상경로(즉시 render)는
+    // 조기 종료라 영향 없음. clickPastCardOrSkipOnAutoNoshow 내부 예산 60s(heavy-prod-day reload
+    // ~3 cycle) + 콜드스타트/네비 오버헤드를 담도록 120s (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE).
+    test.setTimeout(120_000);
     const name = UNIQ();
     const customerId = await seedCustomer(name, 'new');
     const resvId = await seedReservation({ date: YESTERDAY, time: '14:00', visit_type: 'new', customerId, name });
@@ -345,9 +352,10 @@ test.describe('CHART-OPEN-GATE · G3 타임라인 초진 과거날짜 click→op
 // ════════════════════════════════════════════════════════════════════════════
 test.describe('CHART-OPEN-GATE · G4 타임라인 재진 과거날짜 click→open [역회귀 게이트]', () => {
   test('G4: 어제 재진 예약 카드 클릭 → 차트 오픈', async ({ page }) => {
-    // 콜드스타트 + 카드 미render 시 reload 재조회 1 cycle(≈reload 8s + waitFor)를 60s 안에
-    // 흡수하도록 헤드룸 확보. 정상경로(즉시 render)는 조기 종료라 영향 없음.
-    test.setTimeout(90_000);
+    // 콜드스타트 + 카드 미render 시 reload 재조회를 헤드룸 안에 흡수. 정상경로(즉시 render)는
+    // 조기 종료라 영향 없음. clickPastCardOrSkipOnAutoNoshow 내부 예산 60s(heavy-prod-day reload
+    // ~3 cycle) + 콜드스타트/네비 오버헤드를 담도록 120s (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE).
+    test.setTimeout(120_000);
     const name = UNIQ();
     const customerId = await seedCustomer(name, 'returning');
     const resvId = await seedReservation({ date: YESTERDAY, time: '15:00', visit_type: 'returning', customerId, name });

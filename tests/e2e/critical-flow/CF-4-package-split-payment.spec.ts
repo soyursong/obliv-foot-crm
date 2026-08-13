@@ -11,8 +11,16 @@
  */
 import { test, expect } from '@playwright/test';
 // CF-PROD-WRITE-BAN(Axis-A): 가드된 createClient — PROD ref fail-closed 차단(직접 import 금지).
-import { createClient, assertCriticalFlowDbSafe } from './_prodWriteGuard';
+import { createClient, assertCriticalFlowDbSafe, resolveTargetRef, isProdRef } from './_prodWriteGuard';
 import { CLINIC_ID, seedCheckIn } from '../../fixtures';
+
+// CF-PROD-WRITE-BAN(Axis-A) green 경로 (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE):
+//   dev-DB 컷오버 전 CI 는 PROD ref 만 주입 → 이 파일 전체를 skip 한다(PROD write 0 · 잡 green).
+//   guard 는 fail-closed belt 로 존치 — dev DB 에선 정상 실행. dev-isolation=T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.
+test.skip(
+  isProdRef(resolveTargetRef(process.env.VITE_SUPABASE_URL)),
+  'CF-PROD-WRITE-BAN: PROD 타깃 → dev DB 컷오버(E2E dev-isolation) 전까지 skip.',
+);
 
 // CF-PROD-WRITE-BAN(Axis-A) primary 게이트: 어떤 write(fixtures 시더 포함)보다 먼저 fail-closed 검문.
 test.beforeAll(() => assertCriticalFlowDbSafe('CF-4-package-split-payment'));

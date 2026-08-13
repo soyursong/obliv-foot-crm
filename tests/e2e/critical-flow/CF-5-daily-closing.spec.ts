@@ -12,8 +12,24 @@ import { test, expect } from '@playwright/test';
 //   createClient 를 @supabase/supabase-js 가 아니라 가드 모듈에서 import 한다. 가드된
 //   팩토리가 client 생성 이전에 PROD ref 를 fail-closed 로 차단(진원 봉인). 직접 import 금지
 //   (불변식 spec _prod-write-ban-invariant.spec.ts 강제).
-import { createClient, cleanupClosingOutbox, assertCriticalFlowDbSafe } from './_prodWriteGuard';
+import {
+  createClient,
+  cleanupClosingOutbox,
+  assertCriticalFlowDbSafe,
+  resolveTargetRef,
+  isProdRef,
+} from './_prodWriteGuard';
 import { CLINIC_ID, seedCheckIn } from '../../fixtures';
+
+// CF-PROD-WRITE-BAN(Axis-A) green 경로 (T-20260720-meta-RED-CI-DEPLOY-BLOCK-GATE):
+//   dev-DB 컷오버 전 CI 는 PROD ref 만 주입 → 이 파일 전체를 skip 한다(PROD write 0 · 잡 green).
+//   CF-5 는 특히 PROD 가짜 closed daily_closings INSERT → closing_confirmed_outbox rev0 선점 →
+//   실 EOD emit silent-drop 진원이었다(Axis-A RC). skip 이 그 진원을 CI 에서 원천 차단.
+//   guard 는 fail-closed belt 로 존치 — dev DB(=skip false)에선 정상 실행. dev-isolation=T-20260804-foot-FOOTCTR-E2E-DEVDB-ISOLATION-CUTOVER.
+test.skip(
+  isProdRef(resolveTargetRef(process.env.VITE_SUPABASE_URL)),
+  'CF-PROD-WRITE-BAN: PROD 타깃 → dev DB 컷오버(E2E dev-isolation) 전까지 skip.',
+);
 
 // CF-PROD-WRITE-BAN(Axis-A) primary 게이트: 어떤 write(fixtures 시더 포함)보다 먼저 실행돼
 //   target 이 PROD ref 면 spec 전체를 fail-closed abort. (guarded createClient 는 belt.)
