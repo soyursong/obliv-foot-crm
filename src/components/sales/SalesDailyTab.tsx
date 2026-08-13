@@ -77,7 +77,10 @@ const DB_METHOD_TO_ROW: Record<string, MethodRow> = {
  *   tax_type(VAT축)을 급여(보험축) 판정에 쓰지 않는다 — conflation 금지(DA canon).
  */
 function isGyeoubPayment(p: RawPayment): boolean {
-  const fkCovered = !!p.service_charge_id && p.service_charges?.is_insurance_covered === true;
+  // CARVE-A G2 parity: soft-void 된 SC(voided_at NOT NULL)는 급여 귀속에서 제외 → 이 copay 는 좌측에서 정상 계상.
+  const fkCovered = !!p.service_charge_id
+    && p.service_charges?.is_insurance_covered === true
+    && p.service_charges?.voided_at == null;
   return fkCovered || p.tax_type === '급여';
 }
 
@@ -106,8 +109,9 @@ interface RawPayment {
    *   parent canonical(payments.service_charge_id, mig 20260715160000). package_payments엔 없음(항상 미정의).
    */
   service_charge_id?: string | null;
-  /** FK 임베드(PostgREST to-one) — service_charges.is_insurance_covered. 급여 귀속 판정 소스. */
-  service_charges?: { is_insurance_covered: boolean } | null;
+  /** FK 임베드(PostgREST to-one) — service_charges.is_insurance_covered. 급여 귀속 판정 소스.
+   *  CARVE-A: voided_at(soft-void) 포함 → void 라인은 급여 귀속 제외(G2 parity). */
+  service_charges?: { is_insurance_covered: boolean; voided_at?: string | null } | null;
 }
 
 interface DailyClosingRow {
@@ -176,7 +180,8 @@ export function SalesDailyTab({ filter }: Props) {
       const { data, error } = await supabase
         .from('payments')
         // C4: service_charge_id FK + 임베드 조인(is_insurance_covered)로 급여 귀속 re-source.
-        .select('method, tax_type, amount, payment_type, customer_id, service_charge_id, service_charges(is_insurance_covered)')
+        // CARVE-A G2 parity: 임베드에 voided_at 포함 → fkCovered 판정에서 soft-void SC 를 non-covering 취급.
+        .select('method, tax_type, amount, payment_type, customer_id, service_charge_id, service_charges(is_insurance_covered, voided_at)')
         .eq('clinic_id', clinic!.id)
         .neq('status', 'deleted')
         .gte('accounting_date', from)
@@ -227,6 +232,7 @@ export function SalesDailyTab({ filter }: Props) {
         .select('base_amount, copayment_amount, insurance_covered_amount, exempt_amount, customer_id')
         .eq('clinic_id', clinic!.id)
         .eq('is_insurance_covered', true)
+        .is('voided_at', null) // CARVE-A G2 parity: soft-void 명세 라인 제외(급여 3값 발생기준)
         .gte('calculated_at', from)
         .lte('calculated_at', `${to}T23:59:59.999`);
       if (error) throw error;

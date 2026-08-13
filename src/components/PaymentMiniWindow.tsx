@@ -2519,7 +2519,8 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
     const { data: existing } = await supabase
       .from('service_charges')
       .select('service_id')
-      .eq('check_in_id', checkIn.id);
+      .eq('check_in_id', checkIn.id)
+      .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인은 dedup 대상 아님(재적재 허용)
     const already = new Set((existing ?? []).map((r) => r.service_id as string));
     const rows: Array<Record<string, unknown>> = [];
     for (const svc of covered) {

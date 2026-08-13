@@ -623,7 +623,8 @@ export async function loadEffectiveInsuranceGradeEx(
   const { data } = await supabase
     .from('service_charges')
     .select('customer_grade_at_charge, is_insurance_covered')
-    .eq('check_in_id', checkInId);
+    .eq('check_in_id', checkInId)
+    .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외
   for (const r of (data ?? []) as Array<{
     customer_grade_at_charge: string | null;
     is_insurance_covered: boolean | null;

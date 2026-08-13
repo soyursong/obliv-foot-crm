@@ -963,7 +963,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
     const { data: scData } = await supabase
       .from('service_charges')
       .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
-      .eq('check_in_id', checkIn.id);
+      .eq('check_in_id', checkIn.id)
+      .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외
     setServiceItems((scData ?? []).map((c) => {
       const svc = Array.isArray(c.service) ? c.service[0] : c.service;
       return {
@@ -1391,7 +1392,8 @@ export function DocumentPrintPanel({ checkIn, onUpdated, altStatus = false, hist
       const { data: chargeItems } = await supabase
         .from('service_charges')
         .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
-        .eq('check_in_id', checkIn.id);
+        .eq('check_in_id', checkIn.id)
+        .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외
 
       // T-20260611-foot-BILLDETAIL-CONSULTFEE-COPAY-REWORK: bill_detail 항목·합계 SSOT 를
       //   check_in_services(영수증 bill_receipt 와 동일 grandTotal)로 통일. service_charges 는 진찰료
@@ -2851,7 +2853,8 @@ function IssueDialog({
       .from('service_charges')
       // T-20260524-foot-INS-DOC-COPAY-LINK: copayment_amount 추가 → IssueDialog 세부내역서 본인부담 열
       .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
-      .eq('check_in_id', checkIn.id);
+      .eq('check_in_id', checkIn.id)
+      .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외(삭제=무효처리 반영)
     if (!data) return;
     setServiceItems(data.map((c) => {
       const svc = Array.isArray(c.service) ? c.service[0] : c.service;
@@ -2906,6 +2909,7 @@ function IssueDialog({
       .from('service_charges')
       .select('id, base_amount, copayment_amount, is_insurance_covered, service_id, service:services(name, service_code, hira_code, category_label)')
       .eq('check_in_id', checkIn.id)
+      .is('voided_at', null) // CARVE-A G2 parity: soft-void 라인 제외
       .then(({ data }) => {
         if (cancelled || !data) return;
         const items: ServiceChargeItem[] = data.map((c) => {
@@ -3157,8 +3161,59 @@ function IssueDialog({
   //     미리보기용 count 로더(구 todayIssueSeq)는 print-time 재계산 = persist·재인쇄불변 위배 → 삭제.
 
   // T-20260513-foot-BILLING-DETAIL-EDIT: 항목 삭제
+  // T-20260813-foot-SOFTDELETE-REACTIVATION-LOCK CARVE-A: hard-DELETE → soft-void(voided_at).
+  //   service_charges = Tier-0 매출/insurance-split ledger(DA REPLY 6osg Q1). 물리삭제 차단·라인그레인 소프트보이드.
+  //   경계판정(census C3, 보수 default=불확실 시 post): post-recognition(급여청구행 ∨ payments.service_charge_id FK
+  //   ∨ 확정 마감일) → 이중확인 게이트. voided_at IS NULL G2 parity 로 전 집계/서류에서 제외
+  //   (reversal-offset 불요 — foot 급여매출은 frozen snapshot 없는 live-recompute·offset 병행 시 이중차감).
+  //   G1 delete≠void≠cancel(§6-7-1): is_cancelled 무접촉. G3 payments/settlements 무접촉.
   const handleDeleteItem = async (id: string) => {
-    const { error } = await supabase.from('service_charges').delete().eq('id', id);
+    const { data: row, error: loadErr } = await supabase
+      .from('service_charges')
+      .select('check_in_id, clinic_id, is_insurance_covered, calculated_at')
+      .eq('id', id)
+      .maybeSingle();
+    if (loadErr || !row) { toast.error('삭제 실패: 항목을 찾을 수 없습니다'); return; }
+
+    // 경계 3축 판정 (post-recognition = 매출인식 기여). 불확실 시 post 취급(Tier-0 보수 default).
+    let postRecognition = row.is_insurance_covered === true; // 축a: 급여행=삽입 즉시 청구 draft(autodraft)
+    if (!postRecognition) {
+      // 축b: payments.service_charge_id FK 존재(수납 링크)
+      const { count: payCnt } = await supabase
+        .from('payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('service_charge_id', id);
+      if ((payCnt ?? 0) > 0) postRecognition = true;
+    }
+    if (!postRecognition && row.clinic_id && row.calculated_at) {
+      // 축c: 해당 진료일이 확정 마감(closed)
+      const calcDate = String(row.calculated_at).slice(0, 10);
+      const { data: dc } = await supabase
+        .from('daily_closings')
+        .select('status')
+        .eq('clinic_id', row.clinic_id as string)
+        .eq('close_date', calcDate)
+        .maybeSingle();
+      if (dc?.status === 'closed') postRecognition = true;
+    }
+
+    if (postRecognition) {
+      const ok = window.confirm(
+        '이미 청구·수납·마감에 반영된 항목입니다.\n삭제하면 기록은 보존(무효처리)되고 집계·서류에서만 제외됩니다.\n무효처리하시겠습니까?',
+      );
+      if (!ok) return;
+    }
+
+    const { data: auth } = await supabase.auth.getUser();
+    const actor = auth?.user?.id ?? 'unknown';
+    const reason = postRecognition
+      ? '세부내역 편집 삭제(post-recognition soft-void)'
+      : '세부내역 편집 삭제(pre-settlement soft-void)';
+    const { error } = await supabase
+      .from('service_charges')
+      .update({ voided_at: new Date().toISOString(), voided_reason: reason, voided_by: actor })
+      .eq('id', id)
+      .is('voided_at', null); // 멱등: 이미 void 된 행 재-void no-op
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     await refreshServiceItems();
     toast.success('항목이 삭제되었습니다');
@@ -5142,7 +5197,8 @@ function InvoiceDialog({
         const { data: charges } = await supabase
           .from('service_charges')
           .select('base_amount, is_insurance_covered')
-          .eq('check_in_id', checkIn.id);
+          .eq('check_in_id', checkIn.id)
+          .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외
         if (charges) {
           const nonCoveredSum = charges
             .filter((c) => !c.is_insurance_covered)

@@ -119,8 +119,8 @@ export function formatBirthDate(yymmdd: string | null | undefined): string {
 }
 
 /**
- * 주민번호 하이픈 삽입
- * "1234561234567" → "123456-1234567"
+ * 주민번호 하이픈 삽입 (13자리 → 앞 6자리 + '-' + 뒤 7자리)
+ * 예: 13자리 연속숫자 → 6자리-7자리 형식.
  * 이미 하이픈 있으면 그대로 반환. 13자리 아닌 경우 그대로 반환.
  * T-20260526-foot-DOC-FORM-REVISE AC-C1
  */
@@ -262,7 +262,7 @@ export function buildAutoBindValues(ctx: AutoBindContext): Record<string, string
   const fullAddress = addrParts.join(' ');
 
   // T-20260520-foot-PRINT-FORM-BIND: 주민번호 마스킹 없이 그대로 (서류 출력용)
-  // T-20260526-foot-DOC-FORM-REVISE AC-C1: 하이픈 삽입 (123456-1234567)
+  // T-20260526-foot-DOC-FORM-REVISE AC-C1: 하이픈 삽입 (6자리-7자리 형식)
   const patientRrn = formatRrn(ctx.customer?.rrn);
 
   // T-20260520-foot-PRINT-FORM-BIND: 전화/팩스 조합 (clinic)
@@ -606,7 +606,8 @@ export async function loadAutoBindContext(
   const { data: chargesData } = await supabase
     .from('service_charges')
     .select('insurance_covered_amount, copayment_amount, base_amount, is_insurance_covered')
-    .eq('check_in_id', checkIn.id);
+    .eq('check_in_id', checkIn.id)
+    .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외
 
   const charges = chargesData ?? [];
   const hasCharges = charges.length > 0;
@@ -909,7 +910,8 @@ export async function applyDiagCodesFromVisit(
   const { data: chargeItems } = await supabase
     .from('service_charges')
     .select('service_id, service:services(name, service_code, category_label)')
-    .eq('check_in_id', checkIn.id);
+    .eq('check_in_id', checkIn.id)
+    .is('voided_at', null); // CARVE-A G2 parity: soft-void 라인 제외
   let diagItems: { code: string; name: string }[] = (chargeItems ?? [])
     .map((c) => {
       const svc = Array.isArray(c.service) ? c.service[0] : c.service;

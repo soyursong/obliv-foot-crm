@@ -40,6 +40,8 @@ interface ServiceChargeSummary {
   copayment_amount: number;
   insurance_covered_amount: number;
   exempt_amount: number;
+  /** CARVE-A: soft-void 시각. NOT NULL 이면 합산 제외(G2 parity). */
+  voided_at?: string | null;
 }
 
 interface ClaimDiagnosis {
@@ -112,10 +114,11 @@ function calcTaxableSupply(amount: number, taxType: string | null): number {
   return 0;
 }
 
-/** service_charges 배열 합산 */
+/** service_charges 배열 합산 (CARVE-A G2 parity: soft-void 라인 제외) */
 function sumCharges(charges: ServiceChargeSummary[] | null | undefined) {
-  if (!charges?.length) return { copayment: 0, covered: 0, exempt: 0 };
-  return charges.reduce(
+  const live = charges?.filter((c) => c.voided_at == null);
+  if (!live?.length) return { copayment: 0, covered: 0, exempt: 0 };
+  return live.reduce(
     (acc, c) => ({
       copayment: acc.copayment + (c.copayment_amount ?? 0),
       covered: acc.covered + (c.insurance_covered_amount ?? 0),
@@ -307,7 +310,7 @@ export function SalesPatientTab({ filter }: Props) {
             check_in_services(services(name, category)),
             consultant:staff!check_ins_consultant_id_fkey(name),
             therapist:staff!check_ins_therapist_id_fkey(name),
-            service_charges(copayment_amount, insurance_covered_amount, exempt_amount)
+            service_charges(copayment_amount, insurance_covered_amount, exempt_amount, voided_at)
           ),
           processor:user_profiles!payments_created_by_fkey(name)
         `)

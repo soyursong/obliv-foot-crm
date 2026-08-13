@@ -146,6 +146,7 @@ export async function loadClaimForExport(claimId: string): Promise<EdiExportResu
       .from('service_charges')
       .select('service_id, customer_grade_at_charge, copayment_rate_at_charge, is_insurance_covered, hira_score, calculated_at')
       .eq('check_in_id', claim.check_in_id)
+      .is('voided_at', null) // CARVE-A G2 parity: soft-void 라인 제외
       .order('calculated_at', { ascending: false });
     for (const c of (charges ?? []) as Array<Record<string, unknown>>) {
       const sid = c.service_id as string;
