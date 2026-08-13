@@ -1,4 +1,4 @@
--- ROLLBACK: 20260807120000_foot_consult_notify_outbox_decouple.sql
+-- ROLLBACK: 20260813210000_foot_consult_notify_outbox_decouple.sql
 -- T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN
 --
 -- 주의: 롤백 전 잔여 pending/dlq 건 확인 권장(미발송분 유실 가능):

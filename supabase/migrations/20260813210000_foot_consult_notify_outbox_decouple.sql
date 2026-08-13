@@ -30,8 +30,8 @@
 --   본 마이그·RPC 는 consult_notify_* 발송상태 컬럼만 write. consultant_id / customers.assigned_consultant_id 무접촉.
 --
 -- 멱등: CREATE ... IF NOT EXISTS + 제약 DO-guard. CHECK 확장은 drop&recreate(DO-guard). ADDITIVE — 파괴적 변경 0.
--- Rollback: 20260807120000_foot_consult_notify_outbox_decouple.rollback.sql
--- Dry-run:  20260807120000_foot_consult_notify_outbox_decouple.dryrun.mjs (무영속 sentinel)
+-- Rollback: 20260813210000_foot_consult_notify_outbox_decouple.rollback.sql
+-- Dry-run:  20260813210000_foot_consult_notify_outbox_decouple.dryrun.mjs (무영속 sentinel)
 -- 운영 적용: dev-foot 직접 pg 적용(메모리 'dev-foot DB 마이그레이션 직접 실행') + supervisor DDL-diff/MIG-GATE QA 게이트 선행.
 -- 작성: dev-foot / 2026-08-07 / ticket: T-20260806-foot-CONSULTCONFIRM-SLACK-DECOUPLE-HARDEN
 
