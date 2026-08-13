@@ -68,6 +68,13 @@ async function main() {
   const frozenIds = new Set(frozen.map((f) => f.id));
   console.log(`✔ freeze set: ${frozen.length}행 (재구성 매출합 ${won(freeze.grand_total_reconstruction_won)}원)`);
 
+  // ── 부모 packages 선적재 (DRIFT check + materiality 공용 pkgMap) ─────────
+  //   ↑ freeze 술어 정렬(부모 type-matched 단가>0 판정)에 pkgMap 이 DRIFT check 이전에 필요.
+  const { data: pkgs, error: pe } = await db.from("packages")
+    .select("id, trial_unit_price, unheated_unit_price");
+  if (pe) abort(`packages 조회 실패: ${pe.message}`);
+  const pkgMap = new Map((pkgs ?? []).map((p) => [p.id, p]));
+
   // ── SOP §3: apply−1 re-freeze DRIFT ABORT ──────────────────────────────
   const live = [];
   for (let from = 0; ; from += 1000) {
@@ -78,7 +85,16 @@ async function main() {
     live.push(...(data ?? []));
     if (!data || data.length < 1000) break;
   }
-  const liveZero = new Set(live.filter((s) => Number(s.unit_price ?? -1) === 0).map((s) => s.id));
+  // freeze 술어(freeze.mjs L96 unit_price=0 + L101 부모 type-matched 단가>0 + L98 no_pkg skip)와 정렬.
+  //   부모단가≤0/null(legit-0) 및 no_pkg(pp=0) 행은 진성 residue 아님 → DRIFT population 제외.
+  const liveZero = new Set(
+    live.filter((s) => {
+      if (Number(s.unit_price ?? -1) !== 0) return false;        // zero-snapshot
+      const pkg = pkgMap.get(s.package_id);
+      const pp = pkg ? Number(pkg[COL[s.session_type]] ?? 0) : 0;
+      return pp > 0;                                             // freeze 술어 정렬: 부모 type-matched 단가>0 (진성 residue만)
+    }).map((s) => s.id)
+  );
   const missing = [...frozenIds].filter((id) => !liveZero.has(id));   // freeze 이후 이미 값이 바뀐 행
   const extra = [...liveZero].filter((id) => !frozenIds.has(id));     // freeze 이후 새로 생긴 zero 행
   if (missing.length) abort(`DRIFT: freeze 행 ${missing.length}건이 더 이상 unit_price=0 아님 (id=${missing.slice(0,5).join(",")}...). freeze 재실행 필요.`);
@@ -86,10 +102,7 @@ async function main() {
   console.log(`✔ re-freeze DRIFT check OK (missing=0, extra=0)`);
 
   // ── SOP §5: materiality 게이트 (부모 현재단가 == freeze expected) ────────
-  const { data: pkgs, error: pe } = await db.from("packages")
-    .select("id, trial_unit_price, unheated_unit_price");
-  if (pe) abort(`packages 조회 실패: ${pe.message}`);
-  const pkgMap = new Map((pkgs ?? []).map((p) => [p.id, p]));
+  //   pkgMap 은 DRIFT check 이전에 선적재됨(위) — 재조회 없이 재사용.
   for (const f of frozen) {
     const pkg = pkgMap.get(f.package_id);
     if (!pkg) abort(`materiality: pkg 소실 ${f.package_id} (ps=${f.id})`);
