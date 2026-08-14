@@ -430,7 +430,92 @@ export function assertApplyGateForRunner(o) {
     ticket_id: ticketId, target_ref: targetRef, lane, apply: true, gated: true,
     go_issued_at: gate.issuedAt, sql_sha256: gate.migrationSha256, key_id: gate.keyId,
   });
-  return { ok: true, apply: true, lane, gated: true, targetRef, gate };
+  return {
+    ok: true, apply: true, lane, gated: true, targetRef, gate,
+    // ★ EXEC-OBS(T-20260715 G6): 러너는 COMMIT 성공 직후 이 클로저를 호출 → bus deploy_exec_done 발화.
+    //   ad-hoc DML 러너 lane = 정식 마이그 무접점 → mig_version:null · ledger_registered:null.
+    //   (dry-run/dev lane 은 애초 이 prod-grant 경로에 도달 안 함 → 발화 없음.)
+    emitDeployExecDone: (extra = {}) => emitDeployExecDone({
+      ticket: ticketId,
+      repo: extra.repo ?? path.basename(REPO_ROOT),
+      targetRef,
+      sqlSha256: gate.migrationSha256,
+      migVersion: null,
+      ledgerRegistered: null,
+      applier: extra.applier,
+      lane: 'prod',
+      status: 'applied',
+      dryRun: false,
+      from: extra.from ?? 'apply_gate_runner',
+      busPath: extra.busPath,
+    }),
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★ EXEC-OBS — DEPLOY-EXEC 관측성 (T-20260715-meta-DEPLOY-EXEC-BUS-LEDGER-GATE)
+//   deploy_flow.md v3.8 §2-A MIG-GATE G6 (EXEC-OBS v1.0). db_apply_guard.sh(⑥) 와
+//   ad-hoc DML 러너(assertApplyGateForRunner post-COMMIT) 공용 bus 발화 chokepoint.
+//   ★ 발화 조건 = lane==='prod' && status==='applied' && !dryRun 뿐. dry-run·dev
+//     lane·비-applied = no-op(skipped). append 실패는 throw 하지 않는다(호출부 apply/
+//     COMMIT 는 기수행 — exit 오염 금지) → {emitted:false,error} 반환.
+// ════════════════════════════════════════════════════════════════════════════
+export function deployBusPath() {
+  // SSOT 절대경로 고정 — bare/cwd 상대 append 금지(T-20260712-infra-BUS-WRITEPATH-ABSOLUTE-HARDEN).
+  //   os 모듈 비의존(포크마다 import 상이) → process.env.HOME 로 홈 해석.
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  return path.join(home, 'claude-sync', 'memory', '_handoff', 'bus.jsonl');
+}
+
+export function emitDeployExecDone(o) {
+  const {
+    ticket,
+    repo = null,
+    targetRef = null,
+    sqlSha256 = null,
+    migVersion = null,
+    ledgerRegistered = null,
+    applier = process.env.DEPLOY_EXEC_APPLIER || process.env.APPLIER || process.env.USER || null,
+    lane,
+    status,
+    dryRun = false,
+    from = 'db_apply_guard',
+    busPath = deployBusPath(),
+    ts = new Date().toISOString(),
+  } = o || {};
+
+  // ── 발화 게이트: prod+applied+non-dry-run 만. 그 외 = no-op. ──────────────────
+  if (dryRun || lane !== 'prod' || status !== 'applied') {
+    return {
+      emitted: false,
+      skipped: true,
+      reason: `no-op: lane=${lane} status=${status} dry_run=${dryRun} (prod+applied+non-dry-run 아님)`,
+      busPath,
+    };
+  }
+  if (!ticket) return { emitted: false, error: 'ticket 필수', busPath };
+
+  const record = {
+    ts,
+    from,
+    type: 'deploy_exec_done',
+    ticket,
+    repo,
+    target_ref: targetRef,
+    sql_sha256: sqlSha256,
+    mig_version: migVersion,
+    applier,
+    ledger_registered:
+      ledgerRegistered === true || ledgerRegistered === false ? ledgerRegistered : null,
+  };
+  try {
+    fs.mkdirSync(path.dirname(busPath), { recursive: true });
+    fs.appendFileSync(busPath, JSON.stringify(record) + '\n');
+    return { emitted: true, record, busPath };
+  } catch (e) {
+    // append 실패 = 게이트/apply 판정에 영향 없음(호출부가 WARN 처리). throw 금지.
+    return { emitted: false, error: e.message, record, busPath };
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -762,8 +847,71 @@ if (isMain) {
         process.exit(dbContactless ? 1 : 2); // 1=정상 fail-closed, 2=불변식 위반(치명)
       }
     })();
+  } else if (cmd === 'emit-deploy-exec-done') {
+    // bash guard(db_apply_guard.sh ⑥) 가 prod apply 성공 후 호출하는 bus append entrypoint.
+    const flag = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
+    const norm = (v) => (v === undefined || v === 'null' || v === '') ? null : v;
+    const ledgerRaw = norm(flag('--ledger'));
+    const r = emitDeployExecDone({
+      ticket: norm(flag('--ticket')),
+      repo: norm(flag('--repo')),
+      targetRef: norm(flag('--target-ref')),
+      sqlSha256: norm(flag('--sql-sha256')),
+      migVersion: norm(flag('--mig-version')),
+      ledgerRegistered: ledgerRaw === 'true' ? true : ledgerRaw === 'false' ? false : null,
+      applier: norm(flag('--applier')),
+      lane: norm(flag('--lane')),
+      status: norm(flag('--status')),
+      dryRun: rest.includes('--dry-run'),
+      from: norm(flag('--from')) || 'db_apply_guard',
+      busPath: norm(flag('--bus-path')) || undefined,
+    });
+    console.log(JSON.stringify(r));
+    // write error(append 실패)만 non-zero. emitted/skipped 는 0 → guard 가 bus_emit ok 로 기록.
+    process.exit(r.emitted || r.skipped ? 0 : 1);
+  } else if (cmd === 'emit-selftest') {
+    // DB-free 실측: prod+applied 만 발화 / dry-run·dev·비-applied 미발화 + 절대경로 SSOT 검증.
+    const tmp = rest.find((a) => !a.startsWith('--')) ||
+      path.join(process.env.TMPDIR || '/tmp', `busemit-selftest-${process.pid}.jsonl`);
+    try { fs.rmSync(tmp, { force: true }); } catch { /* noop */ }
+    const base = { ticket: 'T-SELFTEST', repo: 'selftest-repo', targetRef: 'selftestref',
+      sqlSha256: 'deadbeef', applier: 'selftest', busPath: tmp };
+    const cases = [
+      ['prod+applied(mig)',    { ...base, lane: 'prod', status: 'applied', migVersion: '20260715120000', ledgerRegistered: true }, true],
+      ['prod+applied(no-mig)', { ...base, lane: 'prod', status: 'applied' }, true],
+      ['dry-run',              { ...base, lane: 'prod', status: 'applied', dryRun: true }, false],
+      ['dev lane',             { ...base, lane: 'dev',  status: 'applied' }, false],
+      ['prod+apply_failed',    { ...base, lane: 'prod', status: 'apply_failed' }, false],
+    ];
+    let pass = true;
+    for (const [name, o, wantEmit] of cases) {
+      const rr = emitDeployExecDone(o);
+      const ok = (!!rr.emitted === wantEmit);
+      if (!ok) pass = false;
+      console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${name}: emitted=${!!rr.emitted} want=${wantEmit}${rr.reason ? ' (' + rr.reason + ')' : ''}`);
+    }
+    const lines = fs.existsSync(tmp) ? fs.readFileSync(tmp, 'utf8').trim().split('\n').filter(Boolean) : [];
+    const lineOk = lines.length === 2; // 2 prod+applied 케이스만 기록
+    if (!lineOk) pass = false;
+    console.log(`  [${lineOk ? 'PASS' : 'FAIL'}] bus lines written=${lines.length} want=2`);
+    let schemaOk = true;
+    const expectKeys = JSON.stringify(['ts', 'from', 'type', 'ticket', 'repo', 'target_ref', 'sql_sha256', 'mig_version', 'applier', 'ledger_registered']);
+    for (const l of lines) {
+      const j = JSON.parse(l);
+      if (j.type !== 'deploy_exec_done' || j.from !== 'db_apply_guard') schemaOk = false;
+      if (JSON.stringify(Object.keys(j)) !== expectKeys) schemaOk = false;
+    }
+    if (!schemaOk) pass = false;
+    console.log(`  [${schemaOk ? 'PASS' : 'FAIL'}] emitted record schema (keys+type+from)`);
+    const bp = deployBusPath();
+    const absOk = path.isAbsolute(bp) && bp.endsWith('claude-sync/memory/_handoff/bus.jsonl');
+    if (!absOk) pass = false;
+    console.log(`  [${absOk ? 'PASS' : 'FAIL'}] deployBusPath absolute SSOT = ${bp}`);
+    try { fs.rmSync(tmp, { force: true }); } catch { /* noop */ }
+    console.log(pass ? 'EMIT-SELFTEST: PASS' : 'EMIT-SELFTEST: FAIL');
+    process.exit(pass ? 0 : 1);
   } else {
-    console.error('usage: node scripts/apply_gate_lib.mjs <sha256|verify|verify-json|runner-gate|gated-client-selftest> ...');
+    console.error('usage: node scripts/apply_gate_lib.mjs <sha256|verify|verify-json|runner-gate|gated-client-selftest|emit-deploy-exec-done|emit-selftest> ...');
     process.exit(64);
   }
 }
