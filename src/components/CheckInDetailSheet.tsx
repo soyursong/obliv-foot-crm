@@ -756,6 +756,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
           .eq('clinic_id', clinicId)
           .eq('active', true)
           .in('role', ['consultant'])
+          .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
           .order('name'),
         // T-20260512-foot-CUSTMGMT-AC6-AC9: 서류발행·의사소견·접수상태 표시용 최근 체크인 전체 조회
         supabase
@@ -870,6 +871,7 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
         .eq('clinic_id', checkIn.clinic_id)
         .eq('active', true)
         .in('role', ['consultant'])
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name'),
       // T-20260516-foot-RESV-MEMO-REVISIT: 3단계 폴백 — 초진/재진/워크인 무관 동일 경로
       // 수정 이유: ① .single() → 레코드 없을 때 null 반환이나 폴백 없음

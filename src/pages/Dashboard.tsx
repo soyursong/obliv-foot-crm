@@ -4740,6 +4740,7 @@ export default function Dashboard() {
       .eq('clinic_id', clinic.id)
       .eq('active', true)
       .in('role', ['therapist', 'technician', 'consultant', 'director'])
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .order('name');
     const all = (data ?? []) as Staff[];
     setTherapists(all.filter((s) => s.role === 'therapist' || s.role === 'technician'));
@@ -4756,6 +4757,7 @@ export default function Dashboard() {
       .select('id')
       .eq('user_id', profile.id)
       .eq('active', true)
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .maybeSingle();
     setMyStaffId((data as { id: string } | null)?.id ?? null);
   }, [profile]);
@@ -4771,6 +4773,7 @@ export default function Dashboard() {
         .eq('clinic_id', clinic.id)
         .eq('user_id', profile.id)
         .eq('active', true)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .maybeSingle();
       if (!cancelled) setMyAssignStaffId((data as { id: string } | null)?.id ?? null);
     })();

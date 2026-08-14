@@ -108,6 +108,7 @@ export function DutyRosterTab({ clinic }: { clinic: Clinic }) {
         .eq('clinic_id', clinic.id)
         .eq('role', 'director')
         .eq('active', true)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name');
       if (error) throw error;
       return (data ?? []) as Staff[];

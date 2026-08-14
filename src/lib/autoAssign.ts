@@ -209,7 +209,8 @@ export async function fetchActiveStaff(clinicId: string): Promise<Staff[]> {
     .from('staff')
     .select('id, clinic_id, name, role, active, created_at')
     .eq('clinic_id', clinicId)
-    .eq('active', true);
+    .eq('active', true)
+    .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
   return (data ?? []) as Staff[];
 }
 
@@ -382,7 +383,8 @@ export async function fetchAssignSortOrder(clinicId: string): Promise<Map<string
       .from('staff')
       .select('id, assign_sort_order')
       .eq('clinic_id', clinicId)
-      .eq('active', true);
+      .eq('active', true)
+      .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
     if (error) return new Map(); // 컬럼 미존재(42703) 등 — graceful 빈 맵
     const m = new Map<string, number>();
     for (const r of (data ?? []) as { id: string; assign_sort_order: number | null }[]) {

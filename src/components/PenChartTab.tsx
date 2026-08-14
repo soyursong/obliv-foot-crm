@@ -1258,6 +1258,7 @@ export function PenChartTab({
       .eq('user_id', profile.id)
       .eq('clinic_id', clinicId)
       .eq('active', true)
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .maybeSingle()
       .then(({ data }) => setStaffId(data?.id ?? null));
   }, [profile?.id, clinicId]);

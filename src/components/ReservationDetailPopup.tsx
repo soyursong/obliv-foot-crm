@@ -626,6 +626,7 @@ export function ReservationDetailPopup({
       .from('staff')
       .select('id, name, role, clinic_id, active, created_at')
       .eq('clinic_id', clinicId)
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .order('name')
       .then(({ data }) => {
         if (data) setAllStaff(data as Staff[]);

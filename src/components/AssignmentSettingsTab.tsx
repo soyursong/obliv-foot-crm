@@ -108,6 +108,7 @@ export function AssignmentSettingsTab({ clinic }: { clinic: Clinic }) {
           .eq('clinic_id', clinic.id)
           .eq('active', true)
           .eq('role', 'consultant')
+          .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
           .order('name'),
       ]);
       if (w.data) {

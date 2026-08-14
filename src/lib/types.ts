@@ -404,6 +404,16 @@ export interface Staff {
   auto_assign_enabled?: boolean | null;
   /** T-20260726-foot-CRM-ASSIGN-V1 실행6: 실장별 Slack user id(실행5 배정 알림 매핑). NULL=미매핑. */
   slack_user_id?: string | null;
+  /**
+   * T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: soft-delete 단일 authority(NULL=활성 / NOT NULL=목록제거).
+   * '삭제'=목록/드롭다운에서 제거(deleted_at 스탬프), 물리 삭제 아님. active(비활성/가역)와 직교 축.
+   * 읽기경로 로스터/드롭다운/후보풀은 deleted_at IS NULL 필터(삭제직원 미표시). id-keyed name-resolution 은 보존(FK 표시).
+   */
+  deleted_at?: string | null;
+  /** T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 수행자 auth.uid()(감사). */
+  deleted_by?: string | null;
+  /** T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 사유/맥락(보존). */
+  deleted_reason?: string | null;
 }
 
 // ── 상담 자동배정 랭킹·전략 (T-20260726-foot-CRM-ASSIGN-V1) ────────────────────

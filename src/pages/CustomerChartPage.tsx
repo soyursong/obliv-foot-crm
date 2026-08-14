@@ -3331,7 +3331,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
         // T-20260523-foot-PKG-DEDUCT-THERAPIST bugfix: display_name 컬럼 미존재 → 쿼리 400 에러 → 치료사 드롭다운 비어있음
         // display_name 컬럼은 별도 migration(20260523050000)으로 추가될 예정. UI는 display_name||name fallback 유지.
-        supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true)
+        supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true).is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
           .in('role', ['consultant', 'coordinator', 'director', 'therapist']).order('name', { ascending: true }),
         // 6 main data (기존 병렬 그룹)
         supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
@@ -5680,6 +5680,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       .eq('user_id', profile.id)
       .eq('clinic_id', customer.clinic_id)
       .eq('active', true)
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .maybeSingle()
       .then(({ data }) => setCurrentUserStaffId((data as { id: string } | null)?.id ?? ''));
   }, [profile?.id, customer?.clinic_id]);

@@ -153,7 +153,7 @@ export default function TreatmentStatusPanel() {
       supabase.from('check_ins').select('*').eq('clinic_id', clinic.id)
         .gte('checked_in_at', start).lte('checked_in_at', end)
         .order('checked_in_at', { ascending: true }),
-      supabase.from('staff').select('*').eq('clinic_id', clinic.id).eq('active', true).order('name'),
+      supabase.from('staff').select('*').eq('clinic_id', clinic.id).eq('active', true).is('deleted_at', null).order('name'), // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       supabase.from('duty_roster').select('date, doctor_id, staff:doctor_id(name)')
         .eq('clinic_id', clinic.id).gte('date', dateFrom).lte('date', dateTo).order('date'),
     ]);

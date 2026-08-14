@@ -42,7 +42,10 @@ import { withSiljangSuffix } from '@/lib/siljangSlack';
 // T-20260810-foot-COORD-STAFF-DUP-INSERT-GUARD: 활성 coordinator 중복 등록 forward-guard(canonical 다축 술어).
 import { evaluateCoordinatorDup, type CoordIdentity } from '@/lib/coordinatorDupGuard';
 // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제(hard-delete) 전 실무 귀속 참조 census(fail-closed).
-import { countStaffReferences, isForeignKeyError, type StaffRefCensus } from '@/lib/staffDeletion';
+// T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT (DA CONSULT-REPLY MSG-20260814-221208-dpnm):
+//   '삭제' = soft-delete(deleted_at 스탬프), 물리 hard-delete 아님 → 참조 census/ FK 백스톱 불요(부모행 물리보존).
+//   기존 staffDeletion.ts(hard-delete census 게이트)는 obsolete 로 제거됨.
+import { buildStaffSoftDeletePatch, interpretSoftDeleteResult } from '@/lib/staffSoftDelete';
 
 type Role = StaffRole;
 
@@ -168,12 +171,10 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
   const [editTarget, setEditTarget] = useState<Staff | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<Staff | null>(null);
   const [deactivateBusy, setDeactivateBusy] = useState(false);
-  // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: '삭제'(hard-delete) 를 '비활성'(active=false)과 분리.
-  //   삭제는 참조 census(예약·수납·차트·시술 처리자 축) 0건인 테스트/미사용 계정만 허용.
-  //   deleteTarget=대상, deleteCensus=census 결과(null=census 진행중/미완), deleteBusy=삭제 실행중.
+  // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT (DA CONSULT-REPLY: soft-delete single-axis):
+  //   '삭제' = 목록에서 제거(deleted_at 스탬프, 비파괴). 참조 유무로 hard/soft 분기 금지 → uniform soft-delete.
+  //   deleteTarget=대상, deleteBusy=삭제 실행중. (census/ FK 백스톱 state 제거 — 물리삭제 아님)
   const [deleteTarget, setDeleteTarget] = useState<Staff | null>(null);
-  const [deleteCensus, setDeleteCensus] = useState<StaffRefCensus | null>(null);
-  const [deleteCensusError, setDeleteCensusError] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const { data: staffList = [] } = useQuery<Staff[]>({
@@ -183,6 +184,9 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
         .from('staff')
         .select('*')
         .eq('clinic_id', clinic.id)
+        // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제(soft-delete)된 직원은 목록에서 제거.
+        //   '비활성 포함' 체크(showInactive)로도 노출되지 않음(active 축과 직교 — 삭제=목록제거).
+        .is('deleted_at', null)
         .order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as Staff[];
@@ -238,44 +242,36 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
     refresh();
   };
 
-  // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 요청 → 참조 census 실행 후 확인 다이얼로그 오픈.
-  //   census.total>0 → 삭제 차단(비활성 안내) / 0 → hard-delete 허용. census error → fail-closed(차단).
-  const requestDelete = async (s: Staff) => {
+  // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 요청 → 확인 다이얼로그 오픈(census 없음).
+  //   삭제 = soft-delete(목록제거, 비파괴)이므로 참조 유무 상관없이 uniform 허용 — 확인 모달만.
+  const requestDelete = (s: Staff) => {
     setDeleteTarget(s);
-    setDeleteCensus(null);
-    setDeleteCensusError(null);
-    try {
-      const census = await countStaffReferences(s.id);
-      setDeleteCensus(census);
-    } catch (e) {
-      setDeleteCensusError((e as Error).message);
-    }
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget || !deleteCensus || deleteCensus.total > 0) return; // 방어: 참조 있으면 삭제 불가
+    if (!deleteTarget) return;
     setDeleteBusy(true);
-    // rows-affected 검증 + DB RESTRICT FK 백스톱(23503) catch.
+    // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT (DA CONSULT-REPLY):
+    //   삭제 = soft-delete(deleted_at 스탬프) — client .delete() hard-delete 금지(REJECT-as-mechanism).
+    //   staff 행 물리 보존 → created_by(§416) SET-NULL trigger by-construction moot, FK 항상 유효.
+    //   rows-affected 검증(Cross-CRM Write Rows-Affected 표준): RLS 0-row 거부 시 error=null+0행 오성공 차단.
     const { data: deleted, error } = await supabase
-      .from('staff').delete().eq('id', deleteTarget.id).select('id');
+      .from('staff')
+      .update(buildStaffSoftDeletePatch(profile?.id ?? null))
+      .eq('id', deleteTarget.id)
+      .is('deleted_at', null) // 이미 삭제된 행 재삭제 방지(멱등)
+      .select('id');
     setDeleteBusy(false);
     if (error) {
-      // 23503 = FK 위반(census 가 놓친 RESTRICT 축이 존재) → 삭제 대신 비활성 안내.
-      const isFk = isForeignKeyError(error);
-      toast.error(
-        isFk
-          ? '연결된 이력이 있어 완전 삭제할 수 없습니다. 대신 ‘비활성’ 처리하세요.'
-          : `삭제 실패: ${error.message}`,
-      );
+      toast.error(`삭제 실패: ${error.message}`);
       return;
     }
-    if (!deleted || deleted.length === 0) {
-      toast.error('삭제 실패: 권한이 없거나 대상을 찾지 못했습니다 (삭제된 행 없음)');
+    if (!interpretSoftDeleteResult(deleted).ok) {
+      toast.error('삭제 실패: 권한이 없거나 대상을 찾지 못했습니다 (반영된 행 없음)');
       return;
     }
-    toast.success(`${deleteTarget.name} 완전 삭제됨`);
+    toast.success(`${deleteTarget.name} 삭제됨 (목록에서 제거)`);
     setDeleteTarget(null);
-    setDeleteCensus(null);
     refresh();
   };
 
@@ -332,8 +328,9 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                     )}
                   </div>
                   {/* T-20260630-foot-STAFFCRUD-CODY-PERM guard1: coordinator 는 원장(director) 로스터 행 수정/비활성 불가(권한상승 차단). */}
-                  {/* T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: '비활성'(접근차단·데이터보존)과 '삭제'(완전제거) 를 별도 버튼으로 분리.
-                      활성 직원: [수정] [비활성] [삭제] / 비활성 직원: [활성화] [삭제]. 삭제는 참조 census 게이트(테스트 계정만). */}
+                  {/* T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: '비활성'(접근차단·데이터보존, active=false 가역)과
+                      '삭제'(목록제거, deleted_at soft-delete·비파괴) 를 별도 버튼으로 분리.
+                      활성 직원: [수정] [비활성] [삭제] / 비활성 직원: [활성화] [삭제]. 삭제=uniform soft-delete(census 없음). */}
                   {canCrudStaff && !(actorRole === 'coordinator' && s.role === 'director') ? (
                     <div className="flex items-center gap-1">
                       {s.active && (
@@ -347,12 +344,14 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                         </Button>
                       )}
                       {s.active ? (
+                        // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT 요구사항#6(색상 명시 스펙):
+                        //   비활성 = 회색(가역·주의) / 삭제 = 빨강(destructive). 시각적으로 위험도 구분.
                         <Button
                           size="xs"
                           variant="secondary"
                           title="직원 비활성화 (로그인·접근 차단, 데이터 보존)"
                           onClick={() => handleToggleActive(s)}
-                          className="gap-1"
+                          className="gap-1 bg-neutral-200 text-neutral-700 border-neutral-300 hover:bg-neutral-300 hover:text-neutral-800"
                         >
                           <PowerOff className="h-3 w-3" />
                           비활성
@@ -370,7 +369,7 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                       <Button
                         size="xs"
                         variant="destructive"
-                        title="직원 완전 삭제 (테스트/미사용 계정만 — 이력 있으면 차단)"
+                        title="직원 삭제 (목록에서 제거 — 연결된 기록은 보존)"
                         onClick={() => requestDelete(s)}
                         className="gap-1"
                       >
@@ -421,108 +420,49 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
         </DialogContent>
       </Dialog>
 
-      {/* T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 완전 삭제 확인 다이얼로그.
-          census 진행중=로딩 / census error=fail-closed 차단 / total>0=차단(비활성 안내) / total=0=삭제 허용. */}
+      {/* T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT (DA CONSULT-REPLY: soft-delete single-axis):
+          삭제 = 목록에서 제거(deleted_at 스탬프, 비파괴). 참조 유무 분기 없음 → uniform 확인 모달. */}
       <Dialog
         open={!!deleteTarget}
         onOpenChange={(o) => {
-          if (!o && !deleteBusy) {
-            setDeleteTarget(null);
-            setDeleteCensus(null);
-            setDeleteCensusError(null);
-          }
+          if (!o && !deleteBusy) setDeleteTarget(null);
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>직원 완전 삭제</DialogTitle>
+            <DialogTitle>직원 삭제</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 text-sm">
             <p>
               대상: <span className="font-semibold">{deleteTarget?.name}</span>
             </p>
-
-            {/* census 진행중 */}
-            {!deleteCensus && !deleteCensusError && (
-              <p className="text-muted-foreground">연결된 이력을 확인하는 중입니다…</p>
-            )}
-
-            {/* census 실패 → fail-closed 차단 */}
-            {deleteCensusError && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
-                <p className="font-medium">이력 확인에 실패해 삭제를 진행할 수 없습니다.</p>
-                <p className="mt-1 text-xs text-amber-800">
-                  안전을 위해 삭제를 중단했습니다. 잠시 후 다시 시도하거나, 우선 ‘비활성’으로
-                  처리하세요. ({deleteCensusError})
-                </p>
-              </div>
-            )}
-
-            {/* 참조 있음 → 삭제 차단, 비활성 안내 */}
-            {deleteCensus && deleteCensus.total > 0 && (
-              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-900">
-                <p className="font-medium">
-                  연결된 이력이 {deleteCensus.total}건 있어 완전 삭제할 수 없습니다.
-                </p>
-                {deleteCensus.hitLabels.length > 0 && (
-                  <p className="mt-1 text-xs text-red-800">
-                    관련 항목: {deleteCensus.hitLabels.join(', ')}
-                  </p>
-                )}
-                <p className="mt-1 text-xs text-red-800">
-                  이 직원은 예약·수납·차트 등 실제 기록과 연결되어 있습니다. 삭제 대신 ‘비활성’으로
-                  처리하면 로그인·접근이 차단되고 기록은 안전하게 보존됩니다.
-                </p>
-              </div>
-            )}
-
-            {/* 참조 0건 → 삭제 허용 */}
-            {deleteCensus && deleteCensus.total === 0 && (
-              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-900">
-                <p className="font-medium">연결된 이력이 없는 미사용/테스트 계정입니다.</p>
-                <p className="mt-1 text-xs text-red-800">
-                  이 직원을 <b>완전히 삭제</b>합니다. 삭제하면 되돌릴 수 없습니다.
-                </p>
-              </div>
-            )}
+            <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-900">
+              <p className="font-medium">이 직원을 목록에서 삭제합니다.</p>
+              <p className="mt-1 text-xs text-red-800">
+                직원 목록·배정 선택 등 모든 화면에서 사라지고, 로그인·접근이 차단됩니다.
+                기존 예약·수납·차트 등 연결된 기록은 그대로 안전하게 보존됩니다(이력 손상 없음).
+              </p>
+              <p className="mt-1 text-xs text-red-800">
+                실제 근무 직원은 삭제 대신 ‘비활성’을 사용하면 언제든 다시 활성화할 수 있습니다.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button
               variant="outline"
               disabled={deleteBusy}
-              onClick={() => {
-                setDeleteTarget(null);
-                setDeleteCensus(null);
-                setDeleteCensusError(null);
-              }}
+              onClick={() => setDeleteTarget(null)}
             >
-              {deleteCensus && deleteCensus.total === 0 ? '취소' : '닫기'}
+              취소
             </Button>
-            {/* 삭제 버튼은 census 완료 && 참조 0건일 때만 활성화 */}
-            {deleteCensus && deleteCensus.total > 0 && (
-              <Button
-                variant="secondary"
-                disabled={deleteBusy}
-                onClick={() => {
-                  const s = deleteTarget;
-                  setDeleteTarget(null);
-                  setDeleteCensus(null);
-                  if (s && s.active) setDeactivateTarget(s); // 활성 직원이면 바로 비활성 확인으로 유도
-                }}
-                className="gap-1"
-              >
-                <PowerOff className="h-4 w-4" />
-                비활성으로 처리
-              </Button>
-            )}
             <Button
               variant="destructive"
-              disabled={deleteBusy || !deleteCensus || deleteCensus.total > 0}
+              disabled={deleteBusy}
               onClick={confirmDelete}
               className="gap-1"
             >
               <Trash2 className="h-4 w-4" />
-              {deleteBusy ? '삭제 중…' : '완전 삭제'}
+              {deleteBusy ? '삭제 중…' : '삭제'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -600,7 +540,8 @@ function CreateStaffDialog({
         .select('id, name, phone')
         .eq('clinic_id', clinicId)
         .eq('role', 'coordinator')
-        .eq('active', true);
+        .eq('active', true)
+        .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제된 코디는 중복판정 제외(재등록 허용)
       if (qErr) {
         toast.error(`중복 확인 실패: ${qErr.message}`);
         return;
@@ -1106,6 +1047,7 @@ function RoomTab({ clinic }: { clinic: Clinic }) {
         .select('*')
         .eq('clinic_id', clinic.id)
         .eq('active', true)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 목록 제외
         .order('name', { ascending: true });
       if (error) throw error;
       return (data ?? []) as Staff[];

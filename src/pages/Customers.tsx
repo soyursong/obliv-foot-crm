@@ -414,6 +414,7 @@ export default function Customers() {
         .eq('clinic_id', clinic.id)
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director'])
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name', { ascending: true });
       if (cancelled || error) return;
       setStaffOptions((data ?? []) as { id: string; name: string }[]);

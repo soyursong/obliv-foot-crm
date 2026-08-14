@@ -211,6 +211,7 @@ export function PaymentDialog({ checkIn, onClose, onPaid, initialMode }: Props) 
         .eq('clinic_id', checkIn.clinic_id)
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director'])
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name')
         .then(({ data }) => { setStaffList((data ?? []) as StaffOption[]); });
       // T-20260524-foot-PKG-LABEL-AMOUNT AC-2: 고객 활성 패키지 조회 (단건+membership 금액 auto-fill)

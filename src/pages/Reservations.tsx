@@ -3616,6 +3616,7 @@ function ReservationEditor({
           .eq('clinic_id', clinicId)
           .eq('active', true)
           .eq('role', 'therapist')
+          .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
           .order('name');
         if (!cancelled) setTherapistList((staffData ?? []) as Staff[]);
       }
