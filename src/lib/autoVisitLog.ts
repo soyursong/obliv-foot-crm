@@ -17,6 +17,10 @@ export type AutoVisitLogSession = {
   session_date: string;
   status: string;
   staff_name: string | null;
+  /** 세션 고유 id — 세션 grain 개별 행의 안정 key·같은 날 다회 차감 tiebreak(optional, 구조적 수용). */
+  id?: string;
+  /** 패키지 내 회차 번호 — 같은 날 다회 차감 시 개별 행 오름차순 정렬 tiebreak(optional). */
+  session_number?: number;
 };
 
 export interface AutoVisitLogRow {
@@ -25,32 +29,37 @@ export interface AutoVisitLogRow {
   date: string;
   /** 패키지내용(함축) — interim: "{총회차}회" */
   packageContent: string;
-  /** 금일 치료 횟수 = "{패키지 총회수(고정)}-{방문 회차 순번}" (예: 24-1, 24-2, 24-3 … 카운트업) */
+  /** 금일 치료 횟수 = "{패키지 총회수(고정)}-{실차감 세션 순번}" (예: 24-1, 24-2, 24-3 … 차감 1건마다 +1) */
   todayCount: string;
-  /** 차감치료사 (당일 차감 수행 담당 치료사, 복수 시 ', ' join) */
+  /** 차감치료사 (해당 차감을 수행한 담당 치료사, null 은 '-') */
   therapists: string;
 }
 
 /**
  * 방문일별 치료내역 자동 집계.
- * 그룹 grain = (session_date, package_id). status==='used'(실차감)만 카운트
- *   (취소/환불 회차는 치료(차감) 아님 — 제외).
+ * 행 grain = package_session 1건(실차감 status==='used' 세션 1개 = 화면 1행).
+ *   ★같은 날 다회 차감 시 그 날짜에 대해 개별 행을 그만큼 전개(collapse 금지).
+ *   취소/환불 회차는 치료(차감) 아님 — 제외.
  * 정렬 = 일자 최신순(DESC). 고객당 1 히스토리 테이블에 방문행 누적(per-visit 폼 재생성 아님).
  *
  * - 패키지내용 = 해당 패키지 총 회수 "{total}회" (interim).
- * - 금일 치료 횟수 = "{패키지 총회수(고정)}-{방문 회차 순번}" (예: 24-1, 24-2, 24-3, 24-4 …).
- *     T-20260814-foot-PENCHART-SESCOUNT-VISITDATE-GRAIN-FIX (김주연 총괄 C0ATE5P6JTH,
- *     ★부모 SESCOUNT-CUMULATIVE-FIX field-soak watch 현실화 = §13.1.A reporter 권위 재정의):
- *     앞 = 패키지 총회수(packages.total_sessions, 방문 무관 고정) / 뒤 = 방문 회차 순번.
- *       · 뒤 숫자 = 방문일 오름차순 running index — grain = 방문일(unique session_date 순번).
- *         그룹 grain 이 (session_date, package_id) 라 그룹=방문 날짜 유일 → 그룹 1개당 1칸(cumUsed += 1).
- *         같은 날 몇 번 차감돼도 그 날은 순번 1칸만 증가(방문 날짜 수, 차감 세션 총수 아님).
- *         하루 1회 차감이면 1·2·3·4… → 24-1, 24-2, 24-3, 24-4 (세션-grain==방문일-grain 케이스 불변).
- *       · policy_superseded: 부모 SESCOUNT-CUMULATIVE-FIX 의 grain(session-grain, cumUsed += g.count)을
- *         본 티켓에서 방문일-grain(cumUsed += 1)으로 재정의. 임승원 #F-5819 08-14(2차감)=12-2(3 아님).
+ * - 금일 치료 횟수 = "{패키지 총회수(고정)}-{실차감 세션 순번}" (예: 24-1, 24-2, 24-3 …).
+ *     T-20260814-foot-PENCHART-SESCOUNT-SAMEDAY-PERSESSION-ROW-FIX (김주연 총괄 U0ATDB587PV,
+ *     ★확정 스펙 = 같은 날 다회 차감을 개별 행으로 전개 · 뒤 숫자 = 실차감 세션 오름차순 running index):
+ *     ★RETRACT 된 방향(재사용 금지):
+ *       · 부모 T-20260811 SESCOUNT-CUMULATIVE-FIX = 방문일 running-index(1행 collapse, 누적 세션 수).
+ *       · T-20260814 VISITDATE/VISITDAY-ORDINAL/GRAIN-FIX 3티켓(전부 status:cancelled) =
+ *         방문일 순번으로 같은 날 다회 차감을 1행 collapse. → 정반대 방향, 값·grain 재사용 금지.
+ *     확정 재정의(본 티켓):
+ *       · 차감 1건 = 화면 1행(같은 날 2회 차감이면 그 날 2개 행).
+ *       · 뒤 숫자 = 실차감 세션(status==='used') 오름차순 running index(세션 grain, 같은 날도 개별 +1).
+ *       · 재현: 임승원 #F-5819(12회권) 08-07=12-1(1행) · 08-14 2회 차감=12-2(행1)·12-3(행2) 2개 행.
+ *       · 앞 = 패키지 총회수(packages.total_sessions, 방문 무관 고정) 불변.
+ *       · 같은 날 다회 차감 정렬 tiebreak = session_number → id(안정 결정적 순서).
+ *       · 취소/환불 세션 제외(status==='used' 만 running index 산입) — 부모 spec 계승.
  *       · READ-ONLY 파생(packages/package_sessions write-back 0, db_change=false).
  *     ★직교축 무접촉: '패키지내용' 보험구분 함축('비N/가M')은 INSURANCE-SPLIT-PHASE2 소관 — 미접촉.
- * - 차감치료사 = 당일 차감 수행 치료사(들), null 은 '-'.
+ * - 차감치료사 = 해당 차감을 수행한 담당 치료사(세션별), null 은 '-'.
  */
 export function buildAutoVisitLogRows(
   packages: AutoVisitLogPackage[],
@@ -58,62 +67,48 @@ export function buildAutoVisitLogRows(
 ): AutoVisitLogRow[] {
   const pkgById = new Map(packages.map((p) => [p.id, p]));
 
-  type Group = { date: string; pkgId: string; count: number; therapists: Set<string> };
-  const groups = new Map<string, Group>();
-
+  // 실차감(used) 세션만 수집 — 각 세션 = 1행(같은 날 다회 차감이면 그 수만큼 개별 행).
+  const byPkg = new Map<string, AutoVisitLogSession[]>();
   for (const s of sessions) {
     if (s.status !== 'used') continue; // 취소/환불 회차 제외
     if (!s.session_date) continue;
-    const key = `${s.session_date}__${s.package_id}`;
-    let g = groups.get(key);
-    if (!g) {
-      g = { date: s.session_date, pkgId: s.package_id, count: 0, therapists: new Set<string>() };
-      groups.set(key, g);
-    }
-    g.count += 1;
-    if (s.staff_name) g.therapists.add(s.staff_name);
+    const arr = byPkg.get(s.package_id);
+    if (arr) arr.push(s);
+    else byPkg.set(s.package_id, [s]);
   }
 
-  // 패키지별 날짜 오름차순 누적 → 각 방문일의 '방문 회차 순번'(unique session_date 순번) 산출.
-  //   grain = (date, package_id) 이므로 패키지 내 그룹은 날짜 유일 → 그룹 1개 = 방문 날짜 1개.
-  //   T-20260814-foot-PENCHART-SESCOUNT-VISITDATE-GRAIN-FIX (김주연 총괄 C0ATE5P6JTH,
-  //   ★부모 SESCOUNT-CUMULATIVE-FIX field-soak watch 현실화 = §13.1.A reporter 권위 재정의):
-  //   뒤 숫자 grain = 세션-grain(누적 실차감 회차 수) → 방문일-grain(unique session_date 순번).
-  //   같은 날 2회 차감이어도 그 날은 순번 1칸만 증가(방문 날짜 수, 차감 세션 총수 아님).
-  //   → running index 를 `cumUsed += g.count`(당일 차감 세션 수) 대신 `cumUsed += 1`(그룹=날짜 1개당 1칸).
-  //   임승원 #F-5819: 08-07(1차감)=12-1, 08-14(2차감)=12-2(3 아님).
-  //   하유희 #F-4696(하루 1회 차감 4방문)=24-1·24-2·24-3·24-4 불변(세션-grain==방문일-grain).
-  const visitIndex = new Map<Group, number>();
-  const byPkg = new Map<string, Group[]>();
-  for (const g of groups.values()) {
-    const arr = byPkg.get(g.pkgId);
-    if (arr) arr.push(g);
-    else byPkg.set(g.pkgId, [g]);
-  }
-  for (const arr of byPkg.values()) {
-    arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 날짜 오름차순
-    let cumUsed = 0;
-    for (const g of arr) {
-      cumUsed += 1; // 방문일-grain: 그룹(=방문 날짜) 1개당 1칸(당일 차감 세션 수 무관)
-      visitIndex.set(g, cumUsed);
-    }
-  }
+  // 패키지별 실차감 세션 오름차순 정렬 → running index(세션 grain, 같은 날도 개별 +1) 부여.
+  //   정렬 = 날짜 오름차순 → 같은 날은 session_number → id 로 안정·결정적 tiebreak.
+  //   T-20260814-...-SESCOUNT-SAMEDAY-PERSESSION-ROW-FIX: 하루 2회 차감이면 12-2·12-3 개별 2행.
+  const sessCmp = (a: AutoVisitLogSession, b: AutoVisitLogSession): number => {
+    if (a.session_date !== b.session_date) return a.session_date < b.session_date ? -1 : 1;
+    const an = a.session_number ?? Number.POSITIVE_INFINITY;
+    const bn = b.session_number ?? Number.POSITIVE_INFINITY;
+    if (an !== bn) return an - bn;
+    const ai = a.id ?? '';
+    const bi = b.id ?? '';
+    return ai < bi ? -1 : ai > bi ? 1 : 0;
+  };
 
   const rows: AutoVisitLogRow[] = [];
-  for (const [key, g] of groups) {
-    const total = pkgById.get(g.pkgId)?.total_sessions ?? null;
-    const idx = visitIndex.get(g) ?? 1; // 방문일-grain: 단일 그룹 defensive fallback = 1칸
-    rows.push({
-      key,
-      date: g.date,
-      packageContent: total != null ? `${total}회` : '-',
-      // 앞 = 총회수(고정) · 뒤 = 방문 회차 순번. 총회수 미상이면 뒤 회차만 표기.
-      todayCount: total != null ? `${total}-${idx}` : `-${idx}`,
-      therapists: g.therapists.size > 0 ? Array.from(g.therapists).join(', ') : '-',
+  for (const [pkgId, arr] of byPkg) {
+    arr.sort(sessCmp);
+    const total = pkgById.get(pkgId)?.total_sessions ?? null;
+    arr.forEach((s, i) => {
+      const idx = i + 1; // 실차감 세션 오름차순 running index (차감 1건마다 +1, 1-based)
+      const key = s.id ? `sess-${s.id}` : `${s.session_date}__${pkgId}__${idx}`;
+      rows.push({
+        key,
+        date: s.session_date,
+        packageContent: total != null ? `${total}회` : '-',
+        // 앞 = 총회수(고정) · 뒤 = 실차감 세션 순번. 총회수 미상이면 뒤 순번만 표기.
+        todayCount: total != null ? `${total}-${idx}` : `-${idx}`,
+        therapists: s.staff_name ?? '-',
+      });
     });
   }
 
-  // 최신순 (session_date DESC)
+  // 최신순 (session_date DESC). 같은 날 다회 차감 행은 stable-sort 로 running index 오름차순 유지.
   rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   return rows;
 }

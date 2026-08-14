@@ -115,28 +115,31 @@ test.describe('시나리오2: 엣지 케이스', () => {
     );
   });
 
-  // ★policy_superseded (T-20260814-foot-PENCHART-SESCOUNT-VISITDATE-GRAIN-FIX):
-  //   본 티켓(SESCOUNT-CUMULATIVE-FIX)의 뒤 숫자 grain 은 session-grain(cumUsed += g.count)였으나,
-  //   field-soak watch 현실화(임승원 #F-5819)로 방문일-grain(unique session_date 순번, cumUsed += 1)로
-  //   재정의됨(§13.1.A reporter 권위 재정의). 하루 2회 차감이 순번을 2칸 건너뛰지 않는다.
-  //   상세 회귀 커버리지 = T-20260814-...-VISITDATE-GRAIN-FIX.spec.ts.
-  test('하루 2회 차감 → 방문일-grain(그 날은 순번 1칸만) [grain 재정의 반영]', () => {
+  // ★T-20260814-...-SESCOUNT-SAMEDAY-PERSESSION-ROW-FIX: 확정 스펙(같은 날 다회 차감=개별 행)으로 재정합.
+  //   RETRACT 된 VISITDATE-ORDINAL 방향(같은 날 1행 collapse, 24-2·24-1)은 폐기.
+  //   확정 = 차감 1건 = 1행, 뒤 숫자 = 실차감 세션 오름차순 running index →
+  //   07-14 2회 차감 = 24-1·24-2(2행), 07-21 1회 = 24-3.
+  test('하루 2회 차감 → 개별 행 전개 + 세션 running index(24-1·24-2·24-3)', () => {
     const rows = buildAutoVisitLogRows(
       [PKG_24],
       [
-        // 07-14 에 2회 차감(방문 날짜 1개 → 순번 1칸)
-        sess({ package_id: 'pkg-24', session_date: '2026-07-14', staff_name: '지민' }),
-        sess({ package_id: 'pkg-24', session_date: '2026-07-14', staff_name: '혜인' }),
-        // 07-21 에 1회(방문 날짜 2)
-        sess({ package_id: 'pkg-24', session_date: '2026-07-21', staff_name: '임별' }),
+        // 07-14 에 2회 차감 → 개별 2행(24-1, 24-2)
+        sess({ package_id: 'pkg-24', session_date: '2026-07-14', session_number: 1, staff_name: '지민' }),
+        sess({ package_id: 'pkg-24', session_date: '2026-07-14', session_number: 2, staff_name: '혜인' }),
+        // 07-21 에 1회 → 24-3
+        sess({ package_id: 'pkg-24', session_date: '2026-07-21', session_number: 3, staff_name: '임별' }),
       ],
     );
-    expect(rows.map((r) => r.date)).toEqual(['2026-07-21', '2026-07-14']);
-    // 07-14: 2회 차감이어도 방문 날짜 순번 1 → '24-1', 07-21: 순번 2 → '24-2'
-    expect(rows.map((r) => r.todayCount)).toEqual(['24-2', '24-1']);
-    // 같은 날 치료사 2명 join(therapists 집계 무접촉)
-    expect(rows[1].therapists).toContain('지민');
-    expect(rows[1].therapists).toContain('혜인');
+    // 차감 3건 = 3행 (같은 날 collapse 금지)
+    expect(rows).toHaveLength(3);
+    // 최신순 DESC: 07-21 먼저, 그다음 07-14(같은 날 내부는 running index 오름차순)
+    expect(rows.map((r) => r.date)).toEqual(['2026-07-21', '2026-07-14', '2026-07-14']);
+    // 뒤 숫자 = 세션 running index: 07-21=24-3, 07-14=24-1·24-2(오름차순)
+    expect(rows.map((r) => r.todayCount)).toEqual(['24-3', '24-1', '24-2']);
+    // 세션별 담당 치료사(행별 단일, join 아님)
+    expect(rows[0].therapists).toBe('임별'); // 24-3 (07-21)
+    expect(rows[1].therapists).toBe('지민'); // 24-1 (07-14 sn1)
+    expect(rows[2].therapists).toBe('혜인'); // 24-2 (07-14 sn2)
   });
 
   test('취소/환불(status!=used) 회차는 회차 순번에서 제외', () => {
