@@ -3002,6 +3002,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //   증번호는 아래 전용 입력 칸에 스태프가 수기 입력([저장])하는 단일 경로만 유지.
   // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모(직접수정·non-history, customers.customer_note)
   const [customerNoteText, setCustomerNoteText] = useState('');
+  // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 로드된 서버 고객메모 스냅샷(정본값).
+  //   통합저장(60초 자동저장·배포감지 flush 포함)이 "이 창에서 실제 편집된 경우"에만 customer_note 를 쓰도록
+  //   diff 판정 기준. 미편집 상태의 stale/빈 customerNoteText 로 기존 메모를 null 덮어쓰던 유실 RC 차단.
+  const customerNoteBaseline = useRef('');
   // T-20260515-foot-REFERRAL-NAME AC-2: 소개자 성함 로컬 상태 (optimistic update)
   const [referralNameText, setReferralNameText] = useState('');
   // T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 출력용 URL 목록
@@ -3295,6 +3299,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: read-fallback(customer_note ?? customer_memo)로
       // 레거시 customer_memo(신설 전 9건) 표시 연속성 보존 → 예약팝업 read와 동일 규칙(양방향 sync 정합).
       setCustomerNoteText((custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '');
+      // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 로드값 = baseline 스냅샷(정본). 이후 미편집 통합저장은 이 값과 diff 0 → customer_note 미포함(무clobber).
+      customerNoteBaseline.current = (custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '';
       setReferralNameText((custData as Customer).referral_name ?? '');
       setPostalCodeText((custData as Customer).postal_code ?? '');
       // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
@@ -3655,6 +3661,12 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             memo: (data as Customer).customer_memo ?? '',
             etcMemo: (data as Customer).memo ?? '',
           }));
+          // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 타 surface(예약팝업·1번차트·고객목록)가 고객메모(customer_note)를 갱신하면
+          //   이 창도 즉시 반영 + baseline 재동기. 단, 이 창에서 편집 중(textarea≠baseline)이면 진행 중 입력 보존(over-write 금지).
+          const prevBase = customerNoteBaseline.current;
+          const freshNote = (data as Customer).customer_note ?? (data as Customer).customer_memo ?? '';
+          customerNoteBaseline.current = freshNote;
+          setCustomerNoteText((prev) => (prev.trim() === prevBase.trim() ? freshNote : prev));
         });
         // 예약 새로고침 — T-20260720-foot-CHART2-RESV-SYNC-BUG:
         //   증상1(취소/일정변경) = 예약관리 처리 후 CUSTOMER_REFRESH 신호 수신 시 status·일정 재조회로 즉시 반영.
@@ -4217,7 +4229,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       patch.referral_name = referralNameText.trim() || null;
       // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 고객메모 개별 [저장] 버튼 제거 → 상단 통합 저장에 편입.
       //   customers.customer_note 현재값 덮어쓰기(non-history). saveCustomerNote와 동일 write — 신규 저장 경로 X.
-      patch.customer_note = customerNoteText.trim() || null;
+      // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: ★유실 RC 차단★ — 고객메모는 "이 창에서 실제 편집됐을 때만" patch 포함.
+      //   기존엔 무조건 patch.customer_note=customerNoteText 를 실어, 사용자가 메모를 안 건드렸어도 (다른 필드로 isDirty=true 시)
+      //   60초 자동저장·배포감지 flush 가 stale/빈 customerNoteText 로 기존 메모를 null 로 덮어썼다("잠시 후 저절로 사라짐").
+      //   또 타 surface(예약팝업 등)가 채운 값을 미편집 통합저장이 clobber → "예약메모↔고객메모 상호 덮어쓰기/빈값 무단삭제".
+      //   diff 판정으로 편집 시에만 write → 미편집 저장은 고객메모 무접촉(무clobber). 의도 편집(빈칸으로 지우기 포함)은 정상 반영.
+      const noteChanged = customerNoteText.trim() !== customerNoteBaseline.current.trim();
+      if (noteChanged) {
+        patch.customer_note = customerNoteText.trim() || null;
+      }
       if (editingPhone) {
         const digits = phoneText.replace(/\D/g, '');
         if (digits.length === 0) { toast.error('번호를 입력해주세요'); return false; }
@@ -4230,7 +4250,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         patch.phone = normalizeToE164(displayPhone) ?? displayPhone;
       }
       if (Object.keys(patch).length > 0) {
-        const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
+        // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: rows-affected 검증(cross_crm_write_rowcheck 표준).
+        //   RLS 스코프 불일치 등으로 0-row 가 반환돼도 error=null 이면 기존 코드는 "성공"으로 오인 → silent write-failure.
+        //   .select('id') 로 실제 영향행을 확인, 0-row 면 실패 처리(고객메모 등 저장이 실제로 안 됐음을 은폐 금지).
+        const { data: updRows, error } = await supabase
+          .from('customers').update(patch).eq('id', customer.id).select('id');
         if (error) {
           console.error('[C21-SAVE-REGRESS] 다른 필드 저장 실패 (address 저장은 계속 진행):', error.message);
           // T-20260713-foot-CUSTINFO-PHONE-EDIT-ERROR: 통합저장에 phone 이 포함됐고 UNIQUE(clinic_id,phone) 중복이면
@@ -4239,8 +4263,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
           toast.error(friendly ?? `저장 실패: ${error.message}`);
           allOk = false; // T-20260609-CHART2-SAVE-CLOSE-BTN: 실패 시 "저장 후 닫기" 미닫힘
           // return 제거 — address 저장 블록은 다른 필드 저장 결과와 독립 (T-20260516-foot-C21-SAVE-REGRESS AC-3)
+        } else if (!updRows || updRows.length === 0) {
+          // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 0-row silent write-failure — 저장 안 됨을 명시 실패 처리(baseline 미갱신).
+          console.error('[CUSTMEMO-PERSIST] customers update 0-row (RLS/스코프 불일치 의심) — 저장 미반영');
+          toast.error('저장이 반영되지 않았습니다. 새로고침 후 다시 시도해주세요.');
+          allOk = false;
         } else {
           setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+          // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 저장 성공 시 baseline = 방금 쓴 값(dirty 해제). 후속 자동저장이 재-diff 0 → 재clobber 없음.
+          if (noteChanged) customerNoteBaseline.current = customerNoteText.trim();
           // T-20260630-foot-CHART2-LABELCENTER-SAVEMERGE-MEMOHIST AC2: 고객메모 통합저장 → 1번차트 쌍방연동(AC-8) ping 보존(구 saveCustomerNote 동작).
           localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
           // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 통합저장 경로에서도 연락처 변경 시 denorm 동기화 → 접수 패널 stale·가드 오탐 해소

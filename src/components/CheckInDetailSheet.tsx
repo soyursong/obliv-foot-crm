@@ -1303,12 +1303,15 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     const base = customerMemo.trim();
     const newValue = base ? `${base}\n${line}` : line;
     setSavingCustomerMemo(true);
-    const { error } = await supabase
+    // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: rows-affected 검증(cross_crm_write_rowcheck) — 0-row silent 실패 은폐 금지.
+    const { data: updRows, error } = await supabase
       .from('customers')
       .update({ customer_note: newValue })
-      .eq('id', customerId);
+      .eq('id', customerId)
+      .select('id');
     setSavingCustomerMemo(false);
     if (error) { toast.error('고객메모 저장 실패'); return; }
+    if (!updRows || updRows.length === 0) { toast.error('고객메모 저장이 반영되지 않았습니다. 새로고침 후 다시 시도해주세요.'); return; }
     setCustomerMemo(newValue);
     toast.success('고객메모 추가됨');
     dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2

@@ -54,6 +54,7 @@ import { PackageTicketReadonlyList, type PackageSessionRow } from '@/components/
 import type { Customer, Package, Reservation, ReservationRegistrar, Staff, VisitType } from '@/lib/types';
 import { VISIT_ROUTE_OPTIONS, visitRouteOptionsFor, resolveVisitRouteDisplay, resolveRegistrarDisplay } from '@/lib/types';
 import { BRIEF_NOTE_CHIPS } from '@/lib/resvSlotAgg';
+import { STORAGE_KEYS } from '@/lib/storageKeys';
 // T-20260706-foot-INTAKE-REVISIT-JUDGE-365: 접수 시점 초진/재진 = 최근 완료방문 365일 recency(서버 KST).
 import { resolveVisitTypeByRecency } from '@/lib/visitRecency';
 
@@ -663,6 +664,33 @@ export function ReservationDetailPopup({
       });
     return () => { cancelled = true; };
   }, [newMode, clinicId]);
+
+  // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: AC-8 쌍방연동 수신부(2번차트·1번차트는 旣구독, 예약팝업만 누락).
+  //   다른 surface(2번차트 통합저장·1번차트 append 등)가 customers.customer_note 를 갱신하면, 이 팝업의
+  //   customerMemo(고객메모) + baseline 을 서버 최신값으로 재동기한다. 미구독 상태에선 팝업이 stale/빈 customerMemo 를
+  //   보유 → [고객메모 저장] 클릭 시 그 stale 빈값으로 방금 저장된 메모를 덮어써 유실("빈값 저장 무단삭제")시키던 clobber 소스 제거.
+  //   진행 중 편집(customerMemo≠baseline)이면 입력 보존(over-write 금지).
+  useEffect(() => {
+    const cid = reservation?.customer_id;
+    if (!cid) return;
+    const handler = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEYS.CUSTOMER_REFRESH || !e.newValue) return;
+      try {
+        const { customerId: changedId } = JSON.parse(e.newValue) as { customerId: string };
+        if (changedId !== cid) return;
+        supabase.from('customers').select('customer_note, customer_memo, memo').eq('id', cid).maybeSingle().then(({ data }) => {
+          if (!data) return;
+          const c = data as { customer_note?: string | null; customer_memo?: string | null; memo?: string | null };
+          const fresh = c.customer_note ?? c.customer_memo ?? c.memo ?? '';
+          const prevBase = customerMemoBaseline.current;
+          customerMemoBaseline.current = fresh;
+          setCustomerMemo((prev) => (prev.trim() === prevBase.trim() ? fresh : prev));
+        });
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [reservation?.customer_id]);
 
   // T-20260624-foot-RESV-REGISTRAR-DROP-ACCOUNT-DEFAULT-EDITABLE (김주연 총괄):
   //   "드롭 선택 박스 유지 / 접속한 계정 기준 기본값 / 수기 변경 허용".
@@ -1317,12 +1345,15 @@ export function ReservationDetailPopup({
     // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: write는 2번차트 1구역과 동일 컬럼
     // customers.customer_note로 일원화(양방향 sync). customer_memo는 3구역 예약메모 히스토리
     // (customer_reservation_memos) seed 원본이므로 미변경·보존(무회귀).
-    const { error } = await supabase
+    // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: rows-affected 검증(cross_crm_write_rowcheck) — 0-row(RLS/스코프) silent 실패 은폐 금지.
+    const { data: updRows, error } = await supabase
       .from('customers')
       .update({ customer_note: customerMemo })
-      .eq('id', reservation.customer_id);
+      .eq('id', reservation.customer_id)
+      .select('id');
     setMemoSaving(false);
     if (error) { toast.error(`고객메모 저장 실패: ${error.message}`); return; }
+    if (!updRows || updRows.length === 0) { toast.error('고객메모 저장이 반영되지 않았습니다. 새로고침 후 다시 시도해주세요.'); return; }
     // T-20260807-foot-FORMSTATE-AUTOREFRESH-WIPE-GUARD: 저장 성공 → baseline 동기화(저장 후 dirty 해제).
     customerMemoBaseline.current = customerMemo;
     toast.success('고객메모 저장됨');
