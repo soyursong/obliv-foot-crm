@@ -115,20 +115,24 @@ test.describe('시나리오2: 엣지 케이스', () => {
     );
   });
 
-  test('하루 2회 차감 → package_sessions running index(그 날까지 누적 회차) 채택', () => {
+  // ★grain 정정(T-20260814-foot-PENCHART-SESCOUNT-VISITDAY-ORDINAL-FIX):
+  //   구 산식(session grain, 누적 실차감 세션 수)에서는 07-14 2세션=24-2, 07-21=24-3 이었으나,
+  //   reporter field-soak 로 '방문일 순번'(당일 차감건수 무관, 날짜당 +1)이 의도임이 확정됨.
+  //   따라서 07-14(2세션)=방문일1=24-1, 07-21=방문일2=24-2 로 정정. 상세 회귀는 T-20260814 spec 참조.
+  test('하루 2회 차감 → 방문일 순번(날짜당 +1, 차감건수 무관) 채택', () => {
     const rows = buildAutoVisitLogRows(
       [PKG_24],
       [
-        // 07-14 에 2회 차감(2회차까지)
+        // 07-14 에 2회 차감 — 방문일 순번은 1 (같은 날 다회여도 +1)
         sess({ package_id: 'pkg-24', session_date: '2026-07-14', staff_name: '지민' }),
         sess({ package_id: 'pkg-24', session_date: '2026-07-14', staff_name: '혜인' }),
-        // 07-21 에 1회(3회차)
+        // 07-21 에 1회 — 방문일 순번 2
         sess({ package_id: 'pkg-24', session_date: '2026-07-21', staff_name: '임별' }),
       ],
     );
     expect(rows.map((r) => r.date)).toEqual(['2026-07-21', '2026-07-14']);
-    // 07-14: 당일까지 누적 2회 → '24-2', 07-21: 누적 3회 → '24-3'
-    expect(rows.map((r) => r.todayCount)).toEqual(['24-3', '24-2']);
+    // 07-14: 방문일 순번 1 → '24-1', 07-21: 방문일 순번 2 → '24-2' (하루 2세션 차감이어도 +1만)
+    expect(rows.map((r) => r.todayCount)).toEqual(['24-2', '24-1']);
     // 같은 날 치료사 2명 join
     expect(rows[1].therapists).toContain('지민');
     expect(rows[1].therapists).toContain('혜인');

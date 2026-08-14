@@ -38,15 +38,16 @@ export interface AutoVisitLogRow {
  * 정렬 = 일자 최신순(DESC). 고객당 1 히스토리 테이블에 방문행 누적(per-visit 폼 재생성 아님).
  *
  * - 패키지내용 = 해당 패키지 총 회수 "{total}회" (interim).
- * - 금일 치료 횟수 = "{패키지 총회수(고정)}-{방문 회차 순번}" (예: 24-1, 24-2, 24-3, 24-4 …).
- *     T-20260811-foot-PENCHART-...-SESCOUNT-CUMULATIVE-FIX (김주연 총괄 C0ATE5P6JTH,
- *     ★reporter 스펙 정정 MSG-20260811-114508-lci1 = §13.1.A reporter 권위 재정의):
- *     구버그 = 뒤 숫자에 '당일 차감건수'(하루 1회면 항상 1)를 써서 전 방문행 '24-1' 고정 표기.
- *     정정 = 앞 = 패키지 총회수(packages.total_sessions, 방문 무관 고정) / 뒤 = 방문 회차 순번.
- *       · 뒤 숫자 = 방문일 오름차순 package_sessions running index(그 날까지 누적 실차감 회차 수).
- *         하루 1회 차감이면 1·2·3·4… 카운트업 → 24-1, 24-2, 24-3, 24-4.
- *       · ★구 planner 해석 '단일 잔여숫자 감소(23·22·21)'는 reporter 정정으로 폐기됨.
- *       · policy_superseded: 부모 VISITLOG-2CHART AC-4('총회수−당일차감')를 본 산식으로 갱신.
+ * - 금일 치료 횟수 = "{패키지 총회수(고정)}-{방문일 순번}" (예: 24-1, 24-2, 24-3, 24-4 …).
+ *     T-20260814-foot-PENCHART-SESCOUNT-VISITDAY-ORDINAL-FIX (부모 SESCOUNT-CUMULATIVE-FIX grain 정정):
+ *     ★grain 확정 = 뒤 숫자 = '방문일 순번'(unique visit_date 순번, 당일 차감건수 무관).
+ *       같은 날 다회 차감이어도 그 날짜는 +1만 → 1번째 방문날=N-1, 2번째=N-2, 3번째=N-3.
+ *     정정 이력:
+ *       · 구 SESCOUNT-CUMULATIVE-FIX = 뒤 숫자에 '누적 실차감 세션 수'(session grain, cumUsed += g.count).
+ *         → 하루 2세션 차감 시 그 날짜가 +2 점프(예 임승원 08-14 = 12-3). reporter 기대값 12-2 와 발산.
+ *       · 정정 = 방문일 순번(visit-day ordinal). 임승원 12회: 08-07(1세션)=12-1 · 08-14(2세션)=12-2.
+ *       · 앞 = 패키지 총회수(packages.total_sessions, 방문 무관 고정) — 유지.
+ *       · policy_superseded: 부모 CUMULATIVE-FIX session-grain 산식을 visit-day ordinal 로 갱신(부모는 supersede 아님·유지).
  *       · READ-ONLY 파생(packages/package_sessions write-back 0, db_change=false).
  *     ★직교축 무접촉: '패키지내용' 보험구분 함축('비N/가M')은 INSURANCE-SPLIT-PHASE2 소관 — 미접촉.
  * - 차감치료사 = 당일 차감 수행 치료사(들), null 은 '-'.
@@ -73,10 +74,15 @@ export function buildAutoVisitLogRows(
     if (s.staff_name) g.therapists.add(s.staff_name);
   }
 
-  // 패키지별 날짜 오름차순 누적 → 각 방문일의 '방문 회차 순번'(그 날까지 누적 실차감 회차 수) 산출.
-  //   grain = (date, package_id) 이므로 패키지 내 그룹은 날짜 유일 → running prefix-sum 으로 정확.
-  //   뒤 숫자 = 당일까지 포함한 누적 차감 회차(하루 1회면 1,2,3,4… 카운트업).
-  //   AC-4(하루 2회 차감) = package_sessions running index 이므로 그 날의 누적값(예 2회차·3회차)을 채택.
+  // 패키지별 날짜 오름차순 → 각 방문일의 '방문일 순번'(unique visit_date 오름차순 running index) 산출.
+  //   ★T-20260814-foot-PENCHART-SESCOUNT-VISITDAY-ORDINAL-FIX (reporter 의도 grain 확정):
+  //     뒤 숫자 = 방문일 순번(차감건수 무관) — 같은 날 다회 차감이어도 그 날짜는 +1만.
+  //     1번째 방문날=N-1, 2번째=N-2, 3번째=N-3 …
+  //   grain = (date, package_id) 이므로 패키지 내 그룹은 날짜 유일 → 그룹당 +1 = distinct-date index.
+  //   ★부모 SESCOUNT-CUMULATIVE-FIX 는 뒤 숫자에 '누적 실차감 세션 수'(cumUsed += g.count, session grain)를
+  //     썼으나, reporter field-soak 로 방문일 순번(visit-day ordinal)이 의도임이 확정되어 정정.
+  //     예) 임승원 12회 08-07(1세션)=12-1 · 08-14(2세션)=12-2 (구 산출 12-3 → 12-2 정정).
+  //   AC-5: 취소/환불 세션(status!=='used')은 이미 위 그룹핑 단계에서 제외되어 순번 계산 대상 아님.
   const visitIndex = new Map<Group, number>();
   const byPkg = new Map<string, Group[]>();
   for (const g of groups.values()) {
@@ -86,10 +92,10 @@ export function buildAutoVisitLogRows(
   }
   for (const arr of byPkg.values()) {
     arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 날짜 오름차순
-    let cumUsed = 0;
+    let visitOrdinal = 0;
     for (const g of arr) {
-      cumUsed += g.count; // 당일 차감분 포함 누적
-      visitIndex.set(g, cumUsed);
+      visitOrdinal += 1; // 방문일당 +1 (당일 차감건수 무관 — distinct visit_date 순번)
+      visitIndex.set(g, visitOrdinal);
     }
   }
 
