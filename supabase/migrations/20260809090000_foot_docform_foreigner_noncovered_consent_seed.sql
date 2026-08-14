@@ -6,8 +6,8 @@
 -- 성격: ADDITIVE only. 스키마 무변경(신규 컬럼/테이블/enum 없음) → 파괴 0. 기존 서류/동의서 무접점.
 -- 자동채움: patient_name(성명)·issue_date(발행일=오늘) — autoBindContext SSOT. 서명=수기(빈칸, field_map 미포함).
 -- 멱등: 동일 (clinic_id, form_key) 존재 시 no-op(WHERE NOT EXISTS). 재실행 안전.
--- 롤백: 20260809100000_..._seed.rollback.sql (scoped DELETE).
--- dry-run: 20260809100000_..._seed.dryrun.sql (무영속 검증).
+-- 롤백: 20260809090000_..._seed.rollback.sql (scoped DELETE).
+-- dry-run: 20260809090000_..._seed.dryrun.sql (무영속 검증).
 
 INSERT INTO form_templates
   (clinic_id, category, form_key, name_ko, template_path, template_format,

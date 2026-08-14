@@ -1,5 +1,5 @@
 -- DRY-RUN (No-Persistence) — T-20260808-foot-FOREIGNER-NONCOVERED-CONSENT-FORM
---   20260809100000_..._seed.sql 의 INSERT 로직을 그대로 실행하되 COMMIT 대신 ROLLBACK.
+--   20260809090000_..._seed.sql 의 INSERT 로직을 그대로 실행하되 COMMIT 대신 ROLLBACK.
 --   would-INSERT ROW_COUNT 를 실제로 계측·검증하되 영속시키지 않는다(migration_dryrun_no_persistence 준수).
 --
 --   ADDITIVE seed 이므로 파괴/UPDATE/DELETE 없음. 멱등(WHERE NOT EXISTS) 검증만 수행.
