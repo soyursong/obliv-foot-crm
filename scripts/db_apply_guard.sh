@@ -122,11 +122,14 @@ APPLY_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 append_evidence() {
   local status="$1"
+  local mig_version="${2:-}"
+  local ledger_registered="${3:-}"
+  local bus_emit="${4:-}"
   mkdir -p "$(dirname "$EVIDENCE_LOG")"
   # C20 계약 필드: go_token_path·go_issued_at·apply_ts·sql_sha256·target_ref·ticket_id
   node -e '
     const fs=require("fs");
-    const [log,ticket,lane,ref,sha,tok,iss,ts,status,dry]=process.argv.slice(1);
+    const [log,ticket,lane,ref,sha,tok,iss,ts,status,dry,mig,ledger,busEmit]=process.argv.slice(1);
     const rec={
       ticket_id:ticket, lane, target_ref:ref,
       sql_sha256:sha,
@@ -135,11 +138,15 @@ append_evidence() {
       apply_ts:ts, status, dry_run: dry==="1",
       guard:"db_apply_guard.sh", schema_version:1
     };
+    if (mig!=="") rec.mig_version = mig==="null"?null:mig;
+    if (ledger!=="") rec.ledger_registered = ledger==="true"?true:ledger==="false"?false:null;
+    if (busEmit!=="") rec.bus_emit = busEmit;
     fs.appendFileSync(log, JSON.stringify(rec)+"\n");
     console.log("[⑥] evidence append →", log);
     console.log(JSON.stringify(rec,null,2));
   ' "$EVIDENCE_LOG" "$TICKET_ID" "$LANE" "$TARGET_REF" "$SQL_SHA256" \
-    "$GO_TOKEN_PATH" "$GO_ISSUED_AT" "$APPLY_TS" "$status" "$DRY_RUN"
+    "$GO_TOKEN_PATH" "$GO_ISSUED_AT" "$APPLY_TS" "$status" "$DRY_RUN" \
+    "$mig_version" "$ledger_registered" "$bus_emit"
 }
 
 # ── ⑤ apply 집행 (유일 chokepoint) ──────────────────────────────────────────
@@ -153,9 +160,69 @@ fi
 echo "[⑤] apply 집행 → npx supabase db query --linked --file $SQL_FILE"
 if npx supabase db query --linked --file "$SQL_FILE"; then
   # ── ⑥ evidence append ──────────────────────────────────────────────────────
-  append_evidence "applied"
-  echo "[DONE] apply 완료 + evidence 기록 (lane=$LANE, ticket=$TICKET_ID)."
-  exit 0
+  if [ "$LANE" = "prod" ]; then
+    # ── EXEC-OBS (T-20260715-meta-DEPLOY-EXEC-BUS-LEDGER-GATE, deploy_flow v3.8 §2-A G6) ──
+    REPO_NAME="$(basename "$REPO_ROOT")"
+    APPLIER="${DEPLOY_EXEC_APPLIER:-${APPLIER:-${USER:-unknown}}}"
+
+    # mig_version: supabase/migrations/ 정식 마이그면 14자리 version prefix, 아니면 null.
+    MIG_VERSION="null"
+    case "$SQL_FILE" in
+      */supabase/migrations/*|supabase/migrations/*)
+        _mig_base="$(basename "$SQL_FILE")"
+        if printf '%s' "$_mig_base" | grep -qE '^[0-9]{14}'; then
+          MIG_VERSION="$(printf '%s' "$_mig_base" | grep -oE '^[0-9]{14}' | head -1)"
+        fi
+        ;;
+    esac
+
+    # ledger post-assert (read-only): 정식 마이그면 schema_migrations 실재 조회 → true/false.
+    #   비-마이그/DML = null. false = WARN(차단 아님 · 판정측 차단 = supervisor deploy-precheck C34).
+    LEDGER_REGISTERED="null"
+    if [ "$MIG_VERSION" != "null" ]; then
+      _ledger_sql="$(mktemp)"
+      printf "SELECT 'LEDGER_HIT:' || version AS r FROM supabase_migrations.schema_migrations WHERE version = '%s';\n" "$MIG_VERSION" > "$_ledger_sql"
+      set +e
+      _ledger_out="$(npx supabase db query --linked --file "$_ledger_sql" 2>&1)"
+      _ledger_rc=$?
+      set -e
+      rm -f "$_ledger_sql"
+      if [ "$_ledger_rc" -eq 0 ] && printf '%s' "$_ledger_out" | grep -q "LEDGER_HIT:${MIG_VERSION}"; then
+        LEDGER_REGISTERED="true"
+        echo "[⑥] ledger post-assert: schema_migrations version=$MIG_VERSION 등재 확인 → ledger_registered=true"
+      else
+        LEDGER_REGISTERED="false"
+        echo "[⑥][WARN] ledger post-assert: schema_migrations 에 version=$MIG_VERSION row 부재(또는 read 실패 rc=$_ledger_rc) → ledger_registered=false." >&2
+        echo "[⑥][WARN]   정식 CLI 등재 경로: 'npx supabase migration up' 또는 실적용 확인 후 'npx supabase migration repair --status applied $MIG_VERSION'. ★ schema_migrations 수기 INSERT 절대 금지(oob_ddl). 차단 아님 — 판정 차단은 supervisor C34." >&2
+      fi
+    fi
+
+    # bus deploy_exec_done auto-append (prod+applied 한정 · SSOT 절대경로).
+    #   append 실패는 apply(기수행) 오염 금지 → WARN + repo-local evidence bus_emit="failed".
+    BUS_EMIT="failed"
+    set +e
+    _bus_out="$(node "$GATE_LIB" emit-deploy-exec-done \
+      --ticket "$TICKET_ID" --repo "$REPO_NAME" --target-ref "$TARGET_REF" \
+      --sql-sha256 "$SQL_SHA256" --mig-version "$MIG_VERSION" --ledger "$LEDGER_REGISTERED" \
+      --applier "$APPLIER" --lane "$LANE" --status applied --from db_apply_guard 2>&1)"
+    _bus_rc=$?
+    set -e
+    if [ "$_bus_rc" -eq 0 ]; then
+      BUS_EMIT="ok"
+      echo "[⑥] bus deploy_exec_done append → $_bus_out"
+    else
+      echo "[⑥][WARN] bus deploy_exec_done append 실패(rc=$_bus_rc) — apply 는 기수행. repo-local evidence 에 bus_emit=failed 기록. 상세: $_bus_out" >&2
+    fi
+
+    append_evidence "applied" "$MIG_VERSION" "$LEDGER_REGISTERED" "$BUS_EMIT"
+    echo "[DONE] apply 완료 + evidence 기록 (lane=$LANE, ticket=$TICKET_ID, bus_emit=$BUS_EMIT)."
+    exit 0
+  else
+    # dev lane apply — bus 발화 금지(prod 한정). repo-local evidence 현행 유지.
+    append_evidence "applied"
+    echo "[DONE] apply 완료 + evidence 기록 (lane=$LANE, ticket=$TICKET_ID)."
+    exit 0
+  fi
 else
   APPLY_RC=$?
   append_evidence "apply_failed"
