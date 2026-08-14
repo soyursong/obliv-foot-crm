@@ -33,7 +33,7 @@ import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, 
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
-import { canViewRrn, isStaffUnlockRole, canRequestOpinionDoc, canCancelOpinionRequest } from '@/lib/permissions';
+import { canViewRrn, isStaffUnlockRole, canRequestOpinionDoc, canCancelOpinionRequest, canDeletePackageSession } from '@/lib/permissions';
 import { deriveGenderFromRRN } from '@/lib/rrn'; // T-20260630-foot-RRN-GENDER-DIGIT-UNMASK (B안): 성별 파생 표시전용
 import { formatAmount, formatPhone, formatPhoneInput, parseAmount, seoulISODate, todaySeoulISODate, chartNoBadge, chartNoDisplay, formatDateDots, formatDateTimeDots } from '@/lib/format';
 // T-20260524-foot-PKG-LABEL-AMOUNT AC-3: METHOD_KO 추가 import
@@ -4542,7 +4542,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 삭제 (잔여횟수 자동 재계산)
   // T-20260612-foot-USAGEHIST-DELETE-RESTORE: HARD DELETE → SOFT DELETE.
   //   실수 삭제 원복 가능하도록 물리삭제 대신 status='deleted' 표식(soft_delete_package_session RPC).
-  //   권한은 RPC 내부 is_admin_or_manager() 게이트 = 기존 DELETE 권한과 동일(확대 없음).
+  //   권한: T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST 로 RPC 내부 게이트가 admin/manager/director
+  //     + coordinator/therapist(canDeletePackageSession 5역할)로 확대됨(동반 마이그). FE 게이트와 1:1 정합.
   //   잔여횟수는 status='used'만 집계하므로 자동 +1.
   const deleteSession = async (session: PackageSession) => {
     if (!window.confirm(`${session.session_number}회 시술내역을 삭제하시겠습니까?\n삭제하면 잔여 횟수가 +1 됩니다. (삭제 후 '복원'으로 되돌릴 수 있습니다)`)) return;
@@ -7973,7 +7974,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                     {/* T-20260707-foot-PKGTICKET-USAGE-EDIT-THERAPIST-RLS (김주연 총괄 repro): 치료사 계정 2번차트 회차 '수정' 버튼 미노출("수정 권한 없음") — 관리자는 되는데 치료사만 막힘.
                                         ★diagnose-first(실측): prod RLS package_sessions_write[FOR ALL, self-match 없음]가 therapist UPDATE 이미 허용 → RLS gap 아님(추가 마이그 no-op). package_sessions 에 clinic_id 컬럼 없어 DA canonical 술어 적용 불가. RC = FE 게이트.
                                         이 수정 버튼 게이트만 admin/manager/director/consultant 하드코딩 = FE/RLS 불일치(latent lock-out-in-disguise). T-20260702 형제 버튼(구입티켓추가)과 동일 패턴으로 isStaffUnlockRole 정합.
-                                        ※ 삭제 버튼은 아래 admin/manager/director 유지 = is_admin_or_manager DELETE 정책 정합(불변). */}
+                                        ※ 삭제 버튼: T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST 로 coordinator/therapist ADDITIVE 확대(canDeletePackageSession). RPC soft_delete_package_session 내부 게이트와 동반 확대(동반 landing). */}
                                     {isStaffUnlockRole(profile?.role) && (
                                       <span className="ml-auto hidden group-hover:flex items-center gap-0.5 shrink-0">
                                         {/* 수정 버튼 — STAFF_UNLOCK_ROLES(consultant/coordinator/therapist 포함, package_sessions_write RLS 허용) */}
@@ -7992,8 +7993,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                         >
                                           <Pencil className="h-3 w-3" />
                                         </button>
-                                        {/* 삭제 버튼 — admin/manager/director만 (is_admin_or_manager() DELETE 정책, consultant 불허) */}
-                                        {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director') && (
+                                        {/* 삭제 버튼 — T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST: admin/manager/director + coordinator/therapist (canDeletePackageSession SSOT = RPC 내부 게이트 5역할 정합). consultant 불허(요청 스코프). */}
+                                        {canDeletePackageSession(profile?.role) && (
                                           <button
                                             type="button"
                                             onClick={() => deleteSession(s)}
@@ -8010,8 +8011,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                               </div>
                             </div>
                           )}
-                          {/* T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제된 시술내역 — 복원(원복) */}
-                          {deletedSessions.length > 0 && (profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'director') && (
+                          {/* T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제된 시술내역 — 복원(원복)
+                              T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST: 복원 게이트도 canDeletePackageSession(5역할)로 정합.
+                              soft-delete 의 안전 역연산(AC3 "실수 삭제 원복 가능" 원장 doctrine) — 삭제 확대 시 복원도 동반 확대(코디/치료사가 자기 실수 삭제 원복 가능). restore_package_session RPC 게이트와 1:1. */}
+                          {deletedSessions.length > 0 && canDeletePackageSession(profile?.role) && (
                             <div className="border-t border-dashed border-red-200 bg-red-50/40 px-3 pb-2 pt-1.5">
                               <div className="text-[10px] text-red-400 mb-1 font-medium">삭제된 시술내역 ({deletedSessions.length}건) — 복원 가능</div>
                               <div className="space-y-0.5">
