@@ -58,6 +58,8 @@ import {
   anticipatedSession,
   sessionCheckpointLabel,
   compareProgressTargets,
+  chunkIds,
+  IN_CHUNK_SIZE,
 } from '@/lib/progressSixMultiple';
 
 // T-20260701-foot-PROGRESS-LIST-ICON-LABEL-CLEAN: 경과분석 리스트 '회차' 표시 정리(FE-only, DDL0).
@@ -69,6 +71,12 @@ function formatSessionLabel(label: string | null | undefined): string {
   // 숫자 추출 실패: 비어있지 않은 원본은 그대로, 빈/공백/누락은 '경과분석' 폴백.
   return label && label.trim() ? label : '경과분석';
 }
+
+// T-20260814-foot-TREATTABLE-PROGRESSANALYSIS-ERROR: '조회 중 오류가 발생했습니다. Bad Request'(PostgREST 400) 근본원인 수정.
+//   T-20260812 나열기준 변경으로 '활성 패키지 전건'을 조회 → package_sessions/customers/reservations 의 .in(...) 목록이
+//   운영 누적(수백~수천 pkg/customer)에서 URL 길이 한계를 초과 → 400 Bad Request(list 쿼리 throw → 섹션 전체 오류표시).
+//   해결: .in() 을 chunkIds(IN_CHUNK_SIZE) 단위로 분할 조회(선례 visitRecency.ts CHUNK=200 동일).
+//   신규 스키마/트리거/write 0(db_change=false).
 
 interface ProgressTargetRow {
   rowKey: string;                     // 고유 행 키(=packageId). 예약 grain 아님(선택·다운로드용 식별자).
@@ -109,16 +117,19 @@ function useProgressTargets(clinicId: string | null | undefined) {
       if (packages.length === 0) return [];
 
       // 2) 사용 세션 수(status='used') per package — Reservations.tsx anticipatedSession 카운트 로직과 동일.
+      //   T-20260814: pkgIds 다건(활성 패키지 전건) → .in() URL 한계 회피 위해 CHUNK 분할 조회.
       const pkgIds = packages.map((p) => p.id);
       const usedMap = new Map<string, number>();
-      const { data: sessData, error: sessErr } = await supabase
-        .from('package_sessions')
-        .select('package_id')
-        .in('package_id', pkgIds)
-        .eq('status', 'used');
-      if (sessErr) throw sessErr;
-      for (const s of (sessData ?? []) as Array<{ package_id: string }>) {
-        usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+      for (const slice of chunkIds(pkgIds, IN_CHUNK_SIZE)) {
+        const { data: sessData, error: sessErr } = await supabase
+          .from('package_sessions')
+          .select('package_id')
+          .in('package_id', slice)
+          .eq('status', 'used');
+        if (sessErr) throw sessErr;
+        for (const s of (sessData ?? []) as Array<{ package_id: string }>) {
+          usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
+        }
       }
 
       // 3) 6배수 도래 필터: anticipatedSession = used + 1, anticipatedSession % 6 == 0 (tier 0 배제).
@@ -140,12 +151,15 @@ function useProgressTargets(clinicId: string | null | undefined) {
       const customerIds = [...new Set(targets.map((t) => t.customerId))];
       const custMap = new Map<string, { name: string; chart: string | null; phone: string | null }>();
       try {
-        const { data: custs } = await supabase
-          .from('customers')
-          .select('id, name, chart_number, phone')
-          .in('id', customerIds);
-        for (const c of (custs ?? []) as Array<{ id: string; name: string | null; chart_number: string | null; phone: string | null }>) {
-          if (c.id) custMap.set(c.id, { name: c.name ?? '—', chart: c.chart_number ?? null, phone: c.phone ?? null });
+        // T-20260814: customerIds 다건 → .in() CHUNK 분할(URL 한계 회피).
+        for (const slice of chunkIds(customerIds, IN_CHUNK_SIZE)) {
+          const { data: custs } = await supabase
+            .from('customers')
+            .select('id, name, chart_number, phone')
+            .in('id', slice);
+          for (const c of (custs ?? []) as Array<{ id: string; name: string | null; chart_number: string | null; phone: string | null }>) {
+            if (c.id) custMap.set(c.id, { name: c.name ?? '—', chart: c.chart_number ?? null, phone: c.phone ?? null });
+          }
         }
       } catch {
         // 보강 실패 — 무시(회차/식별자는 정상 표시).
@@ -155,23 +169,36 @@ function useProgressTargets(clinicId: string | null | undefined) {
       const today = seoulISODate(new Date());
       const nextResvMap = new Map<string, { date: string; time: string | null; registrar: string | null }>();
       try {
-        const { data: resvs } = await supabase
-          .from('reservations')
-          .select('customer_id, reservation_date, reservation_time, registrar_name, status')
-          .eq('clinic_id', clinicId)
-          .in('customer_id', customerIds)
-          .gte('reservation_date', today)
-          .neq('status', 'cancelled')
-          .order('reservation_date', { ascending: true })
-          .order('reservation_time', { ascending: true });
-        for (const rv of (resvs ?? []) as Array<Record<string, unknown>>) {
-          const cid = rv['customer_id'] ? String(rv['customer_id']) : '';
-          if (!cid || nextResvMap.has(cid)) continue; // 정렬상 첫 매칭 = 최이른.
-          nextResvMap.set(cid, {
-            date: String(rv['reservation_date'] ?? ''),
-            time: rv['reservation_time'] ? String(rv['reservation_time']).slice(0, 5) : null,
-            registrar: rv['registrar_name'] ? String(rv['registrar_name']) : null,
-          });
+        // T-20260814: customerIds 다건 → .in() CHUNK 분할(URL 한계 회피). 청크별 정렬은 유지되며,
+        //   맵은 (customer당) 첫 매칭만 기록하되 더 이른 날짜/시간이 오면 갱신 → 청크 경계 무관 최이른 보장.
+        for (const slice of chunkIds(customerIds, IN_CHUNK_SIZE)) {
+          const { data: resvs } = await supabase
+            .from('reservations')
+            .select('customer_id, reservation_date, reservation_time, registrar_name, status')
+            .eq('clinic_id', clinicId)
+            .in('customer_id', slice)
+            .gte('reservation_date', today)
+            .neq('status', 'cancelled')
+            .order('reservation_date', { ascending: true })
+            .order('reservation_time', { ascending: true });
+          for (const rv of (resvs ?? []) as Array<Record<string, unknown>>) {
+            const cid = rv['customer_id'] ? String(rv['customer_id']) : '';
+            if (!cid) continue;
+            const d = String(rv['reservation_date'] ?? '');
+            const t = rv['reservation_time'] ? String(rv['reservation_time']).slice(0, 5) : null;
+            const prev = nextResvMap.get(cid);
+            // 최이른(날짜→시간) 비교. 미기록이거나 더 이른 예약이면 갱신(청크 경계 넘어도 안전).
+            if (prev) {
+              const prevKey = `${prev.date} ${prev.time ?? ''}`;
+              const curKey = `${d} ${t ?? ''}`;
+              if (curKey >= prevKey) continue;
+            }
+            nextResvMap.set(cid, {
+              date: d,
+              time: t,
+              registrar: rv['registrar_name'] ? String(rv['registrar_name']) : null,
+            });
+          }
         }
       } catch {
         // 다음 예약 보강 실패 — 미예약 취급(목록은 유지).

@@ -10,6 +10,21 @@ export function anticipatedSession(usedSessions: number): number {
   return usedSessions + 1;
 }
 
+// T-20260814-foot-TREATTABLE-PROGRESSANALYSIS-ERROR: 경과분석 리스트 조회 400 Bad Request 근본원인.
+//   나열기준 변경(T-20260812)으로 '활성 패키지 전건'을 조회 → package_sessions/customers/reservations 의
+//   .in(...) 목록이 운영 누적(수백~수천 id)에서 PostgREST GET URL 길이 한계를 초과 → 400 Bad Request.
+//   해결: .in() 목록을 IN_CHUNK_SIZE 단위로 분할 조회(선례 visitRecency.ts CHUNK=200 동일).
+/** PostgREST .in() URL 길이 한계 회피용 청크 크기. */
+export const IN_CHUNK_SIZE = 200;
+
+/** 배열을 size 단위 청크로 분할(순서 보존·전체 원소 무손실). size<=0 이면 통짜 1청크 폴백. */
+export function chunkIds<T>(arr: T[], size: number = IN_CHUNK_SIZE): T[][] {
+  if (size <= 0) return arr.length ? [arr.slice()] : [];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 /**
  * 6배수 도래 대상 여부.
  *   - 활성 패키지 tier(total_sessions>0)만 대상 — 체험/Re:Born tier 0 배제(기존 진행판정 가드 동일).
