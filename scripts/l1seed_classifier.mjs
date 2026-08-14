@@ -82,25 +82,62 @@ const DDL_TOKEN_RE =
   /\b(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b|\bCOMMENT\s+ON\b|\b(POLICY|TRIGGER|FUNCTION|PROCEDURE|SEQUENCE|MATERIALIZED)\b/i;
 // P2 파괴/변경 write (up.sql). 1건 검출 = 비적격.
 const MUTATE_TOKEN_RE = /\b(UPDATE|DELETE|MERGE|UPSERT|REPLACE)\b/i;
+// L0 dollar-quote 마커 — strip 前 raw 검출. 존재 자체가 비적격 신호(reference-seed 는
+//   $$…$$/DO body 불요). dollar-quoted PL/pgSQL body 는 임의 DELETE/UPDATE/DDL/GRANT 실행
+//   가능한데 stripSqlNoise 가 이를 문자열-리터럴처럼 통째 제거 → P1/P2 lexical 스캔이
+//   파괴문을 못 봄(fail-open H1/H1b RC). 따라서 raw 단계에서 fail-closed. (FIX 2026-08-15)
+const DOLLAR_QUOTE_RE = /\$[A-Za-z0-9_]*\$/;
 
 // ── SQL 노이즈 제거 : 주석·문자열 리터럴 제거 후 구조만 lexical 스캔 ──────────────
 //   문자열 리터럴 내부의 우연한 키워드/괄호/콤마가 술어 오판을 내지 않도록 선(先)제거.
 //   DDL 은 문자열 안에 있어도 실행 안 되므로 제거는 안전(정오탐 감소).
+//   ★ dollar-quoted 영역은 여기서 " '' " 로 치환(문 분할 시 내부 세미콜론 오분할 방지)하되,
+//     dollar-quote 는 실행 가능한 PL/pgSQL body 를 담을 수 있어 "치환=은닉"이 곧 fail-open
+//     벡터다(H1). 따라서 dollar-quote 의 존재 자체는 classify 의 L0 체크가 raw 단계에서
+//     fail-closed 로 걸러낸다 — 이 strip 은 어디까지나 그 뒤 lexical 스캔의 견고성을 위한 것.
 export function stripSqlNoise(sql) {
   let s = String(sql);
   s = s.replace(/\/\*[\s\S]*?\*\//g, ' ');            // 블록 주석
   s = s.replace(/--[^\n]*/g, ' ');                     // 라인 주석
-  s = s.replace(/\$([A-Za-z0-9_]*)\$[\s\S]*?\$\1\$/g, " '' "); // dollar-quoted
+  s = s.replace(/\$([A-Za-z0-9_]*)\$[\s\S]*?\$\1\$/g, " '' "); // dollar-quoted (L0 가 별도 거부)
   s = s.replace(/'(?:''|[^'])*'/g, " '' ");            // 단일인용 문자열 → 빈 리터럴
   return s;
 }
 
-// ── VALUES 리터럴 튜플 count (P4 실측) ───────────────────────────────────────
+// ── 문(statement) allowlist (P2) : 세미콜론 분할 후 각 문이 VALUES-INSERT 형태인지 ──
+//   기존 P2 는 denylist(UPDATE/DELETE/MERGE 부재)여서, 파괴문이 DO 블록/dollar body 안에
+//   은닉되면(H1/H1b) 스캔 대상에서 사라져 통과했다. allowlist 로 전환 = "문 전량이
+//   VALUES-INSERT(±ON CONFLICT DO NOTHING)임"을 positive 로 요구. INSERT 외 문(DO·SELECT·
+//   SET·CALL·UPDATE·DELETE …) 1건이라도 존재하면 fail-closed. (FIX 2026-08-15)
+export function statementShapeAllowlist(code) {
+  const stmts = String(code).split(';').map((s) => s.trim()).filter((s) => s.length > 0);
+  if (stmts.length === 0) return { ok: false, reason: '실행 문 없음(fail-closed).' };
+  for (const st of stmts) {
+    if (!/^INSERT\s+INTO\b/i.test(st)) {
+      const head = st.slice(0, 28).replace(/\s+/g, ' ');
+      return { ok: false, reason: `비-INSERT 문 검출: "${head}…" (allowlist: VALUES-INSERT 문만 허용 · DO/SELECT/SET/CALL 등 = 비적격).` };
+    }
+    if (!/\bVALUES\b/i.test(st)) {
+      return { ok: false, reason: 'INSERT 에 VALUES 절 부재 (INSERT...SELECT/파이프형 = 비적격).' };
+    }
+    if (/\bSELECT\b/i.test(st)) {
+      return { ok: false, reason: 'INSERT(VALUES) 문에 SELECT 검출 (서브쿼리/INSERT...SELECT = 비적격).' };
+    }
+  }
+  return { ok: true, stmtCount: stmts.length };
+}
+
+// ── VALUES 리터럴 튜플 count + 리터럴-원소 강제 (P4 실측) ─────────────────────
 //   noise-strip 된 코드에서 각 VALUES 뒤 top-level 괄호 그룹 수를 센다.
 //   INSERT...SELECT/파이프형 = VALUES 부재 → {ok:false} → P4 기계판정 불가 → 비적격.
+//   ★ literalOnly : 튜플 내부(depth≥1)에 중첩 괄호가 나타나면 = 스칼라 서브쿼리
+//     `(SELECT …)` 또는 함수호출 `now()` 등 비-리터럴 원소 → false. DA P4 "VALUES
+//     **리터럴** 튜플" 취지·phi_write=false 전제를 defeat 하는 fail-open(H2) 차단.
+//     리터럴/캐스트(''::text)/상수/NULL 은 중첩 괄호가 없으므로 통과. (FIX 2026-08-15)
 export function countValuesTuples(code) {
   const re = /\bVALUES\b/gi;
   let total = 0;
+  let literalOnly = true;
   let m;
   while ((m = re.exec(code)) !== null) {
     let depth = 0;
@@ -110,20 +147,21 @@ export function countValuesTuples(code) {
       const ch = code[i];
       if (ch === '(') {
         if (depth === 0) { counted++; sawTuple = true; }
+        else { literalOnly = false; }                // 튜플 내부 중첩 괄호 = 서브쿼리/함수호출
         depth++;
       } else if (ch === ')') {
         depth--;
-        if (depth < 0) return { count: 0, ok: false }; // 괄호 불균형 → 판정불가
+        if (depth < 0) return { count: 0, ok: false, literalOnly: false }; // 괄호 불균형 → 판정불가
       } else if (depth === 0) {
         if (ch === ';') break;                       // 문 종료
         if (sawTuple && /[A-Za-z]/.test(ch)) break;  // 튜플 뒤 top-level 단어 = ON/RETURNING → 목록 끝
       }
     }
-    if (!sawTuple) return { count: 0, ok: false };
+    if (!sawTuple) return { count: 0, ok: false, literalOnly };
     total += counted;
   }
-  if (total === 0) return { count: 0, ok: false };
-  return { count: total, ok: true };
+  if (total === 0) return { count: 0, ok: false, literalOnly };
+  return { count: total, ok: true, literalOnly };
 }
 
 // ── INSERT 문 target 테이블 추출 (under-enumeration 가드) ─────────────────────
@@ -238,6 +276,17 @@ export function classifyLowCeremonyGoToken(o) {
     ? ok('env.phi_write', 'phi_write:false 명시')
     : fail('env.phi_write', `phi_write 는 boolean false 명시 필수(positive-gate) — got ${JSON.stringify(manifest.phi_write)}`);
 
+  // ── L0 : dollar-quote 부재 (strip 前 raw 검출 — DO/dollar body 파괴문 은닉 차단) ──
+  //   reference-seed 는 $$…$$/DO body 를 쓰지 않는다. dollar-quote 존재 = PL/pgSQL body
+  //   (임의 DELETE/UPDATE/DDL/GRANT) 은닉 벡터 → fail-closed (H1). P2 allowlist·strip 앞단.
+  {
+    if (DOLLAR_QUOTE_RE.test(migrationSql)) {
+      fail('L0.dollar_quote', 'dollar-quoted 영역($tag$…$tag$) 검출 — reference-seed 불요·PL/pgSQL body(DELETE/UPDATE/DDL) 은닉 벡터 = 비적격.');
+    } else {
+      ok('L0.dollar_quote', 'dollar-quote 부재');
+    }
+  }
+
   // ── lexical 준비 ─────────────────────────────────────────────────────────────
   const code = stripSqlNoise(migrationSql);
   const targetTables = insertTargetTables(code);
@@ -251,25 +300,20 @@ export function classifyLowCeremonyGoToken(o) {
     else ok('P1.ddl_count', 'DDL 0');
   }
 
-  // ── P2 : write_ops == ["INSERT"] (ADDITIVE, INSERT...SELECT 배제) ───────────
+  // ── P2 : write_ops == ["INSERT"] + 문 allowlist (VALUES-INSERT 만) ──────────
+  //   denylist(파괴토큰 부재) → allowlist(문 전량이 VALUES-INSERT) 전환 (H1/H1b/H2 fail-open
+  //   봉합). DO 블록·서브쿼리·SELECT·SET 등 INSERT 외 문 1건이라도 존재 = fail-closed.
   {
     const wo = manifest.write_ops;
     const declOk = Array.isArray(wo) && wo.length === 1 && wo[0] === 'INSERT';
     const mutHit = MUTATE_TOKEN_RE.exec(code);
     const hasInsert = /\bINSERT\s+INTO\b/i.test(code);
-    // INSERT...SELECT / VALUES-없는 INSERT 검출 (N_bound 부속 하드규칙)
-    let insertSelect = false;
-    for (const seg of code.split(/\bINSERT\s+INTO\b/i).slice(1)) {
-      const vIdx = seg.search(/\bVALUES\b/i);
-      const sIdx = seg.search(/\bSELECT\b/i);
-      if (vIdx === -1) { insertSelect = true; break; }          // VALUES 없는 INSERT
-      if (sIdx !== -1 && sIdx < vIdx) { insertSelect = true; break; } // VALUES 앞 SELECT
-    }
+    const shape = statementShapeAllowlist(code);
     if (!declOk) fail('P2.write_ops', `declared write_ops != ["INSERT"] (got ${JSON.stringify(wo)})`);
     else if (!hasInsert) fail('P2.write_ops', 'SQL 에 INSERT INTO 문 부재.');
+    else if (!shape.ok) fail('P2.write_ops', shape.reason);
     else if (mutHit) fail('P2.write_ops', `파괴/변경 write 검출: "${mutHit[0]}" (UPDATE/DELETE/MERGE = 비적격).`);
-    else if (insertSelect) fail('P2.write_ops', 'INSERT...SELECT(계산형/파이프형) 검출 = 무조건 비적격(VALUES 리터럴 INSERT 만 적격).');
-    else ok('P2.write_ops', 'INSERT(VALUES) only');
+    else ok('P2.write_ops', `INSERT(VALUES) allowlist (${shape.stmtCount} stmt)`);
   }
 
   // ── P3 : data_class ∈ enum AND phi_write=false ─────────────────────────────
@@ -290,6 +334,7 @@ export function classifyLowCeremonyGoToken(o) {
     } else {
       const t = countValuesTuples(code);
       if (!t.ok) fail('P4.row_count', 'VALUES 튜플 count 불능(INSERT...SELECT/파이프형/괄호불균형 의심) → 기계판정 불가.');
+      else if (!t.literalOnly) fail('P4.row_count', 'VALUES 튜플에 비-리터럴 원소(스칼라 서브쿼리/함수호출·중첩 괄호) 검출 = 비적격(리터럴/캐스트/상수만 허용).');
       else if (t.count !== rc) fail('P4.row_count', `declared row_count=${rc} ≠ VALUES 실측=${t.count}.`);
       else ok('P4.row_count', `${t.count} ≤ ${L1SEED_N_BOUND}`);
     }
@@ -544,6 +589,43 @@ function runSelftest() {
   cases.push(['data_class 미지', run(withM({ data_class: 'clinical' }), upEligible), false, 'P3']);
   // 15) phi_write true
   cases.push(['phi_write true', run(withM({ phi_write: true }), upEligible), false, 'env.phi_write']);
+
+  // ── FIX 2026-08-15 회귀고정: fail-open H1/H1b/H2 봉합 + H3 정탐 유지 ──────────
+  const refM = (over) => withM({
+    touched_columns: ['ref_presets.code', 'ref_presets.label'],
+    touched_tables: ['ref_presets'], row_count: 2, ...over,
+  });
+  // 16) H1 : 익명 DO 블록/dollar-quoted body 파괴문(DELETE) 은닉 → L0 fail-closed
+  {
+    const s =
+      "INSERT INTO ref_presets (code,label) VALUES ('P1','a'),('P2','b') ON CONFLICT (code) DO NOTHING;\n" +
+      "DO $$ BEGIN DELETE FROM patients; END $$;\n";
+    cases.push(['H1 DO/dollar-quote 파괴문 은닉', run(refM({ sql_sha256: sha(s) }), s), false, 'L0']);
+  }
+  // 17) H1b : single-quote DO body(UPDATE) 은닉 → P2 allowlist(비-INSERT 문) fail-closed
+  {
+    const s =
+      "INSERT INTO ref_presets (code,label) VALUES ('P1','a'),('P2','b') ON CONFLICT (code) DO NOTHING;\n" +
+      "DO 'BEGIN UPDATE payments SET x=0; END';\n";
+    cases.push(['H1b DO single-quote body', run(refM({ sql_sha256: sha(s) }), s), false, 'P2']);
+  }
+  // 18) H2 : VALUES 튜플 내 스칼라 서브쿼리(PHI read) → P2 SELECT 검출 fail-closed
+  {
+    const s = "INSERT INTO ref_presets (code,label) VALUES ('P1',(SELECT name FROM customers LIMIT 1)),('P2','b') ON CONFLICT (code) DO NOTHING;\n";
+    cases.push(['H2 tuple 스칼라 서브쿼리', run(refM({ sql_sha256: sha(s) }), s), false, 'P2']);
+  }
+  // 18b) H2 변형 : 튜플 내 함수호출(SELECT 없음) → P4 literal-only 가드 fail-closed
+  {
+    const s = "INSERT INTO ref_presets (code,label) VALUES ('P1',now()),('P2','b') ON CONFLICT (code) DO NOTHING;\n";
+    cases.push(['H2b tuple 함수호출', run(refM({ sql_sha256: sha(s) }), s), false, 'P4']);
+  }
+  // 19) H3 : 둘째 INSERT INTO payments (정탐 대조군 — 여전히 비적격 유지)
+  {
+    const s =
+      "INSERT INTO ref_presets (code,label) VALUES ('P1','a'),('P2','b') ON CONFLICT (code) DO NOTHING;\n" +
+      "INSERT INTO payments (amount) VALUES (100) ON CONFLICT DO NOTHING;\n";
+    cases.push(['H3 둘째 INSERT payments', run(refM({ sql_sha256: sha(s) }), s), false, null]);
+  }
 
   let pass = true;
   console.log('── l1seed_classifier selftest ──');
