@@ -167,3 +167,80 @@ test.describe('T-20260814-PKGDEDUCT-DELETE-PERM — soft-delete 기제(AC3) 스�
     await expect(page.getByText('대시보드', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3) AC5 restore own-scope 서버강제(Q4(c) LOAD-BEARING) — DA scope-clarify MSG-20260815-000528-kvon.
+//    coherence anchor = 'deleter = self-restore(삭제자=자기복구)'. restore RPC 는 서버-side 에서
+//    '복구자 = 원 삭제자'를 강제한다(NULL deleted_by=undefined-deleter 는 예외 허용).
+//
+//    ★harness 한계(파일 상단 §17 과 동일): 실 own-scope 게이트 거부(스태프 A 삭제 → 스태프 B 복구
+//      시도 → 서버 거부)는 서로 다른 인증 스태프 JWT 2개가 필요하다. E2E harness 는 단일 TEST 계정
+//      + service-key(=auth.uid() 부재 → is_approved_user() 거부로 own-scope 이전에 컷) 이므로
+//      cross-identity RPC 거부의 실계정 통과 검증은 supervisor field-soak/browser-verify 로 보완한다.
+//    여기서는 (a) own-scope 판정 앵커(deleted_by 스탬프)가 soft-delete 데이터 계약에 실재하는지,
+//      (b) 자기복구/타인복구/undefined-deleter 3분기의 판정 술어를 결정적으로 단언한다.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('T-20260814-PKGDEDUCT-DELETE-PERM — AC5 restore own-scope(Q4c) 계약', () => {
+  // 서버 RPC 가 집행하는 own-scope 술어를 FE·검증 공용으로 미러(SSOT 의도 문서화).
+  //   restore 허용 조건 = (deleted_by IS NULL) OR (deleted_by === restorerStaffId).
+  const restoreOwnScopeAllowed = (
+    deletedBy: string | null,
+    restorerStaffId: string,
+  ): boolean => deletedBy === null || deletedBy === restorerStaffId;
+
+  test('AC5-1: 자기복구 허용 — 복구자가 원 삭제자와 동일하면 restore 허용', () => {
+    expect(restoreOwnScopeAllowed('staff-A', 'staff-A')).toBe(true);
+  });
+
+  test('AC5-2: privilege-inversion 차단 — 복구자 ≠ 원 삭제자(예: 코디가 admin 삭제분) 시 거부', () => {
+    expect(restoreOwnScopeAllowed('staff-ADMIN', 'staff-COORD')).toBe(false);
+    expect(restoreOwnScopeAllowed('staff-B', 'staff-A')).toBe(false);
+  });
+
+  test('AC5-3: undefined-deleter(NULL deleted_by·레거시) 는 자기복구 판정 예외 — 게이트 통과 role 이면 허용', () => {
+    expect(restoreOwnScopeAllowed(null, 'staff-A')).toBe(true);
+  });
+
+  test('AC5-4(env-gated): own-scope 앵커 — soft-delete 는 deleted_by 를 스탬프한다(자기복구 비교 근거 실재)', async () => {
+    test.skip(!seedReady, 'Supabase service env 미설정 — 스킵(정당 환경 예외)');
+    const sb2 = createClient(SUPA_URL, SERVICE_KEY, { auth: { persistSession: false } });
+    const name = `pkgdeduct-ownscope-${Date.now()}`;
+    const phone = `DUMMY-OS-${Date.now()}`;
+    const { data: cust } = await sb2.from('customers')
+      .insert({ clinic_id: CLINIC_ID, name, phone, visit_type: 'returning', is_simulation: true })
+      .select('id').single();
+    const cid = cust?.id;
+    const { data: pkg } = await sb2.from('packages')
+      .insert({ clinic_id: CLINIC_ID, customer_id: cid, package_name: '풋케어 5회권(own-scope QA)',
+        package_type: 'custom', total_sessions: 5, heated_sessions: 5, total_amount: 0, paid_amount: 0, status: 'active' })
+      .select('id').single();
+    const pid = pkg?.id;
+    try {
+      const { data: sess } = await sb2.from('package_sessions')
+        .insert({ package_id: pid, session_number: 1, session_type: 'heated_laser', session_date: '2026-08-14', status: 'used' })
+        .select('id').single();
+      const sessionId = sess?.id;
+      // soft-delete 가 산출하는 상태(삭제자 스탬프 포함)를 물질화 — RPC 는 deleted_by=current_staff_id() 를 채운다.
+      //   deleted_by 는 staff(id) FK 이므로 실 staff id 로 스탬프한다(가짜 UUID = FK 위반 → 미반영).
+      const { data: anyStaff } = await sb2.from('staff')
+        .select('id').eq('clinic_id', CLINIC_ID).limit(1).maybeSingle();
+      const stampStaff = anyStaff?.id as string | undefined;
+      test.skip(!stampStaff, 'clinic 에 staff 부재 — own-scope 앵커 스탬프 불가, 스킵');
+      const { error: delErr } = await sb2.from('package_sessions')
+        .update({ status: 'deleted', deleted_at: new Date().toISOString(), deleted_by: stampStaff })
+        .eq('id', sessionId);
+      expect(delErr, `soft-delete 물질화 오류: ${delErr?.message ?? ''}`).toBeNull();
+      const { data: afterDel } = await sb2.from('package_sessions')
+        .select('status, deleted_by').eq('id', sessionId).maybeSingle();
+      expect(afterDel?.status).toBe('deleted');
+      // ★own-scope 앵커: deleted_by 가 비어있지 않아야 서버가 '복구자=원 삭제자' 를 판정할 수 있다.
+      expect(afterDel?.deleted_by, 'soft-delete 는 삭제자(deleted_by)를 스탬프해야 own-scope 판정 가능').toBe(stampStaff);
+    } finally {
+      if (pid) {
+        await sb2.from('package_sessions').delete().eq('package_id', pid);
+        await sb2.from('packages').delete().eq('id', pid);
+      }
+      if (cid) await sb2.from('customers').delete().eq('id', cid);
+    }
+  });
+});

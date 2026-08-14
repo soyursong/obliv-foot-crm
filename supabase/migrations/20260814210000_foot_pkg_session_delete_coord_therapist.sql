@@ -21,6 +21,14 @@
 --
 -- ★AC4 회귀 0: admin/manager/director 는 5역할 집합에 그대로 포함(확대만·축소 0).
 --
+-- ★AC5 restore own-scope 서버강제(DA scope-clarify MSG-20260815-000528-kvon, l8bz RESOLVED · Q4(c) LOAD-BEARING):
+--   삭제 role-set 확대의 승인 근거 = coherence 'deleter = self-restore(삭제자=자기복구)'. 이 대칭성이
+--   restore-widening 의 constitutive 구성요소이므로, restore RPC 는 서버-side 에서 '복구자 = 원 삭제자'
+--   를 강제한다(복구자가 자신이 삭제한 회차만 restore). own-scope 부재 시 coordinator/therapist 가
+--   admin(혹은 타 스태프) 삭제분까지 복구 = 승인초과(privilege-inversion) → 명시적 차단.
+--   load-bearing 통제 = 이 서버-side 게이트(FE 는 defense-in-depth belt·비-load-bearing).
+--   NULL deleted_by(삭제자 미기록·레거시 행) = undefined-deleter → 게이트 통과 role 이면 복원 허용(무해).
+--
 -- ★FE union = RPC union: src/lib/permissions.ts canDeletePackageSession(PKG_SESSION_DELETE_ROLES)
 --   = {admin,manager,director,coordinator,therapist} 와 1:1 정합. ★동반 landing★(FE 단독 배포 금지).
 --
@@ -52,18 +60,39 @@ BEGIN
 END;
 $$;
 
--- 2) restore RPC — 동일 5역할 게이트(soft-delete 의 안전 역연산, AC3 "실수 삭제 원복 가능" doctrine).
+-- 2) restore RPC — 동일 5역할 게이트 + ★AC5 own-scope 서버강제(복구자=원 삭제자).
+--    soft-delete 의 안전 역연산(AC3 "실수 삭제 원복 가능" doctrine)이되, 대칭 restore-widening 의
+--    constitutive 조건인 'deleter = self-restore' 를 서버에서 집행한다.
 CREATE OR REPLACE FUNCTION restore_package_session(p_session_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  v_status     TEXT;
+  v_deleted_by UUID;
 BEGIN
   IF NOT (is_approved_user()
           AND current_user_role() IN ('admin','manager','director','coordinator','therapist')) THEN
     RAISE EXCEPTION 'permission denied: admin/manager/director/coordinator/therapist only';
   END IF;
+
+  -- own-scope 판정 근거(대상 회차의 현재 상태·삭제자) 조회.
+  SELECT status, deleted_by INTO v_status, v_deleted_by
+    FROM package_sessions
+   WHERE id = p_session_id;
+  IF NOT FOUND OR v_status <> 'deleted' THEN
+    RAISE EXCEPTION 'session not found or not in deleted state';
+  END IF;
+
+  -- ★AC5 own-scope 서버강제(Q4(c) LOAD-BEARING): 복구자는 자신이 삭제한 회차만 복원 가능.
+  --   coordinator/therapist 가 admin(혹은 타 스태프) 삭제분을 복구하는 privilege-inversion 차단.
+  --   NULL deleted_by(undefined-deleter·레거시) 는 자기복구 판정 대상 아님 → 게이트 통과 role 이면 허용.
+  IF v_deleted_by IS NOT NULL AND v_deleted_by <> current_staff_id() THEN
+    RAISE EXCEPTION 'restore denied: own-scope only (restorer must be the original deleter)';
+  END IF;
+
   UPDATE package_sessions
      SET status = 'used', deleted_at = NULL, deleted_by = NULL
    WHERE id = p_session_id AND status = 'deleted';
@@ -82,7 +111,7 @@ GRANT EXECUTE ON FUNCTION restore_package_session(UUID) TO authenticated;
 COMMENT ON FUNCTION soft_delete_package_session(UUID) IS
   'T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST: 회차 soft-delete(status=deleted). admin/manager/director/coordinator/therapist. FE canDeletePackageSession 정합.';
 COMMENT ON FUNCTION restore_package_session(UUID) IS
-  'T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST: 회차 복원(status=used). admin/manager/director/coordinator/therapist.';
+  'T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST: 회차 복원(status=used). admin/manager/director/coordinator/therapist + AC5 own-scope 서버강제(복구자=원 삭제자·privilege-inversion 차단).';
 
 COMMIT;
 
@@ -90,5 +119,6 @@ COMMIT;
 -- SELECT pg_get_functiondef('soft_delete_package_session(uuid)'::regprocedure);
 -- SELECT pg_get_functiondef('restore_package_session(uuid)'::regprocedure);
 --   기대: 두 함수 게이트 = is_approved_user() AND current_user_role() IN (admin,manager,director,coordinator,therapist)
+--   기대(restore 추가): own-scope 술어 'v_deleted_by IS NOT NULL AND v_deleted_by <> current_staff_id()' → RAISE(restore denied).
 -- SELECT pg_get_functiondef('is_admin_or_manager()'::regprocedure);
 --   기대: 무변경(admin/manager/director) — 전역 헬퍼 불침범(AC2 누수 0 확인).

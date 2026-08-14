@@ -4558,7 +4558,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const restoreSession = async (session: PackageSession) => {
     if (!window.confirm(`${session.session_number}회 시술내역을 복원하시겠습니까?\n복원하면 잔여 횟수가 -1 됩니다.`)) return;
     const { error } = await supabase.rpc('restore_package_session', { p_session_id: session.id });
-    if (error) { toast.error(`복원 실패: ${error.message}`); return; }
+    if (error) {
+      // T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST AC5(own-scope, defense-in-depth):
+      //   서버가 '복구자=원 삭제자'를 강제(load-bearing). 자신이 삭제하지 않은 회차 복원 시도는 서버에서
+      //   거부되며, 그 영문 예외 메시지 대신 현장 친화 안내로 치환한다(비-load-bearing belt).
+      const ownScope = /own-scope/i.test(error.message ?? '');
+      toast.error(ownScope
+        ? '본인이 삭제한 회차만 복원할 수 있습니다. 다른 담당자가 삭제한 내역은 삭제한 담당자 본인이 복원해 주세요.'
+        : `복원 실패: ${error.message}`);
+      return;
+    }
     toast.success('시술내역이 복원되었습니다. (잔여횟수 -1)');
     await refreshPackageData(packages);
   };
