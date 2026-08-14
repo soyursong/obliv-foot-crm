@@ -28,6 +28,7 @@ import {
 import { ko } from 'date-fns/locale';
 import {
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -192,6 +193,9 @@ export default function Handover() {
   const [formMemo, setFormMemo] = useState('');
   const [formItems, setFormItems] = useState<DraftChecklistItem[]>([]);
   const [newItemLabel, setNewItemLabel] = useState('');
+  // T-20260814-foot-HANDOVER-CHECKLIST-ITEM-EDIT: 항목 in-place 편집 상태
+  const [editItemIdx, setEditItemIdx] = useState<number | null>(null);
+  const [editItemLabel, setEditItemLabel] = useState('');
   const [saving, setSaving] = useState(false);
 
   // ── 조회 범위 계산 (뷰별) ─────────────────────────────────────────────────
@@ -295,6 +299,8 @@ export default function Handover() {
     setFormMemo('');
     setFormItems([]);
     setNewItemLabel('');
+    setEditItemIdx(null);
+    setEditItemLabel('');
     setDialogOpen(true);
   };
 
@@ -311,6 +317,8 @@ export default function Handover() {
       })),
     );
     setNewItemLabel('');
+    setEditItemIdx(null);
+    setEditItemLabel('');
     setDialogOpen(true);
   };
 
@@ -325,6 +333,11 @@ export default function Handover() {
   };
 
   const removeDraftItem = (idx: number) => {
+    // 편집 중이던 항목이 삭제되면 편집 모드 정리(인덱스 어긋남 방지)
+    if (editItemIdx === idx) {
+      setEditItemIdx(null);
+      setEditItemLabel('');
+    }
     setFormItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, sort_order: i })));
   };
 
@@ -332,9 +345,40 @@ export default function Handover() {
     setFormItems((prev) => prev.map((it, i) => (i === idx ? { ...it, is_checked: !it.is_checked } : it)));
   };
 
+  // T-20260814-foot-HANDOVER-CHECKLIST-ITEM-EDIT: 체크리스트 항목 in-place 내용 수정.
+  // 리포터(박민석 코디) 확정 = X 삭제버튼 옆 연필로 항목 텍스트 즉석 편집.
+  const startEditItem = (idx: number) => {
+    setEditItemIdx(idx);
+    setEditItemLabel(formItems[idx]?.label ?? '');
+  };
+
+  const cancelEditItem = () => {
+    setEditItemIdx(null);
+    setEditItemLabel('');
+  };
+
+  const commitEditItem = () => {
+    if (editItemIdx === null) return;
+    const label = editItemLabel.trim();
+    // 빈 값으로 저장 시도 = 편집 취소(항목 원문 보존). 삭제는 X 버튼으로.
+    if (!label) {
+      cancelEditItem();
+      return;
+    }
+    setFormItems((prev) => prev.map((it, i) => (i === editItemIdx ? { ...it, label } : it)));
+    setEditItemIdx(null);
+    setEditItemLabel('');
+  };
+
   const handleSave = async () => {
     const memo = formMemo.trim();
-    const items = formItems.filter((it) => it.label.trim());
+    // T-20260814-foot-HANDOVER-CHECKLIST-ITEM-EDIT: 항목 편집 중 확정 없이 '저장'을 누른 경우,
+    // 미확정 편집값을 최종 반영(빈 값이면 원문 유지). 저장 write-path는 '전체 교체' 그대로.
+    const effectiveItems =
+      editItemIdx !== null && editItemLabel.trim()
+        ? formItems.map((it, i) => (i === editItemIdx ? { ...it, label: editItemLabel.trim() } : it))
+        : formItems;
+    const items = effectiveItems.filter((it) => it.label.trim());
     // AC-3/AC-4: 메모만 / 체크리스트만 / 둘 다 허용 — 단, 완전 빈 인수인계는 막음
     if (!memo && items.length === 0) {
       toast.error('메모 또는 체크리스트 항목을 1개 이상 입력해주세요');
@@ -854,22 +898,80 @@ export default function Handover() {
                         onChange={() => toggleDraftItem(idx)}
                         className="h-4 w-4 accent-gray-600"
                       />
-                      <span className={`flex-1 text-sm ${it.is_checked ? 'text-muted-foreground line-through' : ''}`}>
-                        {it.label}
-                      </span>
-                      {/* T-20260814-foot-HANDOVER-CHECKLIST-ITEM-DELETE: 갤탭(터치) 환경에서
-                          기존 p-0.5·14px 아이콘(≈18px 탭 타겟)은 손가락 터치가 빗나가 "삭제 안 됨"으로
-                          인지됨(데스크톱 정밀클릭 E2E는 통과·현장 touch 미스). 풋 '큰 버튼' 원칙대로
-                          40px 탭 타겟으로 확대(로직 동일·removeDraftItem 무변). */}
-                      <button
-                        type="button"
-                        onClick={() => removeDraftItem(idx)}
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 active:bg-red-100"
-                        aria-label="항목 삭제"
-                        data-testid="handover-form-item-delete"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
+                      {editItemIdx === idx ? (
+                        /* T-20260814-foot-HANDOVER-CHECKLIST-ITEM-EDIT: 항목 내용 in-place 편집 모드.
+                           Enter=저장 / Esc=취소. 확인(체크) 버튼도 저장. */
+                        <Input
+                          value={editItemLabel}
+                          autoFocus
+                          onChange={(e) => setEditItemLabel(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              commitEditItem();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              cancelEditItem();
+                            }
+                          }}
+                          className="h-9 flex-1 text-sm"
+                          data-testid="handover-form-item-edit-input"
+                        />
+                      ) : (
+                        <span className={`flex-1 text-sm ${it.is_checked ? 'text-muted-foreground line-through' : ''}`}>
+                          {it.label}
+                        </span>
+                      )}
+                      {/* T-20260814-foot-HANDOVER-CHECKLIST-ITEM-EDIT: X 삭제버튼 옆 편집(연필) 컨트롤.
+                          편집 중에는 저장(체크)·취소(X)로 전환. 모든 컨트롤 탭 타겟 40px(h-10 w-10)
+                          — 풋=갤탭/터치 환경(DELETE 티켓 RC 교훈). */}
+                      {editItemIdx === idx ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={commitEditItem}
+                            className="flex h-10 min-h-[40px] w-10 min-w-[40px] shrink-0 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100"
+                            aria-label="항목 저장"
+                            data-testid="handover-form-item-edit-save"
+                          >
+                            <Check className="h-5 w-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditItem}
+                            className="flex h-10 min-h-[40px] w-10 min-w-[40px] shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted active:bg-muted/70"
+                            aria-label="편집 취소"
+                            data-testid="handover-form-item-edit-cancel"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startEditItem(idx)}
+                            className="flex h-10 min-h-[40px] w-10 min-w-[40px] shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-teal-50 hover:text-teal-600 active:bg-teal-100"
+                            aria-label="항목 수정"
+                            data-testid="handover-form-item-edit"
+                          >
+                            <Pencil className="h-5 w-5" />
+                          </button>
+                          {/* T-20260814-foot-HANDOVER-CHECKLIST-ITEM-DELETE: 갤탭(터치) 환경에서
+                              기존 p-0.5·14px 아이콘(≈18px 탭 타겟)은 손가락 터치가 빗나가 "삭제 안 됨"으로
+                              인지됨(데스크톱 정밀클릭 E2E는 통과·현장 touch 미스). 풋 '큰 버튼' 원칙대로
+                              40px 탭 타겟으로 확대(로직 동일·removeDraftItem 무변). */}
+                          <button
+                            type="button"
+                            onClick={() => removeDraftItem(idx)}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 active:bg-red-100"
+                            aria-label="항목 삭제"
+                            data-testid="handover-form-item-delete"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
