@@ -35,7 +35,24 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 // ── 환경 변수 ─────────────────────────────────────────────────────
 const SUPABASE_URL             = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const INTERNAL_CRON_SECRET     = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
+// ── T-20260814-foot-SENDNOTIF-CRON-SENDLEG-SILENT-STALL — 크론 시크릿 dual-accept (accept-set) ──
+// RC(실측 2026-08-14): pg_cron wrapper(notify_reminders_batch / notify_retry_failed)는
+//   `X-Internal-Cron = COALESCE(GUC app.cron_secret[NULL], vault internal_cron_secret[=NEW])` 를 송신하는데,
+//   본 EF 는 primary INTERNAL_CRON_SECRET(=OLD) 단일값만 대조 → 매 크론 POST 가 401 → logNotification 도달 前
+//   반환 → pending row 무진행(recipient_phone/body_rendered/error_code 전부 NULL = silent no-op). = T-20260810
+//   VAULT rotation 이 mid-window(vault=NEW / EF primary=OLD / *_NEXT=NEW)로 방치됐고, 종전 "dual-accept" 는
+//   env-only no-op(어떤 EF 도 _NEXT 를 코드에서 read 안 함)이었던 것이 근본.
+// 봉합: primary + _NEXT 를 모두 읽어 accept-set 을 구성하고, 크론 시크릿이 둘 중 하나와 일치하면 수용한다.
+//   → 현재 caller 의 NEW(=_NEXT)를 즉시 수용 → 실 send 재개. revoke 이후(primary=NEW, _NEXT clear)에도 무결.
+//   시크릿 write/vault 접촉 0 (env 이름 read 만) → secret 재취급 아님(supervisor secret lane 무저촉).
+const INTERNAL_CRON_SECRET      = Deno.env.get("INTERNAL_CRON_SECRET") ?? "";
+const INTERNAL_CRON_SECRET_NEXT = Deno.env.get("INTERNAL_CRON_SECRET_NEXT") ?? "";
+// 빈 문자열 제외(미설정 env 로 인한 우회 차단) — 유효 시크릿만 accept-set 에 편입.
+const CRON_ACCEPT_SET: string[] = [INTERNAL_CRON_SECRET, INTERNAL_CRON_SECRET_NEXT].filter((s) => s !== "");
+// 크론 시크릿 판정: accept-set 에 하나라도 유효값이 있고, presented 값이 그 집합에 포함되면 true.
+function isAcceptedCronSecret(presented: string): boolean {
+  return CRON_ACCEPT_SET.length > 0 && presented !== "" && CRON_ACCEPT_SET.includes(presented);
+}
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -481,7 +498,9 @@ Deno.serve(async (req: Request) => {
 
   // ── Auth 결정 ─────────────────────────────────────────────────
   const isServiceRole = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
-  const isCronCall    = INTERNAL_CRON_SECRET !== "" && cronSecret === INTERNAL_CRON_SECRET;
+  // T-20260814-…-SILENT-STALL: 단일 primary 대조 → dual-accept(primary + _NEXT) accept-set 대조로 전환.
+  //   rotation mid-window(caller=NEW=_NEXT, EF primary=OLD)에서도 크론 POST 를 정상 수용 → 실 send 재개.
+  const isCronCall    = isAcceptedCronSecret(cronSecret);
   const isAdminAction = Boolean(bodyJson._action);
 
   // admin UI 액션은 user JWT도 허용 (role 검증)
@@ -504,7 +523,21 @@ Deno.serve(async (req: Request) => {
       });
     }
   } else if (!isServiceRole && !isCronCall) {
-    console.warn("[send-notification] Unauthorized call");
+    // ── T-20260814-…-SILENT-STALL AC-4: silent no-op 재발 차단(에러 스탬프) ──
+    // 크론 헤더가 실제로 실려 왔는데 accept-set 과 불일치면 = rotation drift 로 인한 크론 실발송 정체.
+    //   종전엔 이 401 이 무징후로 pending row 를 방치(edge_logs 오라클도 by-design keepwarm 401 과 구분 불가)
+    //   → 무음 stall. 이제 CRON-SECRET-MISMATCH 태그 error 로 격상해 즉시 관측 가능(edge_logs raw grep 키).
+    //   plaintext 미기록: presented/기대값의 길이·개수만 남긴다(시크릿 유출 0).
+    if (cronSecret !== "") {
+      console.error(
+        `[send-notification][CRON-SECRET-MISMATCH] X-Internal-Cron presented but NOT in dual-accept set ` +
+        `(primary+_NEXT). VAULT rotation drift 의심 → 크론 실발송 silent stall(pending 무진행). ` +
+        `presented_len=${cronSecret.length} accept_set_size=${CRON_ACCEPT_SET.length}. ` +
+        `조치: EF env INTERNAL_CRON_SECRET / _NEXT ↔ vault internal_cron_secret 정합 재확인(T-20260810 lane).`
+      );
+    } else {
+      console.warn("[send-notification] Unauthorized call");
+    }
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
