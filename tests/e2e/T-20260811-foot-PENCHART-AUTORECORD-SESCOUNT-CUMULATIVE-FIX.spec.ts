@@ -115,21 +115,26 @@ test.describe('시나리오2: 엣지 케이스', () => {
     );
   });
 
-  test('하루 2회 차감 → package_sessions running index(그 날까지 누적 회차) 채택', () => {
+  // ★policy_superseded (T-20260814-foot-PENCHART-SESCOUNT-VISITDATE-GRAIN-FIX):
+  //   본 티켓(SESCOUNT-CUMULATIVE-FIX)의 뒤 숫자 grain 은 session-grain(cumUsed += g.count)였으나,
+  //   field-soak watch 현실화(임승원 #F-5819)로 방문일-grain(unique session_date 순번, cumUsed += 1)로
+  //   재정의됨(§13.1.A reporter 권위 재정의). 하루 2회 차감이 순번을 2칸 건너뛰지 않는다.
+  //   상세 회귀 커버리지 = T-20260814-...-VISITDATE-GRAIN-FIX.spec.ts.
+  test('하루 2회 차감 → 방문일-grain(그 날은 순번 1칸만) [grain 재정의 반영]', () => {
     const rows = buildAutoVisitLogRows(
       [PKG_24],
       [
-        // 07-14 에 2회 차감(2회차까지)
+        // 07-14 에 2회 차감(방문 날짜 1개 → 순번 1칸)
         sess({ package_id: 'pkg-24', session_date: '2026-07-14', staff_name: '지민' }),
         sess({ package_id: 'pkg-24', session_date: '2026-07-14', staff_name: '혜인' }),
-        // 07-21 에 1회(3회차)
+        // 07-21 에 1회(방문 날짜 2)
         sess({ package_id: 'pkg-24', session_date: '2026-07-21', staff_name: '임별' }),
       ],
     );
     expect(rows.map((r) => r.date)).toEqual(['2026-07-21', '2026-07-14']);
-    // 07-14: 당일까지 누적 2회 → '24-2', 07-21: 누적 3회 → '24-3'
-    expect(rows.map((r) => r.todayCount)).toEqual(['24-3', '24-2']);
-    // 같은 날 치료사 2명 join
+    // 07-14: 2회 차감이어도 방문 날짜 순번 1 → '24-1', 07-21: 순번 2 → '24-2'
+    expect(rows.map((r) => r.todayCount)).toEqual(['24-2', '24-1']);
+    // 같은 날 치료사 2명 join(therapists 집계 무접촉)
     expect(rows[1].therapists).toContain('지민');
     expect(rows[1].therapists).toContain('혜인');
   });
