@@ -394,7 +394,18 @@ export default function Handover() {
           return;
         }
         // 체크리스트 전체 교체 (단순·정확): 기존 삭제 후 재삽입
-        await supabase.from('handover_checklist_items').delete().eq('handover_id', editingId);
+        // T-20260814-foot-HANDOVER-CHECKLIST-ITEM-DELETE: 기존엔 delete 결과를 무시 →
+        // RLS 등으로 삭제 실패 시 재삽입만 되어 항목 중복/삭제 미반영이 silent 통과했음.
+        // error 검증으로 실패를 표면화(silent write-failure 방어).
+        const { error: delErr } = await supabase
+          .from('handover_checklist_items')
+          .delete()
+          .eq('handover_id', editingId);
+        if (delErr) {
+          toast.error('체크리스트 갱신 실패: ' + delErr.message);
+          await fetchNotes();
+          return;
+        }
         if (items.length > 0) {
           const { error: ciErr } = await supabase.from('handover_checklist_items').insert(
             items.map((it, i) => ({
@@ -846,12 +857,18 @@ export default function Handover() {
                       <span className={`flex-1 text-sm ${it.is_checked ? 'text-muted-foreground line-through' : ''}`}>
                         {it.label}
                       </span>
+                      {/* T-20260814-foot-HANDOVER-CHECKLIST-ITEM-DELETE: 갤탭(터치) 환경에서
+                          기존 p-0.5·14px 아이콘(≈18px 탭 타겟)은 손가락 터치가 빗나가 "삭제 안 됨"으로
+                          인지됨(데스크톱 정밀클릭 E2E는 통과·현장 touch 미스). 풋 '큰 버튼' 원칙대로
+                          40px 탭 타겟으로 확대(로직 동일·removeDraftItem 무변). */}
                       <button
                         type="button"
                         onClick={() => removeDraftItem(idx)}
-                        className="rounded p-0.5 text-muted-foreground hover:text-red-600"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 active:bg-red-100"
+                        aria-label="항목 삭제"
+                        data-testid="handover-form-item-delete"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="h-5 w-5" />
                       </button>
                     </li>
                   ))}
