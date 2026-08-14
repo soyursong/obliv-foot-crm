@@ -48,6 +48,7 @@ import { toast } from '@/lib/toast';
 // T-20260708-foot-CUSTINFO-PHONE-EDIT-PANEL-NOSYNC: 연락처 저장 후 denorm(check_ins/reservations.customer_phone) 동기화 + 접수 패널 same-tab refetch
 import { normalizeToE164, phoneSaveErrorMessage } from '@/lib/phone';
 import { requestRefresh } from '@/lib/dashboardRefreshBus';
+import { confirmStaffChange } from '@/lib/staffChangeConfirm'; // T-20260814-foot-STAFFCHANGE-CONFIRM-POPUP: 담당자 변경 확인 공통 가드(shared home)
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, Reservation, VisitType } from '@/lib/types';
 // T-20260806-foot-RX-PERSIST-FORWARDFIX: 처방전 발행 이력 canonical SSOT = form_submissions(처방전). 발행 이력 축 투영 헬퍼.
 import { mapRxIssuanceRows, RX_ISSUANCE_FORM_KEY, type RxIssuanceRow, type RawFormSubmissionRow } from '@/lib/rxIssuanceHistory';
@@ -2778,13 +2779,6 @@ const DWELL_STATUS_TO_ROOM_TYPE: Record<string, string> = {
 // logged_at ≈ entered_at. INSERT 순서 오차를 흡수하는 시간창 허용오차(±90초).
 const DWELL_ROOM_MATCH_TOL_MS = 90 * 1000;
 
-// T-20260814-foot-STAFFCHANGE-CONFIRM-POPUP: 담당자 재지정(이미 지정된 값 → 다른 값) 확인 문구.
-//   원안(김주연 총괄) — money-attribution 문장 포함. 배포순서 의존: 자매 T-20260724 스냅샷(Branch A) prod 반영 이후에만
-//   'money-attribution' 문장이 사실과 일치(그 前 현행은 과거 매출까지 재귀속되어 오도). deploy_coordination 참조.
-//   조기 배포가 불가피하면 아래를 완화판('담당자를 정말 변경하시겠습니까?')으로 교체 후 스냅샷 라이브 시 원안 복원.
-const STAFFCHANGE_CONFIRM_MSG =
-  '담당자를 정말 변경하시겠습니까?\n이후 매출은 신규 담당자 앞으로 귀속됩니다.';
-
 // 체류시간(초) → "1시간 23분" / "12분 5초" / "45초" 한글 포맷 (천단위·Asia/Seoul UX 일관)
 function formatDwell(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -3842,23 +3836,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //     · 최초지정(빈값 '' → 실장) = 변경 아님 → 팝업 없음(엣지: 그대로 저장).
   //     · 동일값 재선택 = 변경 아님 → 팝업 없음.
   //   동작: [확인] = 변경 진행 / [취소] = 기존 담당자 유지(저장·state 무접점 → controlled select 원복).
-  //   ★공통 가드: 2번차트 담당자 변경 모든 진입경로(정보구역 select·상담탭 select)가 이 헬퍼를 공유 — 중복구현 금지.
-  //   ★deploy_coordination(배포순서): 문구의 'money-attribution' 문장('이후 매출은 신규 담당자 앞으로 귀속됩니다')은
-  //     자매 T-20260724-foot-ASSIGN-UPSYNC-REVENUE-REATTRIB-GATE(Branch A=과거매출 이전 담당 유지, 변경 이후분만 신규 귀속)
-  //     스냅샷이 prod 반영된 이후에만 사실과 일치. 스냅샷 前 현행은 담당자 변경 시 과거 매출까지 재귀속되어 이 문구가 오도됨.
-  //     → 배포는 스냅샷 deployed 와 함께/그 다음(supervisor 배포게이트 C16 deploy-order 로 강제).
-  //     → 조기 배포가 불가피하면 STAFFCHANGE_CONFIRM_MSG 를 완화판(단순 '담당자를 정말 변경하시겠습니까?')으로 1줄 교체.
+  //   ★공통 가드(SCOPE-EXPAND): 담당자 변경 확인은 shared home `@/lib/staffChangeConfirm` 의 confirmStaffChange 로 단일화.
+  //     차트 모든 경로(2번차트 정보구역·상담탭 select, 예약상세 팝업 select)와 배분이력 AC-5 가 동일 모듈 재사용 — 중복구현 금지.
+  //   ★deploy_coordination(배포순서): 문구의 'money-attribution' 문장은 자매 T-20260724 스냅샷 prod 반영 이후에만 사실과 일치.
+  //     문구/완화판·배포순서 상세는 shared home(staffChangeConfirm.ts) 주석 참조(supervisor 배포게이트 C16 deploy-order 강제).
   //   markDirty: 정보구역 select 는 info-panel 소속 → 기존대로 isDirty=true(상단 저장·60초 자동저장 트리거).
   //     상담탭 select 는 info-panel 밖(별도 탭) → 기존대로 dirty 미마킹(false) — 각 진입경로 원래 side-effect 보존(회귀0).
   const changeAssignedStaffWithGuard = useCallback(async (rawValue: string, markDirty: boolean) => {
     const nextValue = rawValue || null;
     const prev = customer?.assigned_staff_id ?? '';
-    // 변경(=팝업 대상) 판정: 기존값이 지정돼 있고(prev!=='') 새 값이 기존과 다를 때만.
-    const isReassignment = prev !== '' && rawValue !== prev;
-    if (isReassignment) {
-      const ok = window.confirm(STAFFCHANGE_CONFIRM_MSG);
-      if (!ok) return; // 취소 → 기존 담당자 유지(저장·전파 무접점, controlled select 는 customer 값으로 원복)
-    }
+    // 재지정(최초지정·동일값 제외)일 때만 confirm — 판정·문구는 공통 가드 SSOT. [취소] → 저장·전파·state 무접점(기존 담당 유지).
+    if (!confirmStaffChange(prev, rawValue)) return;
     if (markDirty) setIsDirty(true);
     setConsultationStaffId(rawValue); // AC-6 쌍방연동(표시값 동기화)
     const { error } = await saveCustomerField({ assigned_staff_id: nextValue });

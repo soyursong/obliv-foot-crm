@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { toast } from '@/lib/toast';
+import { confirmStaffChange } from '@/lib/staffChangeConfirm'; // T-20260814-foot-STAFFCHANGE-CONFIRM-POPUP: 담당자 변경 확인 공통 가드(shared home)
 // T-20260803-foot-INFLOW-RESVFORM-DROPDOWN-WIRING: 사전예약 접수(팝업 new-mode) 유입경로 필수 드롭다운 배선.
 //   walk-in(NewCheckInDialog) 컨벤션 동일: inflow.available/requiresReason/options. §36 방화벽 — inflow_channel(inflow 축)만 write.
 import { useInflowChannels } from '@/hooks/useInflowChannels';
@@ -1363,8 +1364,13 @@ export function ReservationDetailPopup({
   const saveConsultant = async (val: string) => {
     if (!reservation.customer_id) return;
     const staffId = val === '__none__' ? null : val;
+    const nextNorm = val === '__none__' ? '' : val;
+    // T-20260814-foot-STAFFCHANGE-CONFIRM-POPUP (SCOPE-EXPAND): 차트 담당자 변경 '모든 경로' 공통 가드 — 예약상세 팝업 담당자 변경도 동일 확인.
+    //   prev = consultantBaseline.current(현재 저장된 assigned_staff_id, '' = 미배정). 재지정(prev 지정 + 새 값 상이)일 때만 confirm.
+    //   [취소] → early-return: update/state/baseline 무접점 → controlled Select 는 기존값(selectedConsultantId) 유지(회귀0).
+    if (!confirmStaffChange(consultantBaseline.current, nextNorm)) return;
     setConsultantSaving(true);
-    setSelectedConsultantId(val === '__none__' ? '' : val);
+    setSelectedConsultantId(nextNorm);
     const { error } = await supabase
       .from('customers')
       .update({ assigned_staff_id: staffId })
