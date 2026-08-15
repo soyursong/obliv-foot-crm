@@ -45,10 +45,10 @@ import { useDragToPan } from '@/hooks/useDragToPan';
 import { useInflowChannels } from '@/hooks/useInflowChannels';
 import { useVisitNatures, deriveVisitNatureDefault } from '@/hooks/useVisitNatures';
 import {
-  closeTimeFor,
   generateSlots,
   isOpenDay,
-  openTimeFor,
+  slotsForDate,
+  weekSlotRange,
   WEEK_DAYS_KO,
 } from '@/lib/schedule';
 import { VISIT_TYPE_KO } from '@/lib/status';
@@ -760,17 +760,16 @@ export default function Reservations() {
   }, []);
 
   // tbody 시간 행 소스 — JSX와 단일화 (그리드 행 시각 목록)
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: date-aware 세대 반영.
+  //   day view = 선택일 슬롯(휴무일 → [] = 빈 그리드) / week view = 주간 영업일 union window(휴무 열은 isOpenDay=false 로 회색).
   const gridSlots = useMemo(
     () =>
       clinic
-        ? generateSlots(
-            clinic.open_time,
-            // day view: 선택일 close_time / week view: clinic.close_time(평일 최대)
-            viewMode === 'day' ? closeTimeFor(selectedDay, clinic) : clinic.close_time,
-            clinic.slot_interval,
-          )
+        ? viewMode === 'day'
+          ? slotsForDate(selectedDay, clinic)
+          : weekSlotRange(weekDays, clinic)
         : [],
-    [clinic, viewMode, selectedDay],
+    [clinic, viewMode, selectedDay, weekDays],
   );
 
   // 현재 시각 슬롯 ('HH:mm', slot_interval 단위 내림) — 행 ref 타깃 키
@@ -1578,7 +1577,8 @@ export default function Reservations() {
   const slotsFor = useCallback(
     (d: Date): string[] => {
       if (!clinic) return [];
-      return generateSlots(openTimeFor(clinic), closeTimeFor(d, clinic), clinic.slot_interval);
+      // date-aware(세대/flat): 휴무일 → [] (셀 비활성). T-20260815-foot-JONGNO-OPHOURS-CHANGE.
+      return slotsForDate(d, clinic);
     },
     [clinic],
   );
@@ -1739,6 +1739,11 @@ export default function Reservations() {
       }
       if (!resolvedCustomerId) {
         return { ok: false, reason: 'error', message: '고객 정보(성함·연락처)가 필요합니다.' };
+      }
+      // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901 (AC-4): 휴무일(일요일, 2026-09-01~) 예약 생성 실차단(폼 콜백 레벨).
+      //   date-aware(isOpenDay) — 09-01 이전 일요일은 현행 영업이라 통과(forward-only).
+      if (clinic && params.date && !isOpenDay(parseISO(params.date), clinic)) {
+        return { ok: false, reason: 'error', message: '휴무일에는 예약을 생성할 수 없습니다 (일요일 휴무).' };
       }
       const res = await createReservationCanonical({
         clinicId: clinic.id,
@@ -2704,7 +2709,7 @@ export default function Reservations() {
                     className={cn(
                       // T-20260615-foot-RESVMGMT-REFIX-8 AC6: 요일·일자 헤더 중앙정렬 + 폰트 확대(text-xs→text-sm, font-semibold).
                       'border-b border-r p-2 text-center text-sm font-semibold overflow-hidden', // T-20260522-foot-RESV-CAL-COLWIDTH: overflow-hidden → table-fixed 시 텍스트 셀 밖 넘침 방지
-                      !isOpenDay(d) && 'bg-gray-50 text-muted-foreground',
+                      !isOpenDay(d, clinic) && 'bg-gray-50 text-muted-foreground',
                       isSameDay(d, new Date()) && 'bg-teal-50 text-teal-700',
                     )}
                   >
@@ -3446,6 +3451,8 @@ function ReservationEditor({
   //   longre 정본 AdminReservations.tsx 패턴: useInflowChannels + 강제선택 + 구환 first_inflow_channel 자동상속(면제).
   //   ⚠ §36 방화벽: write 대상은 reservations.inflow_channel(+ inflow 축 customers.first_inflow_*)뿐. referral_source 무접점.
   const inflow = useInflowChannels(clinicId);
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: 휴무일 예약 실차단(AC-4) 게이트용 clinic(운영시간 세대 포함).
+  const editorClinic = useClinic();
   const [inflowReason, setInflowReason] = useState('');        // inbound.etc(기타) 사유
   const [inheritedInflow, setInheritedInflow] = useState<string | null>(null); // 구환 customers.first_inflow_channel 상속값
   // ── T-20260803-foot-VISIT-NATURE-COLUMN-DERIVESEED: 방문성격(visit_nature) picker(예약 접수 폼 편승) ──
@@ -3826,6 +3833,14 @@ function ReservationEditor({
   const save = async () => {
     if (!clinicId || !state) return;
     setSubmitting(true);
+
+    // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901 (AC-4): 휴무일(일요일, 2026-09-01~) 예약 생성/변경 실차단.
+    //   date-aware(isOpenDay) — 09-01 이전 일요일은 현행 영업이라 통과(forward-only). 세대 미로드 시 슬롯 UI 가 이미 게이트.
+    if (editorClinic && state.date && !isOpenDay(parseISO(state.date), editorClinic)) {
+      toast.error('휴무일에는 예약을 생성/변경할 수 없습니다 (일요일 휴무).');
+      setSubmitting(false);
+      return;
+    }
 
     // ─── 수정(UPDATE) 경로 — 인라인 유지(신규 생성경로와 분리, 회귀 0) ───────────────
     //   T-20260614-foot-RESVPOPUP-AC2-NEWMODE-L002: 신규(INSERT) 경로만 단일소스 함수로 추출.

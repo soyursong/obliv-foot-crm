@@ -25,7 +25,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
-import { addDays, format, isSameDay, subDays } from 'date-fns';
+import { addDays, format, isSameDay, subDays, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import {
   ArrowDown,
@@ -76,7 +76,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 // T-20260708-foot-DASH-HSCROLL-DRAGPAN: 현황판 가로영역 grab-and-drag(pan)
 import { useDragToPan } from '@/hooks/useDragToPan';
-import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
+import { generateSlots, slotsForDate, isOpenDay } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
@@ -2410,11 +2410,10 @@ function DashboardTimeline({
     try { sessionStorage.removeItem(STORAGE_KEYS.THERAPIST_FOLD); } catch {/* ignore */}
   }
 
-  // T-20260513-foot-TIMETABLE-20H: 하드코딩 '20:00' → DB clinic.close_time 동적 참조
-  // 기존: generateSlots('10:00', '20:00', 30) → 마지막 슬롯 19:30 (20:00 누락)
-  // 수정: closeTimeFor(date, clinic) = '20:30' → 마지막 슬롯 20:00 포함
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: date-aware 세대 SSOT(slotsForDate) — 날짜별 운영시간(세대/flat) 자동 반영, 휴무일 → [].
+  //   (T-20260513-foot-TIMETABLE-20H flat close_time 동적참조를 세대 resolver 로 승격)
   const slots = clinic
-    ? generateSlots(openTimeFor(clinic), closeTimeFor(date, clinic), clinic.slot_interval)
+    ? slotsForDate(date, clinic)
     : generateSlots('10:00', '20:00', 30);
 
   // ── 체크인 조회 맵 구성 ──────────────────────────────────────────────────────
@@ -3222,6 +3221,8 @@ function QuickReservationDialog({
   const [saving, setSaving] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [selectedBirthDate, setSelectedBirthDate] = useState<string | null>(null);
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: 휴무일 예약 실차단(AC-4) + date-aware 시간슬롯용 clinic(운영시간 세대 포함).
+  const clinic = useClinic();
   // AC-2: 신규 환자 즉석 등록 패널
   const [showNewPatient, setShowNewPatient] = useState(false);
   const [npName, setNpName] = useState('');
@@ -3302,6 +3303,13 @@ function QuickReservationDialog({
         setSaving(false);
         return;
       }
+    }
+
+    // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901 (AC-4): 휴무일(일요일, 2026-09-01~) 빠른예약 실차단.
+    if (clinic && form.date && !isOpenDay(parseISO(form.date), clinic)) {
+      toast.error('휴무일에는 예약을 생성할 수 없습니다 (일요일 휴무).');
+      setSaving(false);
+      return;
     }
 
     // T-20260610-foot-RESV-DUPGUARD-SAMEDAY: 동일고객 당일 예약 중복 생성 방지 (insert 직전 게이트)
