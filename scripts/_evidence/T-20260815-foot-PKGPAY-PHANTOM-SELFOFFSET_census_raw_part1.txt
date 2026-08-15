@@ -1,0 +1,818 @@
+=== auth-context (postgres/무RLS 여야 함) ===
+[
+  {
+    "usr": "postgres",
+    "super": "off"
+  }
+]
+
+=== 0. package_payments 컬럼 실재 (계보/멱등/처리자 축) ===
+[
+  {
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "column_name": "package_id",
+    "data_type": "uuid"
+  },
+  {
+    "column_name": "customer_id",
+    "data_type": "uuid"
+  },
+  {
+    "column_name": "amount",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "method",
+    "data_type": "text"
+  },
+  {
+    "column_name": "installment",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "payment_type",
+    "data_type": "text"
+  },
+  {
+    "column_name": "vat_amount",
+    "data_type": "integer"
+  },
+  {
+    "column_name": "memo",
+    "data_type": "text"
+  },
+  {
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "column_name": "clinic_id",
+    "data_type": "uuid"
+  },
+  {
+    "column_name": "accounting_date",
+    "data_type": "date"
+  },
+  {
+    "column_name": "origin_tx_date",
+    "data_type": "date"
+  },
+  {
+    "column_name": "tax_type",
+    "data_type": "text"
+  },
+  {
+    "column_name": "appr_info",
+    "data_type": "text"
+  },
+  {
+    "column_name": "exclude_tax_report",
+    "data_type": "boolean"
+  },
+  {
+    "column_name": "parent_payment_id",
+    "data_type": "uuid"
+  },
+  {
+    "column_name": "external_approval_no",
+    "data_type": "text"
+  },
+  {
+    "column_name": "external_tid",
+    "data_type": "text"
+  },
+  {
+    "column_name": "fee_kind",
+    "data_type": "text"
+  },
+  {
+    "column_name": "created_by",
+    "data_type": "uuid"
+  },
+  {
+    "column_name": "is_simulation",
+    "data_type": "boolean"
+  },
+  {
+    "column_name": "payment_attempt_id",
+    "data_type": "uuid"
+  }
+]
+
+=== 1. 8월 MTD package_payments 요약 (is_simulation IS NOT TRUE) ===
+[
+  {
+    "pay_n": 123,
+    "pay_sum": 312438000,
+    "ref_n": 15,
+    "ref_sum": 39950000,
+    "net": 272488000
+  }
+]
+
+=== 2. 8/10 대상쌍 지문 — 2,960,000 근처 전 8월 행 raw ===
+[
+  {
+    "id": "cfb0a6cb-13db-4603-a50d-04084b25ba53",
+    "package_id": "24d69292-f7ce-4fcd-a03a-fd0242151867",
+    "customer_id": "c94b4e33-e7c4-473e-bef9-07a9e08dedba",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-07 05:23:22.973242+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "정연경"
+  },
+  {
+    "id": "d26061a6-928a-49b6-ba5e-c41493b17dd8",
+    "package_id": "de8c1106-47b8-4063-a0fc-eb2e2cde0434",
+    "customer_id": "54a44db4-0fcc-4483-a5af-3226db021ea9",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-07 10:22:36.743514+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "권여정"
+  },
+  {
+    "id": "c9cc7a86-6dad-4d48-bae0-9771c3f5ab5a",
+    "package_id": "bbb4ec68-a163-49bb-910d-5960f9fdebed",
+    "customer_id": "66c08e48-c708-4e50-963d-aaa56b27d9ea",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-10 23:20:08.856542+00",
+    "fee_kind": "package",
+    "payment_attempt_id": "c5d7d178-d251-4bc7-a7c3-6f592fa34e55",
+    "external_approval_no": "46226270",
+    "external_tid": "1047479470",
+    "is_simulation": false,
+    "is_test": true,
+    "cust_name": "박민석"
+  },
+  {
+    "id": "8e05684d-8493-42dd-939c-667cc25bdbaa",
+    "package_id": "bbb4ec68-a163-49bb-910d-5960f9fdebed",
+    "customer_id": "66c08e48-c708-4e50-963d-aaa56b27d9ea",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "refund",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-10 23:20:41.121645+00",
+    "fee_kind": "package",
+    "payment_attempt_id": "fab604f3-9aa5-49ac-8b98-5fc09f3c1b4a",
+    "external_approval_no": "46226270",
+    "external_tid": "1047479470",
+    "is_simulation": false,
+    "is_test": true,
+    "cust_name": "박민석"
+  },
+  {
+    "id": "13cd3fc4-a177-42a3-b5d4-dbadb764ed7d",
+    "package_id": "fc07e861-cbaa-495f-bce5-d37ec1d91c39",
+    "customer_id": "66c08e48-c708-4e50-963d-aaa56b27d9ea",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-11 01:08:30.715847+00",
+    "fee_kind": "package",
+    "payment_attempt_id": "f7458e75-21d4-4711-9c16-0b6c3aa56a1b",
+    "external_approval_no": "63318811",
+    "external_tid": "1047479470",
+    "is_simulation": false,
+    "is_test": true,
+    "cust_name": "박민석"
+  },
+  {
+    "id": "21a7eadd-7d35-4e3e-bf7f-a69e7a6a90a5",
+    "package_id": "fc07e861-cbaa-495f-bce5-d37ec1d91c39",
+    "customer_id": "66c08e48-c708-4e50-963d-aaa56b27d9ea",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "refund",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-11 01:09:04.236511+00",
+    "fee_kind": "package",
+    "payment_attempt_id": "667a0571-2e45-40fa-9019-fca0493e9624",
+    "external_approval_no": "63318811",
+    "external_tid": "1047479470",
+    "is_simulation": false,
+    "is_test": true,
+    "cust_name": "박민석"
+  },
+  {
+    "id": "b624493d-7cd3-4ecb-94ff-b967841e07ee",
+    "package_id": "27b25565-ba64-4108-8615-e3566f59f14f",
+    "customer_id": "ad94621d-bc60-45aa-b345-65d224515918",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-11 03:06:20.15993+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "이혜민"
+  },
+  {
+    "id": "42759014-632a-455e-9a2a-df4df8f8e122",
+    "package_id": "fdddd6b8-a47f-4824-9a6e-a7bef9239215",
+    "customer_id": "bd6b9d3d-2f9b-451f-8a98-cc9bfdbf5ada",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-11 11:37:44.441976+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "구릉산띠"
+  },
+  {
+    "id": "ce7674ed-dcee-40f3-ba20-b843fd6e85bf",
+    "package_id": "27b25565-ba64-4108-8615-e3566f59f14f",
+    "customer_id": "ad94621d-bc60-45aa-b345-65d224515918",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "refund",
+    "parent_payment_id": "b624493d-7cd3-4ecb-94ff-b967841e07ee",
+    "created_by": "ea24c289-1e64-4878-8aae-bf8e463ea130",
+    "created_at": "2026-08-11 11:37:50.157841+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "이혜민"
+  },
+  {
+    "id": "38832d6d-459b-42dc-a330-67129c99adb6",
+    "package_id": "93bd2723-ca37-4602-8c0c-90313f12b396",
+    "customer_id": "3ec379b3-b620-48b8-9062-5677fb3b60ee",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-12 02:49:42.260685+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "최영심"
+  },
+  {
+    "id": "0a4de48f-fa23-4aed-98c1-f7f007de6101",
+    "package_id": "d7767d81-04c4-47c9-b5da-97d68d642caa",
+    "customer_id": "c0b4fc72-74d0-4f17-b8b1-27dd9c386eda",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-12 10:06:48.813207+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "유철수"
+  },
+  {
+    "id": "0d6d3baf-3a30-4dd0-a6ad-eb7a3a961781",
+    "package_id": "e1749777-7e72-4422-8f85-4303c335ba2d",
+    "customer_id": "ed84b8ce-4c4c-4c9b-864c-aa311f5cf9af",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-12 10:08:48.061308+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "한상훈"
+  },
+  {
+    "id": "f83643f2-e569-4363-86fd-60c6e1650a38",
+    "package_id": "e1749777-7e72-4422-8f85-4303c335ba2d",
+    "customer_id": "ed84b8ce-4c4c-4c9b-864c-aa311f5cf9af",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "refund",
+    "parent_payment_id": "0d6d3baf-3a30-4dd0-a6ad-eb7a3a961781",
+    "created_by": "f953b4f4-c28a-4ba9-90b7-1542f73c3f91",
+    "created_at": "2026-08-12 11:11:44.920081+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "한상훈"
+  },
+  {
+    "id": "ce08b42d-308a-4c6d-9942-64020ee4f645",
+    "package_id": "54ebb9d2-9147-48e2-95fa-0a51b3bf6d84",
+    "customer_id": "34b5311c-eeed-49e0-b29d-ec6b2384b0f8",
+    "amount": 2960000,
+    "method": "card",
+    "payment_type": "payment",
+    "parent_payment_id": null,
+    "created_by": null,
+    "created_at": "2026-08-13 09:54:13.956875+00",
+    "fee_kind": "package",
+    "payment_attempt_id": null,
+    "external_approval_no": null,
+    "external_tid": null,
+    "is_simulation": false,
+    "is_test": false,
+    "cust_name": "서명애"
+  }
+]
+
+=== 3. 쌍 매칭 — refund.parent_payment_id 로 payment 지목 + Δt ===
+[
+  {
+    "refund_id": "0dc22bf2-7f2a-4fb7-a0e2-8af51a20c95d",
+    "refund_amt": 1160000,
+    "refund_at": "2026-08-03 03:24:08.721834+00",
+    "refund_by": "b36e74a3-be1f-4b61-aeb4-9150affe2c05",
+    "parent_payment_id": "39456c8a-3fc0-41c7-850d-c86a10e4ed26",
+    "pay_id": "39456c8a-3fc0-41c7-850d-c86a10e4ed26",
+    "pay_amt": 1160000,
+    "pay_at": "2026-08-03 03:21:54.06779+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "134.654044"
+  },
+  {
+    "refund_id": "da69b8f3-1fad-4f3e-844a-5dfac3561b76",
+    "refund_amt": 10000,
+    "refund_at": "2026-08-05 02:51:15.691134+00",
+    "refund_by": "170e0cd5-2d17-43d7-9433-3be5280d5d30",
+    "parent_payment_id": "01d84181-bc78-4811-89f3-b632ecf04dc0",
+    "pay_id": "01d84181-bc78-4811-89f3-b632ecf04dc0",
+    "pay_amt": 10000,
+    "pay_at": "2026-08-05 02:50:12.768909+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "62.922225"
+  },
+  {
+    "refund_id": "3c9a1263-0d41-4307-b59c-1a467548785b",
+    "refund_amt": 300000,
+    "refund_at": "2026-08-05 10:47:40.148789+00",
+    "refund_by": "170e0cd5-2d17-43d7-9433-3be5280d5d30",
+    "parent_payment_id": "2c7dfe01-8ff0-4840-aa10-8c28d51322af",
+    "pay_id": "2c7dfe01-8ff0-4840-aa10-8c28d51322af",
+    "pay_amt": 300000,
+    "pay_at": "2026-08-05 10:03:10.287356+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "2669.861433"
+  },
+  {
+    "refund_id": "801a0888-3ecf-49ba-abf6-5f2736db5e36",
+    "refund_amt": 2920000,
+    "refund_at": "2026-08-06 04:32:34.029735+00",
+    "refund_by": "77ef3500-f0c1-43de-9c3b-1072b7a2713c",
+    "parent_payment_id": "44ce3535-2d62-4fb9-bdc5-1b718b296d61",
+    "pay_id": "44ce3535-2d62-4fb9-bdc5-1b718b296d61",
+    "pay_amt": 2920000,
+    "pay_at": "2026-08-06 03:18:59.102718+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "4414.927017"
+  },
+  {
+    "refund_id": "2f38cb94-2f18-4b91-9c53-34c46c011e88",
+    "refund_amt": 2000000,
+    "refund_at": "2026-08-06 07:44:22.230863+00",
+    "refund_by": "cd102e05-f16a-42ad-8ef3-a52e405990a2",
+    "parent_payment_id": "12aff83b-c6b4-4ac9-8754-763be9565cec",
+    "pay_id": "12aff83b-c6b4-4ac9-8754-763be9565cec",
+    "pay_amt": 2000000,
+    "pay_at": "2026-08-06 07:41:28.570815+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "173.660048"
+  },
+  {
+    "refund_id": "8e05684d-8493-42dd-939c-667cc25bdbaa",
+    "refund_amt": 2960000,
+    "refund_at": "2026-08-10 23:20:41.121645+00",
+    "refund_by": null,
+    "parent_payment_id": null,
+    "pay_id": null,
+    "pay_amt": null,
+    "pay_at": null,
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": null,
+    "delta_sec": null
+  },
+  {
+    "refund_id": "21a7eadd-7d35-4e3e-bf7f-a69e7a6a90a5",
+    "refund_amt": 2960000,
+    "refund_at": "2026-08-11 01:09:04.236511+00",
+    "refund_by": null,
+    "parent_payment_id": null,
+    "pay_id": null,
+    "pay_amt": null,
+    "pay_at": null,
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": null,
+    "delta_sec": null
+  },
+  {
+    "refund_id": "ce7674ed-dcee-40f3-ba20-b843fd6e85bf",
+    "refund_amt": 2960000,
+    "refund_at": "2026-08-11 11:37:50.157841+00",
+    "refund_by": "ea24c289-1e64-4878-8aae-bf8e463ea130",
+    "parent_payment_id": "b624493d-7cd3-4ecb-94ff-b967841e07ee",
+    "pay_id": "b624493d-7cd3-4ecb-94ff-b967841e07ee",
+    "pay_amt": 2960000,
+    "pay_at": "2026-08-11 03:06:20.15993+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "30689.997911"
+  },
+  {
+    "refund_id": "f83643f2-e569-4363-86fd-60c6e1650a38",
+    "refund_amt": 2960000,
+    "refund_at": "2026-08-12 11:11:44.920081+00",
+    "refund_by": "f953b4f4-c28a-4ba9-90b7-1542f73c3f91",
+    "parent_payment_id": "0d6d3baf-3a30-4dd0-a6ad-eb7a3a961781",
+    "pay_id": "0d6d3baf-3a30-4dd0-a6ad-eb7a3a961781",
+    "pay_amt": 2960000,
+    "pay_at": "2026-08-12 10:08:48.061308+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "3776.858773"
+  },
+  {
+    "refund_id": "85a44a99-ac0a-40e0-ab6c-cf461f0771ff",
+    "refund_amt": 7920000,
+    "refund_at": "2026-08-13 07:19:17.484508+00",
+    "refund_by": "dad7dc00-dc99-41af-b5fc-42aa77a0bd9b",
+    "parent_payment_id": "a3fdb746-4bd8-4028-8395-b69640bfcd88",
+    "pay_id": "a3fdb746-4bd8-4028-8395-b69640bfcd88",
+    "pay_amt": 7920000,
+    "pay_at": "2026-08-06 02:24:15.569024+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "622501.915484"
+  },
+  {
+    "refund_id": "d7a6343c-77ba-4dfc-b4e9-b859217bb167",
+    "refund_amt": 4800000,
+    "refund_at": "2026-08-13 07:22:00.44951+00",
+    "refund_by": "dad7dc00-dc99-41af-b5fc-42aa77a0bd9b",
+    "parent_payment_id": "2f68bd2d-757f-44a7-b478-aa31d43cec08",
+    "pay_id": "2f68bd2d-757f-44a7-b478-aa31d43cec08",
+    "pay_amt": 4800000,
+    "pay_at": "2026-07-30 06:41:49.283576+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "1212011.165934"
+  },
+  {
+    "refund_id": "30019cb9-21d9-4c05-b4bf-9654442eceba",
+    "refund_amt": 1000000,
+    "refund_at": "2026-08-14 08:49:25.458928+00",
+    "refund_by": "ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12",
+    "parent_payment_id": "adc1cf2d-8bd8-4560-ade0-f69eedf9863f",
+    "pay_id": "adc1cf2d-8bd8-4560-ade0-f69eedf9863f",
+    "pay_amt": 1000000,
+    "pay_at": "2026-08-14 06:18:50.665511+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "9034.793417"
+  },
+  {
+    "refund_id": "4e8e6f61-7433-4ac6-a77e-8e71c3ed0783",
+    "refund_amt": 1000000,
+    "refund_at": "2026-08-14 08:52:04.99653+00",
+    "refund_by": "ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12",
+    "parent_payment_id": "0b023360-926f-4ef0-a68a-bbc61d870ec9",
+    "pay_id": "0b023360-926f-4ef0-a68a-bbc61d870ec9",
+    "pay_amt": 1000000,
+    "pay_at": "2026-08-14 05:35:28.193513+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "11796.803017"
+  },
+  {
+    "refund_id": "6647b736-8428-49ae-8a41-e6351a18b0ae",
+    "refund_amt": 1000000,
+    "refund_at": "2026-08-14 08:54:21.402122+00",
+    "refund_by": "ee67fc6b-a7b5-487e-97ae-9d3fc8e70d12",
+    "parent_payment_id": "b7ca40e6-8065-457d-802c-bc97f02d31d7",
+    "pay_id": "b7ca40e6-8065-457d-802c-bc97f02d31d7",
+    "pay_amt": 1000000,
+    "pay_at": "2026-08-14 08:48:54.131944+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "327.270178"
+  },
+  {
+    "refund_id": "6abf6872-a21b-404d-ae77-9e7522785f3c",
+    "refund_amt": 6000000,
+    "refund_at": "2026-08-14 10:52:43.468507+00",
+    "refund_by": "dad7dc00-dc99-41af-b5fc-42aa77a0bd9b",
+    "parent_payment_id": "246b772e-e1d3-45a1-bcd0-96687598c553",
+    "pay_id": "246b772e-e1d3-45a1-bcd0-96687598c553",
+    "pay_amt": 6000000,
+    "pay_at": "2026-08-07 01:52:47.139808+00",
+    "pay_by": null,
+    "pay_attempt": null,
+    "exact_offset": true,
+    "delta_sec": "637196.328699"
+  }
+]
+
+=== 4. created_by 주체 해석 — user_profiles 조인 (실스태프 vs NULL/시스템) ===
+[
+  {
+    "id": "cfb0a6cb-13db-4603-a50d-04084b25ba53",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-07 05:23:22.973242+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "d26061a6-928a-49b6-ba5e-c41493b17dd8",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-07 10:22:36.743514+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "c9cc7a86-6dad-4d48-bae0-9771c3f5ab5a",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-10 23:20:08.856542+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "8e05684d-8493-42dd-939c-667cc25bdbaa",
+    "payment_type": "refund",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-10 23:20:41.121645+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "13cd3fc4-a177-42a3-b5d4-dbadb764ed7d",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-11 01:08:30.715847+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "21a7eadd-7d35-4e3e-bf7f-a69e7a6a90a5",
+    "payment_type": "refund",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-11 01:09:04.236511+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "b624493d-7cd3-4ecb-94ff-b967841e07ee",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-11 03:06:20.15993+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "42759014-632a-455e-9a2a-df4df8f8e122",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-11 11:37:44.441976+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "ce7674ed-dcee-40f3-ba20-b843fd6e85bf",
+    "payment_type": "refund",
+    "amount": 2960000,
+    "created_by": "ea24c289-1e64-4878-8aae-bf8e463ea130",
+    "created_at": "2026-08-11 11:37:50.157841+00",
+    "staff_name": "장예지",
+    "staff_role": "coordinator"
+  },
+  {
+    "id": "38832d6d-459b-42dc-a330-67129c99adb6",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-12 02:49:42.260685+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "0a4de48f-fa23-4aed-98c1-f7f007de6101",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-12 10:06:48.813207+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "0d6d3baf-3a30-4dd0-a6ad-eb7a3a961781",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-12 10:08:48.061308+00",
+    "staff_name": null,
+    "staff_role": null
+  },
+  {
+    "id": "f83643f2-e569-4363-86fd-60c6e1650a38",
+    "payment_type": "refund",
+    "amount": 2960000,
+    "created_by": "f953b4f4-c28a-4ba9-90b7-1542f73c3f91",
+    "created_at": "2026-08-12 11:11:44.920081+00",
+    "staff_name": "김지혜",
+    "staff_role": "coordinator"
+  },
+  {
+    "id": "ce08b42d-308a-4c6d-9942-64020ee4f645",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_by": null,
+    "created_at": "2026-08-13 09:54:13.956875+00",
+    "staff_name": null,
+    "staff_role": null
+  }
+]
+
+=== 5. 대상쌍 패키지 상태 정합 (status/used 회차) ===
+[
+  {
+    "pkg_id": "24d69292-f7ce-4fcd-a03a-fd0242151867",
+    "status": "active",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-07 04:46:07.654475+00",
+    "used_n": 2,
+    "total_ps": 2
+  },
+  {
+    "pkg_id": "de8c1106-47b8-4063-a0fc-eb2e2cde0434",
+    "status": "active",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-07 10:19:18.506166+00",
+    "used_n": 1,
+    "total_ps": 1
+  },
+  {
+    "pkg_id": "93bd2723-ca37-4602-8c0c-90313f12b396",
+    "status": "active",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-12 02:25:46.140929+00",
+    "used_n": 1,
+    "total_ps": 1
+  },
+  {
+    "pkg_id": "d7767d81-04c4-47c9-b5da-97d68d642caa",
+    "status": "active",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-12 09:00:16.93751+00",
+    "used_n": 1,
+    "total_ps": 1
+  },
+  {
+    "pkg_id": "54ebb9d2-9147-48e2-95fa-0a51b3bf6d84",
+    "status": "active",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-13 09:49:47.903937+00",
+    "used_n": 1,
+    "total_ps": 1
+  },
+  {
+    "pkg_id": "bbb4ec68-a163-49bb-910d-5960f9fdebed",
+    "status": "refunded",
+    "total_amount": 2960000,
+    "paid_amount": 0,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-10 23:19:52.378718+00",
+    "used_n": 0,
+    "total_ps": 0
+  },
+  {
+    "pkg_id": "27b25565-ba64-4108-8615-e3566f59f14f",
+    "status": "refunded",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-11 02:56:39.932552+00",
+    "used_n": 0,
+    "total_ps": 0
+  },
+  {
+    "pkg_id": "fdddd6b8-a47f-4824-9a6e-a7bef9239215",
+    "status": "active",
+    "total_amount": 2960000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-11 10:04:40.980085+00",
+    "used_n": 1,
+    "total_ps": 1
+  },
+  {
+    "pkg_id": "fc07e861-cbaa-495f-bce5-d37ec1d91c39",
+    "status": "refunded",
+    "total_amount": 2960000,
+    "paid_amount": 0,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-11 01:08:22.004007+00",
+    "used_n": 0,
+    "total_ps": 0
+  },
+  {
+    "pkg_id": "e1749777-7e72-4422-8f85-4303c335ba2d",
+    "status": "refunded",
+    "total_amount": 3120000,
+    "paid_amount": 2960000,
+    "total_sessions": 12,
+    "pkg_created": "2026-08-12 07:04:44.798915+00",
+    "used_n": 1,
+    "total_ps": 1
+  }
+]

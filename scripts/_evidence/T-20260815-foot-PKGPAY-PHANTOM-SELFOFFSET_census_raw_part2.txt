@@ -1,0 +1,179 @@
+=== A. 전기간 package_payments self-offset 쌍 CLASS 분류 (CAT-test vs staff-refund) ===
+[
+  {
+    "class": "A_CAT_terminal_cancel(external_authno link)",
+    "n": 2,
+    "n_is_test": 2,
+    "first_at": "2026-08-10 23:20:41.121645+00",
+    "last_at": "2026-08-11 01:09:04.236511+00"
+  },
+  {
+    "class": "B_staff_refund_RPC(parent link+staff)",
+    "n": 20,
+    "n_is_test": 1,
+    "first_at": "2026-07-27 09:33:14.027785+00",
+    "last_at": "2026-08-14 10:52:43.468507+00"
+  },
+  {
+    "class": "C_legacy_refund(parent link,no actor)",
+    "n": 9,
+    "n_is_test": 0,
+    "first_at": "2026-07-15 06:59:51.331743+00",
+    "last_at": "2026-07-23 09:23:57.420287+00"
+  }
+]
+
+=== B. Class A (CAT terminal cancel, parent NULL + attempt) 전건 raw ===
+[
+  {
+    "refund_id": "8e05684d-8493-42dd-939c-667cc25bdbaa",
+    "amount": 2960000,
+    "created_at": "2026-08-10 23:20:41.121645+00",
+    "external_approval_no": "46226270",
+    "external_tid": "1047479470",
+    "payment_attempt_id": "fab604f3-9aa5-49ac-8b98-5fc09f3c1b4a",
+    "customer_id": "66c08e48-c708-4e50-963d-aaa56b27d9ea",
+    "is_test": true,
+    "name": "박민석",
+    "matched_pay_id": "c9cc7a86-6dad-4d48-bae0-9771c3f5ab5a",
+    "delta_sec": "32.265103"
+  },
+  {
+    "refund_id": "21a7eadd-7d35-4e3e-bf7f-a69e7a6a90a5",
+    "amount": 2960000,
+    "created_at": "2026-08-11 01:09:04.236511+00",
+    "external_approval_no": "63318811",
+    "external_tid": "1047479470",
+    "payment_attempt_id": "667a0571-2e45-40fa-9019-fca0493e9624",
+    "customer_id": "66c08e48-c708-4e50-963d-aaa56b27d9ea",
+    "is_test": true,
+    "name": "박민석",
+    "matched_pay_id": "13cd3fc4-a177-42a3-b5d4-dbadb764ed7d",
+    "delta_sec": "33.520664"
+  }
+]
+
+=== C. CEO 보고 대상쌍(8/10 23:20)이 is_test 인지 명시 확인 ===
+[
+  {
+    "id": "c9cc7a86-6dad-4d48-bae0-9771c3f5ab5a",
+    "payment_type": "payment",
+    "amount": 2960000,
+    "created_at": "2026-08-10 23:20:08.856542+00",
+    "is_simulation": false,
+    "is_test": true,
+    "cust_sim": false,
+    "name": "박민석"
+  },
+  {
+    "id": "8e05684d-8493-42dd-939c-667cc25bdbaa",
+    "payment_type": "refund",
+    "amount": 2960000,
+    "created_at": "2026-08-10 23:20:41.121645+00",
+    "is_simulation": false,
+    "is_test": true,
+    "cust_sim": false,
+    "name": "박민석"
+  }
+]
+
+=== D. payments(비패키지) 테이블도 동일 CAT-cancel self-offset 클래스 존재하는지 (8월) ===
+[
+  {
+    "ref_n": 47,
+    "ref_cat_n": 6,
+    "pay_n": 643
+  }
+]
+
+=== E. 8월 net=0 exact self-offset 패키지(전액환불) — 오염 아닌 정당취소 여부 판별용 provenance ===
+[
+  {
+    "package_id": "bbb4ec68-a163-49bb-910d-5960f9fdebed",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": true,
+    "any_actor": false,
+    "pkg_status": "refunded",
+    "is_test": true,
+    "name": "박민석"
+  },
+  {
+    "package_id": "fc07e861-cbaa-495f-bce5-d37ec1d91c39",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": true,
+    "any_actor": false,
+    "pkg_status": "refunded",
+    "is_test": true,
+    "name": "박민석"
+  },
+  {
+    "package_id": "27b25565-ba64-4108-8615-e3566f59f14f",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": false,
+    "any_actor": true,
+    "pkg_status": "refunded",
+    "is_test": false,
+    "name": "이혜민"
+  },
+  {
+    "package_id": "d12d8a8e-b7f5-471e-87c1-c4f8ec156acb",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": false,
+    "any_actor": true,
+    "pkg_status": "refunded",
+    "is_test": false,
+    "name": "변보원"
+  },
+  {
+    "package_id": "da662ae9-431a-4a6d-b9a2-89a4010e5244",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": false,
+    "any_actor": true,
+    "pkg_status": "refunded",
+    "is_test": false,
+    "name": "최재욱"
+  },
+  {
+    "package_id": "e1749777-7e72-4422-8f85-4303c335ba2d",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": false,
+    "any_actor": true,
+    "pkg_status": "refunded",
+    "is_test": false,
+    "name": "한상훈"
+  },
+  {
+    "package_id": "e3ab4a29-53b2-46b0-8981-fff80626501c",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": false,
+    "any_actor": true,
+    "pkg_status": "refunded",
+    "is_test": false,
+    "name": "박민석"
+  },
+  {
+    "package_id": "fff6b9c7-6f62-481a-923a-e3d95dc15ff8",
+    "net_paid": 0,
+    "pay_n": 1,
+    "ref_n": 1,
+    "any_cat": false,
+    "any_actor": true,
+    "pkg_status": "refunded",
+    "is_test": false,
+    "name": "박응순"
+  }
+]
