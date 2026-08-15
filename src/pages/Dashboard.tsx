@@ -2561,10 +2561,17 @@ function DashboardTimeline({
   // T-20260530-foot-WALKIN-OFFHOUR-SLOT AC-4: 일요일 pass-through 렌더 슬롯 보정
   // 타임라인은 slots[] 에 존재하는 슬롯만 렌더한다. 일요일 워크인이 운영시간 범위
   // (clinic 설정 기반 slots) 밖 시각으로 접수된 경우에도 "그 시각 그대로" 표시되도록
-  // slotMap 에 쌓인 실데이터 슬롯을 합쳐 정렬한다. 평일/토는 slots 그대로(무변경).
-  const renderSlots = isSunday
-    ? Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort()
-    : slots;
+  // slotMap 에 쌓인 실데이터 슬롯을 합쳐 정렬한다.
+  //
+  // T-20260815-foot-JONGNO-OPHOURS-0901-EXISTING-RESV-CENSUS-RENDER AC-4 (렌더 회귀 보정):
+  //   09-01 운영창 축소(평일 마지막슬롯 19:00 / 토 18:00 / 일 휴무·슬롯0)로, 운영창 밖
+  //   (평일 19:30·20:00 / 토 18:30 / 일 전건) "기존 예약"이 slots(신규예약 가능 슬롯) 밖으로
+  //   밀려나 타임라인 행 자체가 사라지는 회귀(스태프 미인지 → 노쇼/이중예약)를 봉합한다.
+  //   기존 일요일 한정 pass-through 를 전 요일로 일반화: slotMap(실 예약·체크인 데이터) 슬롯을
+  //   항상 slots 에 합쳐 기존 예약을 표시한다. 표시축(renderSlots) ⊥ 신규예약 차단축(slots)
+  //   분리 — 이 행은 표시 전용(신규 생성 UI 없음)이고, 신규예약 가능 여부는 여전히 slots/
+  //   isOpenDay 기준(부모 T-...-CHANGE-20260901 AC-1/AC-4 무저촉). 일요일 동작 무회귀.
+  const renderSlots = Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort();
 
   // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청1:
   //   통합시간표 금일 총 방문 예정 수 — 초진/재진 카운트. slotMap(이미 cancelled 제외·

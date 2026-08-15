@@ -1592,6 +1592,26 @@ export default function Reservations() {
     return map;
   }, [rows]);
 
+  // T-20260815-foot-JONGNO-OPHOURS-0901-EXISTING-RESV-CENSUS-RENDER AC-4 (렌더 회귀 보정):
+  //   09-01 운영창 축소(평일 마지막슬롯 19:00 / 토 18:00 / 일 휴무·슬롯0)로, 운영창 밖
+  //   (평일 19:30·20:00 / 토 18:30 / 일 전건) "기존 예약"이 gridSlots(신규예약 슬롯) 밖이라
+  //   tbody 행 자체가 안 생겨 화면에서 사라지는 회귀(스태프 미인지 → 노쇼/이중예약)를 봉합한다.
+  //   표시축(renderSlots) ⊥ 신규예약 차단축(slotsFor/allowed) 분리: 현재 뷰의 실 예약 시각
+  //   (취소 제외)을 gridSlots 에 합쳐 행을 생성한다. 각 셀의 신규예약 가능 여부
+  //   (allowed = slotsFor(d).includes(time))는 불변 → 운영창 밖 셀은 여전히 신규예약·드롭 차단
+  //   (부모 T-...-CHANGE-20260901 AC-1/AC-4 무저촉). Dashboard renderSlots 일반화와 동형.
+  const renderSlots = useMemo(() => {
+    const visibleDates = viewMode === 'week' ? weekDays : [selectedDay];
+    const visibleDateStrs = new Set(visibleDates.map((d) => format(d, 'yyyy-MM-dd')));
+    const occupied = new Set<string>(gridSlots);
+    for (const r of rows) {
+      if (r.status === 'cancelled') continue;
+      if (!visibleDateStrs.has(r.reservation_date)) continue;
+      occupied.add(r.reservation_time.slice(0, 5));
+    }
+    return Array.from(occupied).sort();
+  }, [gridSlots, rows, viewMode, weekDays, selectedDay]);
+
   // T-20260611-foot-RESVCAL-DISPLAY-REWORK item1: 날짜별 유형 카운트 (취소 제외).
   //   총건수 = 초진(new) + 재진(returning)만. 힐러(HL)는 별도 표기, 총합 제외.
   const dayKindCounts = useMemo(() => {
@@ -2757,8 +2777,10 @@ export default function Reservations() {
                 /* T-20260609-foot-RESV-LIVE-AUTOSCROLL: 인라인 generateSlots → gridSlots 단일 소스 사용
                    (day view: 선택일 close_time / week view: clinic.close_time = 평일 최대, 토요일 열은 allowed=false로 그레이아웃)
                    T-20260622-foot-RESVCAL-30MIN-SLOT-REVERT: HOURLY-GROUPING 정시 버킷 REVERT — tbody 행 = 30분 단위 슬롯(gridSlots).
-                   10:30 등 반시 예약은 다시 독립 행에 표시(정시 흡수 철회). 컴팩트 압축(COMPACT-HALFSIZE/CONTENT-KEEP className)은 그대로 유지. */
-                gridSlots.map(
+                   10:30 등 반시 예약은 다시 독립 행에 표시(정시 흡수 철회). 컴팩트 압축(COMPACT-HALFSIZE/CONTENT-KEEP className)은 그대로 유지.
+                   T-20260815-foot-JONGNO-OPHOURS-0901-EXISTING-RESV-CENSUS-RENDER AC-4: 행 소스 = renderSlots
+                   (gridSlots ∪ 운영창 밖 기존 예약 시각). 신규예약 차단축(allowed=slotsFor)은 셀 단위 불변. */
+                renderSlots.map(
                   (time) => (
                     <tr
                       key={time}
