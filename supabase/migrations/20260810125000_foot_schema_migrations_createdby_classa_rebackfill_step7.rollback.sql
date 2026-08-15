@@ -1,6 +1,6 @@
 -- ROLLBACK — T-20260802-foot-CREATEDBY-NOTNULL-DISCRIMINATOR-PILOT STEP7 (되돌림)
---   20260810120000_..._createdby_classa_rebackfill_step7.sql 원복 — 재backfill 센티넬을 NULL 로 재설정.
---   author: dev-foot / 2026-08-10
+--   20260810125000_..._createdby_classa_rebackfill_step7.sql 원복 — 재backfill 센티넬을 NULL 로 재설정.
+--   author: dev-foot / 2026-08-10 (re-authored 2026-08-16 — renumber 20260810120000→125000)
 --
 -- ⚠ forward-only 원칙상 통상 롤백 불요. 긴급 원복 시에만 사용.
 --   원복 = 재backfill 이 바꾼 정확한 집합(_backup 스냅샷)에 대해서만 created_by 를 사전값(NULL)로 재설정.
