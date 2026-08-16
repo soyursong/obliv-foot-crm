@@ -230,7 +230,13 @@ function App() {
                 Routes 대신 ResetPassword 렌더(루트/admin 흡수 차단). 평소엔 통과(회귀 0). */}
             <RecoveryGate>
             <Routes>
-              <Route path="/login" element={<Login />} />
+              {/* T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: Cloudflare "Suspected Phishing"
+                  인터스티셜이 pages.dev 공유 서브도메인 연좌로 경로 `/login`(server GET)만 하드차단(403·path-exact,
+                  CEO 실측 MSG-20260816-151913). 앱 로그인 canonical 경로를 미차단 경로 `/signin`으로 rename →
+                  하드리프레시·직접URL·북마크 전부 unblock. `/login`은 client-side redirect alias로만 잔존
+                  (SPA 내부 stray nav 방어용 — server GET `/login`은 여전히 edge 차단이나 앱은 이 경로로 향하지 않음). */}
+              <Route path="/signin" element={<Login />} />
+              <Route path="/login" element={<Navigate to="/signin" replace />} />
               <Route path="/register" element={<Register />} />
               {/* recovery 딥링크 전용 라우트(직접 접근·향후 redirect_to 지정 대비 fallback).
                   주 경로는 RecoveryGate(루트 착지 감지) — 이 라우트는 recovery 세션 없이 진입 시

@@ -456,7 +456,8 @@ export default function AdminLayout() {
 
   const handleLogout = async () => {
     await signOut();
-    navigate('/login');
+    // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: `/login`→`/signin` (CF 피싱 오탐 path-exact 차단 회피).
+    navigate('/signin');
   };
 
   const today = new Date().toLocaleDateString('ko-KR', {

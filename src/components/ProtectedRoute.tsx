@@ -14,7 +14,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!session) return <Navigate to="/login" replace />;
+  // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: `/login`→`/signin` (CF 피싱 오탐 path-exact 차단 회피).
+  if (!session) return <Navigate to="/signin" replace />;
   if (profile && !profile.approved && profile.role !== 'admin') {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">

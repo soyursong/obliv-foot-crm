@@ -53,7 +53,8 @@ export default function ResetPassword({ expired = false, onDone }: Props) {
       // signOut 실패해도 로그인 화면 복귀는 계속 진행.
     }
     onDone?.();
-    navigate('/login');
+    // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: `/login`→`/signin` (CF 피싱 오탐 path-exact 차단 회피).
+    navigate('/signin');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
