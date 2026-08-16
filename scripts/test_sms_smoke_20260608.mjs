@@ -1,5 +1,5 @@
 /**
- * MSG-20260608-170230-smstest — 이광현 팀장 요청: 01035690462 테스트 SMS 발송
+ * MSG-20260608-170230-smstest — 이광현 팀장 요청: 테스트 SMS 발송 (실수신 번호=off-git, TEST_PHONE env/synthetic 참조)
  * 부모티켓: T-20260608-foot-RESV-AUTO-SMS-NOFIRE / linked: T-20260608-foot-SMS-EF-DEPLOY-VERIFY
  *
  * 목적:
@@ -9,14 +9,15 @@
  *  3) notification_logs 적재 확인 (message_id/status/channel)
  *  4) 오늘 예약 message_id의 Solapi 전달 리포트 조회
  *
- * 실행: node scripts/test_sms_smoke_01035690462_20260608.mjs
+ * 실행: node scripts/test_sms_smoke_20260608.mjs  (실수신 번호는 TEST_PHONE env 로 주입; 미주입 시 synthetic)
  */
 import pg from 'pg';
 import fs from 'fs';
 import crypto from 'crypto';
 const { Client } = pg;
 
-const TEST_PHONE = '01035690462';
+// 실수신 번호는 off-git env(TEST_PHONE)로 주입. 미주입 시 structural-synthetic 기본값(§4.2.1(iv)(a) 오름차순 run, 엔진 규칙-permit).
+const TEST_PHONE = process.env.TEST_PHONE || '01012345678';
 
 // ── .env 로드 ─────────────────────────────────────────────
 const env = {};
