@@ -301,6 +301,7 @@ function useCoordinators(clinicId: string | null | undefined) {
         .eq('clinic_id', clinicId) // 현재 클리닉 = 종로풋센터(foot CRM 단일 지점 스코프)
         .eq('role', 'coordinator')
         .eq('active', true) // 재직중
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name', { ascending: true });
       if (error) {
         // staff 테이블 자체 미적용 prod(undefined_table 42P01)만 빈 목록 폴백(섹션 무파손).

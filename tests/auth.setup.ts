@@ -70,7 +70,8 @@ setup('authenticate', async ({ page }) => {
     user: session.user,
   });
 
-  await page.goto('/login');
+  // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: canonical 로그인 경로 rename /login→/entry.
+  await page.goto('/entry');
   await page.evaluate(
     ({ key, value }) => {
       localStorage.setItem(key, value);

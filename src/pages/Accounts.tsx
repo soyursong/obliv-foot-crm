@@ -120,6 +120,7 @@ export default function Accounts() {
         .from('staff')
         .select('*')
         .eq('clinic_id', clinic.id)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name', { ascending: true }),
     ]);
     if (usersResp.error) {

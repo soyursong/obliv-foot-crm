@@ -5,7 +5,7 @@
  * 고객 데이터(이름/생년월일/차트번호/주민번호)를 Supabase에서 직접 로드한 뒤
  * PenChartTab을 popupMode=true 로 렌더 → 저장 후 BroadcastChannel 브로드캐스트 + window.close().
  *
- * 인증: 동일 origin → localStorage Supabase 세션 공유. 미인증 시 ProtectedRoute가 /login 리다이렉트.
+ * 인증: 동일 origin → localStorage Supabase 세션 공유. 미인증 시 ProtectedRoute가 /entry 리다이렉트.
  */
 
 import { useEffect, useState } from 'react';

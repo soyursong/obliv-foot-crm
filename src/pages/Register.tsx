@@ -62,7 +62,7 @@ export default function Register() {
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             관리자 승인 후 로그인하실 수 있습니다.
           </div>
-          <Button variant="outline" onClick={() => navigate('/login')} className="w-full">
+          <Button variant="outline" onClick={() => navigate('/entry')} className="w-full">
             로그인으로 돌아가기
           </Button>
         </div>
@@ -138,7 +138,7 @@ export default function Register() {
           </Button>
           <button
             type="button"
-            onClick={() => navigate('/login')}
+            onClick={() => navigate('/entry')}
             className="w-full text-sm text-muted-foreground hover:text-foreground"
           >
             이미 계정이 있으신가요? 로그인

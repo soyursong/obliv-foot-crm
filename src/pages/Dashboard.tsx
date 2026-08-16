@@ -25,7 +25,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
-import { addDays, format, isSameDay, subDays } from 'date-fns';
+import { addDays, format, isSameDay, subDays, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import {
   ArrowDown,
@@ -52,6 +52,7 @@ import {
   ZoomIn,
   Package,
   Ticket,
+  TicketCheck,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -75,7 +76,7 @@ import { useAuth } from '@/lib/auth';
 import { useClinic } from '@/hooks/useClinic';
 // T-20260708-foot-DASH-HSCROLL-DRAGPAN: 현황판 가로영역 grab-and-drag(pan)
 import { useDragToPan } from '@/hooks/useDragToPan';
-import { closeTimeFor, generateSlots, openTimeFor } from '@/lib/schedule';
+import { generateSlots, slotsForDate, isOpenDay } from '@/lib/schedule';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
@@ -165,6 +166,18 @@ const TrialHolderCtx = createContext<Set<string>>(new Set());
 /** T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: [체험권] 배지로 relabel 대상인 canonical 티켓명(정확일치, trim 후).
  *  현장(김주연 총괄) 요청 대상 = 무좀체험권 / 내성체험권 2종만. 그 외 체험 계열(체험단·직원체험·체험권 단독 등)은 [패키지] 유지. */
 const TRIAL_TICKET_NAMES = new Set(['무좀체험권', '내성체험권']);
+
+/** T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: 활성 '1회권' 티켓 보유 고객 customer_id 집합 (잔여>0).
+ *  1회권 = packages.package_name 이 canonical 티켓명 '1회권' 과 정확일치(trim 후).
+ *  AC-0 census(prod 실측): package_name btrim='1회권' 정확일치=12건(스태프가 명시 선택한 티켓 종류).
+ *    total_sessions=1 축은 514건이나 무좀체험권(334)·오니코레이저·AF레이저 등 단일-회차 실시술까지 광범위 포섭 →
+ *    '1회권 티켓 종류'가 아니라 '아무 단일회차 패키지'라 오탐 대량발생 → 판정축으로 부적합(REJECT).
+ *  → 체험권 relabel(TRIAL_TICKET_NAMES)과 동형: package_name 정확일치가 유일 canonical 축.
+ *    부분문자열 매칭('회권'·'1회권' 포함)은 12회권/HL1회권 등 오탐 → 금지(정확일치 only). */
+const OneTimeHolderCtx = createContext<Set<string>>(new Set());
+
+/** T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: [1회권] 배지로 relabel 대상인 canonical 티켓명(정확일치, trim 후). */
+const ONETIME_TICKET_NAMES = new Set(['1회권']);
 
 /** 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 고객 customer_id 집합 (T-20260623-foot-PKGBOX-PODOLOGE-BADGE) */
 const PodologeHolderCtx = createContext<Set<string>>(new Set());
@@ -527,6 +540,9 @@ const DraggableCard = memo(function DraggableCard({
   // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 활성 체험권 티켓(무좀/내성체험권) 보유 여부
   const trialHolderSet = useContext(TrialHolderCtx);
   const hasTrial = !!(checkIn.customer_id && trialHolderSet.has(checkIn.customer_id));
+  // T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: 활성 '1회권' 티켓 보유 여부
+  const oneTimeHolderSet = useContext(OneTimeHolderCtx);
+  const hasOneTime = !!(checkIn.customer_id && oneTimeHolderSet.has(checkIn.customer_id));
   // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 여부
   const podologeHolderSet = useContext(PodologeHolderCtx);
   const hasPodologe = !!(checkIn.customer_id && podologeHolderSet.has(checkIn.customer_id));
@@ -771,6 +787,17 @@ const DraggableCard = memo(function DraggableCard({
               체험권
             </span>
           )}
+          {/* T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: '1회권' 티켓 → [1회권] 배지.
+              색상=cyan(청록) — [패키지] violet·[체험권] amber 와 모두 구분(AC-4 제3색). */}
+          {hasOneTime && (
+            <span
+              data-testid="onetime-holder-badge"
+              className="inline-flex items-center gap-0.5 bg-cyan-100 text-cyan-700 text-[9px] px-0.5 py-px rounded font-medium"
+            >
+              <TicketCheck className="h-2 w-2" />
+              1회권
+            </span>
+          )}
           {/* T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 포돌로게 회차 보유 식별 배지 */}
           {hasPodologe && (
             <span
@@ -979,6 +1006,17 @@ const DraggableCard = memo(function DraggableCard({
           >
             <Ticket className="h-2 w-2" />
             체험권
+          </span>
+        )}
+        {/* T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: '1회권' 티켓 → [1회권] 배지.
+            색상=cyan(청록) — [패키지] violet·[체험권] amber 와 모두 구분(AC-4 제3색). */}
+        {hasOneTime && (
+          <span
+            data-testid="onetime-holder-badge"
+            className="inline-flex items-center gap-0.5 bg-cyan-100 text-cyan-700 text-[9px] px-0.5 py-px rounded font-medium"
+          >
+            <TicketCheck className="h-2 w-2" />
+            1회권
           </span>
         )}
         {/* T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 포돌로게 회차 보유 식별 배지 */}
@@ -2372,11 +2410,10 @@ function DashboardTimeline({
     try { sessionStorage.removeItem(STORAGE_KEYS.THERAPIST_FOLD); } catch {/* ignore */}
   }
 
-  // T-20260513-foot-TIMETABLE-20H: 하드코딩 '20:00' → DB clinic.close_time 동적 참조
-  // 기존: generateSlots('10:00', '20:00', 30) → 마지막 슬롯 19:30 (20:00 누락)
-  // 수정: closeTimeFor(date, clinic) = '20:30' → 마지막 슬롯 20:00 포함
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: date-aware 세대 SSOT(slotsForDate) — 날짜별 운영시간(세대/flat) 자동 반영, 휴무일 → [].
+  //   (T-20260513-foot-TIMETABLE-20H flat close_time 동적참조를 세대 resolver 로 승격)
   const slots = clinic
-    ? generateSlots(openTimeFor(clinic), closeTimeFor(date, clinic), clinic.slot_interval)
+    ? slotsForDate(date, clinic)
     : generateSlots('10:00', '20:00', 30);
 
   // ── 체크인 조회 맵 구성 ──────────────────────────────────────────────────────
@@ -2524,10 +2561,17 @@ function DashboardTimeline({
   // T-20260530-foot-WALKIN-OFFHOUR-SLOT AC-4: 일요일 pass-through 렌더 슬롯 보정
   // 타임라인은 slots[] 에 존재하는 슬롯만 렌더한다. 일요일 워크인이 운영시간 범위
   // (clinic 설정 기반 slots) 밖 시각으로 접수된 경우에도 "그 시각 그대로" 표시되도록
-  // slotMap 에 쌓인 실데이터 슬롯을 합쳐 정렬한다. 평일/토는 slots 그대로(무변경).
-  const renderSlots = isSunday
-    ? Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort()
-    : slots;
+  // slotMap 에 쌓인 실데이터 슬롯을 합쳐 정렬한다.
+  //
+  // T-20260815-foot-JONGNO-OPHOURS-0901-EXISTING-RESV-CENSUS-RENDER AC-4 (렌더 회귀 보정):
+  //   09-01 운영창 축소(평일 마지막슬롯 19:00 / 토 18:00 / 일 휴무·슬롯0)로, 운영창 밖
+  //   (평일 19:30·20:00 / 토 18:30 / 일 전건) "기존 예약"이 slots(신규예약 가능 슬롯) 밖으로
+  //   밀려나 타임라인 행 자체가 사라지는 회귀(스태프 미인지 → 노쇼/이중예약)를 봉합한다.
+  //   기존 일요일 한정 pass-through 를 전 요일로 일반화: slotMap(실 예약·체크인 데이터) 슬롯을
+  //   항상 slots 에 합쳐 기존 예약을 표시한다. 표시축(renderSlots) ⊥ 신규예약 차단축(slots)
+  //   분리 — 이 행은 표시 전용(신규 생성 UI 없음)이고, 신규예약 가능 여부는 여전히 slots/
+  //   isOpenDay 기준(부모 T-...-CHANGE-20260901 AC-1/AC-4 무저촉). 일요일 동작 무회귀.
+  const renderSlots = Array.from(new Set([...slots, ...Object.keys(slotMap)])).sort();
 
   // T-20260623-foot-TIMETABLE-VISITCOUNT-STATUSBAR-4ITEM 요청1:
   //   통합시간표 금일 총 방문 예정 수 — 초진/재진 카운트. slotMap(이미 cancelled 제외·
@@ -3184,6 +3228,8 @@ function QuickReservationDialog({
   const [saving, setSaving] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [selectedBirthDate, setSelectedBirthDate] = useState<string | null>(null);
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: 휴무일 예약 실차단(AC-4) + date-aware 시간슬롯용 clinic(운영시간 세대 포함).
+  const clinic = useClinic();
   // AC-2: 신규 환자 즉석 등록 패널
   const [showNewPatient, setShowNewPatient] = useState(false);
   const [npName, setNpName] = useState('');
@@ -3264,6 +3310,13 @@ function QuickReservationDialog({
         setSaving(false);
         return;
       }
+    }
+
+    // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901 (AC-4): 휴무일(일요일, 2026-09-01~) 빠른예약 실차단.
+    if (clinic && form.date && !isOpenDay(parseISO(form.date), clinic)) {
+      toast.error('휴무일에는 예약을 생성할 수 없습니다 (일요일 휴무).');
+      setSaving(false);
+      return;
     }
 
     // T-20260610-foot-RESV-DUPGUARD-SAMEDAY: 동일고객 당일 예약 중복 생성 방지 (insert 직전 게이트)
@@ -3619,6 +3672,8 @@ export default function Dashboard() {
   const [pkgHolderSet, setPkgHolderSet] = useState<Set<string>>(new Set());
   // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 잔여>0인 활성 체험권 티켓(무좀/내성체험권) 보유 고객 ID 집합
   const [trialHolderSet, setTrialHolderSet] = useState<Set<string>>(new Set());
+  // T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: 잔여>0인 활성 '1회권' 티켓 보유 고객 ID 집합
+  const [oneTimeHolderSet, setOneTimeHolderSet] = useState<Set<string>>(new Set());
   // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 보유 고객 ID 집합
   const [podologeHolderSet, setPodologeHolderSet] = useState<Set<string>>(new Set());
   // T-20260522-foot-ALT-BADGE: ALT 활성 고객 ID 집합
@@ -4608,7 +4663,7 @@ export default function Dashboard() {
       .select('id, customer_id, package_name, total_sessions, podologe_sessions')
       .eq('clinic_id', clinic.id)
       .eq('status', 'active');
-    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); setTrialHolderSet(new Set()); setPodologeHolderSet(new Set()); return; }
+    if (!pkgs || pkgs.length === 0) { setPkgMap(new Map()); setPkgHolderSet(new Set()); setTrialHolderSet(new Set()); setOneTimeHolderSet(new Set()); setPodologeHolderSet(new Set()); return; }
 
     const pkgIds = pkgs.map((p: { id: string }) => p.id);
     // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: 활성 패키지가 누적(클리닉당 수백건)되면
@@ -4633,6 +4688,8 @@ export default function Dashboard() {
     const holderSet = new Set<string>();
     // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: 잔여>0 체험권 티켓(무좀/내성체험권) 보유 고객 ID 집합
     const trialSet = new Set<string>();
+    // T-20260814-foot-CUSTBOX-BADGE-ONETIME-RELABEL: 잔여>0 '1회권' 티켓 보유 고객 ID 집합
+    const oneTimeSet = new Set<string>();
     // T-20260623-foot-PKGBOX-PODOLOGE-BADGE: 활성 패키지 중 포돌로게(podologe_sessions>0) 고객 ID 집합 (추가 DB 쿼리 없음)
     const podologeSet = new Set<string>();
     for (const p of pkgs as { id: string; customer_id: string; package_name: string; total_sessions: number; podologe_sessions: number | null }[]) {
@@ -4640,18 +4697,23 @@ export default function Dashboard() {
       const remaining = Math.max(0, p.total_sessions - used);
       // T-20260617-foot-PKGBOX-USED-FORMAT: used 보존 → 회차 번호 표기(N=used+1)
       map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions, used });
-      // T-20260810-foot-CUSTBOX-TRIAL-TICKET-BADGE-RELABEL: package_name 정확일치(trim)로 체험권 티켓 분기.
-      //   체험권 → trialSet([체험권] 배지), 그 외 → holderSet([패키지] 배지 유지). 잔여>0 만 대상(기존 배지 노출 조건 동일).
-      const isTrialTicket = TRIAL_TICKET_NAMES.has((p.package_name ?? '').trim());
+      // package_name 정확일치(trim)로 티켓 종류 분기. 잔여>0 만 대상(기존 배지 노출 조건 동일).
+      //   AC-2 상호배타 판정 순서: 체험권 → 1회권 → 그 외(일반 패키지). package_name 은 3집합에
+      //   동시 포함될 수 없으므로(정확일치 disjoint) 패키지 단위 분류는 배타적. 체험권/일반패키지 종전 유지.
+      const name = (p.package_name ?? '').trim();
+      const isTrialTicket = TRIAL_TICKET_NAMES.has(name);
+      const isOneTimeTicket = ONETIME_TICKET_NAMES.has(name);
       if (remaining > 0) {
-        if (isTrialTicket) trialSet.add(p.customer_id);
-        else holderSet.add(p.customer_id);
+        if (isTrialTicket) trialSet.add(p.customer_id);        // → [체험권] 배지
+        else if (isOneTimeTicket) oneTimeSet.add(p.customer_id); // → [1회권] 배지
+        else holderSet.add(p.customer_id);                     // → [패키지] 배지 유지
       }
       if ((p.podologe_sessions ?? 0) > 0) podologeSet.add(p.customer_id);
     }
     setPkgMap(map);
     setPkgHolderSet(holderSet);
     setTrialHolderSet(trialSet);
+    setOneTimeHolderSet(oneTimeSet);
     setPodologeHolderSet(podologeSet);
   }, [clinic]);
 
@@ -4678,6 +4740,7 @@ export default function Dashboard() {
       .eq('clinic_id', clinic.id)
       .eq('active', true)
       .in('role', ['therapist', 'technician', 'consultant', 'director'])
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .order('name');
     const all = (data ?? []) as Staff[];
     setTherapists(all.filter((s) => s.role === 'therapist' || s.role === 'technician'));
@@ -4694,6 +4757,7 @@ export default function Dashboard() {
       .select('id')
       .eq('user_id', profile.id)
       .eq('active', true)
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .maybeSingle();
     setMyStaffId((data as { id: string } | null)?.id ?? null);
   }, [profile]);
@@ -4709,6 +4773,7 @@ export default function Dashboard() {
         .eq('clinic_id', clinic.id)
         .eq('user_id', profile.id)
         .eq('active', true)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .maybeSingle();
       if (!cancelled) setMyAssignStaffId((data as { id: string } | null)?.id ?? null);
     })();
@@ -7794,6 +7859,7 @@ export default function Dashboard() {
       <ChecklistDoneCtx.Provider value={checklistDone}>
       <PkgHolderCtx.Provider value={pkgHolderSet}>
       <TrialHolderCtx.Provider value={trialHolderSet}>
+      <OneTimeHolderCtx.Provider value={oneTimeHolderSet}>
       <PodologeHolderCtx.Provider value={podologeHolderSet}>
       <AltHolderCtx.Provider value={altHolderSet}>
       <OutstandingMapCtx.Provider value={outstandingMap}>
@@ -8008,6 +8074,7 @@ export default function Dashboard() {
       </OutstandingMapCtx.Provider>
       </AltHolderCtx.Provider>
       </PodologeHolderCtx.Provider>
+      </OneTimeHolderCtx.Provider>
       </TrialHolderCtx.Provider>
       </PkgHolderCtx.Provider>
       </ChecklistDoneCtx.Provider>

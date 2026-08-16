@@ -767,6 +767,7 @@ export default function Closing() {
         .eq('clinic_id', clinic!.id)
         .eq('active', true)
         .in('role', ['consultant', 'coordinator', 'director', 'therapist'])
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .order('name', { ascending: true });
       if (error) throw error;
       return (data ?? []) as Staff[];

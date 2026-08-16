@@ -17,7 +17,7 @@ import { ko } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
-import { hasOpsAuthority } from '@/lib/permissions';
+import { hasOpsAuthority, canIssueProgressDocs } from '@/lib/permissions';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
 import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -252,6 +252,12 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   // T-20260702-foot-PROGRESS-CSV-EXPORT: PHI 반출 게이트 — admin/manager(운영권한, 대표원장 포함)만 노출/동작.
   //   경과분석 탭 열람권과 동일 계층. 치료사/일반직원에게는 CSV 버튼 미노출.
   const canExportCsv = hasOpsAuthority(profile);
+  // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP (A안, read/write split): 경과분석지 '발행(write)' 게이트.
+  //   발행(개별 발행하기·일괄처리) = 원장(director)+admin/manager 만. 코디/상담/치료사(read-only)에는 미노출.
+  //   ★두 surface(치료테이블 경과분석 · 진료대시보드 서류작성 탭)가 동일 컴포넌트를 재사용 → 여기서 게이트 = surface drift 0.
+  const canIssue = canIssueProgressDocs(profile);
+  // 선택(체크박스)·발행 열은 발행 또는 CSV 반출 권한이 있을 때만 노출. 순수 read 역할(코디/상담/치료사)은 read-only 명단.
+  const canSelect = canIssue || canExportCsv;
   const [csvBusy, setCsvBusy] = useState(false);
   // T-20260811-foot-SONGDO-FORM-DOWNLOAD: per-row txt 다운로드 진행 상태(현재 처리 중인 reservationId).
   const [txtBusyId, setTxtBusyId] = useState<string | null>(null);
@@ -628,7 +634,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
             {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 상단 일괄처리 툴바(선택 개수 + 일괄처리 버튼). */}
             {rows.length > 0 && (
               <>
-                {selectedCount > 0 && (
+                {canSelect && selectedCount > 0 && (
                   <span
                     className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold text-neutral-700"
                     data-testid="progress-bulk-selected-count"
@@ -636,17 +642,20 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     선택 {selectedCount}명
                   </span>
                 )}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleBulkIssue}
-                  disabled={selectedCount === 0}
-                  data-testid="progress-bulk-action-btn"
-                >
-                  <ListChecks className="h-3.5 w-3.5" />
-                  일괄처리
-                </Button>
+                {/* T-20260812-...-DOCWRITE-LISTUP (A안): 일괄처리(발행 write) = 원장+admin/manager 만. */}
+                {canIssue && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBulkIssue}
+                    disabled={selectedCount === 0}
+                    data-testid="progress-bulk-action-btn"
+                  >
+                    <ListChecks className="h-3.5 w-3.5" />
+                    일괄처리
+                  </Button>
+                )}
                 {/* T-20260702-foot-PROGRESS-CSV-EXPORT: 선택 환자 시술기록 전체 CSV 다운로드. admin/manager(운영권한)만 노출(PHI 가드). */}
                 {canExportCsv && (
                   <Button
@@ -708,24 +717,27 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="border-b bg-muted/20 text-left text-[11px] font-semibold text-muted-foreground">
-                  {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 전체선택 체크박스 */}
-                  <th className="px-2 py-1 whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
-                      checked={allSelected}
-                      onChange={toggleSelectAll}
-                      aria-label="전체선택"
-                      data-testid="progress-selectall-checkbox"
-                    />
-                  </th>
+                  {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 전체선택 체크박스
+                      T-20260812-...-DOCWRITE-LISTUP (A안): 발행/반출 권한 있을 때만 선택 열 노출(read-only 역할 미노출). */}
+                  {canSelect && (
+                    <th className="px-2 py-1 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        aria-label="전체선택"
+                        data-testid="progress-selectall-checkbox"
+                      />
+                    </th>
+                  )}
                   <th className="px-2 py-1 whitespace-nowrap">#</th>
                   <th className="px-2 py-1 whitespace-nowrap">환자</th>
                   <th className="px-2 py-1 whitespace-nowrap">회차</th>
                   <th className="px-2 py-1 whitespace-nowrap">다음 예약</th>
                   <th className="px-2 py-1 whitespace-nowrap">담당자</th>
-                  {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행 열 */}
-                  <th className="px-2 py-1 whitespace-nowrap text-right">발행</th>
+                  {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행 열 (발행/반출 권한자만) */}
+                  {canSelect && <th className="px-2 py-1 whitespace-nowrap text-right">발행</th>}
                 </tr>
               </thead>
               <tbody>
@@ -735,17 +747,20 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     className="border-b last:border-0 transition-colors hover:bg-muted/30"
                     data-testid="progress-targets-row"
                   >
-                    {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: row 선택 체크박스 */}
-                    <td className="px-2 py-1">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
-                        checked={selectedIds.has(r.rowKey)}
-                        onChange={() => toggleRow(r.rowKey)}
-                        aria-label={`${r.customerName} 선택`}
-                        data-testid="progress-row-checkbox"
-                      />
-                    </td>
+                    {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: row 선택 체크박스
+                        T-20260812-...-DOCWRITE-LISTUP (A안): 발행/반출 권한자만 선택 셀 노출. */}
+                    {canSelect && (
+                      <td className="px-2 py-1">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer accent-teal-600 align-middle"
+                          checked={selectedIds.has(r.rowKey)}
+                          onChange={() => toggleRow(r.rowKey)}
+                          aria-label={`${r.customerName} 선택`}
+                          data-testid="progress-row-checkbox"
+                        />
+                      </td>
+                    )}
                     <td className="px-2 py-1 text-[11px] tabular-nums text-muted-foreground">{idx + 1}</td>
                     <td className="px-2 py-1 font-medium whitespace-nowrap">
                       {/* 좌클릭=2번차트 / 우클릭=CRM 컨텍스트 메뉴 (부모 nameInteraction 재사용) */}
@@ -795,40 +810,46 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     <td className="px-2 py-1 whitespace-nowrap text-muted-foreground" data-testid="progress-registrar-cell">
                       {r.registrarName ? `@${r.registrarName}` : '—'}
                     </td>
-                    {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행하기 버튼(placeholder). */}
-                    <td className="px-2 py-1 whitespace-nowrap text-right">
-                      <div className="inline-flex items-center gap-1.5">
-                        {/* T-20260811-foot-SONGDO-FORM-DOWNLOAD: 개별 '치료이력 다운로드'(txt) — admin/manager(운영권한)만 노출(PHI 가드). */}
-                        {canExportCsv && (
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="outline"
-                            onClick={() => handleTxtExport(r)}
-                            disabled={txtBusyId === r.rowKey || !r.customerId}
-                            title="날짜별 치료이력(예약/접수메모)을 txt 파일로 내려받기"
-                            data-testid="progress-txt-download-btn"
-                          >
-                            {txtBusyId === r.rowKey ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <FileText className="h-3 w-3" />
-                            )}
-                            치료이력
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="outline"
-                          onClick={() => handleIssueOne(r)}
-                          data-testid="progress-issue-btn"
-                        >
-                          <FileUp className="h-3 w-3" />
-                          발행하기
-                        </Button>
-                      </div>
-                    </td>
+                    {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행하기 버튼(placeholder).
+                        T-20260812-...-DOCWRITE-LISTUP (A안): 발행 열은 발행/반출 권한자만(read-only 역할 미노출). */}
+                    {canSelect && (
+                      <td className="px-2 py-1 whitespace-nowrap text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          {/* T-20260811-foot-SONGDO-FORM-DOWNLOAD: 개별 '치료이력 다운로드'(txt) — admin/manager(운영권한)만 노출(PHI 가드). */}
+                          {canExportCsv && (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              onClick={() => handleTxtExport(r)}
+                              disabled={txtBusyId === r.rowKey || !r.customerId}
+                              title="날짜별 치료이력(예약/접수메모)을 txt 파일로 내려받기"
+                              data-testid="progress-txt-download-btn"
+                            >
+                              {txtBusyId === r.rowKey ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <FileText className="h-3 w-3" />
+                              )}
+                              치료이력
+                            </Button>
+                          )}
+                          {/* 발행(write) = 원장+admin/manager 만. 코디/상담/치료사에는 미노출(A안 read/write split). */}
+                          {canIssue && (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              onClick={() => handleIssueOne(r)}
+                              data-testid="progress-issue-btn"
+                            >
+                              <FileUp className="h-3 w-3" />
+                              발행하기
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

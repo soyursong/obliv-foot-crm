@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { Clinic } from './types';
+import type { Clinic, OperatingHoursGeneration } from './types';
 
 const SLUG = 'jongno-foot';
 
@@ -20,7 +20,21 @@ let inflight: Promise<Clinic> | null = null;
 async function fetchClinic(): Promise<Clinic> {
   const { data, error } = await supabase.from('clinics').select('*').eq('slug', SLUG).single();
   if (error) throw error;
-  cached = data as Clinic;
+  const clinic = data as Clinic;
+
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: date-aware 운영시간 세대 부착(롱레 clinic_operating_hours mirror).
+  //   ★verbatim mirror 컬럼만 select. is_closed 컬럼 없음(휴무=row-absent, DA Q4).
+  //   ★테이블 미배포(마이그 미적용) DB 는 PostgREST 42P01 → genErr 로 graceful degrade → flat 3컬럼 fallback
+  //     (배포↔마이그 순서 레이스 내성). RLS 거부(anon 등)도 동일하게 무해 폴백.
+  const { data: gens, error: genErr } = await supabase
+    .from('clinic_operating_hours')
+    .select('day_of_week, open_time, close_time, last_booking_slot, effective_from, effective_to')
+    .eq('clinic_id', clinic.id);
+  if (!genErr && gens) {
+    clinic.operating_hours = gens as OperatingHoursGeneration[];
+  }
+
+  cached = clinic;
   cachedAt = Date.now();
   return cached;
 }

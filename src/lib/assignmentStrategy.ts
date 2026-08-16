@@ -412,7 +412,8 @@ export async function fetchPresentEnabledConsultants(clinicId: string): Promise<
         .select('id, auto_assign_enabled')
         .eq('clinic_id', clinicId)
         .eq('active', true)
-        .eq('role', 'consultant'),
+        .eq('role', 'consultant')
+        .is('deleted_at', null), // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       supabase
         .from('staff_attendance')
         .select('staff_id, status')
@@ -649,7 +650,8 @@ async function fetchConsultantSortOrder(clinicId: string): Promise<Map<string, n
       .select('id, assign_sort_order')
       .eq('clinic_id', clinicId)
       .eq('active', true)
-      .eq('role', 'consultant');
+      .eq('role', 'consultant')
+      .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
     if (error) return new Map();
     const m = new Map<string, number>();
     for (const r of (data ?? []) as { id: string; assign_sort_order: number | null }[]) {

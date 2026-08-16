@@ -120,7 +120,8 @@ export default function Handover() {
         .from('staff')
         .select('id, name, role, active')
         .eq('clinic_id', clinic.id)
-        .eq('active', true);
+        .eq('active', true)
+        .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
 
       // 이름 → CRM staff.role 매핑 (name 키, 공백 제거)
       const norm = (s: string) => s.replace(/\s+/g, '');

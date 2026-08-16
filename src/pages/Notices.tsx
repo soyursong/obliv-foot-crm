@@ -47,6 +47,7 @@ export default function Notices() {
       .eq('user_id', profile.id)
       .eq('clinic_id', clinic.id)
       .eq('active', true)
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .maybeSingle()
       .then(({ data }) => setCreatorStaffId((data as { id: string } | null)?.id ?? null));
   }, [profile?.id, clinic?.id]);

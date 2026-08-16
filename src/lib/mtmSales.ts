@@ -25,7 +25,7 @@ import {
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 import { fetchAttributedPayments, STAFF_UNASSIGNED } from '@/lib/staffRevenue';
-import { todaySeoulISODate } from '@/lib/format';
+import { todaySeoulISODate, seoulISODate } from '@/lib/format';
 import {
   fetchRevenue,
   fetchNoshowReturning,
@@ -459,4 +459,163 @@ export async function fetchNoshowReturningPrev(
     prevHasData: true,
     prevLabel: prev.label,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260814-foot-SALESSTAT-WEEKLY-AOV-ADD — 주단위 매출 breakdown 표 (객단가 포함)
+//   CEO 결정(b): 통계>매출통계에 여러 주를 나열하는 신규 '주별 매출 breakdown 표' 신설.
+//
+// ★산식 정합 게이트(AC-2): 신규 주단위 객단가는 **기존 월간 매출통계 객단가와 동일 분자·분모 정의**.
+//   · 분자(주 매출)   = 누적매출(순) = package + single − refund (RevenueSection totals.total / fetchRevenue 와 동일 SSOT).
+//   · 분모(주 내원환자) = 기간 내 체크인(취소·삭제·테스트 제외) distinct customer_id
+//                        (fetchMtmCardMetrics visitPatients 정의 100% 미러 — 별도 분모 authoring 0).
+//   · 객단가 = 주 매출 ÷ 주 내원환자수, 내원환자 0 → null(0-div 가드, 화면 '-').
+//   · is_test(테스트고객) 제외 = getSimulationCustomerIds + 매출/체크인 양측 동일 필터(AC-3).
+//
+//   ★ db_change=false: 주단위 = 기존 read-path(fetchRevenue 일별 net + check_ins distinct)를
+//     ISO주(월요일 시작, resolveRange 'week' 와 동일 경계)로 재그룹만 한다. 신규 RPC/컬럼/테이블 0.
+//   READ-ONLY 집계. write/RPC/DDL/신규컬럼·테이블·enum 무접촉(§S2.4 데이터정책 게이트 비유발).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface WeeklyRevenueRow {
+  weekStart: string;      // yyyy-MM-dd — 해당 주 월요일(경계 raw)
+  weekEnd: string;        // yyyy-MM-dd — 해당 주 일요일(경계 raw)
+  rangeStart: string;     // yyyy-MM-dd — 조회기간으로 clip 된 주 시작일(표시용)
+  rangeEnd: string;       // yyyy-MM-dd — 조회기간으로 clip 된 주 종료일(표시용)
+  label: string;          // "8/11~8/17"(clip 된 표시 라벨)
+  revenue: number;        // 주 매출(순) = pkg + single − refund
+  visitPatients: number;  // 주 내원환자 수(distinct customer_id, 취소·삭제·테스트 제외)
+  arpu: number | null;    // 객단가 = revenue ÷ visitPatients. 내원 0 → null('-')
+}
+
+/** yyyy-MM-dd → 그 주의 월요일(yyyy-MM-dd). UTC 순수 날짜연산(TZ 무관, resolveRange 'week' 와 동일 경계). */
+function mondayOfISO(dateISO: string): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay();            // 0=일 … 6=토
+  const diffToMon = (dow + 6) % 7;       // 월요일까지 뒤로 이동할 일수
+  dt.setUTCDate(dt.getUTCDate() - diffToMon);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** yyyy-MM-dd + n일 → yyyy-MM-dd (UTC 순수 연산). */
+function addDaysISO(dateISO: string, n: number): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** "M/D" 표시(선행 0 제거). */
+function shortMD(dateISO: string): string {
+  const [, m, d] = dateISO.split('-').map(Number);
+  return `${m}/${d}`;
+}
+
+/** 주별 집계 입력용 체크인 행(내원환자 distinct 산정). */
+export interface WeeklyCheckInRow {
+  customer_id: string | null;
+  checked_in_at: string | null;  // timestamptz(UTC) — KST 날짜로 환산해 주 귀속
+}
+
+/**
+ * 순수 집계(테스트 가능): 일별 매출 + 체크인 행 → 주별(ISO주, 월요일 시작) 매출·내원환자수·객단가.
+ *   · 매출(순) = pkg + single − refund (RevenueSection totals.total / 월간 객단가 분자 SSOT 동일).
+ *   · 내원환자 = distinct customer_id(취소·삭제 체크인은 호출부에서 이미 제외 · 테스트고객 simIds 제외).
+ *   · 객단가 = 주 매출 ÷ 주 내원환자수, 내원 0 → null(0-div 가드) — 월간 매출통계 객단가 정의 100% 미러(AC-2).
+ * @param simIds 테스트(is_test/sim) 고객 id 집합 — 매출은 RPC 단, 체크인은 여기서 제외(AC-3).
+ * @returns 주 시작일 오름차순 WeeklyRevenueRow[]. 매출·내원 0인 주도 포함(기간 완전성).
+ */
+export function aggregateWeeklyRevenue(
+  from: string,
+  to: string,
+  revRows: RevenueRow[],
+  checkIns: WeeklyCheckInRow[],
+  simIds: Set<string>,
+): WeeklyRevenueRow[] {
+  // 1) 매출(순) 일별 → 주 버킷.
+  const revByWeek = new Map<string, number>();
+  for (const r of revRows) {
+    const wk = mondayOfISO(r.dt);
+    const net =
+      (r.package_amount ?? 0) + (r.single_amount ?? 0) - (r.refund_amount ?? 0);
+    revByWeek.set(wk, (revByWeek.get(wk) ?? 0) + net);
+  }
+
+  // 2) 내원환자(distinct customer_id) 주 버킷 — KST 날짜로 주 귀속, 테스트고객 제외.
+  const visitByWeek = new Map<string, Set<string>>();
+  for (const c of checkIns) {
+    if (!c.customer_id || !c.checked_in_at) continue;
+    if (simIds.has(c.customer_id)) continue;                 // 테스트고객 제외(AC-3)
+    const wk = mondayOfISO(seoulISODate(c.checked_in_at));    // UTC → KST 날짜 → 주 귀속
+    let set = visitByWeek.get(wk);
+    if (!set) {
+      set = new Set<string>();
+      visitByWeek.set(wk, set);
+    }
+    set.add(c.customer_id);
+  }
+
+  // 3) 기간 내 모든 주(월요일 시작) 오름차순 생성 → 매출·내원 0인 주도 표에 포함(완전성).
+  const firstMonday = mondayOfISO(from);
+  const out: WeeklyRevenueRow[] = [];
+  for (let wk = firstMonday; wk <= to; wk = addDaysISO(wk, 7)) {
+    const weekEnd = addDaysISO(wk, 6);
+    // 표시용 clip: 주 경계가 조회기간을 벗어나면 from/to 로 자른다.
+    const rangeStart = wk < from ? from : wk;
+    const rangeEnd = weekEnd > to ? to : weekEnd;
+    const revenue = revByWeek.get(wk) ?? 0;
+    const visitPatients = visitByWeek.get(wk)?.size ?? 0;
+    out.push({
+      weekStart: wk,
+      weekEnd,
+      rangeStart,
+      rangeEnd,
+      label: `${shortMD(rangeStart)}~${shortMD(rangeEnd)}`,
+      revenue,
+      visitPatients,
+      // 객단가 = 주 매출 ÷ 주 내원환자수. 내원 0 → null(0-div 가드, AC-1).
+      arpu: visitPatients > 0 ? revenue / visitPatients : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * 조회기간 [from, to] 를 ISO주(월요일 시작)로 재그룹해 주별 매출·내원환자수·객단가를 산출.
+ *   신규 RPC/컬럼 0 — fetchRevenue(일별 net) + check_ins distinct 를 재그룹만(db_change=false).
+ */
+export async function fetchWeeklyRevenueBreakdown(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<WeeklyRevenueRow[]> {
+  const simIds = await getSimulationCustomerIds(clinicId);
+
+  // 매출(순) 일별 (fetchRevenue = foot_stats_revenue SSOT).
+  const revRows = await fetchRevenue(clinicId, from, to);
+
+  // 체크인 — fetchMtmCardMetrics visitPatients 필터 100% 미러(취소·삭제 제외, KST 바운드).
+  //   PostgREST max-rows=1000 cap 우회 = cursor pagination(.range), 기존 stats 패턴 재사용.
+  const PAGE_SIZE = 1000;
+  const checkIns: WeeklyCheckInRow[] = [];
+  let offset = 0;
+  for (let page = 0; page < 60; page++) {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('customer_id, checked_in_at')
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .gte('checked_in_at', `${from}T00:00:00+09:00`)
+      .lte('checked_in_at', `${to}T23:59:59+09:00`)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as WeeklyCheckInRow[];
+    checkIns.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return aggregateWeeklyRevenue(from, to, revRows, checkIns, simIds);
 }

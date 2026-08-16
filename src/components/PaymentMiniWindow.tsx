@@ -1464,6 +1464,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         .eq('user_id', user.id)
         .eq('clinic_id', checkIn.clinic_id)
         .eq('active', true)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .maybeSingle()
         .then(({ data }) => setStaffId(data?.id ?? null));
     });
@@ -1503,6 +1504,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       .eq('clinic_id', checkIn.clinic_id)
       .eq('active', true)
       .eq('role', 'therapist')
+      .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       .order('name', { ascending: true })
       .then(({ data }) => setTherapistOptions((data ?? []) as { id: string; name: string }[]));
   }, [checkIn?.clinic_id]); // eslint-disable-line react-hooks/exhaustive-deps

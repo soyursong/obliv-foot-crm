@@ -182,18 +182,20 @@ export async function expectDeprecatedCheckinRedirect(page: Page): Promise<void>
   await expect(page.locator('#sc-name')).toHaveCount(0);
 
   // 로그인으로 튕기지 않음 (anon 라우트 보존 — 기존 B2 의도 유지)
-  expect(page.url()).not.toContain('/login');
+  // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: canonical 로그인 경로 rename /login→/entry.
+  expect(page.url()).not.toContain('/entry');
 }
 
 /**
  * /admin 진입 시 이미 storageState 로 인증된 상태가 정상.
- * Dashboard 텍스트가 보이면 true. /login 으로 튕기면 UI 로그인 폴백.
+ * Dashboard 텍스트가 보이면 true. /entry 로 튕기면 UI 로그인 폴백.
  */
 export async function loginAndWaitForDashboard(page: Page): Promise<boolean> {
   await page.goto('/admin');
 
   // storageState 로 인증된 케이스 — /admin 그대로 유지
-  if (!page.url().includes('/login')) {
+  // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: canonical 로그인 경로 rename /login→/entry.
+  if (!page.url().includes('/entry')) {
     try {
       await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
       await page.waitForTimeout(500);
@@ -207,9 +209,9 @@ export async function loginAndWaitForDashboard(page: Page): Promise<boolean> {
 }
 
 async function uiLogin(page: Page): Promise<boolean> {
-  await page.goto('/login');
+  await page.goto('/entry');
 
-  if (!page.url().includes('/login')) {
+  if (!page.url().includes('/entry')) {
     try {
       await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 15_000 });
       return true;
@@ -244,7 +246,7 @@ async function uiLogin(page: Page): Promise<boolean> {
 export async function navigateToDashboard(page: Page): Promise<boolean> {
   await page.goto('/admin');
 
-  if (page.url().includes('/login')) {
+  if (page.url().includes('/entry')) {
     return loginAndWaitForDashboard(page);
   }
 

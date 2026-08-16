@@ -39,9 +39,12 @@ export default function DoctorTools() {
   const [activeTab, setActiveTab] = useState('call_dashboard');
 
   // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 서류작성(opinion_doc) 탭 경과분석지 발행 대상 리스트업.
-  //   ★AC3 PHI 게이트: 원장(director) + 운영권한(admin/manager)만 노출. 판정 = SSOT predicate
-  //     canSeeProgressDocs(permissions.ts) — canViewPhraseManagement/canEditClinicMgmt 와 동일 stopgap
-  //     (has_ops_authority 미적재 동안 대표원장 lock-out 방지). STEP6 인라인 role=== 이관(SSOT 사용).
+  //   ★A안(read/write split, 김주연 총괄 확정 2026-08-14):
+  //     · 명단 조회(READ)  = canSeeProgressDocs(permissions.ts) — 치료테이블 §③ 경과분석 탭과 '동일 read 범위'로 완화
+  //       (coordinator/총괄 포함). 재신고 '증발' 근본원인 = 기존 게이트가 코디 미통과였던 것 → 완화.
+  //       net-new PHI 0(코디는 동일 코호트를 치료테이블에서 이미 열람).
+  //     · 발행(WRITE)      = canIssueProgressDocs — 개별/일괄 발행 버튼은 원장(+admin/manager)만.
+  //       게이트는 ProgressTargetsSection 내부에 상주(두 surface 공유 컴포넌트 → surface drift 0).
   //   ★AC2 모집단 정합: ProgressTargetsSection(치료테이블 §③ 경과분석) 그대로 재사용 → PROGCHK 필터(활성 패키지 &
   //     (used+1)%6==0)와 by-construction 동일. read-only(db_change=false, AC5).
   const { profile } = useAuth();
@@ -111,7 +114,8 @@ export default function DoctorTools() {
           <DocRequestQueue />
           {/* T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 경과분석지 발행 대상 리스트업(6배수 도래).
               발행 동선 일원화 — 원장 동선(서류작성 탭)에서도 대상 확인·발행. SSOT=ProgressTargetsSection 재사용.
-              PHI 게이트(AC3): 원장/admin/manager 만 노출. */}
+              A안 read/write split: 명단 조회=canSeeProgressDocs(코디/총괄 포함, 치료테이블과 동일 범위) /
+              발행 버튼=canIssueProgressDocs(원장+admin/manager, ProgressTargetsSection 내부 게이트). */}
           {showProgressDocs && (
             <div className="mt-6 border-t pt-5" data-testid="docdash-progress-form-section">
               <div className="mb-3">

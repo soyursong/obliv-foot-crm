@@ -29,11 +29,13 @@ import {
   fetchMonthlyComparison,
   fetchStaffDailyBreakdown,
   fetchNoshowReturningPrev,
+  fetchWeeklyRevenueBreakdown,
   projectMonthlyRevenue,
   type MtmCardMetrics,
   type MonthlyComparison,
   type StaffDailyBreakdown,
   type NoshowPrevCompare,
+  type WeeklyRevenueRow,
 } from '@/lib/mtmSales';
 import {
   downloadConsultantSalesReport,
@@ -42,6 +44,7 @@ import {
 import { toast } from '@/lib/toast';
 import { Download } from 'lucide-react';
 import RevenueSection from '@/components/stats/RevenueSection';
+import WeeklyRevenueSection from '@/components/stats/WeeklyRevenueSection';
 import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSection';
 // T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT: 01 매출통계 최상단 목표매출/달성률.
 import MonthlyTargetSection from '@/components/stats/MonthlyTargetSection';
@@ -129,6 +132,8 @@ export default function Stats() {
   const [monthlyCompare, setMonthlyCompare]         = useState<MonthlyComparison | null>(null);
   const [staffDaily, setStaffDaily]                 = useState<StaffDailyBreakdown | null>(null);
   const [noshowPrev, setNoshowPrev]                 = useState<NoshowPrevCompare | null>(null);
+  // T-20260814-foot-SALESSTAT-WEEKLY-AOV-ADD: 주단위 매출 breakdown(매출·내원환자·객단가).
+  const [weeklyRevenue, setWeeklyRevenue]           = useState<WeeklyRevenueRow[]>([]);
   const [therapistSummary, setTherapistSummary]     = useState<TherapistSummaryRow[]>([]);
   const [therapistServices, setTherapistServices]   = useState<TherapistServiceRow[]>([]);
   const [tmData, setTmData]                         = useState<TmAggregateData | null>(null);
@@ -150,7 +155,7 @@ export default function Stats() {
         if (tab === 'revenue') {
           // MTM 5섹션: 기존 4종(매출/시술별/실장/노쇼) + MTM 확장 3종(01 카드지표·02 전월비교·05 전월노쇼).
           //   refISO=from 기준 달의 1일~말일 경계로 전월 비교를 계산(선택 기간과 무관하게 월 단위).
-          const [rev, cat, cons, consStaffRev, nsr, mtm, cmp, staffBd, nprev] = await Promise.all([
+          const [rev, cat, cons, consStaffRev, nsr, mtm, cmp, staffBd, nprev, weekly] = await Promise.all([
             fetchRevenue(clinic.id, from, to),
             fetchCategoryRevenue(clinic.id, from, to),
             fetchConsultantPerf(clinic.id, from, to),
@@ -161,6 +166,8 @@ export default function Stats() {
             fetchMonthlyComparison(clinic.id, from),
             fetchStaffDailyBreakdown(clinic.id, from),
             fetchNoshowReturningPrev(clinic.id, from),
+            // T-20260814-foot-SALESSTAT-WEEKLY-AOV-ADD: 조회기간을 ISO주로 재그룹한 주별 매출·객단가.
+            fetchWeeklyRevenueBreakdown(clinic.id, from, to),
           ]);
           if (aborted) return;
           setRevenue(rev);
@@ -172,6 +179,7 @@ export default function Stats() {
           setMonthlyCompare(cmp);
           setStaffDaily(staffBd);
           setNoshowPrev(nprev);
+          setWeeklyRevenue(weekly);
         } else if (tab === 'tm') {
           const data = await fetchTmAggregate(clinic.id, from, to);
           if (aborted) return;
@@ -343,6 +351,8 @@ export default function Stats() {
           {/* T-20260804-foot-SALESSTAT-MONTHLY-TARGET-ACHIEVEMENT: 01 매출통계 맨 상단 목표/달성률 (AC-5: RevenueSection 바로 위) */}
           <MonthlyTargetSection clinicId={clinic?.id} refISO={rangeFrom} />
           <RevenueSection rows={revenue} loading={loading} metrics={mtmMetrics} projectedMonthly={projectedMonthly} />
+          {/* T-20260814-foot-SALESSTAT-WEEKLY-AOV-ADD: 주단위 매출 breakdown 표(매출·내원환자·객단가) */}
+          <WeeklyRevenueSection rows={weeklyRevenue} loading={loading} />
           <MonthlyComparisonSection data={monthlyCompare} staffBreakdown={staffDaily} loading={loading} />
           <CategorySection rows={categories} loading={loading} />
           <ConsultantSection rows={consultantDual} loading={loading} totalNetRevenue={revenueNetTotal} />

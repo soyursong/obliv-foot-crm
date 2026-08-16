@@ -558,7 +558,8 @@ export default function Assignments() {
         .from('staff')
         .select('id, clinic_id, name, role, active, created_at, user_id')
         .eq('clinic_id', clinic.id)
-        .eq('active', true);
+        .eq('active', true)
+        .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
       const staffList = (staffRows ?? []) as Staff[];
       setStaff(staffList);
 
@@ -3330,7 +3331,8 @@ function RotationOrderDialog({
       .select('id, name, role, assign_sort_order')
       .eq('clinic_id', clinicId)
       .eq('active', true)
-      .in('role', ['consultant', 'therapist']);
+      .in('role', ['consultant', 'therapist'])
+      .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
     if (error) {
       setColMissing(true);
       setLoading(false);

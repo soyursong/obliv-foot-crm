@@ -424,28 +424,47 @@ export function canViewPhraseManagement(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP (AC3 PHI 게이트) — 진료대시보드>서류작성
-//   탭의 '경과분석지(원장 최종발행 서류) 발행 대상' 리스트업 노출 게이트.
-//   노출 대상 = 원장(director) + 운영최고권한(admin/manager/has_ops_authority).
-//   ★director escape = canEditClinicMgmt/canViewPhraseManagement 와 동일 stopgap(동형 패턴):
-//     has_ops_authority 컬럼 미적재(DDL_DIFF_HOLD) 동안 대표원장(문지은, role='director')이
-//     hasOpsAuthority=false 로 평가돼 lock-out 되는 것을 방지(prod director=문지은 1명뿐 → 무회귀).
-//   ★STEP6(T-20260725-foot-PERMISSION-PARITY-PLAYBOOK): 인라인 role=== 을 SSOT predicate 로 이관
-//     (DoctorTools.tsx 인라인 `role === 'director'` 제거). null-safe(subject 없으면 false).
-//   ★마이그(20260619220000_..._has_ops_authority_additive.sql) landing + 문지은 has_ops_authority=true
-//     set 후 이 director escape 1줄 제거 → converged model(has_ops_authority 단독) 복귀.
+// T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP — 진료대시보드>서류작성 탭의
+//   '경과분석지(원장 최종발행 서류) 발행 대상' 리스트업 read/write 게이트 분리(A안, 김주연 총괄 확정 2026-08-14).
+//
+//   ★A안 근거(dev-foot RCA MSG-20260814-204034-wzox): 기존 canSeeProgressDocs 가
+//     hasOpsAuthority(admin/manager) + director 만 통과 → coordinator(코디) 미통과로 섹션 전체 '증발'.
+//     현장 재신고 = 코디/총괄이 '명단(read)'은 봐야 하고 '발행(write)'은 원장이 함(read/write 분리).
+//   ★read/write 2게이트로 split:
+//     · canSeeProgressDocs(READ)  = 치료테이블 §③ 경과분석 탭과 '동일 read 범위'로 완화
+//         → PROGRESS_DOCS_VIEW_ROLES(=treatment-table RoleGuard 집합) 멤버십.
+//         net-new PHI 노출 0 — 동일 코호트를 코디/상담/치료사는 이미 치료테이블에서 봄(date-독립·동일 필터).
+//     · canIssueProgressDocs(WRITE) = 발행 액션(개별 발행하기·일괄처리)은 원장(+admin/manager)만.
+//   ★db_change=false — FE 노출/활성 게이트만. backing-table SELECT RLS = role-agnostic(clinic-scoped)라
+//     read 완화에 RLS 변경 불요(치료테이블에서 이미 동일 쿼리 통과).
 // ─────────────────────────────────────────────────────────────────────────────
+// READ 범위 = 치료테이블 경과분석 탭 접근 집합(App.tsx /admin/treatment-table RoleGuard 와 동일 SSOT).
+export const PROGRESS_DOCS_VIEW_ROLES: UserRole[] = [
+  'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist',
+];
+// WRITE(발행) = 원장 + 운영최고권한(admin/manager). 코디/상담/치료사 제외.
+export const PROGRESS_DOCS_ISSUE_ROLES: UserRole[] = ['admin', 'manager', 'director'];
+
+/** 경과분석지 발행 대상 '명단 조회(read)' 노출 여부 — 치료테이블 경과분석 탭과 동일 범위. null-safe(false). */
 export function canSeeProgressDocs(
   subject: OpsAuthSubject | UserRole | null | undefined,
 ): boolean {
   const s: OpsAuthSubject | null | undefined =
     typeof subject === 'string' ? { role: subject } : subject;
-  if (!s) return false;
-  // 운영최고권한(대표원장 flag·admin·manager) → 노출.
-  if (hasOpsAuthority(s)) return true;
-  // ── STOPGAP (canViewPhraseManagement 동일 사유) — director escape(lock-out 가드) ──
-  if (s.role === 'director') return true;
-  return false;
+  const role = s?.role;
+  if (!role) return false;
+  return PROGRESS_DOCS_VIEW_ROLES.includes(role);
+}
+
+/** 경과분석지 '발행(write)' 액션(개별/일괄) 노출·동작 여부 — 원장 + admin/manager 만. null-safe(false). */
+export function canIssueProgressDocs(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  const role = s?.role;
+  if (!role) return false;
+  return PROGRESS_DOCS_ISSUE_ROLES.includes(role);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

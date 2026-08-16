@@ -145,6 +145,25 @@ export interface Clinic {
   // 서류 바인딩 (T-20260520-foot-PRINT-FORM-BIND)
   nhis_code?: string | null;    // 요양기관번호
   fax?: string | null;          // 팩스번호
+  // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: date-aware 운영시간 세대(clinic_operating_hours) 부착.
+  //   미배포/미seed DB 는 undefined → flat 3컬럼(open_time/close_time/weekend_close_time) fallback.
+  operating_hours?: OperatingHoursGeneration[] | null;
+}
+
+// T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901: 운영시간 세대 1행(요일별).
+//   ★롱레 clinic_operating_hours 물리 DDL verbatim mirror (DA CONSULT-REPLY DA-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901):
+//     day_of_week / open_time / close_time(독립 운영종료) / last_booking_slot(INCLUSIVE 마지막슬롯) / effective_from + effective_to(세대 pair).
+//   ★close_time = 독립 사실(운영종료·표시)이지 슬롯 상한이 아니다. 슬롯 상한 = last_booking_slot(INCLUSIVE).
+//   ★foot generateSlots 는 [open, close) EXCLUSIVE → resolver 가 EXCLUSIVE close = last_booking_slot + slot_interval 로 파생(저장 아님, DA Q3).
+//   ★휴무 = 해당 요일 row-absent(negative-space) — is_closed 컬럼 발명 없음(롱레 census dispositive, DA Q4).
+//   (schedule.ts 와 clinic.ts 공용 — 순환 import 방지 위해 여기 정의)
+export interface OperatingHoursGeneration {
+  day_of_week: number;             // 0=일 … 6=토 (Postgres EXTRACT(DOW) / JS Date.getDay 정합)
+  open_time: string;               // 'HH:MM[:SS]' 개시(하한)
+  close_time: string;              // 'HH:MM[:SS]' 운영종료(독립 사실·표시). 슬롯 상한 아님.
+  last_booking_slot: string;       // 'HH:MM[:SS]' 마지막 신규예약 슬롯(INCLUSIVE). 슬롯 상한 = last_booking_slot + interval(파생).
+  effective_from: string;          // 'YYYY-MM-DD' 세대 발효일(forward-only, 포함)
+  effective_to: string | null;     // 'YYYY-MM-DD' 세대 종료일(포함) · null=무기한
 }
 
 export type LeadSource = 'TM' | '인바운드' | '워크인' | '지인소개' | '온라인' | '기타';
@@ -385,6 +404,16 @@ export interface Staff {
   auto_assign_enabled?: boolean | null;
   /** T-20260726-foot-CRM-ASSIGN-V1 실행6: 실장별 Slack user id(실행5 배정 알림 매핑). NULL=미매핑. */
   slack_user_id?: string | null;
+  /**
+   * T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: soft-delete 단일 authority(NULL=활성 / NOT NULL=목록제거).
+   * '삭제'=목록/드롭다운에서 제거(deleted_at 스탬프), 물리 삭제 아님. active(비활성/가역)와 직교 축.
+   * 읽기경로 로스터/드롭다운/후보풀은 deleted_at IS NULL 필터(삭제직원 미표시). id-keyed name-resolution 은 보존(FK 표시).
+   */
+  deleted_at?: string | null;
+  /** T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 수행자 auth.uid()(감사). */
+  deleted_by?: string | null;
+  /** T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 사유/맥락(보존). */
+  deleted_reason?: string | null;
 }
 
 // ── 상담 자동배정 랭킹·전략 (T-20260726-foot-CRM-ASSIGN-V1) ────────────────────

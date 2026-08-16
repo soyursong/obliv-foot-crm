@@ -750,6 +750,7 @@ export async function loadAutoBindContext(
         .eq('clinic_id', checkIn.clinic_id)
         .eq('role', 'director')
         .eq('active', true)
+        .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
         .limit(1)
         .maybeSingle();
       doctorName = fallbackStaff?.name ?? null;

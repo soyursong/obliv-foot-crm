@@ -50,6 +50,7 @@ export async function fetchCurrentStaffId(clinicId: string): Promise<string | nu
     .eq('user_id', uid)
     .eq('clinic_id', clinicId)
     .eq('active', true)
+    .is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
     .maybeSingle();
   if (error) return null;
   return (data as { id: string } | null)?.id ?? null;
