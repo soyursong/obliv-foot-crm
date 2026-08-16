@@ -79,6 +79,13 @@ interface RawPayRow {
   accounting_date: string | null;
   /** T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: 결제수단(card/cash/transfer/membership/null). */
   method: string | null;
+  /**
+   * T-20260724-foot-ASSIGN-UPSYNC-REVENUE-REATTRIB-GATE (Option A · Branch A):
+   *   결제시점 담당 실장 스냅샷. INSERT 시 BEFORE INSERT 트리거(trg_*_attributed_staff_stamp)가
+   *   그 시점 customers.assigned_staff_id 를 각인 → 이후 재배정이 과거 매출귀속을 소급 이동시키지 않음.
+   *   NULL(레거시행·워크인·미배정) → 아래 COALESCE belt 로 live-join fallback.
+   */
+  attributed_staff_id: string | null;
 }
 
 /**
@@ -101,7 +108,8 @@ export async function fetchAttributedPayments(
       supabase
         .from('payments')
         // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: method 추가(ADDITIVE, 결제수단별 분해축용).
-        .select('amount, payment_type, customer_id, accounting_date, method')
+        // T-20260724-foot-ASSIGN-UPSYNC-REVENUE-REATTRIB-GATE: attributed_staff_id 추가(결제시점 담당 스냅샷).
+        .select('amount, payment_type, customer_id, accounting_date, method, attributed_staff_id')
         .eq('clinic_id', clinicId)
         // FIX-2A: 취소·삭제 결제 제외(foot_stats_revenue 와 동일 규칙). 구 .not(status,eq,deleted) 교체.
         .not('status', 'in', '(cancelled,deleted)')
@@ -110,7 +118,8 @@ export async function fetchAttributedPayments(
       supabase
         .from('package_payments')
         // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: method 추가(ADDITIVE, 결제수단별 분해축용).
-        .select('amount, payment_type, customer_id, accounting_date, method')
+        // T-20260724-foot-ASSIGN-UPSYNC-REVENUE-REATTRIB-GATE: attributed_staff_id 추가(결제시점 담당 스냅샷).
+        .select('amount, payment_type, customer_id, accounting_date, method, attributed_staff_id')
         .eq('clinic_id', clinicId)
         .gte('accounting_date', from)
         .lte('accounting_date', to),
@@ -160,8 +169,16 @@ export async function fetchAttributedPayments(
 
   const rows: AttributedPayment[] = [];
   const push = (r: RawPayRow, source: 'single' | 'package') => {
+    // T-20260724-foot-ASSIGN-UPSYNC-REVENUE-REATTRIB-GATE (Branch A · Option A):
+    //   귀속 우선순위 = ① attributed_staff_id 스냅샷(결제시점 담당·재배정 소급이동 방지)
+    //                  → ② live-join fallback(레거시행·워크인·미배정 안전 belt)
+    //                  → ③ STAFF_UNASSIGNED.
+    //   ★belt only — 설계된 재귀속 경로 아님. write-path 트리거가 항상 stamp + baseline-freeze 백필로
+    //   legacy NULL≈0. code-gate 는 이 파일 밖 독립 live-join(매출→staff 귀속) 0 을 검증한다.
     const staffId =
-      (r.customer_id && custStaff.get(r.customer_id)) || STAFF_UNASSIGNED;
+      r.attributed_staff_id ||
+      (r.customer_id && custStaff.get(r.customer_id)) ||
+      STAFF_UNASSIGNED;
     rows.push({
       staffId,
       customerId: r.customer_id,
