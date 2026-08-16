@@ -14,8 +14,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: `/login`→`/signin` (CF 피싱 오탐 path-exact 차단 회피).
-  if (!session) return <Navigate to="/signin" replace />;
+  // T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: 미인증·세션만료(SIGNED_OUT)·401 인터셉터 전원 튕김 타깃.
+  //   CF 피싱 오탐 path-exact 차단 회피 → canonical 로그인 경로를 비-유의어 `/entry`로 rename.
+  if (!session) return <Navigate to="/entry" replace />;
   if (profile && !profile.approved && profile.role !== 'admin') {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">

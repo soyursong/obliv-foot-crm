@@ -231,12 +231,14 @@ function App() {
             <RecoveryGate>
             <Routes>
               {/* T-20260805-foot-CF-PHISHING-BLOCK-LOGIN: Cloudflare "Suspected Phishing"
-                  인터스티셜이 pages.dev 공유 서브도메인 연좌로 경로 `/login`(server GET)만 하드차단(403·path-exact,
-                  CEO 실측 MSG-20260816-151913). 앱 로그인 canonical 경로를 미차단 경로 `/signin`으로 rename →
-                  하드리프레시·직접URL·북마크 전부 unblock. `/login`은 client-side redirect alias로만 잔존
-                  (SPA 내부 stray nav 방어용 — server GET `/login`은 여전히 edge 차단이나 앱은 이 경로로 향하지 않음). */}
-              <Route path="/signin" element={<Login />} />
-              <Route path="/login" element={<Navigate to="/signin" replace />} />
+                  인터스티셜이 pages.dev 공유 서브도메인 연좌로 경로 `/login`(server GET)만 하드차단
+                  (403·path-exact, CEO 실측 2026-08-16 phishing_hits=5·cf-ray a2be6bf70d29). 대소문자/슬래시만
+                  달라도 통과 → path-exact 확정. 로그인 canonical 경로를 로그인-유의어가 아닌 내부용 명칭
+                  `/entry`로 rename(사전프로브 200·phishing_hits=0·cf-ray a2be6bf7c85a). `/signin`(직전 임시경로)은
+                  한 릴리스 동안 client-side redirect 로만 브릿지(다음 사이클 제거 대상). 구 `/login`은 라우트에서
+                  완전 제거 — CF 403이 origin 도달 前 엣지 차단이라 앱단 redirect 로 되살릴 수 없는 사망경로. */}
+              <Route path="/entry" element={<Login />} />
+              <Route path="/signin" element={<Navigate to="/entry" replace />} />
               <Route path="/register" element={<Register />} />
               {/* recovery 딥링크 전용 라우트(직접 접근·향후 redirect_to 지정 대비 fallback).
                   주 경로는 RecoveryGate(루트 착지 감지) — 이 라우트는 recovery 세션 없이 진입 시
