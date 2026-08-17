@@ -753,6 +753,11 @@ export default defineConfig({
         //   + 소스 정적 가드(숨기기 버튼/확인 다이얼로그/deleted_at·by UPDATE/rowcheck/is_deleted 필터/role 무게이트).
         //   auth/DB/server/page 불요·결정론. 실 UI+데이터경로 = supervisor 갤탭 field-soak.
         '**/T-20260808-foot-RXHIST-HIDE-SOFTDELETE.spec.ts',
+        // T-20260817-foot-RESVSLOT-OPHOURS-0930-PREVIEW: 09-01 세대(open_time 09:30) forward-date PREVIEW 렌더.
+        //   staged 마이그 값을 실제 resolver(src/lib/schedule)에 in-memory 주입 → 슬롯피커 setContent 렌더 + 스크린샷.
+        //   PROD DB 무접촉(prod apply 前 reporter 화면 컨펌용). auth/DB/server 불요·결정론(page.setContent 만).
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260817-foot-RESVSLOT-OPHOURS-0930-PREVIEW.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -879,6 +884,9 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         //   (FIX-REQUEST MSG-20260730-024921-h69j §결함2: 자격증명 없는 워크트리/CI 회귀가드 무력화 방지.)
         '**/T-20260729-foot-RX-PRINT-PATH-CONSISTENCY.spec.ts',
+        // T-20260817-foot-RESVSLOT-OPHOURS-0930-PREVIEW: unit 전용 setContent 렌더 프리뷰 spec →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260817-foot-RESVSLOT-OPHOURS-0930-PREVIEW.spec.ts',
       ],
     },
     {
