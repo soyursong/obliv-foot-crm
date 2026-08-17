@@ -14,6 +14,8 @@
 //   부원장(consultant)/코디(coordinator)/치료사(therapist)가 진입해도 어드민성 항목은 비노출.
 
 import { useState } from 'react';
+import { format, subDays, addDays } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import DoctorPatientList from '@/components/doctor/DoctorPatientList';
 // T-20260601-foot-DOCTOR-CALL-PUSH-DASH: 진료부 통합 대시보드(호출 알람+처방+차팅+진료완료)
 import DoctorCallDashboard from '@/components/doctor/DoctorCallDashboard';
@@ -26,17 +28,36 @@ import DocRequestQueue from '@/components/doctor/DocRequestQueue';
 // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 경과분석지(원장 최종발행 서류) 발행 대상을 서류작성 탭에도 리스트업.
 //   ★SSOT 재사용 — 치료테이블 §③ 경과분석의 ProgressTargetsSection 을 그대로 렌더(모집단/필터/발행 동선 병렬 신설 금지).
 import ProgressTargetsSection from '@/components/treatment/ProgressTargetsSection';
+// T-20260817-foot-PROGANALYSIS-DOCDASH-TAB-MIRROR: 치료테이블 > 경과분석 메뉴 전체를 진료대시보드 탭으로 미러.
+//   ★SSOT 재사용 — 경과분석 플랜(설정) = ProgressPlansTab(useClinic 자체 사용) 을 치료테이블과 동일 컴포넌트로 렌더(복제 금지).
+import ProgressPlansTab from '@/components/admin/ProgressPlansTab';
 import type { NameInteraction } from '@/pages/TreatmentTable';
 import { useAuth } from '@/lib/auth';
 import { useChart } from '@/lib/chartContext';
 import { canSeeProgressDocs } from '@/lib/permissions';
 import { seoulISODate } from '@/lib/format';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Users, Stethoscope, FlaskConical, FileText, TrendingUp } from 'lucide-react';
+import { Users, Stethoscope, FlaskConical, FileText, TrendingUp, Settings2, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function DoctorTools() {
   // 모든 역할이 진료 알림판(진료부 통합 대시보드)을 기본 화면으로 — 상시 켜놓는 단일 창 동선.
   const [activeTab, setActiveTab] = useState('call_dashboard');
+
+  // T-20260817-foot-PROGANALYSIS-DOCDASH-TAB-MIRROR: 경과분석 탭 로컬 상태(치료테이블 경과분석 부모 탭과 동일 구조).
+  //   · progressSub  = 하위 서브탭('targets'=오늘 대상자 / 'plan'=경과분석 플랜 설정). 기본 'targets'.
+  //   · progressDate = 대상목록 조회 날짜(치료테이블 공통 날짜선택기와 동일 동작 — 오늘 기본 + 전/후 이동).
+  //   ★신규 로직 authoring 0 — 컴포넌트(ProgressTargetsSection·ProgressPlansTab)·필터·데이터훅은 치료테이블과 완전 동일 재사용.
+  const today = seoulISODate(new Date());
+  const [progressSub, setProgressSub] = useState<'targets' | 'plan'>('targets');
+  const [progressDate, setProgressDate] = useState(today);
+  const isProgressToday = progressDate === today;
+  const goProgressPrev = () =>
+    setProgressDate(format(subDays(new Date(progressDate + 'T12:00:00'), 1), 'yyyy-MM-dd'));
+  const goProgressNext = () => {
+    const next = format(addDays(new Date(progressDate + 'T12:00:00'), 1), 'yyyy-MM-dd');
+    if (next <= today) setProgressDate(next);
+  };
 
   // T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP: 서류작성(opinion_doc) 탭 경과분석지 발행 대상 리스트업.
   //   ★A안(read/write split, 김주연 총괄 확정 2026-08-14):
@@ -95,6 +116,13 @@ export default function DoctorTools() {
             <FileText className="h-3.5 w-3.5" />
             서류작성
           </TabsTrigger>
+          {/* 경과분석 — T-20260817-foot-PROGANALYSIS-DOCDASH-TAB-MIRROR:
+              치료테이블 > 경과분석 메뉴를 진료대시보드 탭으로 미러(원본 메뉴는 그대로 유지, 추가 노출).
+              원장 발행 동선(진료대시보드)에서도 경과분석 대상목록·조회·경과분석지 작성/열람을 그대로 사용. */}
+          <TabsTrigger value="progress_analysis" className="gap-1.5" data-testid="tab-progress-analysis">
+            <TrendingUp className="h-3.5 w-3.5" />
+            경과분석
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="call_dashboard">
@@ -134,6 +162,78 @@ export default function DoctorTools() {
           <div className="mt-6 border-t pt-5">
             <OpinionDocTab />
           </div>
+        </TabsContent>
+
+        {/* 경과분석 — T-20260817-foot-PROGANALYSIS-DOCDASH-TAB-MIRROR:
+            치료테이블 > 경과분석 메뉴 전체를 그대로(as-is) 미러. 부모 탭 = 경과분석, 하위 서브탭 2개
+            (① 경과분석=ProgressTargetsSection 오늘 대상자 / ② 경과분석 플랜=ProgressPlansTab 설정) — 치료테이블과 동일 컴포넌트/필터/데이터훅 재사용(신규 로직 0).
+            날짜선택기는 치료테이블 공통 날짜선택기와 동일 동작(오늘 기본 + 전/후 이동, 미래 이동 차단). */}
+        <TabsContent value="progress_analysis">
+          <Tabs
+            value={progressSub}
+            onValueChange={(v) => setProgressSub(v as 'targets' | 'plan')}
+            className="flex flex-col gap-4"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <TabsList data-testid="docdash-progress-subtabs">
+                <TabsTrigger value="targets" data-testid="tab-docdash-progress-targets">
+                  <TrendingUp className="size-3.5 mr-1.5" />
+                  경과분석
+                </TabsTrigger>
+                <TabsTrigger value="plan" data-testid="tab-docdash-progress-plans">
+                  <Settings2 className="size-3.5 mr-1.5" />
+                  경과분석 플랜
+                </TabsTrigger>
+              </TabsList>
+              {/* 날짜선택기 — '경과분석'(대상자) 서브탭에서만 노출(플랜=설정은 날짜 무관). */}
+              {progressSub === 'targets' && (
+                <div className="flex items-center gap-2" data-testid="docdash-progress-date-nav">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={goProgressPrev}
+                    data-testid="docdash-progress-date-prev"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <span
+                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium"
+                    data-testid="docdash-progress-date-label"
+                  >
+                    <Calendar className="size-4 text-teal-600" />
+                    {format(new Date(progressDate + 'T12:00:00'), 'M월 d일 (EEEE)', { locale: ko })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={goProgressNext}
+                    disabled={isProgressToday}
+                    data-testid="docdash-progress-date-next"
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                  {!isProgressToday && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-teal-600"
+                      onClick={() => setProgressDate(today)}
+                      data-testid="docdash-progress-date-today"
+                    >
+                      오늘
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+            <TabsContent value="targets" className="mt-0">
+              <ProgressTargetsSection date={progressDate} nameInteraction={nameInteraction} />
+            </TabsContent>
+            {/* 경과분석 플랜(설정). ProgressPlansTab 는 useClinic 자체 사용(date/nameInteraction 불요) — 회차tier별 체크포인트 CRUD. */}
+            <TabsContent value="plan" className="mt-0">
+              <ProgressPlansTab />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
     </div>

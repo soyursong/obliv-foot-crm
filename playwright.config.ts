@@ -203,6 +203,10 @@ export default defineConfig({
         //   (ProgressTargetsSection SSOT 재사용·병렬 신설 금지). 순수 로직(PROGCHK 6배수 필터 정합) + 정적 소스 가드
         //   (SSOT 재사용·PHI 게이트·DocRequestQueue/OpinionDocTab 무접촉·read-only). auth/DB/server 불요·결정론.
         '**/T-20260812-foot-PROGFORM-DOCDASH-DOCWRITE-LISTUP.spec.ts',
+        // T-20260817-foot-PROGANALYSIS-DOCDASH-TAB-MIRROR: 치료테이블 > 경과분석 메뉴 전체를 진료대시보드 '경과분석' 탭으로
+        //   그대로 미러(원본 무접촉·placement 만 추가). ProgressTargetsSection·ProgressPlansTab SSOT 재사용(복제 0).
+        //   정적 소스 가드(탭 신설·서브탭 2개·SSOT 재사용·원본 무접촉·기존 탭 regression 0·read-only). auth/DB/server 불요·결정론.
+        '**/T-20260817-foot-PROGANALYSIS-DOCDASH-TAB-MIRROR.spec.ts',
         // T-20260812-foot-DOCFEE-DIAGCODE-ADD (alias SUSU-DETAIL-SANGBYEONG-CODE-INSERT): 진료비 세부내역서(bill_detail)에
         //   [상병코드]를 **별도 한 줄**(.diag-line)로 삽입(김주연 총괄 요청). ★planner 제약: T-20260731 AC-D가 삭제한 상병 '표(diag-grid)'
         //   blind 복원 금지 — '결제 미니창 선택 상병코드 별도 줄'로만 착지(표 재도입 회귀가드 포함). diag_code_N/diag_name_N 토큰은
