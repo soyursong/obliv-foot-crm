@@ -567,3 +567,31 @@ export function canViewTherapistSales(role: UserRole | null | undefined): boolea
   if (!role) return false;
   return THERAPIST_SALES_VIEW_ROLES.includes(role);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST — 고객상세 2번째 탭(펜차트/자동기록)
+//   '패키지 시술 차감내역(회차)' soft-delete·복원 권한 role-set SSOT (1지점).
+//   현장(김주연 총괄, U0ATDB587PV, 슬랙 C0ATE5P6JTH ts 1786700281.528599): 코디(coordinator)·
+//     치료사(therapist)도 이 차감내역 삭제를 하도록 권한 확대 요청.
+//   ★기존 게이트 = admin/manager/director (CustomerChartPage 인라인 하드코딩 + RPC 내부
+//     is_admin_or_manager()). 여기에 coordinator/therapist 2역할만 ADDITIVE 추가(확대만·축소 0·회귀 0).
+//   ★AC2 스코프 하드가드: 이 predicate 는 '패키지 시술 차감내역(package_sessions) soft-delete/복원'
+//     surface 전용. 다른 삭제(고객/패키지 자체/서류 등) 게이트에는 절대 재사용하지 말 것(권한 누수 0).
+//   ★consultant 미포함: 티켓은 coordinator·therapist 만 명시(정확 스코프). '수정' 버튼(isStaffUnlockRole,
+//     consultant 포함)과 다른 별 set 인 이유 — 삭제는 요청 2역할만 확대.
+//   ★FE union = RLS(RPC) union 의무: soft_delete_package_session / restore_package_session RPC 내부
+//     게이트를 동일 5역할(admin/manager/director/coordinator/therapist)로 확대하는 동반 마이그
+//     (20260814..._pkg_session_delete_coord_therapist) 와 1:1 정합. FE 단독 확대(RPC 미확대)는
+//     lock-out-in-disguise(버튼은 보이나 RPC permission denied) → ★동반 landing★ 의무(supervisor DB-GATE).
+//   ★복원(restore) 포함 근거: soft-delete 의 안전 역연산(AC3 "실수 삭제 원복 가능" 원장 doctrine,
+//     SOFTDELETE-REACTIVATION-LOCK 표준). 삭제만 확대하고 복원을 admin-only 로 두면 코디/치료사가
+//     자기 실수 삭제를 되돌릴 수 없어 안전망이 깨짐 → 같은 target 의 삭제/복원 쌍을 함께 확대(scope creep 아님).
+export const PKG_SESSION_DELETE_ROLES: UserRole[] = [
+  'admin', 'manager', 'director', 'coordinator', 'therapist',
+];
+
+/** 패키지 시술 차감내역(회차) soft-delete·복원 권한 보유 여부. null/undefined 안전 기본값 false(fail-closed). */
+export function canDeletePackageSession(role: UserRole | null | undefined): boolean {
+  if (!role) return false;
+  return PKG_SESSION_DELETE_ROLES.includes(role);
+}
