@@ -13,8 +13,15 @@
  *      스타일 전용(CSS 클래스만). DB/RPC/스키마/산식 무변경.
  *
  * S1 (AC1/AC3 정적): 3사이트 성함 span 이 whitespace-nowrap 보유, break-words 잔재 0.
- * S2 (AC4 정적): 카드 레이아웃 마커(box1/box2/checkin testid, min-w-0, title) 불변.
+ * S2 (AC4 정적): 카드 레이아웃 마커(box1/box2/checkin testid, title) 불변.
  * S3 (AC1/AC2 런타임): 통합시간표 성함 셀이 computed whiteSpace=nowrap, 세로 wrap 없음(1줄 높이).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ★ SUPERSEDED (부분) by T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE (P1, 현장 최우선):
+ *   현장 재지시 — ellipsis(말줄임)=이름 잘림 → 현장 요건 위배. "성함 절대 안 잘림"이 최우선 요건.
+ *   본 티켓의 nowrap(음절 중간 꺾임 방지) 불변식은 유지되나, ellipsis/overflow-hidden/min-w-0(말줄임 전제)은
+ *   후속 티켓이 의도적으로 제거(shrink-0 로 셀 전체 수용). 아래 정적 assertion 을 후속 티켓 현실에 맞춰 갱신.
+ *   전면 검증은 T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE.spec.ts 로 수렴(중복 soak 방지).
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -36,21 +43,23 @@ const NAME_CELLS = [
 test.describe('정적 소스 불변식 (T-20260817-foot-DASHBOARD-TIMETABLE-CUSTNAME-NOWRAP)', () => {
   const dash = read('src/pages/Dashboard.tsx');
 
-  test('S1-a: 초진 예약(box1) 성함 span 에 whitespace-nowrap + ellipsis 적용', () => {
+  // ★ SUPERSEDED: ellipsis 전제(min-w-0/overflow-hidden/text-ellipsis)는 NAME-NOTRUNCATE-BADGE 가 제거.
+  //   nowrap 불변식(음절 중간 꺾임 방지)만 잔존 검증. 말줄임 assertion 은 후속 티켓 현실(shrink-0 전체수용)으로 갱신.
+  test('S1-a: 초진 예약(box1) 성함 span 에 whitespace-nowrap 유지(nowrap 불변식)', () => {
     expect(dash).toMatch(
-      /className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis leading-tight text-gray-900 font-semibold" data-testid="timeline-name"/,
+      /className="shrink-0 whitespace-nowrap leading-tight text-gray-900 font-semibold" data-testid="timeline-name"/,
     );
   });
 
-  test('S1-b: 재진 예약(box2) 성함 span 에 whitespace-nowrap + ellipsis 적용', () => {
+  test('S1-b: 재진 예약(box2) 성함 span 에 whitespace-nowrap 유지(nowrap 불변식)', () => {
     expect(dash).toMatch(
-      /className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis leading-tight text-gray-800" data-testid="timeline-name"/,
+      /className="shrink-0 whitespace-nowrap leading-tight text-gray-800" data-testid="timeline-name"/,
     );
   });
 
-  test('S1-c: 초진·재진 체크인 카드 성함 span 에 whitespace-nowrap + ellipsis 적용', () => {
+  test('S1-c: 초진·재진 체크인 카드 성함 span 에 whitespace-nowrap 유지(nowrap 불변식)', () => {
     expect(dash).toMatch(
-      /'min-w-0 whitespace-nowrap overflow-hidden text-ellipsis leading-tight',\s*visitType === 'returning' \? 'text-gray-800' : 'text-gray-900'/,
+      /'shrink-0 whitespace-nowrap leading-tight',\s*visitType === 'returning' \? 'text-gray-800' : 'text-gray-900'/,
     );
   });
 
@@ -73,8 +82,9 @@ test.describe('정적 소스 불변식 (T-20260817-foot-DASHBOARD-TIMETABLE-CUST
     expect(dash).toMatch(/data-testid="timeline-checkin-card"/);
     // 전체 성함 tooltip 보존 — 카드 title 에 cardDisplayName 유지.
     expect(dash).toMatch(/title=\{cardDisplayName\(reservation\)\}/);
-    // min-w-0 (flex ellipsis 발동 전제) 유지.
-    expect(dash).toMatch(/min-w-0 whitespace-nowrap overflow-hidden text-ellipsis/);
+    // ★ SUPERSEDED: 구 min-w-0+ellipsis 전제 assertion 은 NAME-NOTRUNCATE-BADGE 로 제거.
+    //   nowrap 불변식(음절 중간 꺾임 방지)만 잔존 검증.
+    expect(dash).toMatch(/shrink-0 whitespace-nowrap leading-tight/);
   });
 });
 
