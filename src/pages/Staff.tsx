@@ -346,15 +346,17 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                       {s.active ? (
                         // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT 요구사항#6(색상 명시 스펙):
                         //   비활성 = 회색(가역·주의) / 삭제 = 빨강(destructive). 시각적으로 위험도 구분.
+                        // T-20260817-foot-STAFF-DEACTIVATE-DELETE-ICON-ONLY: 텍스트 라벨 제거 → 아이콘만.
+                        //   설명은 title(hover tooltip) + aria-label(스크린리더)로 유지(접근성). 회색·동작·권한 무변.
                         <Button
                           size="xs"
                           variant="secondary"
                           title="직원 비활성화 (로그인·접근 차단, 데이터 보존)"
+                          aria-label="직원 비활성화 (로그인·접근 차단, 데이터 보존)"
                           onClick={() => handleToggleActive(s)}
-                          className="gap-1 bg-neutral-200 text-neutral-700 border-neutral-300 hover:bg-neutral-300 hover:text-neutral-800"
+                          className="bg-neutral-200 text-neutral-700 border-neutral-300 hover:bg-neutral-300 hover:text-neutral-800"
                         >
                           <PowerOff className="h-3 w-3" />
-                          비활성
                         </Button>
                       ) : (
                         <Button
@@ -366,15 +368,15 @@ function StaffTab({ clinic }: { clinic: Clinic }) {
                           활성화
                         </Button>
                       )}
+                      {/* T-20260817-foot-STAFF-DEACTIVATE-DELETE-ICON-ONLY: 텍스트 라벨 제거 → 쓰레기통 아이콘만(빨강 유지). title+aria-label 설명 유지. */}
                       <Button
                         size="xs"
                         variant="destructive"
                         title="직원 삭제 (목록에서 제거 — 연결된 기록은 보존)"
+                        aria-label="직원 삭제 (목록에서 제거 — 연결된 기록은 보존)"
                         onClick={() => requestDelete(s)}
-                        className="gap-1"
                       >
                         <Trash2 className="h-3 w-3" />
-                        삭제
                       </Button>
                     </div>
                   ) : null}
