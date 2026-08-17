@@ -1858,7 +1858,9 @@ function TimelineCheckInCard({
       {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (김주연 총괄, P0 PTNAME-TRUNCATE 통합/정정):
           성함 '절대 잘림 금지' → 말줄임(truncate)·tooltip 방식 폐기. min-w-0 + whitespace-normal + break-words 로
           칸 폭 안에서 전체 표시(넘치면 줄바꿈, 잘림 0). 칸 폭은 패널 w-80→w-96 확대로 확보(접기 기능 유지). */}
-      <span className={cn('min-w-0 whitespace-normal break-words leading-tight', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
+      {/* T-20260817-foot-DASHBOARD-TIMETABLE-CUSTNAME-NOWRAP (P3): 한글 성함이 열 폭 부족 시 break-words 로 음절 중간에서 꺾임
+          ("한정사"→"한정/사"). whitespace-nowrap 한 줄 고정 + overflow/ellipsis 로 레이아웃 안정. 전체 성함은 카드 title(hover/tap) 보존. */}
+      <span className={cn('min-w-0 whitespace-nowrap overflow-hidden text-ellipsis leading-tight', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
       {/* T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY: 통합시간표 초진(new)/재진(returning) 체크인 카드 식별자를
           폰번호 뒷4자리로 통일(김주연 총괄). 초진 차트번호(#RF-…) 표기 제거 → 재진과 동일 '폰 뒷4자리' 포맷.
           (선행: T-20260630-REVISIT-CUSTBOX 재진 통일 → 본 건으로 초진 통일 마무리. presentation only, DB 무변경.
@@ -2075,7 +2077,8 @@ function DraggableBox1Card({
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
       {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (P0 PTNAME-TRUNCATE 통합/정정): 성함 '절대 잘림 금지'.
           말줄임(truncate)·tooltip 폐기 → whitespace-normal + break-words 로 칸 폭 안에서 전체표시(넘치면 줄바꿈, 잘림 0). */}
-      <span className="min-w-0 whitespace-normal break-words leading-tight text-gray-900 font-semibold" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260817-foot-DASHBOARD-TIMETABLE-CUSTNAME-NOWRAP (P3): 초진 칼럼 성함 한 줄 고정(음절 중간 꺾임 방지). 전체 성함은 카드 title 보존. */}
+      <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis leading-tight text-gray-900 font-semibold" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW (김주연 총괄): 초진 예약 박스 '성함 폰뒷자리' → '성함 폰뒷자리 [간략메모]'.
           - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
@@ -2224,7 +2227,8 @@ function DraggableBox2ResvCard({
       {/* T-20260704-foot-RESV-DASH-CUSTBOX-NOTSHOWING(대시보드 파리티): 이름 결측 시 빈 span(고객박스 공백) 방지 폴백 */}
       {/* T-20260708-foot-TIMETABLE-CUSTBOX-WIDEN-MEMOLINE (P0 PTNAME-TRUNCATE 통합/정정): 재진 박스 성함 '절대 잘림 금지'.
           말줄임·tooltip 폐기 → whitespace-normal + break-words 로 칸 폭 안 전체표시(넘치면 줄바꿈, 잘림 0). */}
-      <span className="min-w-0 whitespace-normal break-words leading-tight text-gray-800" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260817-foot-DASHBOARD-TIMETABLE-CUSTNAME-NOWRAP (P3): 재진 칼럼 성함 한 줄 고정(음절 중간 꺾임 방지). 전체 성함은 카드 title 보존. */}
+      <span className="min-w-0 whitespace-nowrap overflow-hidden text-ellipsis leading-tight text-gray-800" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
           REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
       <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
