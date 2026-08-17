@@ -64,6 +64,22 @@ test.describe('TREATHIST-DOWNLOAD · PC(프리컨디셔닝) 유무', () => {
     const lines = treatmentTypeMemoLines([], undefined, false);
     expect(lines.some((l) => l.startsWith('PC'))).toBe(false);
   });
+
+  // T-20260817-foot-PRECON-ALLNONE-BUG (회귀 lock): PC canonical 축 = 프리컨디셔닝 스테이지 경유.
+  test('프리컨디셔닝 스테이지 경유(status_transitions) → PC 있음 (canonical 축·회귀수정)', () => {
+    // 두 기존 축(session_type·preconditioning_done)이 전부 부재여도 스테이지 경유면 있음.
+    expect(treatmentTypeMemoLines(['unheated_laser'], false, true, true)).toContain('PC(프리컨디셔닝): 있음');
+    expect(treatmentTypeMemoLines([], undefined, true, true)).toContain('PC(프리컨디셔닝): 있음');
+  });
+
+  test('스테이지 미경유 + 기존 축 부재 → PC 없음 (전 row 획일 없음 아님·정상 분기)', () => {
+    expect(treatmentTypeMemoLines(['heated_laser'], false, true, false)).toContain('PC(프리컨디셔닝): 없음');
+  });
+
+  test('4번째 인자 생략(기존 호출부 호환) → 스테이지 축 false 로 폴백', () => {
+    // 부모 스펙의 3-arg 호출 계약 유지(회귀 0).
+    expect(treatmentTypeMemoLines(['podologue'], undefined, true)).toContain('PC(프리컨디셔닝): 없음');
+  });
 });
 
 test.describe('TREATHIST-DOWNLOAD · 기존 txt 골격 불변식', () => {

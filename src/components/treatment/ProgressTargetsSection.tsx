@@ -566,6 +566,27 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         }
       }
 
+      // 3c) T-20260817-foot-PRECON-ALLNONE-BUG: PC(프리컨디셔닝) 유무 canonical 소스 = 프리컨디셔닝 스테이지 경유.
+      //   부모 배포(0c4307df)는 PC를 session_type='preconditioning'(prod 0건) + preconditioning_done(전건 false·미사용)
+      //   에서만 읽어 전 row '없음' 회귀. 실 시행 신호 = status_transitions.to_status='preconditioning' 존재(방문이 프리컨 거침).
+      //   read-only. 실패 시 기존 두 축(무데이터) 폴백 — 필드만 '없음', 기존 메모/포맷 무변.
+      const preconditionedCheckInIds = new Set<string>();
+      if (uniqueCheckInIds.length > 0) {
+        try {
+          const { data: stData } = await supabase
+            .from('status_transitions')
+            .select('check_in_id, to_status')
+            .in('check_in_id', uniqueCheckInIds)
+            .eq('to_status', 'preconditioning');
+          for (const s of (stData ?? []) as Array<Record<string, unknown>>) {
+            const cid = s['check_in_id'] ? String(s['check_in_id']) : '';
+            if (cid) preconditionedCheckInIds.add(cid);
+          }
+        } catch {
+          // 프리컨 스테이지 보강 실패 — PC 필드만 기존 축 폴백.
+        }
+      }
+
       // 4) 방문 블록 조립 — 예약/접수 메모를 라벨과 함께 '그대로' 나열.
       const textOf = (v: unknown): string => (v == null ? '' : String(v).trim());
       const pushMemo = (lines: string[], label: string, value: unknown) => {
@@ -619,7 +640,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         const ciId = ci?.['id'] ? String(ci['id']) : '';
         const sessTypes = ciId ? (sessionTypesByCheckIn.get(ciId) ?? []) : [];
         const pcDone = ci ? ci['preconditioning_done'] === true : undefined;
-        for (const line of treatmentTypeMemoLines(sessTypes, pcDone, !!ci)) {
+        // PC 유무 canonical 축 = 프리컨디셔닝 스테이지 경유(status_transitions).
+        const pcViaStage = ciId ? preconditionedCheckInIds.has(ciId) : false;
+        for (const line of treatmentTypeMemoLines(sessTypes, pcDone, !!ci, pcViaStage)) {
           memoLines.push(line);
         }
 
