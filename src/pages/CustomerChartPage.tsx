@@ -118,6 +118,7 @@ import OpinionRequestBox from '@/components/consult/OpinionRequestBox';
 // T-20260724-foot-PATIENTCHART-ISSUEDDOCS-HISTORY-VIEW: 상담내역 탭 소견서·진단서 발행 이력(신청/발행여부/열람)
 import OpinionDocHistorySection from '@/components/chart/OpinionDocHistorySection';
 import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
+import { confirmStaffResvWindow } from '@/lib/resvGate';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -4750,6 +4751,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       toast.error('예약일자와 시작시간을 입력하세요');
       return;
     }
+    // T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·스태프 (i)soft): 차트 미니예약(재진) out-of-window soft 경고.
+    if (!(await confirmStaffResvWindow(resvMiniForm.date, resvMiniForm.startTime))) return;
     setSavingResvMini(true);
     // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 미니예약(재진 동선) 유입경로 canonical 상속.
     //   재진 = 재입력 요구 없이 고객 최초유입(customers.first_inflow_channel) 상속(DA: 구환 미갱신·forward-only).
@@ -5801,6 +5804,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260524-foot-THERAPIST-BISYNC AC-2: 치료사 선택 시 preferred_therapist_id 저장 + designated_therapist_id 역동기화
   const saveInlineResv = async (time: string) => {
     if (!customer || !inlineResvDate) return;
+    // T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·스태프 (i)soft): 차트 인라인 슬롯예약(재진) out-of-window soft 경고.
+    if (!(await confirmStaffResvWindow(inlineResvDate, time))) return;
     setSavingInlineResv(true);
     // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 인라인 슬롯예약(재진 동선) 유입경로 canonical 상속.
     //   재진 = 고객 최초유입(customers.first_inflow_channel) 상속(재입력 없음·forward-only·first-write-wins).

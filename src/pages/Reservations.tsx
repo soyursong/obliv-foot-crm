@@ -51,6 +51,7 @@ import {
   weekSlotRange,
   WEEK_DAYS_KO,
 } from '@/lib/schedule';
+import { confirmStaffResvWindow } from '@/lib/resvGate';
 import { VISIT_TYPE_KO } from '@/lib/status';
 import { formatPhone, chartNoBadge } from '@/lib/format';
 import { normalizeToE164 } from '@/lib/phone';
@@ -325,6 +326,14 @@ async function createReservationCanonical(input: CanonicalCreateInput): Promise<
         : true;
       if (!proceed) return { ok: false, reason: 'duplicate_cancelled' };
     }
+  }
+
+  // T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·스태프 (i)soft): 신규예약 out-of-window soft 경고.
+  //   캘린더 직접예약(new-mode 콜백)·복사생성(quick-add) 두 스태프 경로가 이 단일소스 함수를 공유 → 여기 1곳에서 게이트.
+  //   창밖(2026-09-01~ 운영시간 밖)이면 confirm → 사용자가 취소 시 silent 중단(duplicate_cancelled 재사용 = 무-toast).
+  //   외부/도파민 HARD 차단은 서버 EF 소유(직교). 표시축·휴무 hard-block(旣존 isOpenDay)과 무저촉.
+  if (!(await confirmStaffResvWindow(input.date, input.time))) {
+    return { ok: false, reason: 'duplicate_cancelled' };
   }
 
   // T-20260714-foot-RESVROUTE-VISITCHANNEL-ALWAYSYNC (AC-1/AC-B/G1/G2/G4): 예약경로 → 2번차트 방문경로(customers.visit_route) 동기.

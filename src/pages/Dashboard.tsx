@@ -77,6 +77,7 @@ import { useClinic } from '@/hooks/useClinic';
 // T-20260708-foot-DASH-HSCROLL-DRAGPAN: 현황판 가로영역 grab-and-drag(pan)
 import { useDragToPan } from '@/hooks/useDragToPan';
 import { generateSlots, slotsForDate, isOpenDay } from '@/lib/schedule';
+import { confirmStaffResvWindow } from '@/lib/resvGate';
 import { STATUS_KO, VISIT_TYPE_KO, STATUS_COLOR, VISIT_TYPE_COLOR, STATUS_FLAG_CARD_BG, STATUS_FLAG_LABEL } from '@/lib/status';
 import { applyStatusFlagTransition } from '@/lib/statusFlagTransition';
 import { timelineVisitType } from '@/lib/timeline-routing';
@@ -3325,6 +3326,13 @@ function QuickReservationDialog({
     // T-20260815-foot-JONGNO-OPHOURS-CHANGE-20260901 (AC-4): 휴무일(일요일, 2026-09-01~) 빠른예약 실차단.
     if (clinic && form.date && !isOpenDay(parseISO(form.date), clinic)) {
       toast.error('휴무일에는 예약을 생성할 수 없습니다 (일요일 휴무).');
+      setSaving(false);
+      return;
+    }
+
+    // T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·스태프 (i)soft): 빠른예약 out-of-window soft 경고.
+    //   2026-09-01~ 운영시간 밖이면 confirm → 취소 시 중단(진행 시 통과). 외부/도파민 HARD 는 서버 EF 소유.
+    if (!(await confirmStaffResvWindow(form.date, form.time))) {
       setSaving(false);
       return;
     }

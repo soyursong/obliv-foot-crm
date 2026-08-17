@@ -205,6 +205,43 @@ function normalizeSlug(slug: string): string {
   return SLUG_ALIAS[slug] ?? slug;
 }
 
+// ── T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·차단축 HARD, 외부/도파민) ─────────────────
+//   CEO DECISION MSG-20260818-070213-u1rx: 외부/도파민 인입(기계 인입·사람 판단 부재·월 ~13.3건)의
+//   신규 out-of-window 예약을 서버에서 HARD 차단. 스코프 = 이 EF 의 '신규 INSERT' 경로 only.
+//   ★forward-only: 예약일 >= 2026-09-01 (이전 무교란). ★표시축 무접촉: 기존예약 reschedule/cancel/edit 분기
+//     (아래 if(existing) 블록)는 무저촉 — 차단은 신규 생성만. ★도파민 코드 무접촉: 거부는 JSON 응답으로만.
+//   운영창 판정 = 롱레 clinic_operating_hours mirror(src/lib/schedule.ts slotWindowFor 와 동일 규칙 verbatim):
+//     covering = effective_from<=date & (effective_to null|>=date). 활성세대 = max(effective_from).
+//     활성세대에 해당 요일 행 부재 = 휴무(차단). INCLUSIVE last_booking_slot → EXCLUSIVE close = +slot_interval.
+//   ★fail-open(과대차단 방지): 세대 미커버(2026-08-31 이전·미배포·미관리) → 미차단(현행 flat 동작 유지).
+const OPHOURS_GATE_EFFECTIVE_FROM = '2026-09-01';
+interface OpHoursRow {
+  day_of_week: number; open_time: string; close_time: string;
+  last_booking_slot: string; effective_from: string; effective_to: string | null;
+}
+function hhmmEf(t: string): string { return t && t.length >= 5 ? t.slice(0, 5) : t; }
+function addMinutesEf(hm: string, minutes: number): string {
+  const [h, m] = hhmmEf(hm).split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+/** 신규예약(date 'YYYY-MM-DD', time 'HH:MM[:SS]')이 운영창 밖인가. 판정불가/세대 미커버 → false(fail-open). */
+function isOutOfWindowEf(date: string, time: string, gens: OpHoursRow[], slotInterval: number): boolean {
+  if (date < OPHOURS_GATE_EFFECTIVE_FROM) return false;   // forward-only
+  if (!gens || gens.length === 0) return false;            // 세대 미배포/미로드 → fail-open
+  const covering = gens.filter(
+    (g) => g.effective_from <= date && (g.effective_to === null || g.effective_to >= date),
+  );
+  if (covering.length === 0) return false;                 // 조회일 커버 세대 없음 = flat fallback = fail-open
+  let maxEff = covering[0].effective_from;
+  for (const g of covering) if (g.effective_from > maxEff) maxEff = g.effective_from;
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();    // 0=일..6=토 (TZ 드리프트 방어: UTC 고정)
+  const row = covering.find((g) => g.effective_from === maxEff && g.day_of_week === dow);
+  if (!row) return true;                                   // 활성세대가 이 날짜 관리 & 요일행 부재 = 휴무 → 차단
+  const t = hhmmEf(time);
+  return t < hhmmEf(row.open_time) || t >= addMinutesEf(row.last_booking_slot, slotInterval); // EXCLUSIVE close
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   // CORS preflight
@@ -357,7 +394,7 @@ Deno.serve(async (req) => {
     const lookupSlug = normalizeSlug(clinicSlug);
     const { data: clinicRow, error: clinicLookupErr } = await admin
       .from('clinics')
-      .select('id')
+      .select('id, slot_interval')   // slot_interval: WRITEGATE out-of-window close(EXCLUSIVE) 파생용
       .eq('slug', lookupSlug)
       .maybeSingle();
 
@@ -627,6 +664,34 @@ Deno.serve(async (req) => {
       await syncReservationMemoToTimeline(admin, ridResolved, clinicId, memo, sourceSystem ?? 'dopamine');
       console.log(`[reservation-ingest] EDIT applied external_id=${externalId} → ${ridResolved} date=${scheduledDate} time=${scheduledTime} status=confirmed`);
       return json({ ok: true, reservation_id: ridResolved, applied: true, reason: 'rescheduled' });
+    }
+
+    // ── T-20260816-foot-JONGNO-OPHOURS-WRITEGATE: out-of-window 신규예약 HARD 차단(외부/도파민) ──
+    //   ★신규 생성 경로에서만 실행(위 if(existing) 분기는 이미 return — reschedule/cancel/edit 무저촉 = 표시축⊥차단축).
+    //   scheduledDate/scheduledTime 은 선산출값(:464-465). malformed 은 fail-open(isValidDate/isValidTime 가드).
+    if (isValidDate(scheduledDate) && isValidTime(scheduledTime)) {
+      const { data: opGens, error: opGensErr } = await admin
+        .from('clinic_operating_hours')
+        .select('day_of_week, open_time, close_time, last_booking_slot, effective_from, effective_to')
+        .eq('clinic_id', clinicId);
+      // 테이블 미배포(42P01)/RLS/조회에러 → gens 없음 → isOutOfWindowEf fail-open(과대차단 방지, 배포↔마이그 레이스 내성).
+      if (opGensErr) {
+        console.warn(`[reservation-ingest] operating_hours lookup skipped (non-fatal): ${opGensErr.message}`);
+      }
+      const slotInterval = (clinicRow.slot_interval as number | null) ?? 30;
+      if (isOutOfWindowEf(scheduledDate, hhmmEf(scheduledTime), (opGens ?? []) as OpHoursRow[], slotInterval)) {
+        console.warn(`[reservation-ingest] OUT_OF_WINDOW block external_id=${externalId} date=${scheduledDate} time=${scheduledTime} created_via=${createdVia} slug=${clinicSlug}`);
+        // ★방침 4(거부 TM 화면 노출): 기 검증된 lifecycle-reject 채널(HTTP 409 + error:'LIFECYCLE_INVALID')로 회신.
+        //   도파민 footCrmProxyService.isFootLifecycleReject / footPushErrorMessage 가 이 동일 응답형을 이미
+        //   non-swallow 로 surface(旣존 stale-edit reject 와 동일 코드경로) → 거부가 조용히 삼켜지지 않음.
+        //   reason='out_of_window' = 내부 discriminator(사용자 노출 X). detail = 현장 친화 한국어(dev-jargon 0).
+        return json({
+          ok: false,
+          error: 'LIFECYCLE_INVALID',
+          reason: 'out_of_window',
+          detail: '9/1부터 종로 풋 운영시간이 변경되어 이 시간에는 예약을 잡을 수 없습니다. 운영시간 내로 예약해 주세요.',
+        }, 409);
+      }
     }
 
     // ── AC-4: Customer upsert (clinic_id + phone_e164 기준) ─────────────────

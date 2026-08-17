@@ -110,6 +110,44 @@ export function isOpenDay(date: Date, clinic?: Clinic | null): boolean {
   return !slotWindowFor(date, clinic).isClosed;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·차단축): 신규예약 out-of-window 판정(SSOT).
+//   CEO DECISION MSG-20260818-070213-u1rx: forward-only(예약일 >= 2026-09-01) 운영창 밖 신규예약 차단.
+//     · 외부/도파민 인입 = HARD(서버 EF reservation-ingest-from-dopamine 에서 동일 규칙으로 거부).
+//     · 스태프 직접입력 = (i) soft(이 예측자로 판정 → confirmStaffResvWindow 가 경고 후 진행).
+//   ★표시축 무접촉: 이 예측자는 "신규 생성 가부"만 판정. 기존예약 표시/조회/수정과 무관(자매 RENDER 직교).
+//   ★fail-open(과대차단 방지): 2026-08-31 이전·세대 미커버(flat fallback) 날짜는 항상 false(무교란).
+// ─────────────────────────────────────────────────────────────────────────────
+export const OPHOURS_GATE_EFFECTIVE_FROM = '2026-09-01';
+
+/**
+ * 신규예약(date·time 'HH:MM[:SS]')이 운영창 밖인가 = 차단 후보인가.
+ *   forward-only: date < 2026-09-01 → 항상 false(현행 무교란).
+ *   운영창(slotWindowFor) 판정: 휴무 → true / time < open || time >= close(EXCLUSIVE) → true.
+ *   clinic 미제공·세대 미커버(flat fallback) → false(fail-open, 정당 예외 과대차단 방지).
+ */
+export function isNewResvOutOfWindow(
+  date: Date,
+  time: string,
+  clinic: Clinic | null | undefined,
+): boolean {
+  if (!clinic || !time) return false;
+  if (toLocalYmd(date) < OPHOURS_GATE_EFFECTIVE_FROM) return false; // forward-only
+  const gens = clinic.operating_hours;
+  // 세대 미로드/flat 지점은 slotWindowFor 가 flat 영업 window 반환 → 창밖만 판정(무배포 안전).
+  if (gens && gens.length > 0) {
+    const ymd = toLocalYmd(date);
+    const covering = gens.filter(
+      (g) => g.effective_from <= ymd && (g.effective_to === null || g.effective_to >= ymd),
+    );
+    if (covering.length === 0) return false; // 조회일 커버 세대 없음 = flat fallback = fail-open
+  }
+  const w = slotWindowFor(date, clinic);
+  if (w.isClosed) return true;
+  const t = hhmm(time);
+  return t < hhmm(w.open) || t >= hhmm(w.close);
+}
+
 /**
  * 해당 날짜의 신규예약 가능 슬롯 목록(SSOT). 휴무일 → [] (슬롯 0). 날짜별 운영시간(세대/flat) 자동 반영.
  */
