@@ -38,6 +38,7 @@ import {
   progressTxtFilename,
   downloadProgressTxt,
   logProgressTxtExport,
+  treatmentTypeMemoLines,
   type ProgressTxtVisit,
 } from '@/lib/progressTreatmentTxt';
 import type { NameInteraction } from '@/pages/TreatmentTable';
@@ -498,23 +499,70 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
       }
 
       // 3) 접수(check_ins) — 룸 + 접수/시술 메모. reservation_id FK 연결분만(read-only).
+      //   T-20260817-foot-TREATHIST-DOWNLOAD-MISSING-FIELDS: 신규 필드(치료종류·PC유무) 소스 보강.
+      //     · id                  = package_sessions.check_in_id 조인 키(치료종류 소스).
+      //     · preconditioning_done = 방문 단위 PC(프리컨디셔닝) boolean(펜차트 자동기록 필드) — PC유무 OR-병합.
+      //   ADDITIVE 컬럼(preconditioning_done) 미적용 prod → id/메모는 유지하는 폴백(예약 메모 쿼리와 동일 방어).
       const resvIds = resvRows.map((r) => String(r['id'] ?? '')).filter(Boolean);
       const ciByResv = new Map<string, Record<string, unknown>>();
+      const checkInIds: string[] = [];
       if (resvIds.length > 0) {
+        const CI_FULL =
+          'id, reservation_id, treatment_room, laser_room, consultation_room, examination_room, ' +
+          'treatment_memo, notes, treatment_kind, treatment_contents, preconditioning_done';
+        const CI_CORE =
+          'id, reservation_id, treatment_room, laser_room, consultation_room, examination_room, ' +
+          'treatment_memo, notes, treatment_kind, treatment_contents';
+        const runCiQuery = (sel: string) =>
+          supabase.from('check_ins').select(sel).in('reservation_id', resvIds);
         try {
-          const { data: ciData } = await supabase
-            .from('check_ins')
-            .select(
-              'reservation_id, treatment_room, laser_room, consultation_room, examination_room, ' +
-                'treatment_memo, notes, treatment_kind, treatment_contents',
-            )
-            .in('reservation_id', resvIds);
-          for (const c of (ciData ?? []) as unknown as Array<Record<string, unknown>>) {
+          let ciData: Array<Record<string, unknown>> = [];
+          const { data, error } = await runCiQuery(CI_FULL);
+          if (error) {
+            if (/preconditioning_done|42703|PGRST204/.test(error.message ?? '')) {
+              const retry = await runCiQuery(CI_CORE);
+              if (retry.error) throw retry.error;
+              ciData = (retry.data ?? []) as unknown as Array<Record<string, unknown>>;
+            } else {
+              throw error;
+            }
+          } else {
+            ciData = (data ?? []) as unknown as Array<Record<string, unknown>>;
+          }
+          for (const c of ciData) {
             const rid = c['reservation_id'] ? String(c['reservation_id']) : '';
             if (rid) ciByResv.set(rid, c);
+            const cid = c['id'] ? String(c['id']) : '';
+            if (cid) checkInIds.push(cid);
           }
         } catch {
           // 접수 보강 실패 — 예약 메모만으로 계속.
+        }
+      }
+
+      // 3b) 펜차트 자동기록 시술타입(package_sessions.session_type) — check_in FK 연결·used·미삭제만(read-only).
+      //   치료종류(비가열/가열/포돌로게 등) + PC(프리컨디셔닝) 유무 파생 canonical 소스.
+      //   CSV export(progressTreatmentCsv)와 동일 소스·라벨(SESSION_TYPE_LABEL) 재사용 → 두 다운로드 정합.
+      const sessionTypesByCheckIn = new Map<string, string[]>();
+      const uniqueCheckInIds = [...new Set(checkInIds)];
+      if (uniqueCheckInIds.length > 0) {
+        try {
+          const { data: psData } = await supabase
+            .from('package_sessions')
+            .select('check_in_id, session_type, status, deleted_at')
+            .in('check_in_id', uniqueCheckInIds)
+            .eq('status', 'used')
+            .is('deleted_at', null);
+          for (const p of (psData ?? []) as Array<Record<string, unknown>>) {
+            const cid = p['check_in_id'] ? String(p['check_in_id']) : '';
+            const st = p['session_type'] ? String(p['session_type']) : '';
+            if (!cid || !st) continue;
+            const arr = sessionTypesByCheckIn.get(cid) ?? [];
+            arr.push(st);
+            sessionTypesByCheckIn.set(cid, arr);
+          }
+        } catch {
+          // 시술타입 보강 실패 — 치료종류/PC 필드만 생략(기존 메모/포맷은 유지).
         }
       }
 
@@ -564,6 +612,15 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
           if (Array.isArray(contents) && contents.length > 0) {
             pushMemo(memoLines, '진료내용', contents.map((c) => textOf(c)).filter(Boolean).join(', '));
           }
+        }
+
+        // T-20260817-foot-TREATHIST-DOWNLOAD-MISSING-FIELDS: 날짜별 치료종류 + PC(프리컨디셔닝) 유무(신규 필드).
+        //   소스=package_sessions.session_type(check_in FK) + check_ins.preconditioning_done. 파생=순수 lib 함수.
+        const ciId = ci?.['id'] ? String(ci['id']) : '';
+        const sessTypes = ciId ? (sessionTypesByCheckIn.get(ciId) ?? []) : [];
+        const pcDone = ci ? ci['preconditioning_done'] === true : undefined;
+        for (const line of treatmentTypeMemoLines(sessTypes, pcDone, !!ci)) {
+          memoLines.push(line);
         }
 
         return {
