@@ -35,7 +35,12 @@ export function VisitCallResultBadge({
         className,
       )}
     >
-      {compact ? VISIT_CALL_RESULT_LABEL[result] : `내원콜 ${VISIT_CALL_RESULT_LABEL[result]}`}
+      {/* T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE (P1): 통합시간표 등 극소폭 compact 슬롯에서
+          배지 문구가 성함 표시공간을 압박 → reachable 라벨 '내원예정'(4자)→'내원'(2자)로 단축(공간 확보).
+          canonical 값·배지 로직 불변, 전체 라벨은 title(hover/tap) 보존. non-compact/SSOT VISIT_CALL_RESULT_LABEL 불변. */}
+      {compact
+        ? (isReachable ? '내원' : VISIT_CALL_RESULT_LABEL[result])
+        : `내원콜 ${VISIT_CALL_RESULT_LABEL[result]}`}
     </span>
   );
 }
