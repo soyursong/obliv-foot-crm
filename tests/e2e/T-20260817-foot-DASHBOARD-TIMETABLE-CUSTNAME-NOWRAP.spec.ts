@@ -17,11 +17,14 @@
  * S3 (AC1/AC2 런타임): 통합시간표 성함 셀이 computed whiteSpace=nowrap, 세로 wrap 없음(1줄 높이).
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * ★ SUPERSEDED (부분) by T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE (P1, 현장 최우선):
- *   현장 재지시 — ellipsis(말줄임)=이름 잘림 → 현장 요건 위배. "성함 절대 안 잘림"이 최우선 요건.
- *   본 티켓의 nowrap(음절 중간 꺾임 방지) 불변식은 유지되나, ellipsis/overflow-hidden/min-w-0(말줄임 전제)은
- *   후속 티켓이 의도적으로 제거(shrink-0 로 셀 전체 수용). 아래 정적 assertion 을 후속 티켓 현실에 맞춰 갱신.
- *   전면 검증은 T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE.spec.ts 로 수렴(중복 soak 방지).
+ * ★ R2 REOPEN (P3→P1 상향, 현장 최우선 — 김주연 총괄):
+ *   R1(6ef70bdd) 의 ellipsis(말줄임) 적용 부작용 = 셀 폭 초과 이름이 "…"로 잘림("한정자"→"한정…").
+ *   현장 판정 — 고객 이름이 잘리는 것 자체가 불가(중간 꺾임도, 말줄임도 모두 잘림 = 불허).
+ *   R2 요건: [최우선] 성함은 어떤 경우에도 온전히 전체 표시(중간꺾임 X · ellipsis 말줄임 X).
+ *     1안(CSS): nowrap 유지 + overflow-hidden/text-ellipsis 제거 + min-w-0 제거 → shrink-0 로 셀이 전체 수용.
+ *     2안(배지 단축): 내원콜 compact 배지 '내원예정'→'내원' 단축(성함 공간 병목 완화). 1안+2안 병행.
+ *   본 spec 은 R2 AC 를 직접 담는다: [AC1] 말줄임/중간꺾임 부재(S1) · [AC2 배지 텍스트 불변식](S3) · [AC4 회귀 0](S2).
+ *   (동일 fix 의 전면 런타임 잘림-0 실증은 T-…-NAME-NOTRUNCATE-BADGE.spec.ts 로도 수렴 — 중복 soak 방지.)
  */
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
@@ -63,16 +66,23 @@ test.describe('정적 소스 불변식 (T-20260817-foot-DASHBOARD-TIMETABLE-CUST
     );
   });
 
-  test('S1-d: 성함 셀에서 break-words(음절 중간 꺾임 원인) 잔재 0', () => {
-    // timeline-name 을 담은 span 라인 어디에도 break-words 가 남지 않아야 한다.
+  test('S1-d [R2 AC1]: 성함 셀 3사이트 — 잘림 유발 클래스 전부 부재(중간꺾임+말줄임 0), nowrap 유지', () => {
+    // R2 최우선: 성함은 어떤 경우에도 온전히 전체 표시. 잘림 유발 클래스는 3사이트 어디에도 없어야 한다.
     const nameLines = dash
       .split('\n')
       .filter((l) => l.includes('data-testid="timeline-name"'));
     expect(nameLines.length).toBe(3);
     for (const l of nameLines) {
+      // 중간 꺾임 원인(R1 이전) 잔재 0
       expect(l).not.toMatch(/break-words/);
       expect(l).not.toMatch(/whitespace-normal/);
+      // ★ R2: 말줄임(ellipsis)·하드클립·셀 축소 전제 잔재 0 — 이 셋이 있으면 이름이 잘린다.
+      expect(l).not.toMatch(/text-ellipsis/);
+      expect(l).not.toMatch(/overflow-hidden/);
+      expect(l).not.toMatch(/\bmin-w-0\b/);
+      // 한 줄 고정(음절 중간 꺾임 방지) 유지 + 셀이 전체 수용
       expect(l).toMatch(/whitespace-nowrap/);
+      expect(l).toMatch(/shrink-0/);
     }
   });
 
@@ -82,9 +92,34 @@ test.describe('정적 소스 불변식 (T-20260817-foot-DASHBOARD-TIMETABLE-CUST
     expect(dash).toMatch(/data-testid="timeline-checkin-card"/);
     // 전체 성함 tooltip 보존 — 카드 title 에 cardDisplayName 유지.
     expect(dash).toMatch(/title=\{cardDisplayName\(reservation\)\}/);
-    // ★ SUPERSEDED: 구 min-w-0+ellipsis 전제 assertion 은 NAME-NOTRUNCATE-BADGE 로 제거.
-    //   nowrap 불변식(음절 중간 꺾임 방지)만 잔존 검증.
+    // ★ R2: 셀은 성함 전체를 수용(축소 없이) — shrink-0 + nowrap 유지.
     expect(dash).toMatch(/shrink-0 whitespace-nowrap leading-tight/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S3 [R2 AC2] 배지 텍스트 불변식 — 2안(내원예정→내원 단축), 로직/canonical/전체라벨 불변
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('S3 내원콜 배지 텍스트 불변식 (R2 2안: compact 단축 only)', () => {
+  const badge = read('src/components/VisitCallResultBadge.tsx');
+  const types = read('src/lib/types.ts');
+
+  test('S3-a: compact reachable 배지 = 단축 문구 "내원"(성함 공간 확보)', () => {
+    expect(badge).toMatch(/isReachable \? '내원' : VISIT_CALL_RESULT_LABEL\[result\]/);
+  });
+
+  test('S3-b: non-compact 배지 = 전체 라벨(내원콜 …) 불변(회귀 0)', () => {
+    expect(badge).toMatch(/`내원콜 \$\{VISIT_CALL_RESULT_LABEL\[result\]\}`/);
+  });
+
+  test('S3-c: 전체 라벨 title(hover/tap) 보존 — 정보손실 0', () => {
+    expect(badge).toMatch(/title=\{`도파민TM 내원콜: \$\{VISIT_CALL_RESULT_LABEL\[result\]\}`\}/);
+  });
+
+  test('S3-d: SSOT canonical 라벨 불변 — reachable=내원예정 / absent=부재 (배지 로직 무변경)', () => {
+    // 2안은 표시 문구만 단축. 데이터/canonical 라벨(SSOT)은 절대 불변 → 다른 상태 표기 회귀 0.
+    expect(types).toMatch(/reachable:\s*'내원예정'/);
+    expect(types).toMatch(/absent:\s*'부재'/);
   });
 });
 
