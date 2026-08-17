@@ -9,8 +9,8 @@
 --   에러 메시지 본문 "DRYRUN_BACKFILL_REPORT ..." 가 판정 산출물(에러 = 정상, 무영속 sentinel).
 -- 사후: POST-PROBE(파일 하단) 를 별도 query 로 실행 → 신규 draft 0 이어야 무영속 정상.
 --
--- ★DECISION-1: 아래 v_from 기본값 = '2026-08-01'(원 요청). decision_probe 결과 7월분 포함(b) 확정 시
---   supervisor 가 v_from := DATE '2026-07-01' 로 1줄 수정 후 재실행. (default=요청값, AC-1.)
+-- ★DECISION-1 RESOLVED 2026-08-18 = B안(김주연 총괄 '청구한 거 없음' → 7월 78건 미청구 누락) →
+--   v_from = '2026-07-01' 확정. 대상 218건(7월 78 + 8월 140, check_in grain) · freeze 예상 218 · covered 3,259,628원.
 --
 -- 실행: POST {mgmt}/v1/projects/rxlomoozakkjesdqjtvd/database/query  body={"query": <본 파일 전체>}
 -- ============================================================
@@ -20,7 +20,7 @@ DO $DR$
 DECLARE
   -- ── 파라미터 ──
   v_expect_clinic uuid := '74967aea-a60b-4da3-a0e7-9c997a930bc8';  -- jongno-foot / 요양기관기호 13328581
-  v_from          date := DATE '2026-08-01';   -- ★DECISION-1: (b) 확정 시 '2026-07-01' 로 수정
+  v_from          date := DATE '2026-07-01';   -- ★DECISION-1 RESOLVED(B안, 2026-08-18): 7월분 포함(freeze 예상 218)
   v_to            date := NULL;                 -- NULL = 상한 없음(원 요청)
   -- ── 상태 ──
   v_clinic        uuid;

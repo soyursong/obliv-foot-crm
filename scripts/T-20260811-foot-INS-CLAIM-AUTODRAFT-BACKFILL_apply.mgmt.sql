@@ -12,8 +12,8 @@
 --       위반 시 RAISE → 트랜잭션 ABORT(영속 0). 통과 시에만 COMMIT.
 --   6) APPLY_REPORT NOTICE 산출(판정근거 AFTER 스냅샷).
 --
--- ★DECISION-1: v_from 기본값 = '2026-08-01'(원 요청). decision_probe 로 7월분 포함(b) 확정 시
---   supervisor 가 v_from := DATE '2026-07-01' 로 수정 후 실행.
+-- ★DECISION-1 RESOLVED 2026-08-18 = B안(김주연 총괄 '청구한 거 없음' → 7월 78건 미청구 누락) →
+--   v_from = '2026-07-01' 확정. 대상 218건(7월 78 + 8월 140, check_in grain) · freeze 예상 218 · covered 3,259,628원.
 --
 -- 멱등: 재실행 안전(이미 draft 있던 방문은 update-in-place → 순증 0). 중복 draft 0.
 -- 방화벽: insurance_claims/claim_items 만 write. service_charges/payments 무접촉(H2). edi_submissions 무접촉.
@@ -24,7 +24,7 @@ BEGIN;
 DO $AP$
 DECLARE
   v_expect_clinic uuid := '74967aea-a60b-4da3-a0e7-9c997a930bc8';
-  v_from          date := DATE '2026-08-01';   -- ★DECISION-1: (b) 확정 시 '2026-07-01'
+  v_from          date := DATE '2026-07-01';   -- ★DECISION-1 RESOLVED(B안, 2026-08-18): 7월분 포함(freeze 예상 218)
   v_to            date := NULL;
   v_clinic        uuid;
   v_before_cnt    int;   v_before_amt   bigint;
