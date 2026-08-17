@@ -502,7 +502,7 @@ export default function ClinicSettings() {
               {/* 헤더 */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{doctors[idx]?.name || form.name || '—'}</span>
+                  <span className="text-sm font-semibold">{form.name || '—'}</span>
                   {form.is_default && (
                     <span className="text-[10px] rounded-full bg-teal-100 text-teal-700 px-2 py-0 font-medium">
                       기본 의사
