@@ -59,6 +59,24 @@ async function seedConsultWaiting(
     .single();
   expect(ce).toBeNull();
 
+  // ⚠ 재진 판정 SSOT = **check_ins done-이력 365일 recency**(resolveVisitTypesByCheckIn), 저장 visit_type 아님.
+  //   재진 시드는 반드시 '자기 시각 이전 완료(done) 방문'을 함께 심어야 recency 가 returning 으로 판정한다.
+  //   (T-20260727-RECLASS 시점정합: prior done 0 → recency 'new'. stored visit_type='returning' 만으론 재진 아님.)
+  if (visitType === 'returning') {
+    const priorAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); // 30일 전 완료방문(365일 이내)
+    const { error: pe } = await service.from('check_ins').insert({
+      clinic_id: clinicId,
+      customer_id: cust!.id,
+      customer_name: name,
+      customer_phone: phone,
+      visit_type: 'returning',
+      status: 'done', // 완료방문 = 재진 근거
+      checked_in_at: priorAt,
+      queue_number: 900000 + (ts % 8000),
+    });
+    expect(pe).toBeNull();
+  }
+
   const { data: ci, error: ie } = await service
     .from('check_ins')
     .insert({
@@ -100,24 +118,27 @@ test.describe('T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE — 재진 상담 
 
   test.afterAll(async () => {
     for (const s of seeds) {
-      await service.from('check_ins').delete().eq('id', s.checkInId);
+      // 재진 시드는 prior done check_in 도 함께 심으므로 customer 기준 전량 회수(FK 잔류 방지).
+      await service.from('check_ins').delete().eq('customer_id', s.customerId);
       await service.from('customers').delete().eq('id', s.customerId);
     }
   });
 
-  // ── S1 (AC-1/AC-3): 재진 → 상담 실장 배정 칸 숨김 ──────────────────────────────
-  test('S1: 재진 고객은 [상담] 탭 오늘 배정 현황에서 상담 실장 select 가 숨겨지고 "재진 — 상담 배정 없음" 마커가 뜬다', async ({ page }) => {
+  // ── S1 (AC-1/AC-3): 재진 → 상담 배정 큐에서 완전 제외 ────────────────────────────
+  //   T-20260818-foot-CONSULT-REJIN-FIRSTVISIT-EXCL (B) 로 supersede: 종전 '재진 — 상담 배정 없음' 마커(행은 노출,
+  //   select 만 숨김)를 **행 자체 제외(초진만 노출)** 로 escalate. 현장(풋센터 총괄) "재진 고객은 상담 대상 아님".
+  //   판별 SSOT 는 불변(isReturningAxis/deriveConsultAxis, 365일 done-이력 recency). 초진 노출은 회귀0(S2).
+  test('S1: 재진 고객은 [상담] 탭 오늘 배정 현황에서 완전히 제외된다(select·마커 모두 미노출, 초진만 노출) — T-20260818-EXCL supersede', async ({ page }) => {
     const seed = await seedConsultWaiting(clinicId, 'returning');
     seeds.push(seed);
 
     await gotoAssignments(page);
+    // 로드 안정화(비동기 recency 판정 반영 대기).
+    await page.waitForTimeout(1_500);
 
-    // 재진 행: 상담 실장 배정 select 미존재 + hidden 마커 노출.
-    await expect(page.getByTestId(`assign-consult-hidden-${seed.checkInId}`)).toBeVisible({
-      timeout: 20_000,
-    });
-    await expect(page.getByTestId(`assign-consult-hidden-${seed.checkInId}`)).toContainText('상담 배정 없음');
+    // 재진 행: 상담 배정 큐에서 제외 → select 도 마커도 없음(행 자체 부재).
     await expect(page.getByTestId(`assign-consult-select-${seed.checkInId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`assign-consult-hidden-${seed.checkInId}`)).toHaveCount(0);
   });
 
   // ── S2 (AC-2): 초진 → 상담 실장 배정 select 정상 노출(회귀0) ─────────────────────
@@ -150,8 +171,9 @@ test.describe('T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE — 재진 상담 
   // ── 정적: AC-4 판정 SSOT 통일 ─────────────────────────────────────────────────
   test('AC-4: 재진 판정 SSOT = deriveConsultAxis/isReturningAxis (REVISIT-CHECKIN-AUTOASSIGN-SKIP 동일 소스)', () => {
     const page = read('src/pages/Assignments.tsx');
-    // UI 숨김 조건이 isReturningAxis(axis) 사용 — autoAssign 과 동일 판정 함수.
-    expect(page).toMatch(/role === 'consult' && isReturningAxis\(axis\)/);
+    // T-20260818-EXCL(B): 상담 배정 큐 제외 조건이 isReturningAxis(axisOf(...,'consult')) 사용 — autoAssign 과 동일 판정 함수.
+    //   (구 마커 분기 `isReturningAxis(axis)` 는 행 제외로 supersede.)
+    expect(page).toMatch(/x\.role === 'consult' && isReturningAxis\(axisOf\(x\.ci, 'consult'\)\)/);
     expect(page).toMatch(/import \{[\s\S]*?isReturningAxis[\s\S]*?\} from '@\/lib\/autoAssign'/);
     // autoAssign SSOT: visit_type==='returning' → 'returning' 축.
     const lib = read('src/lib/autoAssign.ts');
