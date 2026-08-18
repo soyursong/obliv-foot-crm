@@ -2418,8 +2418,16 @@ function DashboardTimeline({
   const currentSlotRef = useRef<HTMLDivElement>(null);
   // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL: 세로 스크롤 컨테이너 ref (영업시간 외 클램핑용)
   const innerScrollRef = useRef<HTMLDivElement>(null);
-  // T-20260603-foot-TIMETABLE-NOW-AUTOSCROLL AC-1: 진입 시 1회만 자동 스크롤 (이후 사용자 스크롤 보존)
-  const didInitialScrollRef = useRef(false);
+  // T-20260818-foot-DASHBOARD-TIMETABLE-REALTIME-SCROLL-SYNC (증상#2 RC fix): 사용자가 직접
+  //   스크롤(wheel/touchmove)했는지 플래그. true 면 진입 자동 재스크롤을 즉시 중단(사용자 스크롤 보존).
+  //   구 didInitialScrollRef(1회 소진) 대체 — 단일 rAF 가 예약/체크인 async 도착·clinic 로드로 인한
+  //   레이아웃 시프트 전에 소진돼 최상단(아침) 고정되던 근본 라인을 제거한다.
+  const userScrolledRef = useRef(false);
+  // 콘텐츠 래퍼 ref — ResizeObserver 대상(행 높이 변화 = 데이터 도착/레이아웃 시프트 감지).
+  const timelineContentRef = useRef<HTMLDivElement>(null);
+  // scrollToNow 를 stable ref 로 보관 → settle-window 타이머/옵저버가 renderSlots 재계산과 무관하게
+  //   최신 scrollToNow 를 호출(effect 재구독 없이). 실제 대입은 scrollToNow 정의 직후.
+  const scrollToNowRef = useRef<() => void>(() => {});
   // scrollToNow 실제 정의는 renderSlots 산출 이후 (renderSlots 의존)
 
   // ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 상태 ──────────────────────────
@@ -2678,16 +2686,66 @@ function DashboardTimeline({
     }
   }, [isToday, renderSlots, currentH, currentM]);
 
-  // AC-1: 진입 시 1회 자동 스크롤. 슬롯 전환(30분)마다 재스크롤하지 않음(사용자 스크롤 보존).
-  //       다른 날짜로 이동 후 오늘로 복귀 시 플래그 리셋 → 재진입 시 다시 1회 스크롤.
+  // scrollToNow 최신본을 ref 에 유지 (settle-window 타이머가 effect 재구독 없이 호출)
+  scrollToNowRef.current = scrollToNow;
+
+  // ── T-20260818-foot-DASHBOARD-TIMETABLE-REALTIME-SCROLL-SYNC (증상#2 RC fix) ──
+  // AC(증상#2): 진입/새로고침 시 현재 시각 슬롯으로 자동 스크롤 (아침 최상단 고정 금지).
+  // RC: 예약/체크인은 빈 배열로 시작해 fetch+realtime 으로 async 도착하고, clinic 도 async
+  //   로드된다. 구현: 단일 rAF 1회 스크롤 → 그 직후 위쪽 슬롯 행들이 데이터로 커지며 콘텐츠가
+  //   밀려 현재슬롯이 뷰포트 밖으로 나가는데(scroll-anchoring 시프트), 가드가 이미 소진돼
+  //   재시도 없이 최상단(아침)에 고정됐다.
+  // Fix: 진입 직후 settle-window(≈1.4s) 동안 staggered 재스크롤(rAF/250/700/1400ms)로 late
+  //   데이터·레이아웃 시프트를 따라잡는다. 사용자가 직접 스크롤(wheel/touchmove)하면 즉시 중단
+  //   (사용자 스크롤 보존). window 종료 후에는 realtime 변경으로 자동 재스크롤하지 않는다
+  //   (진입/새로고침 semantics 유지 — 이후 이동은 "지금" 버튼으로).
   useEffect(() => {
-    if (!isToday) { didInitialScrollRef.current = false; return; }
-    if (didInitialScrollRef.current) return;
-    didInitialScrollRef.current = true;
-    // 레이아웃/페인트 안정 후 스크롤 (슬롯 행 DOM 보장)
-    const raf = requestAnimationFrame(() => scrollToNow());
-    return () => cancelAnimationFrame(raf);
-  }, [isToday, scrollToNow]);
+    if (!isToday || viewMode !== 'time' || folded) return;
+    userScrolledRef.current = false; // fresh 진입 — 사용자 스크롤 플래그 리셋
+
+    const container = innerScrollRef.current;
+    const content = timelineContentRef.current;
+    const markUser = () => { userScrolledRef.current = true; };
+    // wheel(마우스)·touchmove(갤탭 태블릿) = 명백한 사용자 스크롤 제스처. pointerdown/click 은
+    //   카드 조작과 구분 불가하므로 제외(오탐으로 자동스크롤이 조기 중단되는 것 방지).
+    container?.addEventListener('wheel', markUser, { passive: true });
+    container?.addEventListener('touchmove', markUser, { passive: true });
+
+    const run = () => { if (!userScrolledRef.current) scrollToNowRef.current(); };
+
+    // 1) 진입 즉시 1회 + 초반 staggered — 데이터가 이미 있거나 즉시 도착하는 경우 커버.
+    const raf = requestAnimationFrame(run);
+    const timers = [250, 700].map((d) => window.setTimeout(run, d));
+
+    // 2) settle-window(≈3s) 동안 콘텐츠 크기 변화를 감지해 재-앵커한다(핵심 RC fix):
+    //    예약/체크인 async 도착·clinic 로드로 위쪽 행이 커지면 현재슬롯이 밀린다 → 즉시 따라잡기.
+    //    사용자 스크롤(userScrolled) 시 중단. window 종료 후에는 realtime 변경으로 자동 재스크롤
+    //    하지 않음(진입/새로고침 semantics 유지 — 이후 이동은 "지금" 버튼).
+    let windowOpen = true;
+    let ro: ResizeObserver | null = null;
+    if (content && typeof ResizeObserver !== 'undefined') {
+      let firstFire = true;
+      ro = new ResizeObserver(() => {
+        // 최초 observe 콜백(초기 사이즈)은 위 rAF 와 중복 → 스킵. 이후 실제 시프트만 재-앵커.
+        if (firstFire) { firstFire = false; return; }
+        if (windowOpen && !userScrolledRef.current) scrollToNowRef.current();
+      });
+      ro.observe(content);
+    }
+    const closeTimer = window.setTimeout(() => { windowOpen = false; ro?.disconnect(); ro = null; }, 3000);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      timers.forEach((t) => clearTimeout(t));
+      clearTimeout(closeTimer);
+      windowOpen = false;
+      ro?.disconnect();
+      container?.removeEventListener('wheel', markUser);
+      container?.removeEventListener('touchmove', markUser);
+    };
+    // folded/viewMode 변화 시 재구독(펼침·시간표뷰 복귀 시 재스크롤). renderSlots/scrollToNow
+    //   identity 는 deps 에서 제외 — scrollToNowRef 로 최신본 호출(realtime 재스크롤 yank 방지).
+  }, [isToday, viewMode, folded]);
 
   // T-20260522-foot-TIMETABLE-FOLD: 접힌 상태 — 세로 스트립만 표시 (토글 버튼 + 라벨)
   if (folded) {
@@ -2810,6 +2868,10 @@ function DashboardTimeline({
         data-testid="timeline-inner-scroll"
         className="flex-1 min-h-0 overflow-y-auto [overflow-x:clip] md:overflow-x-hidden"
       >
+        {/* T-20260818-foot-DASHBOARD-TIMETABLE-REALTIME-SCROLL-SYNC: 콘텐츠 래퍼 —
+             ResizeObserver 대상. 예약/체크인 async 도착·clinic 로드로 행 높이가 커지면(레이아웃
+             시프트) 이 래퍼 크기가 변하고, 진입 settle-window 동안 현재 시각으로 재-앵커한다. */}
+        <div ref={timelineContentRef} data-testid="timeline-content">
         {viewMode === 'therapist' ? (
           /* ── T-20260522-foot-TIMETABLE-FOLD: 치료사별 뷰 ─────────────────── */
           <div className="flex flex-col">
@@ -3220,6 +3282,7 @@ function DashboardTimeline({
         })}
           </>
         )}
+        </div>
       </div>
     </div>
   );
