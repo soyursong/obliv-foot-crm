@@ -1434,6 +1434,11 @@ function TreatmentImagesSection({
   const [capturedBlobs, setCapturedBlobs] = useState<{ blob: Blob; previewUrl: string }[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  // T-20260818-foot-MEDIMG-CAPTURE-WAITERROR-FALSEPOSITIVE: 셔터 인플라이트 상태.
+  //   capturePhoto()는 초점 수렴 대기(450ms) + ImageCapture.takePicture() 하드웨어 초점 사이클(수 초)로
+  //   완료까지 지연이 큰데, 그동안 아무 피드백이 없어 현장이 "대기/멈춤 오류"로 오인하고 반복 탭 →
+  //   느린 캡처가 중첩돼 지연이 가중됐다. 이 플래그로 (a) 처리 중 스피너 노출(로딩), (b) 셔터 재진입 차단.
+  const [isCapturing, setIsCapturing] = useState(false);
   // REOPEN #2 T-20260526-foot-CAMERA-FOCUS-BUG: 탭-투-포커스 상태
   const [isFocusing, setIsFocusing] = useState(false);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
@@ -1528,18 +1533,31 @@ function TreatmentImagesSection({
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    // T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX (AC-1): 처리 중 재진입 가드.
+    if (uploading) { e.target.value = ''; return; }
     setUploading(true);
-    for (const file of Array.from(files)) {
+    const arr = Array.from(files);
+    const total = arr.length;
+    let failed = 0;
+    // T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX (AC-1): 처리 중에는 오류 토스트 미노출.
+    //   업로드 지연/일시오류를 루프 중 즉시 toast.error 로 띄워 '저장 중'을 "대기 오류"로 오인시키던 문제 교정.
+    //   실패는 모아서 완료 후 1회 안내(AC-2). 저장 성공/실패 판정 로직 자체는 불변.
+    for (const file of arr) {
       const ext = file.name.split('.').pop() ?? 'jpg';
       // T-20260517: 파일명에 type 접두사 포함
       const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+      if (error) failed++;
     }
     setUploading(false);
     e.target.value = '';
     invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
+    // AC-2: 완료 후 정확한 피드백. toast.success 는 wrapper 묵음(noop) → 완료 확인은 toast.confirm.
+    const saved = total - failed;
+    if (failed === 0) toast.confirm(`${saved}장 저장 완료`);
+    else if (saved > 0) toast.warning(`${saved}장 저장 완료 · ${failed}장 실패 — 실패한 사진은 다시 시도해 주세요`);
+    else toast.error(`저장에 실패했습니다 (${failed}장) — 잠시 후 다시 시도해 주세요`);
   };
 
   const remove = async (img: TreatImgItem) => {
@@ -1934,79 +1952,99 @@ function TreatmentImagesSection({
 
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
+    // T-20260818-foot-MEDIMG-CAPTURE-WAITERROR-FALSEPOSITIVE (AC-1): 재진입 가드.
+    //   takePicture() 하드웨어 초점 사이클(수 초)이 진행 중일 때 셔터를 또 누르면 느린 캡처가
+    //   중첩돼 지연이 가중되고 "멈춘 것 같은" 오인을 키운다. 진행 중이면 무시.
+    if (isCapturing) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const videoTrack = streamRef.current?.getVideoTracks()[0];
 
-    // ── AC-2: capture-time 재-프리포커스 게이트 ───────────────────────────────
-    // 셔터 시점에 single-shot 1회 발화 후 짧게 수렴 대기 → 캡처. 간헐 초점 나감 완화.
-    // ★ focusMode 단독 applyConstraints — zoom 제약과 절대 혼합하지 않음(AC-1/AC-2 분리).
-    // ★ 기존 검증된 single-shot 패턴 재사용 — 미지원 기기는 try/catch로 native AF 유지(무회귀).
-    if (videoTrack) {
-      try {
-        await videoTrack.applyConstraints({ focusMode: 'single-shot' } as MediaTrackConstraints);
-        await new Promise((r) => setTimeout(r, 450)); // 하드웨어 초점 수렴 대기
-        console.debug('[CAMERA-FOCUS] capture-time single-shot refocus ok');
-      } catch {
-        // 미지원 — 기존 AF 상태 그대로 캡처 (무회귀)
-        console.debug('[CAMERA-FOCUS] capture-time refocus unsupported — native AF');
-      }
-    }
-
-    // AC-1: 디지털 줌 활성(하드웨어 줌 비활성 + 배율>1) 여부 — 캡처본에 배율 반영 경로 결정
-    const digitalZoomActive = !hwZoomActive && zoom > 1;
-
-    // ── Strategy 1: ImageCapture.takePicture() ────────────────────────────────
-    // REOPEN #1 AC-5: Galaxy Tab에서 hardware focus cycle 완료 후 캡처 트리거.
-    // Chrome 59+, Android 7+ 지원. canvas drawImage는 현재 프레임을 즉시 캡처하므로
-    // focus 수렴 전 흐린 프레임을 잡을 수 있음 → takePicture()가 근본 해결.
-    // 반환 Blob은 JPEG/PNG(기기 네이티브 인코더 사용) — quality 옵션 불필요.
-    // ★ AC-1: 디지털 줌일 때는 takePicture()가 풀프레임(미확대)을 반환하므로 skip → 캔버스 crop 경로로.
-    //   (하드웨어 줌은 스트림 자체가 확대되므로 takePicture()/canvas 모두 배율 반영됨)
-    if (!digitalZoomActive && videoTrack && 'ImageCapture' in window) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ic = new (window as any).ImageCapture(videoTrack);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const blob: Blob = await (ic as any).takePicture();
-        if (blob && blob.size > 1000) { // sanity: 유효 이미지 (empty blob 아님)
-          const previewUrl = URL.createObjectURL(blob);
-          setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
-          restoreContinuousFocus(videoTrack); // AC-2: 다음 프리뷰 추적용 continuous 복원
-          return; // 성공 → canvas fallback 불필요
+    // AC-1: 처리 중 스피너 노출(로딩) — "대기 오류" 오인 제거. finally 에서 반드시 해제.
+    setIsCapturing(true);
+    let captured = false; // 실제 유효 이미지 확보 여부 — 미확보 시에만 진짜 실패로 오류 노출(AC-3)
+    try {
+      // ── AC-2: capture-time 재-프리포커스 게이트 ───────────────────────────────
+      // 셔터 시점에 single-shot 1회 발화 후 짧게 수렴 대기 → 캡처. 간헐 초점 나감 완화.
+      // ★ focusMode 단독 applyConstraints — zoom 제약과 절대 혼합하지 않음(AC-1/AC-2 분리).
+      // ★ 기존 검증된 single-shot 패턴 재사용 — 미지원 기기는 try/catch로 native AF 유지(무회귀).
+      if (videoTrack) {
+        try {
+          await videoTrack.applyConstraints({ focusMode: 'single-shot' } as MediaTrackConstraints);
+          await new Promise((r) => setTimeout(r, 450)); // 하드웨어 초점 수렴 대기
+          console.debug('[CAMERA-FOCUS] capture-time single-shot refocus ok');
+        } catch {
+          // 미지원 — 기존 AF 상태 그대로 캡처 (무회귀)
+          console.debug('[CAMERA-FOCUS] capture-time refocus unsupported — native AF');
         }
-      } catch (_icErr) {
-        // ImageCapture 미지원 또는 실패 → canvas fallback으로 계속
-        console.debug('[CAMERA-FOCUS] ImageCapture.takePicture() failed, fallback to canvas');
       }
+
+      // AC-1: 디지털 줌 활성(하드웨어 줌 비활성 + 배율>1) 여부 — 캡처본에 배율 반영 경로 결정
+      const digitalZoomActive = !hwZoomActive && zoom > 1;
+
+      // ── Strategy 1: ImageCapture.takePicture() ────────────────────────────────
+      // REOPEN #1 AC-5: Galaxy Tab에서 hardware focus cycle 완료 후 캡처 트리거.
+      // Chrome 59+, Android 7+ 지원. canvas drawImage는 현재 프레임을 즉시 캡처하므로
+      // focus 수렴 전 흐린 프레임을 잡을 수 있음 → takePicture()가 근본 해결.
+      // 반환 Blob은 JPEG/PNG(기기 네이티브 인코더 사용) — quality 옵션 불필요.
+      // ★ AC-1: 디지털 줌일 때는 takePicture()가 풀프레임(미확대)을 반환하므로 skip → 캔버스 crop 경로로.
+      //   (하드웨어 줌은 스트림 자체가 확대되므로 takePicture()/canvas 모두 배율 반영됨)
+      if (!digitalZoomActive && videoTrack && 'ImageCapture' in window) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ic = new (window as any).ImageCapture(videoTrack);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const blob: Blob = await (ic as any).takePicture();
+          if (blob && blob.size > 1000) { // sanity: 유효 이미지 (empty blob 아님)
+            const previewUrl = URL.createObjectURL(blob);
+            setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
+            restoreContinuousFocus(videoTrack); // AC-2: 다음 프리뷰 추적용 continuous 복원
+            captured = true;
+            return; // 성공 → canvas fallback 불필요 (finally 에서 스피너 해제)
+          }
+        } catch (_icErr) {
+          // ImageCapture 미지원 또는 실패 → canvas fallback으로 계속
+          console.debug('[CAMERA-FOCUS] ImageCapture.takePicture() failed, fallback to canvas');
+        }
+      }
+
+      // ── Fallback: canvas drawImage ─────────────────────────────────────────────
+      // AC-3 T-20260522-foot-CHART2-CAM-FOCUS: 최소 1280px 보장
+      // applyConstraints(width:{ideal:1920})로 스트림 레벨 대응
+      // + canvas scale-up double-safety
+      const naturalW = video.videoWidth || 1280;
+      const naturalH = video.videoHeight || 720;
+      const minWidth = 1280;
+
+      // AC-1: 디지털 줌 — 중앙 crop으로 배율 반영(프리뷰 CSS scale과 동일한 시야)
+      //   crop 영역 = 원본 / zoom (중앙 정렬), 출력은 최소 1280px 보장 위해 scale-up
+      const cropW = digitalZoomActive ? naturalW / zoom : naturalW;
+      const cropH = digitalZoomActive ? naturalH / zoom : naturalH;
+      const cropX = (naturalW - cropW) / 2;
+      const cropY = (naturalH - cropH) / 2;
+      const scale = cropW < minWidth ? minWidth / cropW : 1;
+      canvas.width = Math.round(cropW * scale);
+      canvas.height = Math.round(cropH * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return; // ctx 미확보 = 진짜 실패 → finally 에서 오류 노출(AC-3)
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+      // toBlob 완료를 await 해 실제 캡처 성공 여부를 확정(오류 오노출 방지) 후 스피너 해제.
+      await new Promise<void>((resolve) => {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const previewUrl = URL.createObjectURL(blob);
+            setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
+            captured = true;
+          }
+          resolve();
+        }, 'image/jpeg', 0.9);
+      });
+      restoreContinuousFocus(videoTrack); // AC-2: continuous 복원
+    } finally {
+      setIsCapturing(false);
+      // AC-3: 진짜 실패(양 경로 모두 유효 이미지 미확보)일 때만 오류 노출 — false-positive 제거.
+      if (!captured) toast.error('촬영에 실패했습니다. 다시 시도해 주세요.');
     }
-
-    // ── Fallback: canvas drawImage ─────────────────────────────────────────────
-    // AC-3 T-20260522-foot-CHART2-CAM-FOCUS: 최소 1280px 보장
-    // applyConstraints(width:{ideal:1920})로 스트림 레벨 대응
-    // + canvas scale-up double-safety
-    const naturalW = video.videoWidth || 1280;
-    const naturalH = video.videoHeight || 720;
-    const minWidth = 1280;
-
-    // AC-1: 디지털 줌 — 중앙 crop으로 배율 반영(프리뷰 CSS scale과 동일한 시야)
-    //   crop 영역 = 원본 / zoom (중앙 정렬), 출력은 최소 1280px 보장 위해 scale-up
-    const cropW = digitalZoomActive ? naturalW / zoom : naturalW;
-    const cropH = digitalZoomActive ? naturalH / zoom : naturalH;
-    const cropX = (naturalW - cropW) / 2;
-    const cropY = (naturalH - cropH) / 2;
-    const scale = cropW < minWidth ? minWidth / cropW : 1;
-    canvas.width = Math.round(cropW * scale);
-    canvas.height = Math.round(cropH * scale);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const previewUrl = URL.createObjectURL(blob);
-      setCapturedBlobs((prev) => [...prev, { blob, previewUrl }]);
-    }, 'image/jpeg', 0.9);
-    restoreContinuousFocus(videoTrack); // AC-2: continuous 복원
   };
 
   const removeCaptured = (index: number) => {
@@ -2018,13 +2056,22 @@ function TreatmentImagesSection({
 
   const uploadCaptured = async () => {
     if (capturedBlobs.length === 0) { closeCamera(); return; }
+    // T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX (AC-1): 업로드 처리 중 재진입 가드.
+    //   '완료' 연타 시 업로드가 중첩돼 지연이 가중되고 "대기 오류" 오인을 키운다. 진행 중이면 무시.
+    if (uploadProgress) return;
     const total = capturedBlobs.length;
     setUploadProgress({ done: 0, total });
     let done = 0;
+    let failed = 0;
+    // T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX (AC-1): 처리 중에는 오류 토스트를 띄우지 않는다.
+    //   기존엔 blob 업로드가 storage compute 포화로 지연/일시오류일 때 루프 안에서 즉시
+    //   toast.error('업로드 실패')를 띄워, '저장 중'인 상태를 현장이 "대기 오류"로 오인했다.
+    //   → 실패는 카운트만 모아 두고(저장 성공/실패 판정 로직 자체는 불변), 처리 중에는
+    //     '저장 중' 로딩 오버레이만 보이게 한다. 정확한 결과 안내는 완료 후 1회(AC-2).
     for (const { blob, previewUrl } of capturedBlobs) {
       const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
       const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+      if (error) failed++;
       URL.revokeObjectURL(previewUrl);
       done++;
       setUploadProgress({ done, total });
@@ -2035,7 +2082,13 @@ function TreatmentImagesSection({
     setUploadProgress(null);
     invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
-    toast.success(`${done}장 저장 완료`);
+    // AC-2: 완료 후 정확한 피드백(성공/실패 건수 반영). 판정 결과는 실제 upload error 기준(불변).
+    //   ★ toast.success/info 는 이 프로젝트 wrapper 에서 묵음(noop) — 반드시 보여야 하는 완료
+    //     확인은 toast.confirm(묵음 제외 채널)으로 노출해야 현장이 '완료'를 실제로 본다.
+    const saved = total - failed;
+    if (failed === 0) toast.confirm(`${saved}장 저장 완료`);
+    else if (saved > 0) toast.warning(`${saved}장 저장 완료 · ${failed}장 실패 — 실패한 사진은 다시 촬영해 주세요`);
+    else toast.error(`저장에 실패했습니다 (${failed}장) — 잠시 후 다시 시도해 주세요`);
   };
 
   const closeCamera = () => {
@@ -2388,6 +2441,22 @@ function TreatmentImagesSection({
           {/* 숨김 canvas — 스냅샷 캡처용 */}
           <canvas ref={canvasRef} className="hidden" />
 
+          {/* T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX (AC-1): 업로드(저장) 처리 중 전체 오버레이.
+              업로드가 storage compute 포화로 수 초 걸릴 때 "대기 오류"로 오인되던 문제 교정 —
+              실패가 아니라 정상 '저장 중'임을 명확히 표시하고, 완료/취소/셔터 재탭을 차단한다. */}
+          {uploadProgress && (
+            <div
+              className="absolute inset-0 z-[210] flex flex-col items-center justify-center gap-3 bg-black/70"
+              data-testid="medimg-uploading-overlay"
+            >
+              <Loader2 className="h-12 w-12 text-white animate-spin" />
+              <span className="text-white text-base font-semibold">
+                저장 중… ({uploadProgress.done}/{uploadProgress.total})
+              </span>
+              <span className="text-white/70 text-xs">잠시만 기다려 주세요</span>
+            </div>
+          )}
+
           {cameraPhase === 'select-type' ? (
             /* ── 단계 1: 시술 전/후 선택 (AC-2) ── */
             <div className="flex flex-col items-center justify-center flex-1 gap-6 p-8">
@@ -2478,6 +2547,18 @@ function TreatmentImagesSection({
                     }}
                   />
                 )}
+                {/* T-20260818-foot-MEDIMG-CAPTURE-WAITERROR-FALSEPOSITIVE (AC-1):
+                    캡처 처리 중 오버레이 — takePicture() 하드웨어 초점 사이클(수 초) 동안
+                    "대기/멈춤 오류" 오인 제거. 실패가 아니라 정상 처리 중임을 명확히 표시. */}
+                {isCapturing && (
+                  <div
+                    className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-black/30 pointer-events-none"
+                    data-testid="camera-capturing-overlay"
+                  >
+                    <Loader2 className="h-10 w-10 text-white animate-spin" />
+                    <span className="text-white text-sm font-medium">촬영 처리 중…</span>
+                  </div>
+                )}
                 {/* REOPEN #2: 초점 안내 문구 (하단, 촬영 없을 때만) */}
                 {capturedBlobs.length === 0 && (
                   <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none z-10">
@@ -2545,26 +2626,35 @@ function TreatmentImagesSection({
 
               {/* 하단 컨트롤 바 */}
               <div className="flex items-center justify-between px-8 py-5 bg-black gap-4">
-                {/* 취소 */}
+                {/* 취소 — T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX: 저장 처리 중 비활성(중단 방지). */}
                 <button
                   onClick={closeCamera}
-                  className="text-gray-400 hover:text-white text-sm transition min-w-[64px]"
+                  disabled={!!uploadProgress}
+                  className="text-gray-400 hover:text-white text-sm transition min-w-[64px] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   취소
                 </button>
-                {/* 셔터 버튼 (S Pen 터치 대응 — 큰 원형) */}
+                {/* 셔터 버튼 (S Pen 터치 대응 — 큰 원형)
+                    T-20260818-foot-MEDIMG-CAPTURE-WAITERROR-FALSEPOSITIVE (AC-1):
+                    캡처 처리 중(초점 수렴+takePicture 하드웨어 사이클) 셔터 비활성 + 스피너 노출. */}
                 <button
                   onClick={capturePhoto}
-                  className="h-16 w-16 rounded-full border-4 border-white bg-white/10 hover:bg-white/25 active:bg-white/50 transition flex-shrink-0 shadow-lg"
+                  disabled={isCapturing || !!uploadProgress}
+                  className="h-16 w-16 rounded-full border-4 border-white bg-white/10 hover:bg-white/25 active:bg-white/50 transition flex-shrink-0 shadow-lg flex items-center justify-center disabled:opacity-60 disabled:cursor-not-allowed"
                   aria-label="촬영"
-                />
+                  aria-busy={isCapturing}
+                  data-testid="camera-shutter"
+                >
+                  {isCapturing && <Loader2 className="h-7 w-7 text-white animate-spin" />}
+                </button>
                 {/* 완료 버튼 */}
                 <button
                   onClick={uploadCaptured}
-                  disabled={capturedBlobs.length === 0}
+                  disabled={capturedBlobs.length === 0 || !!uploadProgress}
                   className="text-sm font-semibold transition min-w-[64px] text-right disabled:text-gray-600 text-sage-400 hover:text-sage-300 disabled:cursor-not-allowed"
+                  data-testid="camera-complete"
                 >
-                  완료 ({capturedBlobs.length})
+                  {uploadProgress ? '저장 중…' : `완료 (${capturedBlobs.length})`}
                 </button>
               </div>
             </>
