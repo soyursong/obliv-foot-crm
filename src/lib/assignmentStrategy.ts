@@ -60,8 +60,16 @@ export function deriveAssignLeadSource(c: {
   visit_type?: string | null;
   lead_source?: string | null;
   visit_route?: string | null;
+  is_foreign?: boolean | null;
 }): AssignLeadSource | null {
   if (c.visit_type === 'returning') return null;
+  // T-20260818-foot-FOREIGNER-INBOUND-WALKIN-TM-SEQUENCE (김주연 총괄):
+  //   [외국인](customers.is_foreign) 태그 환자는 유입경로(인바운드/워크인/네이버/지인소개/공홈) 분기를
+  //   무시하고 TM 순번 레일(pickTmConsultant: 전일휴무 기본순번 턴 + 슬롯 랭킹투영 skip)로 라우팅한다.
+  //   · 재진(returning)은 위에서 이미 null(전략 미적용 — 상담 재진은 maybeAutoAssign 에서 skip) → 외국인이라도 TM 강제 안 함(경계 보존).
+  //   · 외국인 + TM = 결과 동일(TM) → 회귀 없음. 비외국인은 아래 visit_route 매핑 그대로 = 회귀 없음.
+  //   · 집계/audit 축(deriveConsultAxis)은 무접촉 = 외국인의 유입경로별 집계 라벨은 유지(라우팅만 TM). CEO gate 경계 준수.
+  if (c.is_foreign === true) return 'TM';
   const raw = (c.visit_route ?? c.lead_source ?? '').trim();
   return VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE[raw] ?? 'WALK_IN';
 }
@@ -633,6 +641,10 @@ export async function countSlotNonTmReservations(
       visit_route?: string | null;
     }[]) {
       if (toHalfHourSlot(r.reservation_time) !== slot) continue;
+      // T-20260818-foot-FOREIGNER-INBOUND-WALKIN-TM-SEQUENCE (스코프 노트, 의도적 미포함):
+      //   is_foreign 은 customers 컬럼(reservations 미보유)이라 이 슬롯 카운트에는 주입하지 않는다.
+      //   본 티켓 AC = '외국인 본인'을 TM 순번 레일로 라우팅(maybeAutoAssign, is_foreign 주입 완료)이며,
+      //   '동일슬롯 타 외국인 예약이 비TM skip 셋에 미치는 2차 효과'는 AC 밖 + DB 무변경(reservations join 회피) 원칙상 보류.
       const ls = deriveAssignLeadSource({ visit_type: r.visit_type, visit_route: r.visit_route });
       if (ls && ls !== 'TM') n++;
     }

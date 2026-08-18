@@ -731,11 +731,13 @@ export async function maybeAutoAssign(
       visit_route?: string | null;
       designated_therapist_id?: string | null;
       assigned_consultant_id?: string | null;
+      // T-20260818-foot-FOREIGNER-INBOUND-WALKIN-TM-SEQUENCE: [외국인] 태그(read-only) → 유입경로 무관 TM 순번 라우팅.
+      is_foreign?: boolean | null;
     } | null = null;
     if (checkIn.customer_id) {
       const { data: cu } = await supabase
         .from('customers')
-        .select('visit_type, lead_source, visit_route, designated_therapist_id, assigned_consultant_id')
+        .select('visit_type, lead_source, visit_route, designated_therapist_id, assigned_consultant_id, is_foreign')
         .eq('id', checkIn.customer_id)
         .maybeSingle();
       customer = cu ?? null;
@@ -834,6 +836,9 @@ export async function maybeAutoAssign(
           visit_type: recencyVisitType,
           lead_source: customer?.lead_source,
           visit_route: customer?.visit_route,
+          // T-20260818-foot-FOREIGNER-INBOUND-WALKIN-TM-SEQUENCE: [외국인]이면 인바운드/워크인이어도 TM 순번 레일.
+          //   재진은 recencyVisitType='returning' → deriveAssignLeadSource 가 먼저 null 반환(외국인 강제 없음, 회귀0).
+          is_foreign: customer?.is_foreign,
         });
         // T-20260730-foot-ASSIGN-FULLSPEC-IMPL G2: TM 배정은 동일 30분 슬롯 비TM 예약 수를 세어
         //   랭킹 상위 N명을 skip(Q1)하므로, 이 예약의 슬롯(reservation_date/time)을 전달한다.
