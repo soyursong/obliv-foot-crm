@@ -11,6 +11,11 @@ import { ProtectedRoute, RoleGuard } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 // T-20260610-foot-SPA-VERSION-AUTORELOAD: 배포 후 stale-app 재발방지 — 신버전 감지 배너
 import UpdateBanner from '@/components/UpdateBanner';
+// T-20260818-foot-REFRESH401-RESILIENCE-PILOT (spec §3.1 (a)): refresh-401 비차단 상단 배너.
+//   상류 게이트웨이 401 blip 중 무한로딩·사일런트 저장실패 대신 "일시 지연·자동 재시도" 정직 표시.
+import Refresh401Banner from '@/components/Refresh401Banner';
+// T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): write-buffer flush 트리거 초기화.
+import { initWriteBufferFlush } from '@/lib/resilience/writeBufferFlush';
 // T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: chunk 자가치유 가드 SSOT
 import { markAndCheckAutoReload, clearAutoReloadGuard } from '@/lib/chunkReload';
 
@@ -205,6 +210,9 @@ function RecoveryGate({ children }: { children: ReactNode }) {
 }
 
 function App() {
+  // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c), spec §3.3 기준6): (c) write-buffer
+  //   flush 오케스트레이터 초기화(online 복귀/성공 관측/타이머/탭 가시화 트리거). idempotent.
+  useEffect(() => initWriteBufferFlush(), []);
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -224,6 +232,9 @@ function App() {
         />
         {/* T-20260610-foot-SPA-VERSION-AUTORELOAD: 신버전 감지 시 하단 배너(사용자 클릭으로만 reload) */}
         <UpdateBanner />
+        {/* T-20260818-foot-REFRESH401-RESILIENCE-PILOT (a): refresh-401 재시도 중 비차단 상단 배너.
+            UpdateBanner(하단)와 위치 분리. 재시도 성공/해소 시 자동 소멸(useRefresh401Ux). */}
+        <Refresh401Banner />
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
             {/* T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER: recovery 딥링크 착지 시
