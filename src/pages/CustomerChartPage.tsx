@@ -3184,6 +3184,34 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     reborn_sessions: '', reborn_unit_price: '',
   });
   const [savingEditPkg, setSavingEditPkg] = useState(false);
+  // ── T-20260818-foot-PKG-DETAIL-TOTAL-RECALC-ON-SAVE ──
+  //   RC: 수정(edit) 다이얼로그가 total_amount 를 폼 입력값 그대로 저장 → 시술 항목(회차/수가)을
+  //   추가·수정·삭제해도 '패키지 금액(총액)'이 항목 합계로 재계산되지 않음(스크린샷: 포들로게 10×200,000
+  //   추가했는데 총액 5,800,000 고정, 기대 7,800,000). 항목 추가(addon) 경로는 이미 +finalAddAmount 로
+  //   정합하나 edit 경로만 누락 → 이 경로에서 항목 합계(수가×횟수)로 총액 자동 재계산.
+  //   단, 할인 등으로 총액≠항목합인 패키지는 수기 override 보존(AC-5 회귀 0): 열 때 total==항목합이면
+  //   자동동기 ON, 다르면(할인 존재) 수기모드로 진입해 자동 덮어쓰기 억제. 사용자가 총액을 직접 편집해도 수기모드.
+  const [editPkgTotalManual, setEditPkgTotalManual] = useState(false);
+  // 수정 폼의 항목 합계(Σ 수가×횟수) — 6개 시술유형 전부(가열/비가열/포돌로게/수액/체험/Re:Born).
+  const editItemsSum = useMemo(() => {
+    const line = (sess: string, price: string) => (parseInt(sess, 10) || 0) * parseAmount(price || '0');
+    return (
+      line(editPkgForm.heated_sessions, editPkgForm.heated_unit_price) +
+      line(editPkgForm.unheated_sessions, editPkgForm.unheated_unit_price) +
+      line(editPkgForm.podologe_sessions, editPkgForm.podologe_unit_price) +
+      line(editPkgForm.iv_sessions, editPkgForm.iv_unit_price) +
+      line(editPkgForm.trial_sessions, editPkgForm.trial_unit_price) +
+      line(editPkgForm.reborn_sessions, editPkgForm.reborn_unit_price)
+    );
+  }, [editPkgForm]);
+  // 자동동기: 다이얼로그 열림 && 수기모드 아님 → 총액 필드를 항목 합계로 추적(추가/수정/삭제 3케이스 공통).
+  useEffect(() => {
+    if (!editPkgDlg) return;
+    if (editPkgTotalManual) return;
+    if (parseAmount(editPkgForm.total_amount) !== editItemsSum) {
+      setEditPkgForm((f) => ({ ...f, total_amount: String(editItemsSum) }));
+    }
+  }, [editPkgDlg, editPkgTotalManual, editItemsSum, editPkgForm.total_amount]);
   // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 삭제 확인 다이얼로그
   const [deletePkgDlg, setDeletePkgDlg] = useState<PackageWithRemaining | null>(null);
   const [deletingPkg, setDeletingPkg] = useState(false);
@@ -7865,6 +7893,17 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                                     type="button"
                                     title="패키지 수정"
                                     onClick={() => {
+                                      // T-20260818-foot-PKG-DETAIL-TOTAL-RECALC-ON-SAVE: 열 때 총액==항목합 여부로
+                                      //   자동동기/수기 결정. 항목합과 같으면(할인 없음) 자동동기 ON → 항목 추가/수정/삭제 시
+                                      //   총액 자동 재계산. 다르면(할인 등) 수기모드 유지 → 기존 총액 보존(AC-5 회귀 0).
+                                      const pItemsSum =
+                                        (p.heated_sessions ?? 0) * (p.heated_unit_price ?? 0) +
+                                        (p.unheated_sessions ?? 0) * (p.unheated_unit_price ?? 0) +
+                                        (p.podologe_sessions ?? 0) * (p.podologe_unit_price ?? 0) +
+                                        (p.iv_sessions ?? 0) * (p.iv_unit_price ?? 0) +
+                                        (p.trial_sessions ?? 0) * (p.trial_unit_price ?? 0) +
+                                        (p.reborn_sessions ?? 0) * (p.reborn_unit_price ?? 0);
+                                      setEditPkgTotalManual((p.total_amount ?? 0) !== pItemsSum);
                                       setEditPkgDlg(p);
                                       setEditPkgForm({
                                         package_name: p.package_name,
@@ -10209,14 +10248,27 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
               </div>
-              {/* 총금액 */}
+              {/* 총금액 — T-20260818-foot-PKG-DETAIL-TOTAL-RECALC-ON-SAVE: 항목(수가×횟수) 합계로 자동 재계산.
+                  직접 편집 시 수기모드로 전환(할인 보존), '합계로 맞춤'으로 항목 합계 재동기. */}
               <div>
                 <label className="text-xs font-medium text-gray-700 mb-1 block">총 금액</label>
                 <AmountInput
                   value={editPkgForm.total_amount}
-                  onChange={(raw) => setEditPkgForm((f) => ({ ...f, total_amount: raw }))}
+                  onChange={(raw) => { setEditPkgForm((f) => ({ ...f, total_amount: raw })); setEditPkgTotalManual(true); }}
                   className="w-full h-9 rounded border border-gray-300 px-2 text-xs focus:outline-none focus:border-sage-500"
                 />
+                <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
+                  <span data-testid="edit-pkg-items-sum">항목 합계: <span className="tabular-nums font-medium text-sage-700">{formatAmount(editItemsSum)}</span></span>
+                  {editPkgTotalManual && parseAmount(editPkgForm.total_amount) !== editItemsSum && (
+                    <button
+                      type="button"
+                      onClick={() => setEditPkgTotalManual(false)}
+                      className="rounded border border-sage-300 bg-sage-50 px-1.5 py-0.5 text-[10px] text-sage-700 hover:bg-sage-100 transition"
+                    >
+                      합계로 맞춤
+                    </button>
+                  )}
+                </div>
               </div>
               {/* 시술별 횟수·수가 */}
               {[
