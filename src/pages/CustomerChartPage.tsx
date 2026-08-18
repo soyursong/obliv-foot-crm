@@ -29,7 +29,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
-import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath } from '@/lib/photoUrl';
+import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
@@ -752,7 +752,8 @@ function CustomerStorageImageSection({
   const storagePath = `customer/${customerId}/${prefix}`;
 
   const load = useCallback(async () => {
-    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+    // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: 세션 캐시+dedup 경유(storage.search 폭주 감축).
+    const files = await cachedStorageList('photos', storagePath, {
       limit: 50,
       sortBy: { column: 'name', order: 'desc' },
     });
@@ -786,12 +787,14 @@ function CustomerStorageImageSection({
     }
     setUploading(false);
     e.target.value = '';
+    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
   };
 
   const remove = async (img: StorageImageItem) => {
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([img.path]);
+    invalidateStorageList('photos', storagePath); // 삭제 즉시 반영(캐시 무효화)
     await load();
   };
 
@@ -979,7 +982,8 @@ function ReceiptUploadSection({
   }, [customerId]);
 
   const load = useCallback(async () => {
-    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+    // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: 세션 캐시+dedup 경유(storage.search 폭주 감축).
+    const files = await cachedStorageList('photos', storagePath, {
       limit: 50,
       sortBy: { column: 'name', order: 'desc' },
     });
@@ -1053,6 +1057,7 @@ function ReceiptUploadSection({
       try { pendingDlgStore.removeItem(PENDING_DLG_KEY); } catch { /* noop */ }
       return;
     }
+    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load().catch(() => {}); // 썸네일 갱신 — 비차단(실패해도 다이얼로그 진행).
     // 업로드 성공 — stamp는 착수 시점에 이미 기록됨(재로드 내성). 무거운 재조회 이전에 즉시 오픈.
     openAmountDialog();
@@ -1066,6 +1071,7 @@ function ReceiptUploadSection({
   const remove = async (img: StorageImageItem) => {
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([img.path]);
+    invalidateStorageList('photos', storagePath); // 삭제 즉시 반영(캐시 무효화)
     await load();
   };
 
@@ -1453,7 +1459,8 @@ function TreatmentImagesSection({
   const storagePath = `customer/${customerId}/treatment-images`;
 
   const load = useCallback(async () => {
-    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+    // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: 세션 캐시+dedup 경유(storage.search 폭주 감축).
+    const files = await cachedStorageList('photos', storagePath, {
       limit: 100,
       sortBy: { column: 'name', order: 'desc' },
     });
@@ -1531,12 +1538,14 @@ function TreatmentImagesSection({
     }
     setUploading(false);
     e.target.value = '';
+    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
   };
 
   const remove = async (img: TreatImgItem) => {
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([img.path]);
+    invalidateStorageList('photos', storagePath); // 삭제 즉시 반영(캐시 무효화)
     await load();
   };
 
@@ -2024,6 +2033,7 @@ function TreatmentImagesSection({
     setCapturedBlobs([]);
     setCameraOpen(false);
     setUploadProgress(null);
+    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
     toast.success(`${done}장 저장 완료`);
   };
@@ -2088,6 +2098,7 @@ function TreatmentImagesSection({
       // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 동일 path 객체 교체(회전) → stale signed URL/썸네일
       //   캐시가 옛 이미지를 재표시하지 않도록 해당 path 캐시 무효화.
       invalidatePhotoPath('photos', editingImg.path);
+      invalidateStorageList('photos', storagePath); // 회전 재업로드 반영(캐시 무효화)
       toast.success('회전 저장 완료');
       setEditingImg(null);
       await load();

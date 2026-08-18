@@ -34,7 +34,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
-import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS } from '@/lib/photoUrl';
+import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { STATUS_KO } from '@/lib/status';
@@ -311,7 +311,8 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
   const storagePath = `customer/${customerId}/treatment-images`;
 
   const load = useCallback(async () => {
-    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+    // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: 세션 캐시+dedup 경유(storage.search 폭주 감축).
+    const files = await cachedStorageList('photos', storagePath, {
       limit: 100,
       sortBy: { column: 'name', order: 'desc' },
     });
@@ -359,12 +360,14 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
     }
     setUploading(false);
     e.target.value = '';
+    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
   };
 
   const remove = async (item: C1TreatImgItem) => {
     if (!window.confirm('이미지를 삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([item.path]);
+    invalidateStorageList('photos', storagePath); // 삭제 즉시 반영(캐시 무효화)
     await load();
   };
 
