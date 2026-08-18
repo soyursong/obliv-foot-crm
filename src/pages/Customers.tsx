@@ -361,7 +361,17 @@ export default function Customers() {
       const { data, error, count } = await req;
       setLoading(false);
       if (error) {
-        toast.error('검색 실패');
+        // T-20260818-foot-CUSTMGMT-SEARCH-FAIL: 검색경로·필터·인덱스·RLS·컬럼은 무결(전 입력클래스 200 실증).
+        //   이 토스트는 쿼리 결함이 아니라 DB 일시 지연/타임아웃(예: CRM-SAVE-FAIL-LOADING-SLOW-OUTAGE)
+        //   같은 '일시적 실패'에서만 발생한다. 종전엔 error를 통째로 삼켜 진단(에러코드 확보)이 불가능했다.
+        //   ① 원인코드 콘솔 로깅으로 재발 시 진단 가능케 하고 ② '검색 자체 고장' 오인 방지 위해 재시도 문구로 전환.
+        console.error('[customer-search] query failed', {
+          code: (error as { code?: string }).code,
+          message: error.message,
+          details: (error as { details?: string }).details,
+          hint: (error as { hint?: string }).hint,
+        });
+        toast.error('검색에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         return;
       }
       setTotalCount(count ?? 0);
