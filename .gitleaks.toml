@@ -37,6 +37,45 @@ description = "Database connection URI with embedded plaintext password (use env
 regex = '''(?i)postgres(ql)?://[^\s:'"@/]+:[^\s'"@/${}]{3,}@'''
 keywords = ["postgres://", "postgresql://"]
 
+# --- pgcrypto/암호화 키 하드코딩 할당 전용 룰 ---
+# T-20260818-meta-GITLEAKS-CRYPTOKEY-RULE-ALLOWLIST (CEO MSG-20260818-115050-ym6u ③)
+#   기존 커스텀 4룰(hardcoded-test-password / env-fallback / hardcoded-secret-token / db-connection-uri)
+#   은 전부 pass|pwd|secret|token|apikey 키워드 기반 → 변수명이 v_key 인 RRN 복호키 할당을 못 잡음.
+#   목적 = gate-forward (신규 리터럴 유입 차단). 기존 잔여(마이그 12파일)는 아래 rules.allowlists 로 명시 등재.
+#   ④⑤ 결정(T-20260818-meta-RRN-PUBLICREPO-RESIDUAL-RISK-DECISION-RECORD)으로 구키 평문 = 수용된 잔여위험.
+[[rules]]
+id = "hardcoded-crypto-key-assignment"
+description = "Hardcoded pgcrypto/encryption key assigned to a variable (v_key := '...') — use Vault/GUC injection"
+regex = '''(?i)\b(v_key|v_old_key|v_key_v[0-9]|enc(ryption)?_key|crypt_key|passphrase)\s*:?=\s*'[^'\n]{8,}''''
+keywords = ["v_key", "v_old_key", "enc_key", "encryption_key", "crypt_key", "passphrase"]
+
+  # 기존 27건(마이그 12파일) = ④⑤ 결정으로 수용된 잔여위험. 경로+사유 명시 등재(룰 스코프 한정 —
+  # 타 룰의 이 경로 적용은 유지). 신규 마이그 파일에 유입되는 v_key 리터럴은 미등재 → 정상 차단.
+  [[rules.allowlists]]
+  description = "RRN v1 구키 평문 (수용된 잔여위험, T-20260818-meta-RRN-PUBLICREPO-RESIDUAL-RISK-DECISION-RECORD) — 히스토리 잔존+prod v1 활성 복호키라 HEAD 삭제는 보안조치 아님(③-c 오인 금지)."
+  paths = [
+    '''^supabase/migrations/20260510000020_rrn_functions_fix\.sql$''',
+    '''^supabase/migrations/20260511000010_rrn_functions_hotfix\.sql$''',
+    '''^supabase/migrations/20260520000030_rrn_key_harden\.down\.sql$''',
+    '''^supabase/migrations/20260613120000_customer_birthdate_derive_rpc\.sql$''',
+    '''^supabase/migrations/20260615160000_rls_clinic_isolation_patient_tables\.rollback\.sql$''',
+    '''^supabase/migrations/20260615160000_rls_clinic_isolation_patient_tables\.sql$''',
+    '''^supabase/migrations/20260618190000_rrn_decrypt_staff_read_restore\.sql\.PHI_GATE_HOLD$''',
+    '''^supabase/migrations/20260620120100_rrn_decrypt_a2_role_restore\.sql$''',
+    '''^supabase/migrations/20260710170000_rrn_decrypt_version_aware_multikey\.rollback\.sql$''',
+    '''^supabase/migrations/20260710170000_rrn_decrypt_version_aware_multikey\.sql$''',
+    '''^supabase/migrations/20260710180000_fn_customer_birthdates_version_aware_vault\.rollback\.sql$''',
+    '''^supabase/migrations/20260710180000_fn_customer_birthdates_version_aware_vault\.sql$''',
+  ]
+
+# --- pgp_sym_encrypt/decrypt 인라인 리터럴 키 (defense-in-depth, 현재 매칭 0) ---
+# v_key 변수 경유가 아니라 pgp_sym_decrypt(col, 'literal') 직접 인라인 형태. 현행 0건이나 신규 유입 차단.
+[[rules]]
+id = "hardcoded-crypto-key-in-pgp-call"
+description = "Plaintext key literal passed inline to pgp_sym_encrypt/decrypt()"
+regex = '''(?i)pgp_sym_(en|de)crypt\s*\([^,)]+,\s*'[^'\n]{6,}''''
+keywords = ["pgp_sym_encrypt", "pgp_sym_decrypt"]
+
 # --- Supabase Personal Access Token (PAT) 전용 룰 ---
 # T-20260810-meta-PAT-SECRETSCAN-COVERAGE-HARDEN (부모 T-20260810-meta-ACCOUNTWIDE-PAT-STORAGE-LEAKSCAN-VERIFY AC-2)
 # gitleaks 8.30.1 default 룰셋에 Supabase PAT(sbp_…) 전용 룰 부재 실증 → keyword 비인접 bare-paste
