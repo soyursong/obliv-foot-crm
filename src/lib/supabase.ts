@@ -1,4 +1,8 @@
 import { createClient, type SupabaseClientOptions } from '@supabase/supabase-js';
+// T-20260818-foot-REFRESH401-RESILIENCE-PILOT (spec §2.2): data-plane interceptor 단일 삽입점.
+//   전 REST/RPC/Storage 요청을 1겹으로 감싸 refresh-401(갱신 성공 JWT 인데 상류 게이트웨이 401)을
+//   감지 → (a) 배너 브로드캐스트 + (b) bounded retry+backoff(GET/HEAD). auth-plane(auth.tsx) 불변.
+import { createResilientFetch } from './resilience/resilientFetch';
 
 // Vite(런타임)는 import.meta.env 객체를 제공 → 프로덕션/dev 동작 불변.
 // Playwright(Node ESM) 등 Vite 밖 환경에선 import.meta.env가 undefined이므로
@@ -58,4 +62,7 @@ if (disableAuthLock) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: authOptions,
+  // data-plane interceptor(1겹). supabase-js 는 REST/RPC/Storage 요청을 이 fetch 로 보낸다.
+  // SDK 자체 재시도와 중첩 금지(회귀축) — resilientFetch 내부 maxRetries 로만 bound.
+  global: { fetch: createResilientFetch() },
 });
