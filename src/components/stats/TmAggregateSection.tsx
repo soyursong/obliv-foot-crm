@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -13,6 +13,7 @@ import {
   tmRoleIds,
   TM_UNASSIGNED_LABEL,
   TM_WALKIN_LABEL,
+  fetchTmDetailCustomers,
   type TmAggregateData,
   type TmResRow,
   type TmCheckInRow,
@@ -55,6 +56,9 @@ export default function TmAggregateSection({
   const [onlyMine, setOnlyMine] = useState(false);
   const [onlyTmRole, setOnlyTmRole] = useState(false);
   const [kpiDetail, setKpiDetail] = useState<KpiKey | null>(null);
+  // T-20260818-foot-STATS-DASHBOARD-PERIOD-QUERY-STMT-TIMEOUT: 고객명/전화 지연조회 맵.
+  //   hot 집계 fetch 에서 customers PHI embed 를 제거했으므로, 드릴다운 열릴 때만 여기로 채운다.
+  const [custMap, setCustMap] = useState<Record<string, { name: string; phone: string }>>({});
 
   const registeredRes = data?.registered ?? [];
   const scheduledRes = data?.scheduled ?? [];
@@ -144,6 +148,21 @@ export default function TmAggregateSection({
     [filteredVisited, onlyTmRole, tmIdSet, allResMap],
   );
 
+  // T-20260818-foot-STATS-DASHBOARD-PERIOD-QUERY-STMT-TIMEOUT: 드릴다운 열릴 때만 고객명/전화 지연조회.
+  //   집계 카드/표는 embed 없이 즉시 렌더되고, KPI 카드 클릭 시 해당 subset customer_id 만 batched 조회.
+  useEffect(() => {
+    if (!kpiDetail) return;
+    const ids =
+      kpiDetail === 'registered' ? tmFilteredRegistered.map((r) => r.customer_id)
+      : kpiDetail === 'scheduled' ? tmFilteredScheduled.map((r) => r.customer_id)
+      : tmFilteredVisited.map((ci) => ci.customer_id);
+    let cancelled = false;
+    fetchTmDetailCustomers(ids)
+      .then((m) => { if (!cancelled) setCustMap((prev) => ({ ...prev, ...m })); })
+      .catch(() => { /* 이름 표시는 best-effort — 실패해도 드릴다운 카운트/집계는 유지 */ });
+    return () => { cancelled = true; };
+  }, [kpiDetail, tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited]);
+
   const totals = useMemo(() => {
     const registered = tmFilteredRegistered.length;
     const scheduled = tmFilteredScheduled.length;
@@ -193,7 +212,7 @@ export default function TmAggregateSection({
     });
 
     const mapRes = (r: TmResRow): DetailRow => {
-      const info = r.customers || { name: '', phone: '' };
+      const info = custMap[r.customer_id ?? ''] || { name: '', phone: '' };
       const regDate = r.created_at ? String(r.created_at).slice(0, 10) : '';
       const resTime = r.reservation_time ? String(r.reservation_time).slice(0, 5) : '';
       return {
@@ -208,7 +227,7 @@ export default function TmAggregateSection({
       };
     };
     const mapCI = (ci: TmCheckInRow): DetailRow => {
-      const info = ci.customers || { name: '' };
+      const info = custMap[ci.customer_id ?? ''] || { name: '' };
       const matched = ci.reservation_id ? allResMap.get(ci.reservation_id) : undefined;
       const regDate = matched?.created_at ? String(matched.created_at).slice(0, 10) : '';
       const resTime = matched?.reservation_time ? String(matched.reservation_time).slice(0, 5) : '';
@@ -229,7 +248,7 @@ export default function TmAggregateSection({
       : kpiDetail === 'scheduled' ? tmFilteredScheduled.map(mapRes)
       : tmFilteredVisited.map(mapCI);
     return rows.sort((a, b) => (a.groupKey + a.reservationTime).localeCompare(b.groupKey + b.reservationTime));
-  }, [kpiDetail, tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited, visitedCI, allResMap, staffMap]);
+  }, [kpiDetail, tmFilteredRegistered, tmFilteredScheduled, tmFilteredVisited, visitedCI, allResMap, staffMap, custMap]);
 
   const kpiTitle = (k: KpiKey) => (k === 'registered' ? '예약등록건수' : k === 'scheduled' ? '예약수' : '내원건수');
 

@@ -409,7 +409,11 @@ export interface TmResRow {
   //   TM집계에서 실제 등록자('진운선')가 안 보였음. 이 컬럼으로 예약관리와 동일하게 등록자명 표시.
   //   ⚠ 표시 전용 — created_by/인센티브 산식으로 승격 금지(§416 이중계상 격리 유지).
   registrar_name: string | null;
-  customers?: { name: string | null; phone: string | null } | null;
+  // T-20260818-foot-STATS-DASHBOARD-PERIOD-QUERY-STMT-TIMEOUT (P1 hotfix, no db_change):
+  //   PHI 임베드(customers name/phone) 를 hot 집계 fetch 에서 제거 → customer_id 만 보유.
+  //   고객명/전화 는 KPI 드릴다운(kpiDetail) 열릴 때 fetchTmDetailCustomers 로 소수 subset 만 지연조회.
+  //   (기존 customers embed 는 5~7 페이지 × 전 행 PHI 복호화라 넓은 기간 조회 시 57014 statement timeout 유발)
+  customer_id: string | null;
 }
 
 export interface TmCheckInRow {
@@ -418,7 +422,7 @@ export interface TmCheckInRow {
   created_date: string | null;        // KST 트리거 date 컬럼
   checked_in_at: string | null;
   status: string | null;
-  customers?: { name: string | null } | null;
+  customer_id: string | null;         // 드릴다운 지연조회용 (embed 제거, 위 TmResRow 주석 참조)
 }
 
 export interface TmStaffInfo {
@@ -475,7 +479,10 @@ export async function fetchTmAggregate(
     return all;
   };
 
-  const resSelect = 'id, reservation_date, reservation_time, created_at, created_by, status, referral_source, source_system, registrar_name, customers(name, phone)';
+  // T-20260818-foot-STATS-DASHBOARD-PERIOD-QUERY-STMT-TIMEOUT: customers(name, phone) PHI embed 제거.
+  //   집계(예약등록/예약수/내원/TM별·채널별) 는 고객명/전화를 쓰지 않는다 — customer_id 만 fetch.
+  //   고객명/전화는 KPI 드릴다운 시 fetchTmDetailCustomers 로 지연조회(hot path 에서 PHI 복호화 제거).
+  const resSelect = 'id, reservation_date, reservation_time, created_at, created_by, status, referral_source, source_system, registrar_name, customer_id';
 
   const [registered, scheduled, visitedRaw, staffRows] = await Promise.all([
     // A: 예약등록건수 (created_at KST 경계 명시)
@@ -493,7 +500,7 @@ export async function fetchTmAggregate(
       .range(offset, offset + PAGE_SIZE - 1)),
     // C: 내원건수 (created_date, 'cancelled' 제외 = 롱래 no_show 등가물)
     fetchAll<TmCheckInRow>((offset) => supabase.from('check_ins')
-      .select('id, reservation_id, created_date, checked_in_at, status, customers(name)')
+      .select('id, reservation_id, created_date, checked_in_at, status, customer_id')
       .eq('clinic_id', clinicId)
       .is('deleted_at', null) // R2B soft-hide 제외 (내원건수 KPI)
       .neq('status', 'cancelled')
@@ -521,6 +528,34 @@ export async function fetchTmAggregate(
     visited: dedupVisited(visitedRaw),
     staffMap,
   };
+}
+
+/**
+ * T-20260818-foot-STATS-DASHBOARD-PERIOD-QUERY-STMT-TIMEOUT (P1 hotfix)
+ * KPI 드릴다운(상세 6컬럼 표/CSV)이 열릴 때만 호출되는 고객명·전화 지연조회.
+ * hot 집계 fetch 에서 customers PHI embed 를 걷어낸 대신, 실제로 표시할 소수 행의
+ * customer_id 만 batched .in() 로 조회한다(넓은 기간 조회의 statement timeout 회피).
+ * @returns customer_id → { name, phone } 맵 (미매칭/워크인은 키 없음)
+ */
+export async function fetchTmDetailCustomers(
+  customerIds: Array<string | null | undefined>,
+): Promise<Record<string, { name: string; phone: string }>> {
+  const out: Record<string, { name: string; phone: string }> = {};
+  const uniq = Array.from(new Set(customerIds.filter((v): v is string => !!v)));
+  if (uniq.length === 0) return out;
+  const CHUNK = 300; // URL 길이/PostgREST .in() 안전 청크
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const slice = uniq.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id, name, phone')
+      .in('id', slice);
+    if (error) throw error;
+    for (const c of (data ?? []) as Array<{ id: string; name: string | null; phone: string | null }>) {
+      out[c.id] = { name: c.name ?? '', phone: c.phone ?? '' };
+    }
+  }
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
