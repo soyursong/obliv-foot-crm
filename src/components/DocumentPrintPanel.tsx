@@ -2808,6 +2808,10 @@ function IssueDialog({
   //   [발행]은 publish_first_visit_mgmt_record RPC(published 스냅샷 별도 INSERT, draft 존치).
   //   DA CONSULT-REPLY(20260731 후보 B GO): draft 1행(재편집) + published N행(누적 원장, 불변).
   const [fvmrDraftId, setFvmrDraftId] = useState<string | null>(null);
+  // T-20260818-foot-DOCPRINT-FIRSTVISIT-MGMTRECORD-AUTOGEN-ISSUE: draft 재조회 완료 게이트.
+  //   시술및처방·상병명 자동생성(아래 useEffect)이 "저장된 draft 가 없는 신규 기록"에서만 돌도록,
+  //   draft 조회가 끝났는지(있든 없든) 를 신호한다. draft 있으면 저장본이 authoritative → 자동생성 스킵.
+  const [fvmrDraftLoadDone, setFvmrDraftLoadDone] = useState(false);
   const [fvmrBusy, setFvmrBusy] = useState(false);
   // Phase 3: 서비스 항목 (진료 코드 참조)
   const [serviceItems, setServiceItems] = useState<ServiceChargeItem[]>([]);
@@ -3119,10 +3123,18 @@ function IssueDialog({
   //   ⚠ draft-dedup partial unique index 는 DEFERRED(마이그 헤더: cross-feature dedup 선행) → 인덱스 미의존.
   //   복원 대상 = _fvmr 스냅샷(작성자 입력 원본). 자동 바인딩 필드(환자명 등)는 매 open DB 재파생(무손실).
   useEffect(() => {
-    if (!open || template.form_key !== 'first_visit_mgmt_record' || template.id.startsWith('fallback-')) {
+    if (!open || template.form_key !== 'first_visit_mgmt_record') {
       setFvmrDraftId(null);
+      setFvmrDraftLoadDone(false);
       return;
     }
+    // fallback(빈 DB/프리뷰 template) 은 draft 영속 축이 없음 → 조회 없이 '완료·draft 없음'으로 신호(자동생성 허용).
+    if (template.id.startsWith('fallback-')) {
+      setFvmrDraftId(null);
+      setFvmrDraftLoadDone(true);
+      return;
+    }
+    setFvmrDraftLoadDone(false);
     let cancelled = false;
     supabase
       .from('form_submissions')
@@ -3133,23 +3145,27 @@ function IssueDialog({
       .limit(1)
       .maybeSingle()
       .then(({ data }) => {
-        if (cancelled || !data) return;
-        setFvmrDraftId(data.id as string);
-        const snap = (data.field_data ?? {}) as Record<string, unknown>;
-        const fvmr = (snap._fvmr ?? {}) as {
-          manual?: Record<string, string>;
-          procedures?: MgmtCodePick[];
-          diagnoses?: MgmtCodePick[];
-          clinic_doctor_id?: string;
-          doctor_name?: string;
-        };
-        if (fvmr.manual && typeof fvmr.manual === 'object') {
-          setManualValues((prev) => ({ ...prev, ...fvmr.manual }));
+        if (cancelled) return;
+        if (data) {
+          setFvmrDraftId(data.id as string);
+          const snap = (data.field_data ?? {}) as Record<string, unknown>;
+          const fvmr = (snap._fvmr ?? {}) as {
+            manual?: Record<string, string>;
+            procedures?: MgmtCodePick[];
+            diagnoses?: MgmtCodePick[];
+            clinic_doctor_id?: string;
+            doctor_name?: string;
+          };
+          if (fvmr.manual && typeof fvmr.manual === 'object') {
+            setManualValues((prev) => ({ ...prev, ...fvmr.manual }));
+          }
+          if (Array.isArray(fvmr.procedures)) setMgmtProcedures(fvmr.procedures);
+          if (Array.isArray(fvmr.diagnoses)) setMgmtDiagnoses(fvmr.diagnoses);
+          if (fvmr.clinic_doctor_id) setSelectedClinicDoctorId(fvmr.clinic_doctor_id);
+          if (fvmr.doctor_name) setSelectedDoctorName(fvmr.doctor_name);
         }
-        if (Array.isArray(fvmr.procedures)) setMgmtProcedures(fvmr.procedures);
-        if (Array.isArray(fvmr.diagnoses)) setMgmtDiagnoses(fvmr.diagnoses);
-        if (fvmr.clinic_doctor_id) setSelectedClinicDoctorId(fvmr.clinic_doctor_id);
-        if (fvmr.doctor_name) setSelectedDoctorName(fvmr.doctor_name);
+        // draft 유무 확정 후 자동생성 게이트 개방(있으면 자동생성 스킵, 없으면 신규 기록 자동생성 허용).
+        setFvmrDraftLoadDone(true);
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3214,6 +3230,50 @@ function IssueDialog({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, template.form_key, checkIn.id, serviceItems]);
+
+  // ── T-20260818-foot-DOCPRINT-FIRSTVISIT-MGMTRECORD-AUTOGEN-ISSUE (AC-1/AC-2/AC-3/AC-5): 초진 관리기록지
+  //   시술및처방·상병명 자동생성 ──
+  //   현장 정정 스펙(reporter 김주연 총괄): "기존 서류출력 [초진 관리기록지] 양식 그대로 CRM 데이터로 자동 생성 및 발행".
+  //   기존엔 시술및처방(mgmtProcedures)·상병명(mgmtDiagnoses)만 드롭다운 수기선택 잔존 → 이 두 항목을 진입 시
+  //   자동 채운다(나머지 성명·생년월일·연락처·초진일·발급일·센터명·담당자는 이미 loadAutoBindContext 자동바인딩).
+  //   ★소스 = serviceItems(service_charges JOIN services) = 결제 미니창(PaymentMiniWindow)이 이 방문에 확정한
+  //     canonical 원장(DXCODE 배포분 T-20260818-foot-DOCPRINT-RX-DXCODE-PAYMINI-AUTOFILL 과 동일 소스·동일
+  //     '상병' 분기 = applyDiagTokens 대칭). PaymentDialog(현장 비도달 표면) 미참조(AC-5).
+  //     - 시술및처방 = category_label !== '상병' 인 청구 항목(풋케어/처방약/검사/수액 등).
+  //     - 상병명     = category_label === '상병' 인 청구 항목.
+  //   ★비파괴·db_change=false(읽기 투영). ★덮어쓰기 금지: 저장된 draft 복원분/수기선택이 있으면 자동생성 스킵(AC-5).
+  //     draft 재조회 완료(fvmrDraftLoadDone) + draft 없음(fvmrDraftId===null) 인 '신규 기록'에서만, 캐노니컬 로드
+  //     완료(billingReady) 후 checkIn 당 1회 적용. 청구 항목이 없으면 무동작 → 해당 항목 빈칸(AC-3, 오류 없음).
+  const mgmtAutoPickRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || template.form_key !== 'first_visit_mgmt_record') return;
+    if (!billingReady || !fvmrDraftLoadDone) return;        // 캐노니컬·draft 조회 완료 대기
+    if (fvmrDraftId !== null) return;                       // 저장된 draft = 저장본 authoritative(자동생성 스킵, AC-5)
+    if (mgmtAutoPickRef.current === checkIn.id) return;     // 이 예약에 1회만
+    // 이미 값(수기선택/복원)이 있으면 보존 — 자동생성 불필요, 재실행만 차단(AC-5)
+    if (mgmtProcedures.length > 0 || mgmtDiagnoses.length > 0) {
+      mgmtAutoPickRef.current = checkIn.id;
+      return;
+    }
+    mgmtAutoPickRef.current = checkIn.id;
+    // service_code(없으면 name) 기준 dedup — 동일 코드 중복 청구행이 있어도 1줄로.
+    const toPicks = (items: ServiceChargeItem[]): MgmtCodePick[] => {
+      const seen = new Set<string>();
+      const out: MgmtCodePick[] = [];
+      for (const it of items) {
+        const key = (it.service_code && it.service_code.trim()) || it.name;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ id: it.id, name: it.name, code: it.service_code ?? '' });
+      }
+      return out;
+    };
+    const procedures = toPicks(serviceItems.filter((i) => (i.category_label ?? '') !== '상병'));
+    const diagnoses = toPicks(serviceItems.filter((i) => (i.category_label ?? '') === '상병'));
+    if (procedures.length > 0) setMgmtProcedures(procedures);
+    if (diagnoses.length > 0) setMgmtDiagnoses(diagnoses);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, template.form_key, checkIn.id, billingReady, fvmrDraftLoadDone, fvmrDraftId, serviceItems]);
 
   // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호 당일순번 print-time 로드 제거.
   //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative.
