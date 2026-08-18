@@ -109,7 +109,7 @@ import { CustomerQuickMenu } from '@/components/CustomerQuickMenu';
 import { DocumentReprintPopup } from '@/components/DocumentReprintPopup';
 import SendSmsDialog from '@/components/SendSmsDialog';
 import { canAccess } from '@/lib/permissions';
-import { CustomerHoverCard } from '@/components/CustomerHoverCard';
+import { CustomerHoverCard, type HoverReservationInfo } from '@/components/CustomerHoverCard';
 // T-20260601-foot-DASH-HSCROLL-CHART-LOC #3: 성함 옆 현재 배정 슬롯 이름
 import { getAssignedSlotName } from '@/lib/checkin-slot';
 // T-20260516-foot-CHART2-STATE-UNIFY: CustomerChartSheet 렌더 AdminLayout 단일화로 이동
@@ -212,6 +212,12 @@ const CardHandlersCtx = createContext<CardHandlers | null>(null);
 // ── 예약시간 맵 컨텍스트 (reservation_id → reservation_time) ──────────────────
 /** DraggableCard에서 useContext로 읽어 CustomerHoverCard에 예약시간 전달 */
 const ResvTimeMapCtx = createContext<Map<string, string>>(new Map());
+
+// ── T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP ─────────────────────
+//   통합시간표 성함 hover → 예약관리와 동일한 간략정보 팝업(예약일시·차트#+성함·연락처·간략메모·예약메모).
+//   reservation_id → HoverReservationInfo 사이드맵. 체크인 카드(TimelineCheckInCard)는 예약 객체를 직접 갖지
+//   않으므로 이 맵으로 reservation_id 조회. 초진/재진 예약 카드(Box1/Box2)는 자신의 reservation 객체를 직접 사용.
+const ResvHoverInfoMapCtx = createContext<Map<string, HoverReservationInfo>>(new Map());
 
 // ── T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅, FIX MSG-20260704-175153) ──
 //   힐러 예약카드 치료유형명(package_name) 소스맵 컨텍스트: reservation_id → package_name.
@@ -1764,6 +1770,39 @@ function ExamRequestBadges({ flags }: { flags?: ExamFlagState }) {
 //   초진(new)·진료비/패키지 잔금 칩(PkgOutstandingBadge)은 무수정 = 색컨벤션·레이아웃 무변경(AC-4).
 const REVISIT_MISU_BADGE_CLS = 'text-[7px] px-px py-0 leading-none whitespace-nowrap';
 
+// ── T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP ─────────────────────
+//   예약관리(Reservations.tsx L2472)의 CustomerHoverCard reservationInfo 구성과 동일 필드로 빌드 →
+//   동일 컴포넌트 재사용으로 팝업 필드/레이아웃 파리티(등록자·예약일시·차트#·성함·방문경로·연락처·간략메모·예약메모) 보장.
+//   ⚠ 예약메모: 예약관리는 reservation_memo_history(타임라인 SoT) 우선·booking_memo fallback 이나, 대시보드는
+//     타임라인 history 를 로드하지 않으므로 영속 컬럼 reservations.booking_memo 를 직접 표시(read-only, DB 무변경).
+function buildResvHoverInfo(r: Reservation): HoverReservationInfo {
+  return {
+    registrarLabel: r.registrar_name?.trim() || null,
+    reservationDate: r.reservation_date,
+    visitRoute: r.visit_route ?? r.referral_source ?? null,
+    bookingMemo: r.booking_memo ?? null,
+    briefNote: r.brief_note ?? null,
+  };
+}
+
+// 통합시간표 성함 트리거를 CustomerHoverCard(children 모드)로 감쌀 때 넘길 최소 CheckIn 어댑터.
+//   CustomerHoverCard(reservationInfo 변형)가 읽는 필드만 채운다: customer_id(차트#/생년월일 hover fetch)·
+//   customer_name(트리거 표기 — 현재 고객명 우선 cardDisplayName)·customer_phone(연락처)·customers.chart_number(fetch 전 폴백).
+//   나머지 CheckIn 필드는 reservationInfo 분기에서 미사용 → 캐스팅으로 생략(예약관리 resvAsCheckIn 과 동일 어댑터 취지).
+function resvToHoverCheckIn(r: Reservation): CheckIn {
+  return {
+    id: `resv-hover-${r.id}`,
+    customer_id: r.customer_id,
+    customer_name: cardDisplayName(r),
+    customer_phone: r.customer_phone,
+    customers: r.customers ?? null,
+    reservation_id: r.id,
+    visit_type: r.visit_type,
+    checked_in_at: `${r.reservation_date}T${r.reservation_time}`,
+    treatment_memo: null,
+  } as unknown as CheckIn;
+}
+
 function TimelineCheckInCard({
   checkIn,
   onClick,
@@ -1801,6 +1840,13 @@ function TimelineCheckInCard({
   // T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 체크인 셀 미수 배지
   const timelineOutstandingMap = useContext(OutstandingMapCtx);
   const timelineOutstanding = checkIn.customer_id ? timelineOutstandingMap.get(checkIn.customer_id) : undefined;
+  // T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: 체크인 카드 성함 hover → 예약관리 동일 팝업.
+  //   체크인 카드는 예약 객체를 직접 갖지 않으므로 reservation_id 로 사이드맵 조회(당일 예약은 취소 아니면 timelineReservations 잔존 → 매칭).
+  //   미매칭(예약 소실 등)이면 reservationInfo undefined → CustomerHoverCard 기본(고객메모/치료메모) 팝업으로 graceful fallback(팝업 자체는 표시).
+  const timelineResvHoverMap = useContext(ResvHoverInfoMapCtx);
+  const timelineResvTimeMap = useContext(ResvTimeMapCtx);
+  const timelineHoverInfo = checkIn.reservation_id ? timelineResvHoverMap.get(checkIn.reservation_id) : undefined;
+  const timelineHoverResvTime = checkIn.reservation_id ? timelineResvTimeMap.get(checkIn.reservation_id) : undefined;
 
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
@@ -1863,7 +1909,12 @@ function TimelineCheckInCard({
           ("한정사"→"한정/사"). whitespace-nowrap 한 줄 고정. 전체 성함은 카드 title(hover/tap) 보존. */}
       {/* T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE (P1, 현장 최우선): 말줄임(overflow-hidden text-ellipsis)=이름 잘림 → 제거.
           min-w-0(셀 축소 허용) 제거 + shrink-0 로 체크인 카드 성함 전체 수용. nowrap 유지. */}
-      <span className={cn('shrink-0 whitespace-nowrap leading-tight', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
+      {/* T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: 성함 span 을 CustomerHoverCard(children 모드)로 감싸
+          hover 시 예약관리 동일 팝업 표시. span 자체(testid/클래스)는 원형 보존 → T-20260817 nowrap/notruncate 회귀 0.
+          클릭/드래그/우클릭은 부모 카드가 처리(hover 카드에 onClick/onContextMenu 미전달). */}
+      <CustomerHoverCard checkIn={checkIn} reservationTime={timelineHoverResvTime} reservationInfo={timelineHoverInfo}>
+        <span className={cn('shrink-0 whitespace-nowrap leading-tight', visitType === 'returning' ? 'text-gray-800' : 'text-gray-900')} data-testid="timeline-name">{cardDisplayName(checkIn)}</span>
+      </CustomerHoverCard>
       {/* T-20260701-foot-TIMETABLE-NEW-PHONE-UNIFY: 통합시간표 초진(new)/재진(returning) 체크인 카드 식별자를
           폰번호 뒷4자리로 통일(김주연 총괄). 초진 차트번호(#RF-…) 표기 제거 → 재진과 동일 '폰 뒷4자리' 포맷.
           (선행: T-20260630-REVISIT-CUSTBOX 재진 통일 → 본 건으로 초진 통일 마무리. presentation only, DB 무변경.
@@ -2084,7 +2135,11 @@ function DraggableBox1Card({
       {/* T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE (P1, 현장 최우선): 성함 '절대 안 잘림'이 최우선 요건.
           말줄임(overflow-hidden text-ellipsis)=이름 잘림 → 제거. min-w-0(셀 축소 허용) 제거 + shrink-0 로 셀이 성함 전체를 수용.
           whitespace-nowrap(음절 중간 꺾임 방지)만 유지. 셀 압박은 내원콜 배지 단축(내원예정→내원)으로 완화. */}
-      <span className="shrink-0 whitespace-nowrap leading-tight text-gray-900 font-semibold" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: 초진 예약 성함 hover → 예약관리 동일 팝업(간략메모·예약메모 포함).
+          span 원형 보존(testid/클래스 무변경) → T-20260817 nowrap/notruncate 회귀 0. 클릭/드래그/우클릭=부모 카드 처리. */}
+      <CustomerHoverCard checkIn={resvToHoverCheckIn(reservation)} reservationTime={reservation.reservation_time} reservationInfo={buildResvHoverInfo(reservation)}>
+        <span className="shrink-0 whitespace-nowrap leading-tight text-gray-900 font-semibold" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      </CustomerHoverCard>
       <span className="shrink-0 text-gray-500 font-mono text-[9px]">{tail}</span>
       {/* T-20260630-foot-DASH-INTAKEBOX-BRIEFMEMO-SHOW (김주연 총괄): 초진 예약 박스 '성함 폰뒷자리' → '성함 폰뒷자리 [간략메모]'.
           - 영속 brief_note(TEXT, 既존 컬럼 20260624100000) read·render only — 신규 스키마/CONSULT 0.
@@ -2235,7 +2290,11 @@ function DraggableBox2ResvCard({
           말줄임·tooltip 폐기 → whitespace-normal + break-words 로 칸 폭 안 전체표시(넘치면 줄바꿈, 잘림 0). */}
       {/* T-20260817-foot-DASHBOARD-TIMETABLE-CUSTNAME-NOWRAP (P3): 재진 칼럼 성함 한 줄 고정(음절 중간 꺾임 방지). 전체 성함은 카드 title 보존. */}
       {/* T-20260817-foot-DASHBOARD-TIMETABLE-NAME-NOTRUNCATE-BADGE (P1, 현장 최우선): 말줄임 제거 + min-w-0→shrink-0 로 성함 전체 수용. nowrap 유지. */}
-      <span className="shrink-0 whitespace-nowrap leading-tight text-gray-800" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      {/* T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: 재진 예약 성함 hover → 예약관리 동일 팝업(간략메모·예약메모 포함).
+          span 원형 보존(testid/클래스 무변경) → T-20260817 nowrap/notruncate 회귀 0. 클릭/드래그/우클릭=부모 카드 처리. */}
+      <CustomerHoverCard checkIn={resvToHoverCheckIn(reservation)} reservationTime={reservation.reservation_time} reservationInfo={buildResvHoverInfo(reservation)}>
+        <span className="shrink-0 whitespace-nowrap leading-tight text-gray-800" data-testid="timeline-name">{cardDisplayName(reservation) || '이름없음'}</span>
+      </CustomerHoverCard>
       {/* T-20260618-foot-OUTSTANDING-BADGE-TIMETABLE-CHECKIN: 통합시간표 재진 예약 셀 미수 배지.
           REVISIT-CUSTBOX REQ-3 → DASH-REVISITBOX AC-3: 미수 딱지 더 축소(REVISIT_MISU_BADGE_CLS). */}
       <OutstandingDueBadge data={box2Outstanding} className={REVISIT_MISU_BADGE_CLS} />
@@ -3751,6 +3810,16 @@ export default function Dashboard() {
     const m = new Map<string, string>();
     for (const r of timelineReservations) {
       if (r.id && r.reservation_time) m.set(r.id, r.reservation_time);
+    }
+    return m;
+  }, [timelineReservations]);
+  // T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: reservation_id → HoverReservationInfo 사이드맵.
+  //   TimelineCheckInCard(체크인 카드)가 reservation_id 로 조회해 예약관리 동일 hover 팝업을 띄운다.
+  //   당일 timelineReservations(취소 제외·소량) 파생 → 신규 fetch/스키마 무변경(read-only). Box1/Box2 예약 카드는 자기 객체 직접 사용.
+  const resvHoverInfoMap = useMemo(() => {
+    const m = new Map<string, HoverReservationInfo>();
+    for (const r of timelineReservations) {
+      if (r.id) m.set(r.id, buildResvHoverInfo(r));
     }
     return m;
   }, [timelineReservations]);
@@ -7898,6 +7967,8 @@ export default function Dashboard() {
       <ActiveTimerCtx.Provider value={activeTimersMap}>
       <ConsentMapCtx.Provider value={consentMap}>
       <ResvTimeMapCtx.Provider value={resvTimeMap}>
+      {/* T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: 체크인 카드 성함 hover 팝업용 예약정보 맵 주입 */}
+      <ResvHoverInfoMapCtx.Provider value={resvHoverInfoMap}>
       {/* T-20260702-foot-HEALER-CARD-TREATTYPE-MISSING (대시보드 포팅): 힐러 카드 치료유형명 맵 주입 */}
       <ResvPkgTypeMapCtx.Provider value={resvPkgTypeMap}>
       <DndContext
@@ -8091,6 +8162,7 @@ export default function Dashboard() {
       </DragOverlay>
       </DndContext>
       </ResvPkgTypeMapCtx.Provider>
+      </ResvHoverInfoMapCtx.Provider>
       </ResvTimeMapCtx.Provider>
       </ConsentMapCtx.Provider>
       </ActiveTimerCtx.Provider>

@@ -46,7 +46,7 @@ function calcAge(birthDate: string | null): number | null {
  *   제목줄 `등록자: 예약일시` / 고객성함 | 방문경로 / 연락처(풀번호) / 간략메모 / 예약메모.
  * 미지정 surface(대시보드 등)는 기존 레거시 레이아웃(차트#·예약시간·고객메모·치료메모) 유지 → 회귀 0.
  */
-interface HoverReservationInfo {
+export interface HoverReservationInfo {
   /** 등록자 = 예약등록자(registrar_name 스냅샷) ONLY. booker(예약 입력 계정)와 분리(ReservationDetailPopup.tsx:508).
    *  T-20260630-foot-RESV-REGISTRAR-BRIEFINFO-STAFF-MISMATCH: booker fallback 제거(호출부 registrar_name only) — 선택한 예약등록자만 표기. null이면 제목줄에서 등록자 라벨 생략(일시만). */
   registrarLabel?: string | null;
@@ -76,9 +76,14 @@ interface Props {
   onContextMenu?: (e: React.MouseEvent) => void;
   /** T-20260525-foot-RSVMGMT-CHART-OPEN: 클릭 → 1·2번 차트 열림 (예약관리 진입점) */
   onClick?: () => void;
+  /** T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: 호출부가 트리거(성함 표기)를 직접 제공하는 모드.
+   *  지정 시 내부 기본 성함 span 대신 이 children 을 트리거로 렌더 → 호출부 성함 span 의 testid/클래스 원형 보존.
+   *  통합시간표 3카드가 자신의 timeline-name span 을 그대로 넘겨 hover 팝업만 부여(클릭/드래그/우클릭=부모 카드 처리).
+   *  이 모드에선 outer wrapper 가 display:contents 라 레이아웃 박스를 만들지 않아 성함 span 이 부모 flex 자식 그대로 유지. */
+  children?: React.ReactNode;
 }
 
-export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, compact, compactDense, onContextMenu, onClick }: Props) {
+export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, compact, compactDense, onContextMenu, onClick, children }: Props) {
   const [visible, setVisible] = useState(false);
   const [details, setDetails] = useState<CustomerDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -168,14 +173,18 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
     <span
       // T-20260622-foot-RESVCAL-CARD-OVERFLOW-FONTDOWN: compactDense일 때 트리거를 block+min-w-0로 →
       //   flex row 안에서 가용폭까지 수축, 내부 성함 span의 truncate(ellipsis)가 실제 동작.
-      className={cn('relative', compactDense && 'block min-w-0 max-w-full')}
-      style={{ display: compactDense ? 'block' : 'inline-block' }}
+      // T-20260818-foot-DASHBOARD-TIMETABLE-HOVER-MEMO-POPUP: children(호출부 트리거) 모드는 display:contents 로
+      //   레이아웃 박스 미생성 → 호출부 성함 span 이 부모 flex 자식 그대로 유지(통합시간표 T-20260817 nowrap/notruncate·
+      //   인접 배지 레이아웃 회귀 0). 마우스 이벤트는 DOM 버블로 정상 수신. 미지정 시 기존 렌더(예약관리/칸반 회귀 0).
+      className={cn(!children && 'relative', !children && compactDense && 'block min-w-0 max-w-full')}
+      style={{ display: children ? 'contents' : compactDense ? 'block' : 'inline-block' }}
       onMouseEnter={handleMouseEnter}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
       {/* 성함 텍스트 */}
       {/* T-20260525-foot-RSVMGMT-CHART-OPEN: onClick 연결 시 클릭 가능 스타일 적용 */}
+      {children ?? (
       <span
         data-testid={onClick ? 'customer-hover-card-name-clickable' : 'customer-hover-card-name'}
         className={cn(
@@ -212,6 +221,7 @@ export function CustomerHoverCard({ checkIn, reservationTime, reservationInfo, c
           </span>
         )}
       </span>
+      )}
 
       {/* 호버 팝업 — position:fixed + document.body 포털.
           T-20260613-foot-CHART1-CHARTNO-DEDUP-REORDER §D(AC-5): 팝업 헤더의 차트번호 배지(font-mono #)가
