@@ -686,6 +686,11 @@ export default function Reservations() {
   //   해소: linked_package_id → packages.package_name(치료유형명) read-only 조회. reservation_id → package_name 맵.
   //   resvBookerMap/resvMemoMap 사이드맵 패턴 미러. 미연결·비힐러는 미표기(AC2/AC3 회귀0).
   const [resvPkgTypeMap, setResvPkgTypeMap] = useState<Map<string, string>>(new Map());
+  // T-20260818-foot-RESV-DESIG-THERAPIST-AUTOSHOW: 재진 카드 고객 이름 하단에 지정치료사명 자동 표시.
+  //   coordi팀 메모(notes) 수기입력 의존 폐지 — customers.designated_therapist_id(기존 컬럼, read-only) →
+  //   staff.name(read-only join) 배치 조회. customer_id → 지정치료사명 사이드맵. resvPkgTypeMap 패턴 미러.
+  //   미배정(designated_therapist_id NULL) 고객은 맵 미포함 → 카드 미표시(회귀0). db_change=false.
+  const [resvDesigTherapistMap, setResvDesigTherapistMap] = useState<Map<string, string>>(new Map());
 
   const [editor, setEditor] = useState<ReservationDraft | null>(null);
   const [detail, setDetail] = useState<Reservation | null>(null);
@@ -1231,15 +1236,41 @@ export default function Reservations() {
       // T-20260622-foot-RESVMGMT-ASSIGNEE-BOOKER-UI: 예약관리 담당자 표시가 차트 담당자(assigned_staff_id)에서
       //   '예약 잡은 계정'(booker)으로 교체됨(위 setResvBookerMap) → 여기선 chart_number만 로드(assigned_staff_id 미사용).
       //   ★SCOPE: customers.assigned_staff_id 자체는 미변경 — 2번차트/고객 목록·상세의 담당자 의미 불변(회귀0).
+      // T-20260818-foot-RESV-DESIG-THERAPIST-AUTOSHOW: 동일 customers 배치에 designated_therapist_id 병합 조회
+      //   (별도 왕복 없이 chart_number 조회에 컬럼만 추가). read-only, 스키마 무변경.
       const { data: chartData } = await supabase
         .from('customers')
-        .select('id, chart_number')
+        .select('id, chart_number, designated_therapist_id')
         .in('id', customerIds);
       const chartM = new Map<string, string>();
-      for (const c of (chartData ?? []) as { id: string; chart_number: string | null }[]) {
+      const desigTherapistIdByCustomer = new Map<string, string>(); // customer_id → designated_therapist_id
+      for (const c of (chartData ?? []) as { id: string; chart_number: string | null; designated_therapist_id: string | null }[]) {
         if (c.chart_number) chartM.set(c.id, c.chart_number);
+        const dtid = (c.designated_therapist_id ?? '').trim();
+        if (dtid) desigTherapistIdByCustomer.set(c.id, dtid);
       }
       setResvChartMap(chartM);
+
+      // T-20260818-foot-RESV-DESIG-THERAPIST-AUTOSHOW: 지정치료사 id → 이름(staff.name) 배치 조회 → customer_id → 이름 맵.
+      //   미배정 고객(맵 미포함)은 카드 미표시(회귀0). 신규 계산/저장 없음 — 순수 표시 레이어.
+      const desigM = new Map<string, string>();
+      const desigTherapistIds = Array.from(new Set(desigTherapistIdByCustomer.values()));
+      if (desigTherapistIds.length > 0) {
+        const { data: staffRows } = await supabase
+          .from('staff')
+          .select('id, name')
+          .in('id', desigTherapistIds);
+        const nameByStaff = new Map<string, string>();
+        for (const s of (staffRows ?? []) as { id: string; name: string | null }[]) {
+          const nm = (s.name ?? '').trim();
+          if (nm) nameByStaff.set(s.id, nm);
+        }
+        for (const [custId, dtid] of desigTherapistIdByCustomer) {
+          const nm = nameByStaff.get(dtid);
+          if (nm) desigM.set(custId, nm);
+        }
+      }
+      setResvDesigTherapistMap(desigM);
 
       // T-20260527-foot-TREATMENT-CYCLE-ALERT AC-1/AC-4:
       // 고객별 완료 치료 회차 수를 단일 RPC로 배치 집계 (N+1 방지)
@@ -2523,6 +2554,19 @@ export default function Reservations() {
                   )}
                   {/* T-20260630-...7ADJ ⑥ / [항목6-1] 정합: '취소됨' 텍스트 배지 제거(회색+음각으로 대체). */}
                 </div>
+                {/* T-20260818-foot-RESV-DESIG-THERAPIST-AUTOSHOW: 재진 카드 고객 이름 '바로 아래' 지정치료사명 자동 표시.
+                    coordi팀 메모 수기입력 무의존 — customers.designated_therapist_id → staff.name(사전 배치조회 resvDesigTherapistMap).
+                    범위: 재진(returning) 카드 + customer_id 有 + 지정치료사 배정(맵 hit) 한정. 미배정/취소/타kind = 미표시(회귀0). */}
+                {r.status !== 'cancelled' && r.customer_id && resvKind(r) === 'returning' && resvDesigTherapistMap.get(r.customer_id) && (
+                  <div
+                    className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-left text-[8px] font-semibold leading-tight text-emerald-800"
+                    data-testid={`resv-day-desig-therapist-${r.id}`}
+                    title={`지정치료사: ${resvDesigTherapistMap.get(r.customer_id)}`}
+                  >
+                    <span className="shrink-0 rounded bg-emerald-100 px-0.5 leading-tight">지정</span>
+                    <span className="min-w-0 truncate">{resvDesigTherapistMap.get(r.customer_id)}</span>
+                  </div>
+                )}
                 {/* T-20260702-foot-CUSTBOX-PADDING-MEMO-POS ②: 간략메모(brief_note)를 성함 '바로 아래'에 표기(재배치).
                     메모가 있으면 이 줄만큼 박스 높이가 자동 확장(부모 셀 min-h 없음 → 커져도 무방). 취소건은 미표기. mb-0.5→mt-0.5(성함과의 간격).
                     T-20260708-foot-RESVMGMT-BRIEFMEMO-LEFTALIGN: 좌측정렬 명시(text-left). 부모 격자 컨테이너(resv-day-xaxis)가 text-center라
@@ -3099,6 +3143,18 @@ export default function Reservations() {
                                       {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row1: 주뷰 고객박스를 일뷰(renderDayCard) 기준으로 통일 → 이름만.
                                           회차(N회)·진료필요·다음힐러·예약경로 배지 제거(renderDayCard Row1과 정합, L2088~). 취소건 차트번호 배지(PAIRING-AUDIT: 환자명 단독노출 0)는 유지. */}
                                     </div>
+                                    {/* T-20260818-foot-RESV-DESIG-THERAPIST-AUTOSHOW: 재진 카드 고객 이름 하단 지정치료사명 자동 표시(주간뷰, 일간뷰 정합).
+                                        메모 무의존 — designated_therapist_id → staff.name(resvDesigTherapistMap). 재진+customer_id+맵hit 한정, 미배정/취소/타kind 미표시(회귀0). */}
+                                    {r.status !== 'cancelled' && r.customer_id && resvKind(r) === 'returning' && resvDesigTherapistMap.get(r.customer_id) && (
+                                      <div
+                                        className="mt-0.5 flex min-w-0 items-center gap-0.5 overflow-hidden text-[10px] font-semibold leading-tight text-emerald-800"
+                                        data-testid={`resv-desig-therapist-${r.id}`}
+                                        title={`지정치료사: ${resvDesigTherapistMap.get(r.customer_id)}`}
+                                      >
+                                        <span className="shrink-0 rounded bg-emerald-100 px-0.5 leading-tight">지정</span>
+                                        <span className="min-w-0 truncate">{resvDesigTherapistMap.get(r.customer_id)}</span>
+                                      </div>
+                                    )}
                                     {/* T-20260703-foot-RESVCAL-WEEKBOX-DAYUNIFY Row2: 간략메모(brief_note)만 — 초진/재진/힐러 전 유형 공통(초진 한정 제거), 취소건 제외·있을 때만.
                                         renderDayCard Row2(L2132~)와 정합: whitespace-normal break-words 로 truncate 대신 자동 줄바꿈(박스 높이 자동 확장). */}
                                     {r.status !== 'cancelled' && r.brief_note?.trim() && (
