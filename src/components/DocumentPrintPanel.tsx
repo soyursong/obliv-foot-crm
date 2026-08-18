@@ -3155,6 +3155,66 @@ function IssueDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, template.form_key, template.id, checkIn.id]);
 
+  // ── T-20260818-foot-DOCPRINT-RX-DXCODE-PAYMINI-AUTOFILL (AC-1/AC-3/AC-4): 처방전 용량·횟수·투약일수 자동 prefill ──
+  //   결제 미니창(PaymentMiniWindow)이 발행 시 form_submissions.field_data.rx_items(구조화 leaf, T-20260809 AC1)에
+  //   persist 한 unit_dose/daily_freq/total_days 를 서류출력 처방전 양식 진입 시 rxItemDosages 에 자동 채운다
+  //   (약품명·약품코드·상병코드는 이미 자동 prefill — 이 leg 는 남은 gap = 용량 3칸만 보강). 수기 재입력 해소.
+  //   ★소스 = PaymentMiniWindow 저장본(form_submissions.field_data.rx_items) 단일 — PaymentDialog(현장 비도달 표면)
+  //     미참조(AC-3). 매칭 = service_code 우선, 없으면 약품명(name). 저장본 부재(미결제·미발행) 시 무동작 →
+  //     기존 기본값('1')·수기 흐름 그대로 유지(AC-2, 회귀 0). checkIn 당 1회만 적용 + 이미 입력된 항목 미덮어씀(AC-5).
+  const rxDosagePrefillRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || template.form_key !== 'rx_standard') return;
+    if (rxDosagePrefillRef.current === checkIn.id) return;          // 이 예약에 1회만 적용
+    const rxServiceItems = serviceItems.filter((i) => i.category_label === '처방약');
+    if (rxServiceItems.length === 0) return;                        // 처방약 항목 로드 대기/없음 — 재실행 대기
+    let cancelled = false;
+    supabase
+      .from('form_submissions')
+      .select('field_data, created_at, status')
+      .eq('check_in_id', checkIn.id)
+      .neq('status', 'voided')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        // PaymentMiniWindow 가 저장한 구조화 rx_items leaf(배열) 를 보유한 최신(무효 제외) 발행분 탐색.
+        let leaf: Array<Record<string, unknown>> | null = null;
+        for (const row of data) {
+          const fd = (row.field_data ?? {}) as Record<string, unknown>;
+          const rx = fd.rx_items;
+          if (Array.isArray(rx) && rx.length > 0) { leaf = rx as Array<Record<string, unknown>>; break; }
+        }
+        if (!leaf) return;                                          // 저장본 없음 — 무동작(AC-2, 빈칸 유지)
+        rxDosagePrefillRef.current = checkIn.id;                    // 1회 적용 마킹
+        const byCode = new Map<string, Record<string, unknown>>();
+        const byName = new Map<string, Record<string, unknown>>();
+        for (const it of leaf) {
+          const code = it.code == null ? '' : String(it.code);
+          const nm = it.name == null ? '' : String(it.name);
+          if (code && !byCode.has(code)) byCode.set(code, it);
+          if (nm && !byName.has(nm)) byName.set(nm, it);
+        }
+        setRxItemDosages((prev) => {
+          const next = { ...prev };
+          for (const svc of rxServiceItems) {
+            if (next[svc.id]) continue;                             // 이미 입력/세팅된 항목 보존(AC-5)
+            const match =
+              (svc.service_code ? byCode.get(svc.service_code) : undefined) ??
+              byName.get(svc.name);
+            if (!match) continue;
+            const ud = match.unit_dose == null ? '' : String(match.unit_dose);
+            const df = match.daily_freq == null ? '' : String(match.daily_freq);
+            const td = match.total_days == null ? '' : String(match.total_days);
+            if (!ud && !df && !td) continue;                        // 값 전무 — 스킵(기본값 흐름 유지)
+            next[svc.id] = { unit_dose: ud, daily_freq: df, total_days: td };
+          }
+          return next;
+        });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, template.form_key, checkIn.id, serviceItems]);
+
   // T-20260718-foot-RX-PRINT-ISSUENO-TOTALDAYS-FIX (AC1-PERSIST): 교부번호 당일순번 print-time 로드 제거.
   //   ⚠ DA 설계경보(MSG-k7iz): 발행 시점 1회 채번(handlePrint 의 issue_foot_rx_issue_no RPC)만 authoritative.
   //     미리보기용 count 로더(구 todayIssueSeq)는 print-time 재계산 = persist·재인쇄불변 위배 → 삭제.
