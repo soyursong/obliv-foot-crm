@@ -303,7 +303,7 @@ Deno.serve(async (req) => {
   const phoneE164 = customer['phone_e164'] as string | undefined;
   // ── T-20260721-foot-CUSTOMER-NAME-NFD-NFC-BACKFILL AC-2 (ingest NFC 가드, ADDITIVE, defense-in-depth) ──
   //   [진원] 도파민 push payload 가 한글 이름을 유니코드 NFD(자모분해)로 운반 → 가드 없이 customers.name/
-  //          reservations.customer_name 에 raw 적재 → 이름검색·dedup 실패(LIKE '%강승은%'=0). 백필로 기존분 정정,
+  //          reservations.customer_name 에 raw 적재 → 이름검색·dedup 실패(LIKE '%홍길동%'=0). 백필로 기존분 정정,
   //          본 가드로 재유입 차단. 근원(도파민 write-path)은 별건 T-20260721-dopamine-PUSH-PAYLOAD-NAME-NFC-NORMALIZE-GUARD.
   //   [계약] persist 前 경계에서 NFC 정규화(값-보존·멱등). 완성형 입력은 no-op, NFD 입력만 교정.
   //          아래 모든 landing(customers INSERT/fill, reservations.customer_name/customer_real_name)이 이 정규화값을 사용.

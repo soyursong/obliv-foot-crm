@@ -10,8 +10,8 @@
 -- ══════════════════════════════════════════════════════════════════════════════
 WITH samples(label, nm_raw) AS (
   VALUES
-    ('NFC-정상 강승은',  normalize('강승은', NFC)),   -- 완성형 3 codepoint
-    ('NFD-깨짐 강승은',  normalize('강승은', NFD)),   -- 자모분해(conjoining jamo) → char_length 팽창
+    ('NFC-정상 홍길동',  normalize('홍길동', NFC)),   -- 완성형 3 codepoint
+    ('NFD-깨짐 홍길동',  normalize('홍길동', NFD)),   -- 자모분해(conjoining jamo) → char_length 팽창
     ('NFC 홍길동',       normalize('홍길동', NFC)),
     ('NFC 이영',         normalize('이영',   NFC)),
     ('NFC 박',           normalize('박',     NFC)),
@@ -19,16 +19,16 @@ WITH samples(label, nm_raw) AS (
 )
 SELECT
   label,
-  char_length(nm_raw)                          AS raw_len,       -- NFD 는 팽창(강승은 NFD=9)
+  char_length(nm_raw)                          AS raw_len,       -- NFD 는 팽창(홍길동 NFD=9)
   char_length(normalize(nm_raw, NFC))          AS nfc_len,       -- NFC 정규화 후 3
-  -- 現(수정 전): raw 에 직접 마스킹 → NFD 는 자모 사이로 잘려 깨짐(ᄀ*******ᆫ)
+  -- 現(수정 전): raw 에 직접 마스킹 → NFD 는 자모 사이로 잘려 깨짐(ᄒ*******ᆼ)
   CASE
     WHEN nm_raw IS NULL OR btrim(nm_raw) = ''  THEN nm_raw
     WHEN char_length(btrim(nm_raw)) = 1        THEN btrim(nm_raw)
     WHEN char_length(btrim(nm_raw)) = 2        THEN left(btrim(nm_raw), 1) || '*'
     ELSE left(btrim(nm_raw), 1) || repeat('*', char_length(btrim(nm_raw)) - 2) || right(btrim(nm_raw), 1)
   END                                          AS masked_before,
-  -- 後(수정 후): normalize(NFC) 래핑 입력에 마스킹 → 완성형 글자 기준(강*은)
+  -- 後(수정 후): normalize(NFC) 래핑 입력에 마스킹 → 완성형 글자 기준(홍*동)
   CASE
     WHEN normalize(nm_raw, NFC) IS NULL OR btrim(normalize(nm_raw, NFC)) = ''  THEN normalize(nm_raw, NFC)
     WHEN char_length(btrim(normalize(nm_raw, NFC))) = 1                        THEN btrim(normalize(nm_raw, NFC))
@@ -39,8 +39,8 @@ SELECT
   END                                          AS masked_after
 FROM samples;
 -- 기대:
---   NFC-정상 강승은 → raw_len=3, masked_before=강*은, masked_after=강*은
---   NFD-깨짐 강승은 → raw_len=9, masked_before=ᄀ*******ᆫ(깨짐), masked_after=강*은  ← 교정 핵심
+--   NFC-정상 홍길동 → raw_len=3, masked_before=홍*동, masked_after=홍*동
+--   NFD-깨짐 홍길동 → raw_len=9, masked_before=ᄒ*******ᆼ(깨짐), masked_after=홍*동  ← 교정 핵심
 --   NFC 홍길동      → 홍*동 / 홍*동
 --   NFC 이영        → 이*   / 이*
 --   NFC 박          → 박    / 박
