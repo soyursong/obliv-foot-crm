@@ -5,16 +5,16 @@
 -- ══════════════════════════════════════════════════════════════════════════════
 -- 배경 (RCA 실측)
 -- ══════════════════════════════════════════════════════════════════════════════
--- 셀프접수 키오스크 예약자 명단에서 실환자 강승은의 이름이 `ᄀ*******ᆫ`(자모분해 마스킹 깨짐)로 표시.
+-- 셀프접수 키오스크 예약자 명단에서 실환자 홍길동의 이름이 `ᄒ*******ᆼ`(자모분해 마스킹 깨짐)로 표시.
 --   RC: customers.name(또는 reservations.customer_name)이 유니코드 NFD(자모분해)로 저장 →
 --       한 완성형 글자('강')가 conjoining jamo(U+1100 ᄀ + U+1161 ᅡ + U+11ab ᆫ …) 여러 codepoint 로 쪼개짐.
---       char_length(raw NFD '강승은') = 9, char_length(NFC '강승은') = 3.
+--       char_length(raw NFD '홍길동') = 9, char_length(NFC '홍길동') = 3.
 --   본 함수의 마스킹 산식(left/right/char_length/repeat)은 codepoint 단위로 동작 →
---       NFD 입력에서 성/끝자 경계가 자모 사이로 어긋나 `ᄀ*******ᆫ` 처럼 깨짐.
+--       NFD 입력에서 성/끝자 경계가 자모 사이로 어긋나 `ᄒ*******ᆼ` 처럼 깨짐.
 --   대시보드는 raw 렌더(마스킹 없음)라 안 깨짐 = 표시 비대칭.
 --
 -- 교정: 마스킹 입력(nm)을 normalize(..., NFC) 로 래핑 → codepoint 단위 마스킹이 완성형 글자 기준으로
---       동작. NFD 저장값이 남아있어도(백필 전) 표시 시점에 NFC 로 흡수 → `강*은` 로 정상 표시.
+--       동작. NFD 저장값이 남아있어도(백필 전) 표시 시점에 NFC 로 흡수 → `홍*동` 로 정상 표시.
 --   ※ 저장 데이터(customers.name)는 건드리지 않음(데이터 mutation 0). 근본 데이터정정은 별건
 --     T-20260721-foot-CUSTOMER-NAME-NFD-NFC-BACKFILL(gate_hold, DA CONSULT-REPLY 선행).
 --
@@ -58,7 +58,7 @@ AS $$
     t.customer_id,
     -- AC1 name 마스킹: 성 + 끝자 (홍길동→홍*동 / 홍길→홍* / 1자→그대로 / 결측→그대로)
     --   입력 nm 은 서브쿼리에서 NFC 정규화됨 → char_length/left/right 가 완성형 글자 기준으로 동작
-    --   (NFD 자모분해 저장값도 표시 시점에 흡수: `ᄀ*******ᆫ` 깨짐 방지 → `강*은`).
+    --   (NFD 자모분해 저장값도 표시 시점에 흡수: `ᄒ*******ᆼ` 깨짐 방지 → `홍*동`).
     CASE
       WHEN t.nm IS NULL OR btrim(t.nm) = ''       THEN t.nm
       WHEN char_length(btrim(t.nm)) = 1           THEN btrim(t.nm)
@@ -102,7 +102,7 @@ GRANT  EXECUTE ON FUNCTION public.fn_selfcheckin_today_reservations(UUID, DATE)
 COMMENT ON FUNCTION public.fn_selfcheckin_today_reservations(UUID, DATE) IS
   'T-20260721-foot-KIOSK-NFD-MASK-NORMALIZE (base T-20260711-foot-SELFCHECKIN-SERVER-MASKING): '
   '셀프체크인 anon 오늘 예약자 목록. 서버측 마스킹(name=성+끝자 홍*동, phone=뒤 4자리) → raw PHI anon 미전송. '
-  '마스킹 입력 name 을 normalize(NFC) 로 정규화 → NFD 자모분해 저장값도 완성형 글자 기준 마스킹(강*은). '
+  '마스킹 입력 name 을 normalize(NFC) 로 정규화 → NFD 자모분해 저장값도 완성형 글자 기준 마스킹(홍*동). '
   '반환면 상한: id/customer_id opaque UUID, reservation_time 그대로, visit_type coarse. '
   'clinic_id + date + status=confirmed 스코프 유지. + search_path='''' 핀(§1-8 guardrail). 데이터 mutation 0.';
 
@@ -120,6 +120,6 @@ COMMIT;
 --   -- 2) anon EXECUTE 화이트리스트 유지 (기대: true — 셀프체크인 공개흐름 필수)
 --   SELECT has_function_privilege('anon','public.fn_selfcheckin_today_reservations(uuid,date)','EXECUTE'); -- true
 --
---   -- 3) NFD 마스킹 회귀 (강승은: NFD 저장값 → NFC 마스킹 '강*은')
+--   -- 3) NFD 마스킹 회귀 (홍길동: NFD 저장값 → NFC 마스킹 '홍*동')
 --   --    SELECT customer_name FROM public.fn_selfcheckin_today_reservations('<clinic_uuid>', current_date);
---   --    기대: '강*은'(완성형 3글자 마스킹) — `ᄀ*******ᆫ` 미출현. 기존 정상 이름(서*숙/문*수) 회귀 0.
+--   --    기대: '홍*동'(완성형 3글자 마스킹) — `ᄒ*******ᆼ` 미출현. 기존 정상 이름(서*숙/문*수) 회귀 0.
