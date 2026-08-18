@@ -100,8 +100,13 @@ async function gotoAssignments(page: Page): Promise<boolean> {
   const ok = await loginAndWaitForDashboard(page);
   if (!ok) return false;
   await page.goto('/admin/assignments');
-  const tabs = page.getByTestId('assignments-role-tabs');
-  if (!(await tabs.isVisible({ timeout: 20_000 }).catch(() => false))) return false;
+  // ⚠ locator.isVisible() 는 auto-wait 안 함(timeout 무시) → waitFor 로 렌더 대기.
+  const shown = await page
+    .getByTestId('assignments-role-tabs')
+    .waitFor({ state: 'visible', timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) return false;
   await page.waitForTimeout(1_500); // 비동기 recency 판정(resolveVisitTypesByCheckIn) 반영 대기
   return true;
 }
