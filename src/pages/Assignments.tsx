@@ -1555,10 +1555,18 @@ export default function Assignments() {
         const eligible = unassigned; // 배정된 건(수동/자동/토스)은 당김 후보 아님
         return { ci, role, assignedId, waitMin, unassigned, eligible };
       })
-      .filter((x) => x.eligible && x.role === activeTab)
+      // T-20260818-foot-CONSULT-REJIN-FIRSTVISIT-EXCL (B): 당김 후보(상담 배정 큐)에서도 재진 자동 제외 → 초진만 노출.
+      //   재진 판별 SSOT = isReturningAxis(axisOf→deriveConsultAxis, 365일 done-이력) — (A)/card① 과 동일 소스(AC-4).
+      //   consult 축 한정 필터. therapy(치료대기) 당김 후보는 불변(재진 치료사 당김 경로 보존, 회귀0).
+      .filter(
+        (x) =>
+          x.eligible &&
+          x.role === activeTab &&
+          !(x.role === 'consult' && isReturningAxis(axisOf(x.ci, 'consult'))),
+      )
       .sort((a, b) => b.waitMin - a.waitMin)
       .slice(0, 50);
-  }, [checkIns, slotEnter, activeTab]);
+  }, [checkIns, slotEnter, activeTab, axisOf]);
 
   // ── 액션 핸들러 ──────────────────────────────────────────────────────────────
   const openToss = (ci: CheckIn, role: AssignmentRole) => {
@@ -1852,7 +1860,17 @@ export default function Assignments() {
   const allTodayRows = checkIns
     .map((ci) => ({ ci, role: activeRole(ci.status) }))
     .filter((x) => x.role !== null) as { ci: CheckIn; role: AssignmentRole }[];
-  const todayRows = allTodayRows.filter((x) => x.role === activeTab);
+  // T-20260818-foot-CONSULT-REJIN-FIRSTVISIT-EXCL (B): '상담 배정 큐'(오늘 배정 현황)에서 재진 고객 자동 제외 → 초진만 노출.
+  //   현장(풋센터 총괄): "재진 고객은 상담 대상 아님." T-20260701-REVISIT-CONSULTANT-ASSIGN-HIDE(select 숨김 + '재진 —
+  //   상담 배정 없음' 마커)를 **행 자체 제외**로 escalate. 재진 판별 SSOT = isReturningAxis(axisOf→deriveConsultAxis,
+  //   365일 done-이력 recency) — (A) 상담성격 default 와 **동일 판별 소스**(AC-4 일관성).
+  //   ▸ consult 축 한정: 치료(therapy) 탭·초진(new)은 불변(초진 회귀0, AC-3). 재진의 치료사 배정 경로(treatment_waiting)는
+  //     therapy role 이라 이 필터에 미해당 → 보존.
+  const todayRows = allTodayRows.filter(
+    (x) =>
+      x.role === activeTab &&
+      !(x.role === 'consult' && isReturningAxis(axisOf(x.ci, 'consult'))),
+  );
 
   return (
     // T-20260618-foot-MENUSCROLL-EXISTPATIENT-Q: 페이지 최상위 자체 세로 스크롤.
@@ -2037,38 +2055,30 @@ export default function Assignments() {
                         </Badge>
                       </td>
                       <td className="px-2 py-2">
-                        {role === 'consult' && isReturningAxis(axis) ? (
-                          // T-20260701-foot-REVISIT-CONSULTANT-ASSIGN-HIDE (AC-1): 재진 상담 실장 배정 칸 숨김 → 치료사 배정만.
-                          //   재진 판정 SSOT = isReturningAxis(axisOf→deriveConsultAxis) — autoAssign·NewCheckInDialog 와 동일 소스(AC-4).
-                          //   치료(therapy) 탭·초진(신규) 상담은 불변(select 정상 노출, AC-2).
-                          <span
-                            data-testid={`assign-consult-hidden-${ci.id}`}
-                            className="text-xs text-muted-foreground"
-                          >
-                            재진 — 상담 배정 없음
-                          </span>
-                        ) : (
-                          <select
-                            data-testid={role === 'consult' ? `assign-consult-select-${ci.id}` : undefined}
-                            className="rounded border bg-background px-1.5 py-1 text-xs"
-                            value={selectVal}
-                            disabled={busy}
-                            onChange={(e) => void doManual(ci, role, e.target.value)}
-                          >
-                            <option value="" disabled>
-                              미배정
+                        {/* T-20260818-foot-CONSULT-REJIN-FIRSTVISIT-EXCL (B): 재진은 상담 배정 큐(todayRows)에서 상류 제외 →
+                            여기 도달하는 consult 행은 초진(new)뿐. 구 T-20260701-REVISIT-CONSULTANT-ASSIGN-HIDE 의 '재진 —
+                            상담 배정 없음' 마커 분기는 행 제외로 superseded(dead branch 제거). 초진 select 노출 불변(AC-3).
+                            치료(therapy) 탭 select 는 종전과 동일(재진 치료사 배정 경로 보존). */}
+                        <select
+                          data-testid={role === 'consult' ? `assign-consult-select-${ci.id}` : undefined}
+                          className="rounded border bg-background px-1.5 py-1 text-xs"
+                          value={selectVal}
+                          disabled={busy}
+                          onChange={(e) => void doManual(ci, role, e.target.value)}
+                        >
+                          <option value="" disabled>
+                            미배정
+                          </option>
+                          {poolFor(role).map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {(s.display_name ?? s.name).trim()}
                             </option>
-                            {poolFor(role).map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {(s.display_name ?? s.name).trim()}
-                              </option>
-                            ))}
-                            {/* 출근 풀에 없지만 현재 배정/프리셋된 사람 보존 노출 (프리셋=2번차트 담당이 비출근/비상담직군일 때 포함) */}
-                            {selectVal && !poolFor(role).some((s) => s.id === selectVal) && (
-                              <option value={selectVal}>{staffName(selectVal)} (비출근)</option>
-                            )}
-                          </select>
-                        )}
+                          ))}
+                          {/* 출근 풀에 없지만 현재 배정/프리셋된 사람 보존 노출 (프리셋=2번차트 담당이 비출근/비상담직군일 때 포함) */}
+                          {selectVal && !poolFor(role).some((s) => s.id === selectVal) && (
+                            <option value={selectVal}>{staffName(selectVal)} (비출근)</option>
+                          )}
+                        </select>
                       </td>
                       <td className="px-2 py-2 text-right">
                         <Button
@@ -2269,15 +2279,22 @@ export default function Assignments() {
                       )}
                     </td>
                     {/* T-20260726-foot-ASSIGN-CONSULTTYPE-DROPDOWN: '상담 성격' 드롭다운(담당 옆, 상담 탭 한정).
-                        4종 선택 → check_ins.assignment_consult_type write(doSetConsultType). 기본 pre-select=초진(App default).
-                        DB 저장값 NULL(미분류/auto-assign 미오버라이드)이면 화면상 [초진]으로 표시(default), 명시 선택 시에만 write.
-                        ⚠ 카운터 소비는 scoped hold(DA 파생view co-sign 대기) — 여기선 값 저장만, 누적 카운트축 무접촉. */}
+                        4종 선택 → check_ins.assignment_consult_type write(doSetConsultType). 명시 선택 시에만 write.
+                        T-20260818-foot-CONSULT-REJIN-FIRSTVISIT-EXCL (A): DB 저장값 NULL(수동 미오버라이드)일 때의
+                        pre-select 를 하드코딩 '초진' → **recency 판별(365일 done-이력)** 기반으로 정정.
+                        RC = 하드코딩 '초진' fallback 이라 재진 고객(assignment_consult_type=NULL)도 [초진]으로 오표시.
+                        정본 = COALESCE(수동 assignment_consult_type, recency 정규화) — effectiveConsultBucket(§COALESCE)
+                        와 동일 SSOT(isReturningAxis(monthAxisOf)→재진/초진). 카운트축(effectiveConsultBucket)이 소비하는
+                        recency 축과 화면 표시 default 를 일치시켜 표시/집계 divergence 제거. write 는 명시 선택 시에만(불변). */}
                     {activeTab === 'consult' && (
                       <td className="px-2 py-2">
                         <select
                           data-testid={`dist-consulttype-select-${r.id}`}
                           className="rounded border bg-background px-1.5 py-1 text-xs"
-                          value={r.checkIn.assignment_consult_type ?? '초진'}
+                          value={
+                            r.checkIn.assignment_consult_type ??
+                            (isReturningAxis(monthAxisOf(r.checkIn, 'consult')) ? '재진' : '초진')
+                          }
                           disabled={busy}
                           onChange={(e) =>
                             void doSetConsultType(r.checkIn, e.target.value as AssignConsultType)
