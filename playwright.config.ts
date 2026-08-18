@@ -197,6 +197,9 @@ export default defineConfig({
         // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: cachedStorageList/invalidateStorageList
         //   실 함수 구동 + counting fake 로 storage.list() 호출빈도 계측 + 소스 정적 가드. auth/DB/server 불요·결정론.
         '**/T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX.spec.ts',
+        // T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE: 클라캐시 잔여배선 완결(비의료 4 site) — cachedStorageList
+        //   실 함수 구동(counting fake) + 4 site 소스 정적 가드 + MedicalChartPanel 격리 락. auth/DB/server 불요·결정론.
+        '**/T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE.spec.ts',
         // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 경과분석 탭 나열기준 '예약일=오늘' → '활성 패키지 보유 +
         //   (used_sessions+1)%6==0 인 환자 전부'(미예약 포함). 순수 로직(anticipatedSession/isSixMultipleTarget/
         //   sessionCheckpointLabel/compareProgressTargets) 단언 — 6배수 판정·NULLS-LAST 정렬·tier0 배제·라벨.
@@ -785,6 +788,9 @@ export default defineConfig({
         // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: unit 전용(counting fake + 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX.spec.ts',
+        // T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE: unit 전용(counting fake + 소스 가드) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE.spec.ts',
         // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: unit 전용(6배수 판정·정렬 순수 함수) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER.spec.ts',

@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Loader2, Trash2, UploadCloud } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath } from '@/lib/photoUrl';
+import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -102,10 +102,8 @@ export function PenChartAttachPanel({
     if (!customerId || !stem) { setItems([]); return; }
     setLoading(true);
     try {
-      const { data: files } = await supabase.storage
-        .from(BUCKET)
-        // created_at 정렬(오래된→최신). DB sort_order 불요.
-        .list(prefix, { limit: 100, sortBy: { column: 'created_at', order: 'asc' } });
+      // created_at 정렬(오래된→최신). DB sort_order 불요.
+      const files = await cachedStorageList(BUCKET, prefix, { limit: 100, sortBy: { column: 'created_at', order: 'asc' } });
       // 폴더/placeholder 제외 — 실제 객체만(확장자 보존된 파일).
       const objs = (files ?? []).filter((f) => f.name && !f.name.endsWith('/') && f.id);
       if (objs.length === 0) { if (aliveRef.current) setItems([]); return; }
@@ -168,7 +166,7 @@ export function PenChartAttachPanel({
           success += 1;
         }
       }
-      if (success > 0) await load();
+      if (success > 0) { invalidateStorageList(BUCKET, prefix); await load(); }
     } finally {
       if (aliveRef.current) setUploading(false);
     }
@@ -179,8 +177,9 @@ export function PenChartAttachPanel({
     const { error } = await supabase.storage.from(BUCKET).remove([att.path]);
     if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
     invalidatePhotoPath(BUCKET, att.path);
+    invalidateStorageList(BUCKET, prefix);
     setItems((prev) => prev.filter((a) => a.path !== att.path));
-  }, []);
+  }, [prefix]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

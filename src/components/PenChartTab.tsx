@@ -90,7 +90,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
-import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath } from '@/lib/photoUrl';
+import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -1340,9 +1340,7 @@ export function PenChartTab({
 
   // ── 저장된 차트 목록 로드 ────────────────────────────────────────────
   const loadSavedCharts = useCallback(async () => {
-    const { data: files } = await supabase.storage
-      .from('photos')
-      .list(storagePath, { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+    const files = await cachedStorageList('photos', storagePath, { limit: 100, sortBy: { column: 'name', order: 'desc' } });
 
     if (!files || files.length === 0) { setSavedCharts([]); return; }
 
@@ -3379,6 +3377,7 @@ export function PenChartTab({
       }
 
       // V3 C-2: 토스트는 에러 시에만 표시 — 저장 성공 시 토스트 없이 목록으로 복귀
+      invalidateStorageList('photos', storagePath);
       await loadSavedCharts();
       setPlacedItems([]);
       setSelectedIds(new Set());
@@ -3433,13 +3432,14 @@ export function PenChartTab({
       const stem = stemFromChartName(chartName);
       if (!stem) return;
       const attachPrefix = penChartAttachPrefix(customerId, stem);
-      const { data: files } = await supabase.storage.from('photos').list(attachPrefix, { limit: 100 });
+      const files = await cachedStorageList('photos', attachPrefix, { limit: 100 });
       const objs = (files ?? []).filter((f) => f.name && !f.name.endsWith('/') && f.id);
       if (objs.length === 0) return;
       const { error: rmErr } = await supabase.storage
         .from('photos')
         .remove(objs.map((f) => `${attachPrefix}/${f.name}`));
       if (rmErr) console.warn('[PENCHART-ATTACH] cascade remove 실패(비치명):', rmErr.message);
+      else invalidateStorageList('photos', attachPrefix); // cascade 제거 후 첨부 prefix 캐시 무효화 → 재조회 시 stale 방지
     } catch (e) {
       console.warn('[PENCHART-ATTACH] cascade cleanup 예외(비치명):', e);
     }
@@ -3453,6 +3453,7 @@ export function PenChartTab({
     if (error) { toast.error(`삭제 실패: ${error.message}`); }
     else { await cleanupAttachPrefix(chart.name); } // AC6: PNG 삭제 성공 시에만 첨부 prefix 동반 정리
     if (selectedChart?.name === chart.name) setSelectedChart(null);
+    invalidateStorageList('photos', storagePath);
     await loadSavedCharts();
   };
 

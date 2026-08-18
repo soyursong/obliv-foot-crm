@@ -19,7 +19,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileText, FlaskConical, Trash2, Upload } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
-import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS } from '@/lib/photoUrl';
+import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import type { CheckIn } from '@/lib/types';
 
 // ─── 타입 ───
@@ -65,7 +65,7 @@ function InsDocStorageSection({
   const ac = accentMap[accentColor];
 
   const load = useCallback(async () => {
-    const { data: files } = await supabase.storage.from('photos').list(storagePath, {
+    const files = await cachedStorageList('photos', storagePath, {
       limit: 50,
       sortBy: { column: 'name', order: 'desc' },
     });
@@ -102,12 +102,14 @@ function InsDocStorageSection({
     }
     setUploading(false);
     e.target.value = '';
+    invalidateStorageList('photos', storagePath);
     await load();
   };
 
   const remove = async (item: StorageItem) => {
     if (!window.confirm('삭제하시겠습니까?')) return;
     await supabase.storage.from('photos').remove([item.path]);
+    invalidateStorageList('photos', storagePath);
     await load();
   };
 
