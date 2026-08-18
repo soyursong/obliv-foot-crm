@@ -1456,9 +1456,14 @@ export function OpinionEditorDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={canPublish ? 'max-w-5xl' : 'max-w-2xl'} data-testid="opinion-dialog">
+      {/* T-20260818-foot-OPINIONCERT-ISSUE-POPUP-FIXEDSIZE-STICKYBTN (AC-1): 팝업 외곽 크기 고정(내용 길이 무관 동일 크기).
+          dynamic sizing(content-driven height) → fixed size(flex column + 고정 높이 90vh). 내부는 스크롤(AC-2), '발행하기'는 하단 고정(AC-3). */}
+      <DialogContent
+        className={canPublish ? 'flex h-[90vh] max-w-5xl flex-col overflow-hidden' : 'max-w-2xl'}
+        data-testid="opinion-dialog"
+      >
         {/* ① 헤더 1줄: 왼쪽 서류명(크고 볼드) · 오른쪽 환자이름(클릭→진료차트 drawer)·생년(만나이)·차트번호. ×는 Dialog 기본(우측). */}
-        <DialogTitle className="flex items-center justify-between gap-3 pr-7">
+        <DialogTitle className="flex shrink-0 items-center justify-between gap-3 pr-7">
           <span className="flex shrink-0 items-center gap-2">
             <FileText className="h-5 w-5 text-teal-600" />
             <span className="text-lg font-bold text-foreground" data-testid="opinion-doc-title">{docTitle}</span>
@@ -1487,9 +1492,9 @@ export function OpinionEditorDialog({
 
         {canPublish ? (
           /* ④ 3단 레이아웃: 옵션그리드 | editor+발행자+발행 | 발행이력/출력(우측 단) */
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1fr)] lg:overflow-hidden">
             {/* 1단: 옵션 그리드 (F0BAETELCTF) + 좌측 하단 QR 안내문구(item1) */}
-            <div className="flex max-h-[62vh] flex-col gap-2">
+            <div className="flex min-h-0 flex-col gap-2 lg:max-h-full">
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" data-testid="opinion-options">
                 {sections.map((section) => (
                   <div key={section.title}>
@@ -1514,8 +1519,12 @@ export function OpinionEditorDialog({
               )}
             </div>
 
-            {/* 2단: editor(수기수정) + 발행자 + 발행하기 */}
-            <div className="flex flex-col gap-2">
+            {/* 2단: editor(수기수정) + 발행자 + 발행하기.
+                T-20260818-foot-OPINIONCERT-ISSUE-POPUP-FIXEDSIZE-STICKYBTN: col2 = 스크롤 본문(AC-2) + 하단 고정 '발행하기'(AC-3).
+                col2 는 그리드 flex row 안에서 full 높이로 stretch → 스크롤 본문 flex-1(내부 overflow), 발행 footer shrink-0 로 팝업 하단 고정. */}
+            <div className="flex min-h-0 flex-col gap-2 lg:max-h-full">
+              {/* 스크롤 본문(AC-2): 내용이 길어지면 이 영역만 세로 스크롤 — 팝업 외곽/발행버튼 위치 불변. */}
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1" data-testid="opinion-editor-scroll">
               {/* T-20260724-foot-TREATTABLE-DOCS-PARITY 기능②(AC2): 환자 생년월일·당일 시술·처방내역 자동연동(read-only 참고).
                   값 = 해당 환자(customer_id) 실데이터 — 타 환자 유입 없음. 없으면 '없음' 표기(오표기 방지).
                   ★read-only 표시 전용: 원장 medical 본문은 아래 소견 내용 editor(SSOT), 이 패널은 편집 불가(AC3 경계 보존). */}
@@ -1700,7 +1709,9 @@ export function OpinionEditorDialog({
                 </p>
               )}
 
-              <div className="flex items-center justify-between gap-2">
+              </div>
+              {/* 하단 고정 footer(AC-3): 스크롤 본문 밖·shrink-0 → 내용/환자/문서가 바뀌어도 '발행하기' 위치 불변. */}
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t pt-2" data-testid="opinion-publish-footer">
                 <span className="text-sm text-muted-foreground">
                   ※ 발행 후에는 수정·취소할 수 없습니다(의무기록·비가역).
                 </span>
@@ -1723,7 +1734,7 @@ export function OpinionEditorDialog({
             </div>
 
             {/* 3단: 발행 이력 / 서류 출력 (독립 우측 단) */}
-            <div className="flex min-h-0 max-h-[62vh] flex-col">{historyPanel}</div>
+            <div className="flex min-h-0 flex-col lg:max-h-full">{historyPanel}</div>
           </div>
         ) : (
           /* ⑥ 직원(비의사) 출력전용 뷰 — editor/발행자/발행하기 숨김, 발행이력에서 저장(PDF)·인쇄만. */
