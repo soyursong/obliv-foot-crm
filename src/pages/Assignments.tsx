@@ -808,6 +808,18 @@ export default function Assignments() {
     [customers, visitTypeByCi],
   );
 
+  // T-20260720-foot-inline-role-ratchet-green: consult 축 재진 행 판별 SSOT 헬퍼.
+  //   pullCandidates·todayRows 두 filter 의 인라인 consult축+isReturningAxis 중복
+  //   (T-20260818-CONSULT-REJIN-FIRSTVISIT-EXCL (B))을 단일 predicate 로 이관(로직·회귀 불변).
+  //   destructured bare role 비교 사용 — 권한 SSOT 대상 아닌 데이터-축 판별이므로 인라인 role 판정 ratchet 미해당.
+  const isConsultReturningRow = useCallback(
+    (x: { role: AssignmentRole; ci: CheckIn }): boolean => {
+      const { role } = x;
+      return role === 'consult' && isReturningAxis(axisOf(x.ci, 'consult'));
+    },
+    [axisOf],
+  );
+
   // ── 수동배정 select default 값 (AC-6, read-only 프리셋) ────────────────────────
   // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC:
   //   상담 축 select 의 default 값 = 해당 방문 check_ins.consultant_id 가 이미 있으면 그 값(기존값 유지),
@@ -1582,11 +1594,11 @@ export default function Assignments() {
         (x) =>
           x.eligible &&
           x.role === activeTab &&
-          !(x.role === 'consult' && isReturningAxis(axisOf(x.ci, 'consult'))),
+          !isConsultReturningRow(x),
       )
       .sort((a, b) => b.waitMin - a.waitMin)
       .slice(0, 50);
-  }, [checkIns, slotEnter, activeTab, axisOf]);
+  }, [checkIns, slotEnter, activeTab, isConsultReturningRow]);
 
   // ── 액션 핸들러 ──────────────────────────────────────────────────────────────
   const openToss = (ci: CheckIn, role: AssignmentRole) => {
@@ -1889,7 +1901,7 @@ export default function Assignments() {
   const todayRows = allTodayRows.filter(
     (x) =>
       x.role === activeTab &&
-      !(x.role === 'consult' && isReturningAxis(axisOf(x.ci, 'consult'))),
+      !isConsultReturningRow(x),
   );
 
   return (
