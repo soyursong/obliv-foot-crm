@@ -74,27 +74,57 @@ function normalizeDeclaredRoute(v?: string | null): string {
 }
 
 /**
- * 상담 유입경로 표시/발송 라벨. 단일 순서형 파생(고객선언 우선 → 이벤트 provenance 폴백 → 미지정).
+ * ── T-20260818-foot-CONSULT-INFLOW-SLACK-NULL (RC: 잘못된 컬럼 참조) ──
+ *   증상: 2번차트에 유입경로(=customers.first_inflow_channel canonical 11코드)가 정상 저장돼 있으나
+ *         상담 배정 [확정] 슬랙 발송 메시지에서만 '미지정' 오출력.
+ *   RC(택1 확정 = (a) 잘못된 컬럼/키 참조): 본 라벨 함수가 **canonical inflow 축(§36 축① =
+ *         customers.first_inflow_channel, 11코드)을 참조하지 않고** legacy visit_route/lead_source 만 읽었다.
+ *         INFLOW-CHANNEL-INTAKE-LANE(T-20260801) 이후 접수/예약 동선은 유입경로를 first_inflow_channel 로만
+ *         적재 → visit_route/lead_source 는 신규 코호트에서 빈값 → 폴백 '미지정' 도달(조인 누락·null read 아님,
+ *         매핑 실패도 아님 — 소스 컬럼 자체를 안 읽던 것). 저장값 정상, 발송 참조축만 legacy 였음.
+ *   교정(display-only, no-DDL, no-write): 파생 사슬 최상위(재진 다음)에 canonical first_inflow_channel 을
+ *         1단 추가 — 11코드는 표시라벨로 변환(resolveInflowLabel, system_codes/useInflowChannels SSOT).
+ *         resolver 미가용(RPC 미로드)·미매핑 코드면 라벨을 만들지 않고 기존 legacy 사슬로 graceful fall-through
+ *         (배포순서 무중단·무회귀). §36 방화벽: inflow 축(first_inflow_channel)만 read — referral_source/
+ *         source_system/visit_route(legacy) 매핑·치환 0, 컬럼 write 0.
+ */
+
+/**
+ * 상담 유입경로 표시/발송 라벨. 단일 순서형 파생
+ *   (재진 → canonical inflow 11코드 → 고객선언(legacy) → 이벤트 provenance → 미지정).
  * @param consultAxis   deriveConsultAxis 결과 축('returning' 이면 유입경로 대신 '재진'). returning 판정 단일 목적.
- * @param cust          고객 원본(고객선언 유입경로 소스). visit_route → lead_source 순으로 원문 노출(머신마커 억제).
+ * @param cust          고객 원본. first_inflow_channel(canonical 11코드, 최우선) → visit_route → lead_source.
  * @param sourceSystem  이 상담 건을 만든 예약의 provenance(reservations.source_system). 'dopamine' 이면 'TM' 폴백.
  *                      read-only 참조만 — 컬럼 미write, 매출축 무오염. 미지정/누락이면 폴백 무발동.
+ * @param resolveInflowLabel  canonical 11코드 → 현장 표시라벨 변환기(system_codes SSOT, useInflowChannels).
+ *                      미제공/미매핑/RPC미로드면 canonical 단계를 건너뛰고 legacy 사슬로 진행(graceful, 무회귀).
  */
 export function consultInflowLabel(
   consultAxis: string,
-  cust: { visit_route?: string | null; lead_source?: string | null } | null | undefined,
+  cust:
+    | { visit_route?: string | null; lead_source?: string | null; first_inflow_channel?: string | null }
+    | null
+    | undefined,
   sourceSystem?: string | null,
+  resolveInflowLabel?: (code: string) => string | null | undefined,
 ): string {
   // 재진 축은 유입경로 대신 '재진'. (autoAssign.isReturningAxis 와 동일 판정 — 순수/무의존 위해 인라인)
   if (consultAxis === 'returning') return INFLOW_RETURNING_LABEL;
-  // 1) 고객선언 우선: visit_route → lead_source 원문(네이버·지인소개·공홈·TM·인바운드·워크인 …). 머신마커는 억제.
+  // 1) ★canonical 최우선(T-20260818-SLACK-NULL fix): customers.first_inflow_channel(§36 축① 11코드) →
+  //    표시라벨. resolver 미가용/미매핑이면 라벨 미생성 → 아래 legacy 사슬로 graceful fall-through(무중단·무회귀).
+  const fic = (cust?.first_inflow_channel ?? '').trim();
+  if (fic && resolveInflowLabel) {
+    const mapped = (resolveInflowLabel(fic) ?? '').trim();
+    if (mapped) return mapped;
+  }
+  // 2) 고객선언(legacy) 폴백: visit_route → lead_source 원문(네이버·지인소개·공홈·TM·인바운드·워크인 …). 머신마커 억제.
   const vr = normalizeDeclaredRoute(cust?.visit_route);
   if (vr) return vr;
   const ls = normalizeDeclaredRoute(cust?.lead_source);
   if (ls) return ls;
-  // 2) event-provenance 폴백(★NEW): 고객선언이 비었고 이 예약을 도파민(TM)이 만들었으면 'TM'.
+  // 3) event-provenance 폴백: 고객선언이 비었고 이 예약을 도파민(TM)이 만들었으면 'TM'.
   //    리터럴 'dopamine' 만 매핑 — NULL/manual/워크인 등 다른 값은 폴백 무발동. read-only(컬럼 미write, 매출축 무오염).
   if ((sourceSystem ?? '').trim() === 'dopamine') return INFLOW_TM_LABEL;
-  // 3) 최종 폴백: 공란 노출·거짓 '워크인' 금지 → '미지정' 플레이스홀더(AC-fix6).
+  // 4) 최종 폴백: 공란 노출·거짓 '워크인' 금지 → '미지정' 플레이스홀더(AC-fix6). 실제 미입력/null 케이스만 여기 도달.
   return INFLOW_UNSPECIFIED_LABEL;
 }
