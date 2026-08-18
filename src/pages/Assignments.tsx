@@ -71,6 +71,8 @@ import { resolveVisitTypesByCheckIn } from '@/lib/visitRecency';
 // T-20260729-foot-CONSULT-SLACK-INFLOW-WALKIN-MISLABEL: 유입경로 표시/발송 라벨을 자동배정 균등 버킷
 //   (deriveConsultAxis)에서 분리(DECOUPLE)한 SSOT. 재진='재진', 그 외=고객 실제 visit_route 원문.
 import { consultInflowLabel } from '@/lib/consultInflowLabel';
+// T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: canonical 11코드 → 표시라벨 매핑 SSOT(system_codes/RPC).
+import { useInflowChannels } from '@/hooks/useInflowChannels';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -322,6 +324,9 @@ interface CustomerLite {
   // T-20260722-foot-CONSULT-ASSIGN-CHART-OWNER-SYNC (AC-6): 2번차트 1구역 담당자 = read-only basis.
   //   수동배정 select default 프리셋 소스로만 읽음. 배정 write 는 check_ins.consultant_id/therapist_id 에만(RED LINE).
   assigned_staff_id: string | null;
+  // T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: canonical 유입경로(§36 축① 11코드). 슬랙 [확정] 발송 라벨의
+  //   최우선 소스(legacy visit_route/lead_source 보다 우선). read-only 표시용 — write 0.
+  first_inflow_channel: string | null;
 }
 
 // T-20260726-foot-ASSIGN-STAFFCUMUL-REVAMP 변경5: 건수 셀 클릭 → 고객 명단(성함+차트번호) drill-down.
@@ -343,6 +348,10 @@ interface AssignDrillItem {
 export default function Assignments() {
   const clinic = useClinic();
   const { profile } = useAuth();
+  // T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: canonical 유입경로 11코드 → 현장 표시라벨 매핑(system_codes SSOT).
+  //   슬랙 [확정] 발송 라벨(consultInflowLabel)에서 first_inflow_channel 을 사람이 읽는 라벨로 변환하는 데 사용.
+  //   RPC 미가용/미로드 시 options=[] → resolver 는 매핑 실패 → consultInflowLabel 이 legacy 사슬로 graceful.
+  const inflowChannels = useInflowChannels(clinic?.id ?? null);
   // T-20260804-foot-CHARTNUM-POPUP-GLOBALIZE: 차트번호 클릭 → 2번차트 팝업(공통 훅).
   //   금일 배분 이력 표: 성함은 이미 window.open 링크, 차트번호(형제 span)는 비활성 → 진입점화.
   const openChartNo = useChartNoPopup();
@@ -594,7 +603,8 @@ export default function Assignments() {
       if (custIds.length > 0) {
         const { data: custRows } = await supabase
           .from('customers')
-          .select('id, name, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
+          // T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: first_inflow_channel(canonical 유입경로) 추가 — 슬랙 발송 라벨 최우선 소스.
+          .select('id, name, visit_type, lead_source, visit_route, assigned_staff_id, chart_number, first_inflow_channel')
           .in('id', custIds);
         for (const c of (custRows ?? []) as CustomerLite[]) custMap.set(c.id, c);
       }
@@ -644,7 +654,8 @@ export default function Assignments() {
           const slice = monthCustIds.slice(i, i + CHUNK);
           const { data: rows } = await supabase
             .from('customers')
-            .select('id, name, visit_type, lead_source, visit_route, assigned_staff_id, chart_number')
+            // T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: first_inflow_channel(canonical 유입경로) 추가 — 슬랙 발송 라벨 최우선 소스.
+            .select('id, name, visit_type, lead_source, visit_route, assigned_staff_id, chart_number, first_inflow_channel')
             .in('id', slice);
           for (const c of (rows ?? []) as CustomerLite[]) monthCustMap.set(c.id, c);
         }
@@ -1403,6 +1414,13 @@ export default function Assignments() {
     inflow: string; // 유입경로(축 라벨: TM/인바운드/워크인/재진 …) — 발송 포맷 '[유입경로]'.
     notifyStatus: string | null; // check_ins.consult_notify_status (NULL=미확정, 'sent'=발송됨)
   }
+  // T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: canonical 유입경로 11코드 → 표시라벨 resolver.
+  //   Reservations.tsx:4516 과 동일 SSOT(system_codes/useInflowChannels). options=[] (RPC 미로드)면 매핑 실패 →
+  //   consultInflowLabel 이 legacy 사슬로 graceful fall-through(무회귀).
+  const resolveInflowLabel = useMemo<(code: string) => string | null>(() => {
+    const m = new Map(inflowChannels.options.map((o) => [o.code, o.label]));
+    return (code: string) => m.get(code) ?? null;
+  }, [inflowChannels.options]);
   const todayDistribution = useMemo<TodayDistRow[]>(() => {
     const todayIso = todaySeoulISODate();
     // ISO 포맷 혼재(+00:00 / Z / +09:00) → 문자열 비교 금지, epoch(ms)로 비교.
@@ -1458,6 +1476,8 @@ export default function Assignments() {
                   axisOf(ci, 'consult'),
                   cust,
                   ci.reservation_id ? monthResvSourceSystem.get(ci.reservation_id) : null,
+                  // T-20260818-foot-CONSULT-INFLOW-SLACK-NULL: canonical first_inflow_channel 11코드 → 표시라벨.
+                  resolveInflowLabel,
                 )
               : '',
           notifyStatus: ci.consult_notify_status ?? null,
@@ -1467,7 +1487,7 @@ export default function Assignments() {
       push('therapy', ci.therapist_id);
     }
     return rows.sort((a, b) => b.at.localeCompare(a.at));
-  }, [monthCheckIns, actions, activeTab, monthCustomers, monthResvSourceSystem, axisOf]);
+  }, [monthCheckIns, actions, activeTab, monthCustomers, monthResvSourceSystem, axisOf, resolveInflowLabel]);
 
   // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
   //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.
