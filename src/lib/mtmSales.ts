@@ -33,6 +33,31 @@ import {
 } from '@/lib/stats';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260818-foot-STATS-PERIOD-QUERY-ERROR: PostgREST 기본 1000행 cap 우회 헬퍼.
+//   장기간(>~30d) 조회 시 payments/check_ins 등이 1000행에서 무단 절단되어 매출·내원 KPI 가
+//   과소집계되던 회귀를 차단한다(live 실측: 92d payments count=1299 vs fetched=1000). cursor(.range)
+//   페이지네이션으로 전(全) 행을 수집 — 기존 fetchWeeklyRevenueBreakdown/stats.ts 패턴과 동일.
+//   db_change=false(읽기 방식만 교정, 산식·소스·필터 불변).
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchAllRows<T>(
+  page: (offset: number, limit: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = 200; // 20만행 상한(런어웨이 방어) — 초과 시 수집분 반환.
+  const out: T[] = [];
+  let offset = 0;
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const { data, error } = await page(offset, PAGE_SIZE);
+    if (error) throw error;
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 월 경계 헬퍼 (KST 날짜 문자열 기준, 순수 계산 — TZ 안전: day-of-month 계산만 사용)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -135,18 +160,18 @@ export async function fetchMtmCardMetrics(
   const simIds = await getSimulationCustomerIds(clinicId);
 
   // 1) payments — 급여/비급여/선수금/결제건수 (accounting_date 축, deleted 제외)
-  const { data: pays, error: payErr } = await supabase
-    .from('payments')
-    .select('amount, payment_type, tax_type, customer_id')
-    .eq('clinic_id', clinicId)
-    .not('status', 'eq', 'deleted')
-    .gte('accounting_date', from)
-    .lte('accounting_date', to);
-  if (payErr) throw payErr;
-  const payRows = excludeSimulationPaymentRows(
-    (pays ?? []) as PayMetricRow[],
-    simIds,
+  //    장기간 조회 전행 수집(1000 cap 우회) — 과소집계 회귀 차단.
+  const pays = await fetchAllRows<PayMetricRow>((off, lim) =>
+    supabase
+      .from('payments')
+      .select('amount, payment_type, tax_type, customer_id')
+      .eq('clinic_id', clinicId)
+      .not('status', 'eq', 'deleted')
+      .gte('accounting_date', from)
+      .lte('accounting_date', to)
+      .range(off, off + lim - 1),
   );
+  const payRows = excludeSimulationPaymentRows(pays, simIds);
 
   let salaryRevenue = 0;
   let nonSalaryRevenue = 0;
@@ -165,45 +190,52 @@ export async function fetchMtmCardMetrics(
   }
 
   // 2) closing_manual_payments — 비급여 UNION (수기수납, voided 제외)
-  const { data: cm, error: cmErr } = await supabase
-    .from('closing_manual_payments')
-    .select('amount')
-    .eq('clinic_id', clinicId)
-    .gte('close_date', from)
-    .lte('close_date', to)
-    .is('voided_at', null);
-  if (cmErr) throw cmErr;
-  for (const m of (cm ?? []) as ManualMetricRow[]) {
+  const cm = await fetchAllRows<ManualMetricRow>((off, lim) =>
+    supabase
+      .from('closing_manual_payments')
+      .select('amount')
+      .eq('clinic_id', clinicId)
+      .gte('close_date', from)
+      .lte('close_date', to)
+      .is('voided_at', null)
+      .range(off, off + lim - 1),
+  );
+  for (const m of cm) {
     nonSalaryRevenue += m.amount ?? 0;
   }
 
   // 3) package_sessions — 당월 소진 회차 인식(선수금차감 SSOT, SalesStaffTab 차감기준)
   //    금액기준 = unit_price 스냅샷(SalesStaffTab DEDUCT_AMOUNT_BASIS='snapshot' 동일).
-  const { data: sess, error: sessErr } = await supabase
-    .from('package_sessions')
-    .select('unit_price, packages!inner(clinic_id)')
-    .eq('packages.clinic_id', clinicId)
-    .eq('status', 'used')
-    .gte('session_date', from)
-    .lte('session_date', to);
-  if (sessErr) throw sessErr;
+  const sess = await fetchAllRows<SessionMetricRow>((off, lim) =>
+    supabase
+      .from('package_sessions')
+      .select('unit_price, packages!inner(clinic_id)')
+      .eq('packages.clinic_id', clinicId)
+      .eq('status', 'used')
+      .gte('session_date', from)
+      .lte('session_date', to)
+      .range(off, off + lim - 1) as unknown as PromiseLike<{ data: SessionMetricRow[] | null; error: unknown }>,
+  );
   let sessionRedemption = 0;
-  for (const s of (sess ?? []) as unknown as SessionMetricRow[]) {
+  for (const s of sess) {
     sessionRedemption += s.unit_price ?? 0;
   }
 
   // 4) check_ins — 내원환자 수(distinct 고객, 취소·삭제 제외, KST 바운드)
-  const { data: ci, error: ciErr } = await supabase
-    .from('check_ins')
-    .select('customer_id')
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
-    .neq('status', 'cancelled')
-    .gte('checked_in_at', `${from}T00:00:00+09:00`)
-    .lte('checked_in_at', `${to}T23:59:59+09:00`);
-  if (ciErr) throw ciErr;
+  //    장기간 전행 수집(1000 cap 우회) — distinct 내원환자 과소집계 회귀 차단.
+  const ci = await fetchAllRows<CheckInMetricRow>((off, lim) =>
+    supabase
+      .from('check_ins')
+      .select('customer_id')
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .gte('checked_in_at', `${from}T00:00:00+09:00`)
+      .lte('checked_in_at', `${to}T23:59:59+09:00`)
+      .range(off, off + lim - 1),
+  );
   const visitSet = new Set<string>();
-  for (const c of (ci ?? []) as CheckInMetricRow[]) {
+  for (const c of ci) {
     if (c.customer_id && !simIds.has(c.customer_id)) visitSet.add(c.customer_id);
   }
 

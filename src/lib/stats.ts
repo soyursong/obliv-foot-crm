@@ -116,7 +116,11 @@ export function resolveRange(
   };
 
   if (preset === 'custom' && customFrom && customTo) {
-    return { from: customFrom, to: customTo };
+    // T-20260818-foot-STATS-PERIOD-QUERY-ERROR: 역순(from>to) 방어. 사용자가 종료일을
+    //   시작일보다 앞으로 지정해도 빈결과/오류 대신 정상 범위로 정규화(스왑)해 조회한다.
+    return customFrom <= customTo
+      ? { from: customFrom, to: customTo }
+      : { from: customTo, to: customFrom };
   }
 
   const to = fmt(today);
