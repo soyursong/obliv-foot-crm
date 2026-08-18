@@ -555,6 +555,52 @@ export function findRecentAssignee(
   return bestId;
 }
 
+// ── 상담실 실시간 점유(상담 중) 게이팅 ────────────────────────────────────────────
+//
+// T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (김주연 총괄): 자동 순번 배정이 상담실
+//   실시간 점유 현황을 무시하고, 상담 중인 실장에게 다음 순번을 또 배정하는 문제 해소.
+//   ▸ canonical 점유 소스(AC-4) = check_ins.status='consultation'(상담 중) + consultant_id 보유.
+//     신규 컬럼/상태값 0(기존 status enum 재사용) → db_change=false, DA 게이트 불요.
+//   ▸ 점유(상담 중)인 실장은 다음 순번 후보 풀에서 제외(AC-1) → 후보 전부 점유면 미배정(대기 유지).
+//     지정(0순위)·재진 경로는 무접촉(회귀0). 상담(consult) 역할에만 적용(치료사 무관, 스코프 밖).
+//   ▸ 상담 종료(status='consultation'→그 외) 시점에 다음 순번 1건 자동 배정(AC-2/AC-3, assignNextWaitingConsult).
+
+/**
+ * 점유(상담 중) 실장을 후보 풀에서 제외(순수, AC-1). occupied 가 비면 원본 그대로.
+ *   후보 전부 점유면 빈 배열 반환 → 호출측 no-assign(대기 유지) 분기로 자연 귀결.
+ *   ★ '직전 배정자 회피(findRecentAssignee)'와 달리 후보수 조건(≥2) 없이 항상 hard 제외:
+ *     상담 중인 실장에게는 후보가 0이 되더라도 배정하지 않고 대기시킨다(AC-1 semantics).
+ */
+export function gateOutOccupied(pool: string[], occupied: Set<string>): string[] {
+  if (occupied.size === 0) return pool;
+  return pool.filter((id) => !occupied.has(id));
+}
+
+/**
+ * 현재 '상담 중'(점유)인 상담사 id 집합 — 실시간 점유 게이팅 소스(AC-4).
+ *   check_ins.status='consultation' AND consultant_id IS NOT NULL AND deleted_at IS NULL (clinic-scoped).
+ * graceful: 조회 실패 시 빈 set(= 점유 없음 → 배정 동선 막지 않음, 회귀0).
+ */
+export async function fetchOccupiedConsultantIds(clinicId: string): Promise<Set<string>> {
+  try {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('consultant_id')
+      .eq('clinic_id', clinicId)
+      .eq('status', 'consultation')
+      .not('consultant_id', 'is', null)
+      .is('deleted_at', null);
+    if (error) return new Set();
+    const ids = new Set<string>();
+    for (const r of (data ?? []) as Array<{ consultant_id: string | null }>) {
+      if (r.consultant_id) ids.add(r.consultant_id);
+    }
+    return ids;
+  } catch {
+    return new Set();
+  }
+}
+
 // ── 로그 ──────────────────────────────────────────────────────────────────────
 
 export interface LogInput {
@@ -770,6 +816,16 @@ export async function maybeAutoAssign(
       .filter((s) => s.role === targetRole && workingIds.has(s.id) && !tempOff.has(s.id))
       .map((s) => s.id);
 
+    // T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-1): 상담(consult) 자동 순번 배정 시
+    //   현재 '상담 중'(점유)인 실장을 후보 풀에서 제외 → 상담 중인 방/담당자에 다음 순번 중복 배정 차단.
+    //   후보가 전부 점유면 pool 공집합 → 아래 no-assign 분기(대기 유지). 상담 종료 시점에 재배정(assignNextWaitingConsult).
+    //   지정(0순위)·재진 경로는 무접촉(pool 만 좁힘). 치료사(therapy)는 스코프 밖(무영향).
+    let occupiedConsultants = new Set<string>();
+    if (role === 'consult') {
+      occupiedConsultants = await fetchOccupiedConsultantIds(checkIn.clinic_id);
+      pool = gateOutOccupied(pool, occupiedConsultants);
+    }
+
     // AC-5(초진 한정): 치료사 배정 후보를 치료신청(treatment 축) capability 로 좁힌다.
     //   graceful — 초진 아님/치료신청 없음/capability 소스 부재 시 무동작(전체 pool, 회귀 0).
     if (role === 'therapy') {
@@ -859,6 +915,8 @@ export async function maybeAutoAssign(
           clinicId: checkIn.clinic_id,
           leadSource,
           reservation,
+          // T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-1): 랭킹/TM 전략 후보에서도 점유(상담 중) 실장 제외.
+          excludeStaffIds: occupiedConsultants.size > 0 ? occupiedConsultants : null,
         });
         if (strat) chosen = strat.staffId;
       }
@@ -937,6 +995,43 @@ export async function maybeAutoAssign(
   } catch (e) {
     console.warn('[autoAssign] maybeAutoAssign failed:', e);
     return { assigned: false };
+  }
+}
+
+/**
+ * 상담 종료(상담실 비어짐) 시점의 '다음 순번 1건' 자동 배정 트리거.
+ * T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-2/AC-3):
+ *   상담실이 점유(상담 중)라 배정되지 못하고 대기(consultant_id NULL) 중인 [상담대기] 건을,
+ *   상담이 끝나(실장 1명 free) 나면 FIFO(sort_order→created_at) 순으로 '한 건만' 자동 배정한다.
+ *   ▸ 한 번의 상담 종료 = 실장 1명 free ⇒ 다음 순번 1건 배정(과다 배정 방지: 첫 성공 후 즉시 중단).
+ *   ▸ 배정은 maybeAutoAssign 재사용(점유 게이팅·멱등 조건부 UPDATE 그대로) → 방금 free 된 실장이
+ *     후보로 복귀해 least-loaded/전략으로 선택된다. 재진 건은 skip(assigned=false)되어 다음 후보로 진행.
+ *   best-effort: 어떤 실패도 throw 하지 않음(대시보드 동선 무영향).
+ * @returns 실제로 배정된 건이 있으면 true.
+ */
+export async function assignNextWaitingConsult(
+  clinicId: string,
+  createdBy: string | null = null,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('status', 'consult_waiting')
+      .is('consultant_id', null)
+      .is('deleted_at', null)
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+    if (error) return false;
+    for (const r of (data ?? []) as Array<{ id: string }>) {
+      const res = await maybeAutoAssign(r.id, 'consult_waiting', createdBy);
+      if (res.assigned) return true; // 상담 종료 1건 = 다음 순번 1건만 배정(과다 배정 방지)
+    }
+    return false;
+  } catch (e) {
+    console.warn('[autoAssign] assignNextWaitingConsult failed:', e);
+    return false;
   }
 }
 

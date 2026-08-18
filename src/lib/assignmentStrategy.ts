@@ -689,10 +689,13 @@ export async function pickTmConsultant(opts: {
   clinicId: string;
   reservation?: { date: string; time: string } | null;
   poolFilter?: Set<string> | null;
+  /** T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-1): 현재 '상담 중'(점유) 실장 제외 집합. */
+  excludeStaffIds?: Set<string> | null;
 }): Promise<{ staffId: string; leadSource: AssignLeadSource } | null> {
   try {
     let candidates = await fetchPresentEnabledConsultants(opts.clinicId);
     if (opts.poolFilter) candidates = candidates.filter((id) => opts.poolFilter!.has(id));
+    if (opts.excludeStaffIds) candidates = candidates.filter((id) => !opts.excludeStaffIds!.has(id));
     if (candidates.length === 0) return null;
 
     const [orderMap, offSet, metrics, weights] = await Promise.all([
@@ -776,6 +779,8 @@ export async function pickConsultantByStrategy(opts: {
   poolFilter?: Set<string> | null;
   /** T-20260730 G2: TM 배정 시 동일 30분 슬롯 비TM 예약 lookup 을 위한 현재 예약 슬롯(reservation_id → date/time). */
   reservation?: { date: string; time: string } | null;
+  /** T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-1): 현재 '상담 중'(점유) 실장 제외 집합. 전략/TM 후보에서 사전 제거. */
+  excludeStaffIds?: Set<string> | null;
 }): Promise<{ staffId: string; strategy: AssignStrategy; leadSource: AssignLeadSource } | null> {
   const leadSource = opts.leadSource;
   if (!leadSource) return null; // 재진/미상 = 전략 미적용
@@ -789,6 +794,7 @@ export async function pickConsultantByStrategy(opts: {
       clinicId: opts.clinicId,
       reservation: opts.reservation ?? null,
       poolFilter: opts.poolFilter ?? null,
+      excludeStaffIds: opts.excludeStaffIds ?? null,
     });
     // strategy 필드는 소비처(autoAssign)가 .staffId 만 사용 → 명목 라벨('ranking_pointer', TM 턴은 커서 순환 계열).
     return tm ? { staffId: tm.staffId, strategy: 'ranking_pointer', leadSource: 'TM' } : null;
@@ -800,6 +806,8 @@ export async function pickConsultantByStrategy(opts: {
 
   let candidates = await fetchPresentEnabledConsultants(opts.clinicId);
   if (opts.poolFilter) candidates = candidates.filter((id) => opts.poolFilter!.has(id));
+  // T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-1): 점유(상담 중) 실장 전략 후보에서도 제외.
+  if (opts.excludeStaffIds) candidates = candidates.filter((id) => !opts.excludeStaffIds!.has(id));
   if (candidates.length === 0) return null;
 
   const [metrics, weights] = await Promise.all([

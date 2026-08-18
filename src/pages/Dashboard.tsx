@@ -125,7 +125,7 @@ import { playOvertimeAlert } from '@/lib/audio';
 import { autoDeductSession } from '@/lib/session';
 import { promoteVisitTypeToReturning } from '@/lib/visitType';
 // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 슬롯 진입 시 상담사/치료사 자동배정(best-effort)
-import { maybeAutoAssign, logRealAssignment } from '@/lib/autoAssign';
+import { maybeAutoAssign, logRealAssignment, assignNextWaitingConsult } from '@/lib/autoAssign';
 // T-20260728-foot-INSUR-POPUP-REMOVE: 급여 진료기록 완료 하드차단(MEDLAW22-B-GATE) 해제 —
 //   Dashboard 완료 경로(드래그/우클릭)에서 evaluateMedicalRecordGate 하드차단 호출 제거(문원장 B안, 2026-07-28).
 import { elapsedMinutes, elapsedMMSS, remainingLabel } from '@/lib/elapsed';
@@ -5103,6 +5103,17 @@ export default function Dashboard() {
             // T-20260617-foot-AUTOASSIGN: 재진 셀프접수 직행 치료대기 INSERT → 치료사 자동배정(best-effort, 멱등)
             void maybeAutoAssign(newRow.id, 'treatment_waiting', profile?.id ?? null);
           }
+          // T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-2/AC-3): 상담 종료(상담실 비어짐) 실시간 감지
+          //   → 대기 중 다음 순번 1건 자동 배정(수동 새로고침 없이). 타 클라이언트의 상담 종료를 이 구독으로 반영.
+          //   (acting 클라이언트 자신의 종료는 상단 recentlyUpdated 가드로 skip → 이동 핸들러에서 직접 트리거.)
+          if (
+            payload.eventType === 'UPDATE' &&
+            oldRow?.status === 'consultation' &&
+            newRow?.status &&
+            newRow.status !== 'consultation'
+          ) {
+            void assignNextWaitingConsult(clinic.id, profile?.id ?? null);
+          }
           debouncedCheckInRefetch();
         },
       )
@@ -5833,6 +5844,12 @@ export default function Dashboard() {
         void maybeAutoAssign(row.id, newStatus, profile?.id ?? null);
       }
 
+      // T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-2/AC-3): 상담 종료(상담→그 외 이동)로 상담실이 비면
+      //   대기 중 다음 순번 1건 자동 배정(acting 클라이언트 직접 트리거 — 자신의 realtime echo 는 가드로 skip).
+      if (row.status === 'consultation' && newStatus !== 'consultation') {
+        void assignNextWaitingConsult(row.clinic_id, profile?.id ?? null);
+      }
+
       // AC-4: 수납대기 이동 시 PaymentDialog 대신 PaymentMiniWindow 직접 오픈
       if (newStatus === 'payment_waiting') {
         setMiniPayTarget({ ...row, status: newStatus });
@@ -6219,6 +6236,11 @@ export default function Dashboard() {
     // T-20260617-foot-AUTOASSIGN: 상담대기/치료대기 진입 시 자동배정(best-effort, 멱등)
     if (newStatus === 'consult_waiting' || newStatus === 'treatment_waiting') {
       void maybeAutoAssign(ci.id, newStatus, profile?.id ?? null);
+    }
+    // T-20260818-foot-CONSULT-REALTIME-ROOM-SYNC (AC-2/AC-3): 우클릭 상태변경으로 상담 종료 시
+    //   상담실이 비면 대기 중 다음 순번 1건 자동 배정(acting 클라이언트 직접 트리거).
+    if (ci.status === 'consultation' && newStatus !== 'consultation') {
+      void assignNextWaitingConsult(ci.clinic_id, profile?.id ?? null);
     }
     // T-20260611-foot-CHECKIN-CANCEL-RENAME-RESTORE: '체크인 취소' = 체크인 역전이(soft).
     //   check_in row는 status='cancelled'로 보존(위 update). 추가로, 체크인 시 'checked_in'으로
