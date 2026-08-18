@@ -5,6 +5,9 @@ import type { UserProfile } from './types';
 // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 로그아웃 시 진료차트 임시저장(localStorage draft) 전체 clear.
 //   기기 공용 대비 — 다음 로그인 사용자에게 이전 사용자 draft 가 남지 않도록 폐기.
 import { clearAllChartDrafts } from './chartDraft';
+// T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c), spec §3.3 회귀축/PHI): 로그아웃 시
+//   (c) write-buffer 로컬 큐 전체 폐기(PHI payload 잔류 방지 — clearAllChartDrafts 선례 준용).
+import { writeBuffer } from './resilience/writeBufferInstance';
 
 interface AuthState {
   loading: boolean;
@@ -113,6 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     explicitSignOutRef.current = true;
     // T-20260603-foot-CHART-DRAFT-SAVE (AC-3): 기기 공용 대비 — 로그아웃 시 진료차트 draft 전체 폐기.
     clearAllChartDrafts();
+    // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): (c) write-buffer 로컬 큐도 폐기(PHI 잔류 방지).
+    writeBuffer.discardAll();
     try {
       await supabase.auth.signOut();
       setSession(null);

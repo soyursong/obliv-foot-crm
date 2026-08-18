@@ -763,6 +763,11 @@ export default defineConfig({
         //   + 소스 정적 가드(숨기기 버튼/확인 다이얼로그/deleted_at·by UPDATE/rowcheck/is_deleted 필터/role 무게이트).
         //   auth/DB/server/page 불요·결정론. 실 UI+데이터경로 = supervisor 갤탭 field-soak.
         '**/T-20260808-foot-RXHIST-HIDE-SOFTDELETE.spec.ts',
+        // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): write-buffer 유실0 7항 + R1~R6 순수 로직.
+        //   createWriteBuffer/createDurableStore/classifyWriteOutcome/classify23505 실구동(in-memory store +
+        //   mock executor) — 멱등키-once·enqueue-before-send·23505 A/B/C 감별·0-row 멱등·response-loss·TTL 폐기·
+        //   signOut 큐폐기·flush 재진입가드. auth/DB/server/page 불요·결정론(db_change=false). 실 UX = supervisor field-soak.
+        '**/T-20260818-foot-REFRESH401-RESILIENCE-PILOT-STEP2-writebuffer.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -785,6 +790,10 @@ export default defineConfig({
         //   (순수 fs-grep+로직) → desktop-chrome(auth/webServer) 유입 차단. underscore-prefix 헬퍼도 제외.
         '**/critical-flow/_prod-write-ban-invariant.spec.ts',
         '**/critical-flow/_prodWriteGuard.ts',
+        // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): write-buffer 유실0 로직 spec 은 unit 전용
+        //   (in-memory store + mock executor·순수 로직) → desktop-chrome(auth/webServer/setup) 유입 차단.
+        //   무-project 실행(supervisor QA) 시 setup(TEST_PASSWORD) 미기동 결정론 확보.
+        '**/T-20260818-foot-REFRESH401-RESILIENCE-PILOT-STEP2-writebuffer.spec.ts',
         // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: unit 전용(counting fake + 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX.spec.ts',

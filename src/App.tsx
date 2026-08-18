@@ -14,6 +14,8 @@ import UpdateBanner from '@/components/UpdateBanner';
 // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (spec §3.1 (a)): refresh-401 비차단 상단 배너.
 //   상류 게이트웨이 401 blip 중 무한로딩·사일런트 저장실패 대신 "일시 지연·자동 재시도" 정직 표시.
 import Refresh401Banner from '@/components/Refresh401Banner';
+// T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): write-buffer flush 트리거 초기화.
+import { initWriteBufferFlush } from '@/lib/resilience/writeBufferFlush';
 // T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: chunk 자가치유 가드 SSOT
 import { markAndCheckAutoReload, clearAutoReloadGuard } from '@/lib/chunkReload';
 
@@ -208,6 +210,9 @@ function RecoveryGate({ children }: { children: ReactNode }) {
 }
 
 function App() {
+  // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c), spec §3.3 기준6): (c) write-buffer
+  //   flush 오케스트레이터 초기화(online 복귀/성공 관측/타이머/탭 가시화 트리거). idempotent.
+  useEffect(() => initWriteBufferFlush(), []);
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
