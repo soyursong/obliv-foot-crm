@@ -510,6 +510,51 @@ export function pickLeastLoaded(
   return scored[0].id;
 }
 
+// ── 직전 배정자 회피(동시간대 분산) ───────────────────────────────────────────────
+//
+// T-20260818-foot-CONSULT-CONCURRENT-ASSIGN: 동일/인접 시간대에 나란히 접수된 환자가
+//   같은 담당자에게 연속 배정되는 현장 문제 해소. "직전 배정 담당자"를 산출해 least-loaded
+//   후보 풀에서 사전 제외(후보 2명+ 일 때만) → 나란히 온 환자는 서로 다른 담당자로 분산.
+//   - 부하분산(pickLeastLoaded 월균등)은 primary 로 유지, 회피는 그 위의 tie/연속 방지 레이어.
+//   - 후보 1명뿐이면 회피 미적용(정상 배정, AC-3). 기배정 이력엔 무영향(신규 접수분만, AC-4).
+
+/** 동시간대/인접 접수 batch 판정 창(ms). 20분: 발톱 워크인 등 나란히 접수되는 현실 batch 근사. */
+export const CONCURRENT_ASSIGN_WINDOW_MS = 20 * 60 * 1000;
+
+/**
+ * 최근(windowMs 이내) '직전 배정 담당자' 산출 — 동시간대 연속-동일배정 회피용.
+ *   대상 action: auto_assign|manual(=접수→담당 배정). toss/pull_in(운영자 재배분)은 제외
+ *   (배정 흐름의 '직전'을 접수 배정으로 한정 — 회피가 재배분 조작에 오발동하지 않게).
+ *   role 일치 + to_staff_id 존재 + 창 이내 중 created_at 최댓값의 to_staff_id 반환. 없으면 null.
+ *
+ * @param actions   fetchMonthActions 결과(추가 쿼리 0 — 이미 로드된 액션 재사용).
+ * @param role      consult|therapy
+ * @param windowMs  '동시간대' 창(기본 CONCURRENT_ASSIGN_WINDOW_MS)
+ * @param nowMs     기준 현재시각 ms(테스트 결정성 위해 주입 가능, 기본 Date.now()).
+ */
+export function findRecentAssignee(
+  actions: AssignmentAction[],
+  role: AssignmentRole,
+  windowMs: number = CONCURRENT_ASSIGN_WINDOW_MS,
+  nowMs: number = Date.now(),
+): string | null {
+  let bestId: string | null = null;
+  let bestTs = -Infinity;
+  for (const a of actions) {
+    if (a.role !== role) continue;
+    if (a.action_type !== 'auto_assign' && a.action_type !== 'manual') continue;
+    if (!a.to_staff_id) continue;
+    const ts = new Date(a.created_at).getTime();
+    if (Number.isNaN(ts)) continue;
+    if (nowMs - ts > windowMs) continue; // 창 밖(오래된 배정) = 동시간대 아님 → 회피 대상 아님
+    if (ts > bestTs) {
+      bestTs = ts;
+      bestId = a.to_staff_id;
+    }
+  }
+  return bestId;
+}
+
 // ── 로그 ──────────────────────────────────────────────────────────────────────
 
 export interface LogInput {
@@ -818,6 +863,14 @@ export async function maybeAutoAssign(
         const actions = await fetchMonthActions(checkIn.clinic_id);
         const load = computeLoad(actions, role, axis, todaySeoulISODate());
         const order = await fetchAssignSortOrder(checkIn.clinic_id);
+        // T-20260818-foot-CONSULT-CONCURRENT-ASSIGN: 동시간대(인접 N분) 연속 접수 시
+        //   직전 배정 담당자를 후보 풀에서 사전 제외 → 나란히 온 환자 분산(AC-1/2).
+        //   후보 2명+ 에서만 발동(1명뿐이면 그대로 배정, AC-3). 부하분산(pickLeastLoaded)은 primary 유지.
+        //   pool 자체를 좁혀 호출부 시그니처(pickLeastLoaded(pool, load, order))는 불변 → 회귀 lock 보존.
+        const recentAssignee = findRecentAssignee(actions, role);
+        if (recentAssignee && pool.length >= 2 && pool.includes(recentAssignee)) {
+          pool = pool.filter((id) => id !== recentAssignee);
+        }
         chosen = pickLeastLoaded(pool, load, order);
       }
     }
