@@ -111,6 +111,31 @@ const EXPORT_MAX = 5000;
 // 통계 집계용 IN 쿼리 청크 크기 (URL 길이 한계 회피).
 const STATS_CHUNK = 150;
 
+// T-20260818-foot-CUSTMGMT-SEARCH-FAIL (b): 검색어 최소 글자수 가드.
+//   RC = 1자 broad ilike(%X%) 4컬럼(name/phone/birth_date/chart_number) seq-scan → statement timeout
+//   ('검색 실패' 토스트의 진원). 2자 미만 검색어는 DB 조회 자체를 차단해 RC 를 원천봉쇄한다.
+//   빈 검색어(목록 전체)는 인덱스 range-scan 이라 무관 → 가드 대상 아님(1자만 차단).
+const CUSTOMER_SEARCH_MIN_CHARS = 2;
+// applyCustomerSearchFilters 의 실제 쿼리 술어와 동일 정규화(특수문자 제거)를 공유 →
+// '가드 판정 길이' 와 '실제 broad-scan 대상 길이' drift 차단.
+function normalizeCustomerSearchText(rawQuery: string): string {
+  return rawQuery.trim().replace(/[%_(),.]/g, '');
+}
+
+// T-20260818-foot-CUSTMGMT-SEARCH-FAIL (c): 목록 검색 SELECT * → 실제 소비 컬럼만 선별.
+//   payload 축소(rrn_vault_id·보험·풀퍼널/캠페인·동의·ALT 등 미사용 컬럼 제외)로 검색 조회 부하 경감. UX 무변.
+//   ★소비면 전수대조 결과 = 목록 렌더(c.*) + EditCustomerDialog(전 필드 read→save writeback)
+//     + 컨텍스트메뉴 + 상세/문자(customerAsCheckIn). 한 컬럼이라도 빠지면 수정 시 공란 덮어쓰기(데이터 손실)
+//     이므로 아래 union 은 축소가 아니라 '소비면과 정확히 일치'가 안전조건이다.
+const CUSTOMER_LIST_COLUMNS = [
+  'id', 'clinic_id', 'name', 'phone', 'visit_type', 'created_at',
+  'birth_date', 'chart_number', 'assigned_staff_id',
+  'memo', 'customer_memo', 'customer_note', 'lead_source', 'tm_memo', 'referrer_name',
+  'customer_grade', 'customer_email', 'postal_code', 'is_foreign',
+  'nationality_id', 'language', 'passport_last_name', 'passport_first_name',
+  'passport_number', 'foreigner_registration_number', 'foreign_doc_expiry',
+].join(', ');
+
 /**
  * 고객관리 검색/내보내기 공통 필터 적용 (검색어 + 담당자).
  * runSearch(목록)와 export(전체)에서 동일 필터를 보장하기 위해 추출 — drift 차단.
@@ -131,7 +156,7 @@ function applyCustomerSearchFilters<
   }
   const trimmed = rawQuery.trim();
   if (trimmed) {
-    const safe = trimmed.replace(/[%_(),.]/g, '');
+    const safe = normalizeCustomerSearchText(rawQuery);
     if (safe) {
       const digits = safe.replace(/\D/g, '');
       const digitsNoLeadingZero = digits.startsWith('0') && digits.length >= 5 ? digits.slice(1) : null;
@@ -334,6 +359,8 @@ export default function Customers() {
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  // T-20260818-foot-CUSTMGMT-SEARCH-FAIL (b): 2자 미만 검색어 차단 상태 → 빈결과 대신 '2자 이상' 안내.
+  const [searchTooShort, setSearchTooShort] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navStateConsumed = useRef(false);
 
@@ -341,12 +368,28 @@ export default function Customers() {
     async (q: string, pageNum = 1) => {
       if (!clinic) return;
       const trimmed = q.trim();
+      // T-20260818-foot-CUSTMGMT-SEARCH-FAIL (b): 2자 미만 검색어는 broad ilike seq-scan(RC) → 조회 차단.
+      //   applyCustomerSearchFilters 와 동일 정규화로 실제 broad-scan 대상 길이 판정(drift 차단).
+      //   빈 검색어(0자)는 목록 전체 = 인덱스 range-scan 이므로 통과, 1자만 차단.
+      const searchText = normalizeCustomerSearchText(q);
+      if (searchText.length > 0 && searchText.length < CUSTOMER_SEARCH_MIN_CHARS) {
+        setSearchTooShort(true);
+        setResults([]);
+        setTotalCount(0);
+        setStatsMap(new Map());
+        setBirthMap(new Map());
+        setSelectedIds(new Set());
+        setLoading(false);
+        return;
+      }
+      setSearchTooShort(false);
       setLoading(true);
       const from = (pageNum - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       let req = supabase
         .from('customers')
-        .select('*', { count: 'exact' })
+        // T-20260818-foot-CUSTMGMT-SEARCH-FAIL (c): SELECT * → 소비 컬럼만(payload 축소). count:'exact' 유지((a)는 게이트).
+        .select(CUSTOMER_LIST_COLUMNS, { count: 'exact' })
         .eq('clinic_id', clinic.id)
         // T-20260610-foot-ADMIN-SIM-FILTER: 시뮬레이션(테스트 더미) 기본 숨김.
         // IS NOT TRUE → false/NULL(실고객) 보존, true만 제외 (AC-3 null-safe).
@@ -375,7 +418,9 @@ export default function Customers() {
         return;
       }
       setTotalCount(count ?? 0);
-      const customers = (data ?? []) as Customer[];
+      // 동적 select 문자열(CUSTOMER_LIST_COLUMNS) → supabase-js 는 행 타입 추론 불가(GenericStringError).
+      //   런타임 형태는 Customer 부분집합이며 소비면 union 과 정확히 일치하므로 unknown 경유 캐스트.
+      const customers = (data ?? []) as unknown as Customer[];
       setResults(customers);
       // T-20260613-foot-CUSTMGMT-LIST-5FIX AC4: 검색/페이지 전환 시 선택 초기화(다른 리스트와 혼선 방지)
       setSelectedIds(new Set());
@@ -842,7 +887,7 @@ export default function Customers() {
             {!loading && results.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-2 py-10 text-center text-sm text-muted-foreground">
-                  {query ? '검색 결과 없음' : '고객이 없습니다'}
+                  {searchTooShort ? '검색은 2자 이상 입력해 주세요' : query ? '검색 결과 없음' : '고객이 없습니다'}
                 </td>
               </tr>
             )}

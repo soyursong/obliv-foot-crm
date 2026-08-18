@@ -90,3 +90,78 @@ test('AC-1/3: 이름 검색이 에러 토스트 없이 정상 조회/empty-state
     await expect(page.locator('thead tr th').first()).toBeVisible();
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FE 스톱갭 (AC1 실 fix) — planner GO(MSG-20260818-161030-88l6)
+//   (b) 검색 min 2자 가드 = RC('이'/'김' 1자 broad ilike seq-scan → statement timeout) 원천봉쇄
+//   (c) SELECT * → 소비 컬럼만 narrow (perf, UX 무변)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── AC-4 (b): 1자 검색어는 DB broad-scan 차단 + '2자 이상' 안내 (소스 계약) ──
+test('AC-4(b): 검색 min 2자 가드 — 1자 broad-scan 원천봉쇄 + 안내 문구', () => {
+  const src = readFileSync(CUSTOMERS_SRC, 'utf-8');
+
+  // 최소 글자수 상수 = 2
+  expect(src).toMatch(/const CUSTOMER_SEARCH_MIN_CHARS = 2;/);
+
+  // 가드: 정규화 검색어 길이가 1(0<len<MIN)이면 조회 없이 early-return
+  expect(src).toMatch(/searchText\.length > 0 && searchText\.length < CUSTOMER_SEARCH_MIN_CHARS/);
+  expect(src).toContain('setSearchTooShort(true)');
+
+  // 가드 판정과 실제 쿼리 술어가 동일 정규화를 공유(drift 차단)
+  expect(src).toMatch(/function normalizeCustomerSearchText/);
+  expect(src).toMatch(/const safe = normalizeCustomerSearchText\(rawQuery\)/);
+
+  // empty-state 안내 문구
+  expect(src).toContain('검색은 2자 이상 입력해 주세요');
+});
+
+// ── AC-4 (b) 실브라우저: 1자 입력 → '2자 이상' 안내, 에러 토스트 없음 ──
+test('AC-4(b): 1자 입력 시 2자 이상 안내 렌더(에러 토스트 없음)', async ({ page }) => {
+  await loginIfNeeded(page);
+  if (!(await gotoCustomers(page))) { test.skip(true, '고객관리 표 미렌더 — 스킵'); return; }
+
+  const search = page.getByPlaceholder(/이름 · 전화번호/);
+  await expect(search).toBeVisible();
+
+  await search.fill('');
+  await search.fill('이'); // RC 스모킹건: 1자 성씨
+  await page.waitForTimeout(600);
+
+  // 에러 토스트 미재현 + '2자 이상' 안내 노출
+  await expect(page.getByText('검색에 실패했습니다. 잠시 후 다시 시도해 주세요.')).toHaveCount(0);
+  await expect(page.getByText('검색은 2자 이상 입력해 주세요')).toBeVisible();
+
+  // 2자 입력 시 안내 사라지고 정상 조회/무결과 empty-state 전환
+  await search.fill('이수');
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  await expect(page.getByText('검색은 2자 이상 입력해 주세요')).toHaveCount(0);
+  await expect(page.locator('thead tr th').first()).toBeVisible();
+});
+
+// ── AC-5 (c): 목록 검색 SELECT narrow + 소비면 union 무결(수정 데이터손실 회귀 가드) ──
+test('AC-5(c): 목록 검색 SELECT narrow — 소비 컬럼 union 무결(데이터손실 방지)', () => {
+  const src = readFileSync(CUSTOMERS_SRC, 'utf-8');
+
+  // 목록 검색 쿼리가 select('*') 대신 컬럼 상수 사용
+  expect(src).toMatch(/\.select\(CUSTOMER_LIST_COLUMNS, \{ count: 'exact' \}\)/);
+  // (a) count 는 게이트 — 'exact' 유지(planned/estimated 미전환)
+  expect(src).not.toMatch(/\.select\(CUSTOMER_LIST_COLUMNS, \{ count: 'planned'/);
+
+  // 소비면 전수: EditCustomerDialog 가 read→save writeback 하는 필드가 union 에 전부 존재해야
+  //   narrow 로 인한 공란 덮어쓰기(데이터 손실)가 없다. 하나라도 누락 시 실패.
+  const REQUIRED = [
+    'id', 'clinic_id', 'name', 'phone', 'visit_type', 'created_at',
+    'birth_date', 'chart_number', 'assigned_staff_id',
+    'memo', 'customer_memo', 'customer_note', 'lead_source', 'tm_memo', 'referrer_name',
+    'customer_grade', 'customer_email', 'postal_code', 'is_foreign',
+    'nationality_id', 'language', 'passport_last_name', 'passport_first_name',
+    'passport_number', 'foreigner_registration_number', 'foreign_doc_expiry',
+  ];
+  const declStart = src.indexOf('const CUSTOMER_LIST_COLUMNS');
+  const block = src.slice(declStart, src.indexOf('.join(', declStart));
+  for (const col of REQUIRED) {
+    expect(block).toContain(`'${col}'`);
+  }
+});
