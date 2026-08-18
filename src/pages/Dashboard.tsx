@@ -4714,7 +4714,15 @@ export default function Dashboard() {
       const used = usedMap.get(p.id) ?? 0;
       const remaining = Math.max(0, p.total_sessions - used);
       // T-20260617-foot-PKGBOX-USED-FORMAT: used 보존 → 회차 번호 표기(N=used+1)
-      map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions, used });
+      // T-20260818-foot-PKG-BADGE-REMAINING-ONLY: 고객박스 패키지 배지 후보 = 잔여>0 패키지만.
+      //   규칙①(잔여=0 미표시): remaining=0 은 map.set 생략 → getPkgLabel null → 배지 미노출.
+      //   규칙②(잔여 우선): 여러 패키지 보유 시 소진(remaining=0)이 map 을 덮어써 "완료" 배지를
+      //     차지하던 회귀 차단. remaining>0 만 후보이고, 이미 잔여 패키지가 잡혀 있으면(!map.has)
+      //     덮어쓰지 않아 먼저 잡힌 잔여 패키지가 배지로 유지된다(holderSet remaining>0 필터와 정합).
+      //   데이터·산식 무변경(remaining 기존 파생값 재사용) — 배지 후보 '선택'만 조정.
+      if (remaining > 0 && !map.has(p.customer_id)) {
+        map.set(p.customer_id, { name: p.package_name, remaining, total: p.total_sessions, used });
+      }
       // package_name 정확일치(trim)로 티켓 종류 분기. 잔여>0 만 대상(기존 배지 노출 조건 동일).
       //   AC-2 상호배타 판정 순서: 체험권 → 1회권 → 그 외(일반 패키지). package_name 은 3집합에
       //   동시 포함될 수 없으므로(정확일치 disjoint) 패키지 단위 분류는 배타적. 체험권/일반패키지 종전 유지.
