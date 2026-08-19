@@ -43,9 +43,25 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import type { SalesFilterState } from '@/components/sales/SalesFilterBar';
+// T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: 일마감 '총매출(치료)' 표 화면표시값 그대로 .xlsx.
+import { toast } from '@/lib/toast';
+import {
+  downloadRevenueWorkbook,
+  compactDate,
+  type RevenueSheetSpec,
+} from '@/lib/closingRevenueExport';
 
 interface Props {
   filter: SalesFilterState;
+  /**
+   * T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD:
+   *   현재 표시 중인 뷰(차감기준/수납기준)를 화면 표시값 그대로 .xlsx 로 내려받는 버튼 노출 여부.
+   *   기본 false — 매출집계(Sales.tsx)는 상단 공통 엑셀(raw) 레이어를 쓰므로 회귀 0(버튼 미노출).
+   *   일마감(Closing.tsx) '총매출(치료)' 탭에서만 true 로 넘겨 표 자체를 내보낸다.
+   */
+  enableExcelExport?: boolean;
+  /** 내보내기 파일명 접두어(확장자 제외). 기본 '총매출_치료'. */
+  exportFilenameBase?: string;
 }
 
 // ── T-20260605 field 결정 기본값 (DECISION-REQUEST 회신 시 변경) ───────────────
@@ -241,7 +257,7 @@ function deductTreatmentLabel(t?: string | null): string {
   return DEDUCT_TREATMENT_LABEL[v] ?? (sessionTypeLabel(v) || '(항목 미상)');
 }
 
-export function SalesStaffTab({ filter }: Props) {
+export function SalesStaffTab({ filter, enableExcelExport = false, exportFilenameBase = '총매출_치료' }: Props) {
   const clinic = useClinic();
   const { from, to } = filter.dateRange;
   const searchQuery = filter.searchQuery.trim().toLowerCase();
@@ -1063,6 +1079,85 @@ export function SalesStaffTab({ filter }: Props) {
     </Dialog>
   );
 
+  // ── T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: 현재 뷰 표를 화면 표시값 그대로 .xlsx ──
+  //   집계/산식/순서 재구성 금지 — 렌더에 쓰는 동일 배열(deductRowsWithCosmetic/payRowsWithCosmetic)과
+  //   동일 합계값(deductTotals·payTotals·payDisplayTotals)을 그대로 시트화. 표시 규칙(‘—’·반올림)만 재현.
+  const handleExportStaff = () => {
+    try {
+      let sheet: RevenueSheetSpec;
+      if (basis === 'deduction') {
+        const header = ['치료사', '차감 건수', '지정환자수', '차감 매출(치료)', '화장품 매출'];
+        const body = deductRowsWithCosmetic.map((s) => [
+          s.staffName,
+          s.count,
+          s.designatedCount,
+          Math.round(s.revenue),
+          s.cosmeticRevenue > 0 ? Math.round(s.cosmeticRevenue) : '—',
+        ]);
+        const total = [
+          '합계',
+          deductTotals.count,
+          '—',
+          Math.round(deductTotals.revenue),
+          Math.round(deductCosmeticTotal),
+        ];
+        sheet = {
+          name: '총매출(치료)_차감기준',
+          aoa: [header, ...body, total],
+          numberCols: [1, 2, 3, 4],
+        };
+      } else {
+        const header = ['치료사/장비명', '역할', '시술 건수', '지정환자수', '치료 매출', '화장품 매출', '환불 차감액', '순 실적'];
+        const body = payRowsWithCosmetic.map((s) => {
+          const net = s.treatmentRevenue - s.refundAmount;
+          const isTher = s.role === 'therapist';
+          return [
+            s.staffName,
+            isTher ? '치료사' : '장비명',
+            s.count,
+            isTher ? s.designatedCount : '—',
+            Math.round(s.treatmentRevenue),
+            isTher && s.cosmeticRevenue > 0 ? Math.round(s.cosmeticRevenue) : '—',
+            s.refundAmount > 0 ? -Math.round(s.refundAmount) : '—',
+            Math.round(net),
+          ];
+        });
+        const total = [
+          '합계',
+          '',
+          payTotals.count,
+          '—',
+          Math.round(payDisplayTotals.treatment),
+          Math.round(payDisplayTotals.cosmetic),
+          payTotals.refund > 0 ? -Math.round(payTotals.refund) : '—',
+          Math.round(payDisplayTotals.treatment - payTotals.refund),
+        ];
+        sheet = {
+          name: '총매출(치료)_수납기준',
+          aoa: [header, ...body, total],
+          numberCols: [2, 3, 4, 5, 6, 7],
+        };
+      }
+      downloadRevenueWorkbook([sheet], `${exportFilenameBase}_${compactDate(from)}_${compactDate(to)}`);
+      toast.success('Excel 다운로드 완료');
+    } catch (e) {
+      console.error('[SalesStaffTab.export]', e);
+      toast.error('다운로드 중 오류가 발생했습니다.');
+    }
+  };
+
+  // 내보내기 버튼(옵트인) — 데이터 있는 뷰(차감/수납)에서 기준토글 우측에 노출.
+  const ExportButton = enableExcelExport ? (
+    <button
+      type="button"
+      data-testid="sales-staff-export-btn"
+      onClick={handleExportStaff}
+      className="ml-auto rounded-md border border-teal-600 px-3 py-1 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-50"
+    >
+      엑셀 다운로드
+    </button>
+  ) : null;
+
   // ── 렌더 ────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -1100,7 +1195,7 @@ export function SalesStaffTab({ filter }: Props) {
 
     return (
       <div>
-        {BasisToggle}
+        <div className="flex items-center gap-2">{BasisToggle}{ExportButton}</div>
         <div
           data-testid="sales-staff-deduct-tab"
           className="overflow-auto rounded-lg border bg-background text-xs"
@@ -1221,7 +1316,7 @@ export function SalesStaffTab({ filter }: Props) {
 
   return (
     <div>
-      {BasisToggle}
+      <div className="flex items-center gap-2">{BasisToggle}{ExportButton}</div>
       <div
         data-testid="sales-staff-tab"
         className="overflow-auto rounded-lg border bg-background text-xs"
