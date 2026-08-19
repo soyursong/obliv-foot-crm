@@ -986,13 +986,53 @@ export interface ReservationRegistrar {
 //   '카톡'(카카오톡 인바운드) 신규 ADDITIVE 추가. 라벨=(a) flat '카톡' 확정(DA Q4, MSG-20260819-115858-45sj) — '인바운드(카톡)' 컴파운드 REJECT('네이버'=flat 선례·집계 clean). 인바운드 계열이므로 표시 순서상 '인바운드' 직후 배치.
 //   DA CONSULT-REPLY GO(MSG-20260819-115858-45sj): foot-LOCAL visit_route CHECK 값 1개 add=순수 ADDITIVE·기존 7값/행/집계 불변·backfill 0·§36 firewall NEUTRAL·foot-only(cross-CRM DECOUPLE). CHECK=8값(기존7+카톡).
 //   ⚠ DB CHECK(customers/reservations)에 '카톡' ADD 동반 필수(20260819210000_foot_visit_route_kakao_add.sql). system_codes 무접촉. VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE(배정 라우팅·money-adjacent) 무접촉=WALK_IN 안전폴백(별건 planner 라우팅 결정).
-export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인바운드', '카톡', '워크인', '지인소개', '공홈'] as const;
-/** 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용). '인콜'은 A안에서 '인바운드'로 수렴됐으나 기존행 표시 보존. */
-export const VISIT_ROUTE_LEGACY = ['인콜'] as const;
+// T-20260818-foot-RESV-INFLOW-WRITE-CANONICAL-MIGRATE (김주연 총괄 최종확정 reply_ts 1787134438.745499 '올 예리한데 아래가 최종!!'):
+//   (y) visit_route keep-widen — offered-set 을 최종 12값으로 통일(재방문 EXCLUDE·카톡 already-live·store-literal caveat 반영).
+//   ── 변경 요지 ──
+//   · '인바운드'/'네이버'/'공홈' 3개 → '인바운드(전화)'/'인바운드(네이버)'/'인바운드(공홈)' 3 세분값으로 offered widen.
+//     기존 4 저장값('인바운드','인콜','네이버','공홈')은 byte-parity 존치(CHECK 잔류 + VISIT_ROUTE_LEGACY 이동) — 과거행 무손실·clobber 0.
+//   · SEPARATE 4항목 신규 ADDITIVE: '에이전시'(partner.agency) / '타센터 연계'(internal.center_referral) /
+//     '병원 인계'(internal.transfer) / '임직원.가족'(internal.staff) — 별도 정산 축(Closing per-row distinct label·기존 fold 금지).
+//     ★store-literal caveat(mirror-not-invent): '임직원.가족' = 마침표('.') — system_codes 라벨의 가운데점('·') 아님.
+//   · '기타' 신규 ADDITIVE — offered 라벨 '기타(사유 필수 입력)', 저장 리터럴 = '기타'.
+//   · '카톡' = already-live(T-20260819-foot-INFLOW-KAKAO-INBOUND-ADD 배포완료·CHECK 內) → 무접촉(conflate 금지·flat '카톡' 존치).
+//   · '재방문' = EXCLUDE 확정(first_inflow_channel IMMUTABLE 정합·미저장) — allowlist 미포함.
+//   ── 배정/정산 안전 ──
+//   · VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE(배정 라우팅·money-adjacent) 무접촉 → 신규 라벨은 deriveAssignLeadSource
+//     WALK_IN 안전폴백(기본 순번대로) = money-shift 0 by-construction(총괄 CONFIRM). 박민지 comp-gate=MOOT(attribution shift 0).
+//   · Closing.tsx = visit_route 원문 per-row passthrough(fold 없음) → 신규 라벨 distinct label 표시 = 정산 parity by-construction.
+//   ⚠ DB CHECK(customers ∧ reservations)에 2-table 동시 widen 동반 필수(20260819220000_foot_visit_route_offered_widen_migrate.sql).
+//     ★ 1개만 widen = write fail·divergence. supervisor MIG-GATE(2-table DDL-diff)+물리 GO-token 선행 REQUIRED(apply_before_go 금지). system_codes 무접촉.
+// T-20260819-foot-INFLOW-KAKAO-INBOUND-ADD (김주연 총괄, ch C0ATE5P6JTH · U0ATDB587PV): 현장 "인바운드(카톡) 추가해줘".
+//   '카톡'(카카오톡 인바운드) 신규 ADDITIVE 추가. 라벨=(a) flat '카톡' 확정(DA Q4, MSG-20260819-115858-45sj) — '인바운드(카톡)' 컴파운드 REJECT('네이버'=flat 선례·집계 clean). 인바운드 계열이므로 표시 순서상 '인바운드' 직후 배치.
+//   DA CONSULT-REPLY GO(MSG-20260819-115858-45sj): foot-LOCAL visit_route CHECK 값 1개 add=순수 ADDITIVE·기존 7값/행/집계 불변·backfill 0·§36 firewall NEUTRAL·foot-only(cross-CRM DECOUPLE). CHECK=8값(기존7+카톡).
+//   ⚠ DB CHECK(customers/reservations)에 '카톡' ADD 동반 필수(20260819210000_foot_visit_route_kakao_add.sql). system_codes 무접촉. VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE(배정 라우팅·money-adjacent) 무접촉=WALK_IN 안전폴백(별건 planner 라우팅 결정).
+export const VISIT_ROUTE_OPTIONS = [
+  'TM',
+  '인바운드(전화)',
+  '인바운드(네이버)',
+  '인바운드(공홈)',
+  '카톡',
+  '워크인',
+  '지인소개',
+  '에이전시',
+  '타센터 연계',
+  '병원 인계',
+  '임직원.가족',
+  '기타',
+] as const;
+/**
+ * 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용).
+ * '인콜'=A안에서 '인바운드'로 수렴됐으나 기존행 표시 보존.
+ * '인바운드'/'네이버'/'공홈'=RESV-INFLOW-WRITE-CANONICAL-MIGRATE 에서 '인바운드(전화/네이버/공홈)' 로 offered 세분화되며
+ *   드롭다운 밖으로 이동(과거 저장행 byte-parity 존치·visitRouteOptionsFor 로 편집 시 현재값 보존).
+ *   ※ '인바운드'는 desk 등록자 자동분류(Reservations.tsx)가 계속 write 하므로 배정 INBOUND 매핑 존치(money-neutral).
+ */
+export const VISIT_ROUTE_LEGACY = ['인콜', '인바운드', '네이버', '공홈'] as const;
 export type VisitRoute = (typeof VISIT_ROUTE_OPTIONS)[number] | (typeof VISIT_ROUTE_LEGACY)[number];
 
 /**
- * 드롭다운 옵션 계산: 신규 5종 + 현재값이 legacy('인바운드' 등 5종 밖)면 그 값을 보존 항목으로 추가.
+ * 드롭다운 옵션 계산: offered set(VISIT_ROUTE_OPTIONS) + 현재값이 그 밖(legacy '인바운드'/'네이버'/'공홈'/'인콜' 등)이면 보존 항목으로 추가.
  * → legacy '인바운드' 예약을 편집해도 드롭다운에서 현재값이 빈칸이 되지 않고 그대로 선택·표시(B안 보존).
  */
 export function visitRouteOptionsFor(current?: string | null): string[] {
