@@ -157,12 +157,13 @@ test.describe('T-20260620-foot-CHART2-OPINION-SELECT-BOX-LINK — 소견서 선�
     expect(l).toContain("eq('status', 'draft')");
   });
 
-  // AC-9: 작성하기 버튼 + 반짝효과
-  test('AC-9: 작성하기 버튼 + 반짝(animate-ping) 효과', () => {
+  // AC-9: 작성하기 버튼 (반짝효과는 PING-SHIMMER-REMOVE 로 제거됨)
+  test('AC-9: 작성하기 버튼 존재 + animate-ping 부재(PING-SHIMMER-REMOVE 반영)', () => {
     const q = queue();
     expect(q).toContain('data-testid="docreq-write-btn"');
     expect(q).toContain('작성하기');
-    expect(q).toContain('animate-ping');
+    // animate-ping ripple 은 T-20260716-foot-DOCREQ-PING-SHIMMER-REMOVE(212edca2/f865b336, deployed)로 의도적 제거됨 → 부재 단언.
+    expect(q).not.toContain('animate-ping');
   });
 
   // AC-10: 작성하기 → prefill + 실장 메모 참고 패널
