@@ -34,11 +34,14 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// ★ T-20260819-foot-INFLOW-KAKAO-CANONICAL-CODE-ADD: inbound.kakao(카톡) 12번째 canonical 코드 ADDITIVE 추가.
+//   기존 11코드 무변(회귀 0) — 이 목록은 canonical 코드 셋의 SSOT 회귀 가드로 12종을 반영한다.
 const EXPECTED_CODES = [
   'inbound.walkin',
   'inbound.phone',
   'inbound.naver_place',
   'inbound.homepage',
+  'inbound.kakao',
   'inbound.referral',
   'inbound.revisit',
   'inbound.etc',
@@ -95,9 +98,12 @@ test.describe('T-20260801-foot-INFLOW-CHANNEL-INTAKE-LANE — 유입경로 접�
     expect(error, `system_codes 조회 오류: ${error?.message}`).toBeNull();
 
     const rows = (data ?? []) as { code: string; requires_reason: boolean }[];
-    expect(rows.length, '11종 시드 기대').toBe(11);
+    // T-20260819-KAKAO-CANONICAL: inbound.kakao ADDITIVE 로 12종(기존 11 + 카톡). 회귀 가드 = 유실 0.
+    expect(rows.length, '12종 시드 기대(기존 11 + inbound.kakao)').toBe(12);
     const etc = rows.find((r) => r.code === 'inbound.etc');
     expect(etc?.requires_reason, 'inbound.etc 사유 필수').toBe(true);
+    const kakao = rows.find((r) => r.code === 'inbound.kakao');
+    expect(kakao?.requires_reason, 'inbound.kakao 사유 불요').toBe(false);
     const others = rows.filter((r) => r.code !== 'inbound.etc');
     expect(others.every((r) => r.requires_reason === false), '기타 외 전부 사유 불요').toBe(true);
   });

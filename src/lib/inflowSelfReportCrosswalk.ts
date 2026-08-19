@@ -39,6 +39,12 @@ export function inflowSelfReportCrosswalk(
   if (norm.includes('네이버') || norm.includes('naver')) {
     return { code: 'inbound.naver_place', label: '네이버' };
   }
+  //  · '카카오톡' / '카톡' / '카카오' / 'kakao' → inbound.kakao(카톡)
+  //    T-20260819-foot-INFLOW-KAKAO-CANONICAL-CODE-ADD: 카카오톡 = 진성 canonical 1급 inbound 채널(system_codes inbound.kakao).
+  //    셀프리포트에 카카오톡 표기가 명확하면 확신 1:1 → advisory 제안(비권위·자동 write 0, 스태프가 데스크에서 확정).
+  if (norm.includes('카카오') || norm.includes('카톡') || norm.includes('kakao')) {
+    return { code: 'inbound.kakao', label: '카톡' };
+  }
   //  · '지인 소개' / '지인소개_{성함}' → inbound.referral(지인 소개)
   if (norm.includes('지인') || norm.includes('소개')) {
     return { code: 'inbound.referral', label: '지인 소개' };
