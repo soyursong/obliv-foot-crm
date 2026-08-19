@@ -1,0 +1,37 @@
+== BEHAVIORAL PROBE (AC4) == 2026-08-19T14:09:43.229Z 
+
+── (0) structural: restrictive 정책 0/6 실재 → NOT-YET-APPLIED(baseline)
+
+── service_role totals(대조): {"clinical_images":0,"consent_forms":0,"message_logs":0,"service_charges":782,"checklists":0,"packages":931}
+
+── (1) authenticated no-regression (staff=test@medibuilder.com) ──
+   ✓ clinical_images  staff_read=0 / total=0 (status=200)
+   ✓ consent_forms    staff_read=0 / total=0 (status=200)
+   ✓ message_logs     staff_read=0 / total=0 (status=200)
+   ✓ service_charges  staff_read=782 / total=782 (status=206)
+   ✓ checklists       staff_read=0 / total=0 (status=200)
+   ✓ packages         staff_read=931 / total=931 (status=206)
+
+── (2) admin bypass (admin=test@medibuilder.com) ──
+   clinical_images  admin_read=0 / total=0 (전행 기대)
+   consent_forms    admin_read=0 / total=0 (전행 기대)
+   message_logs     admin_read=0 / total=0 (전행 기대)
+   service_charges  admin_read=782 / total=782 (전행 기대)
+   checklists       admin_read=0 / total=0 (전행 기대)
+   packages         admin_read=931 / total=931 (전행 기대)
+
+── (3) anon 무파손 (신규 차단 0 — restrictive TO authenticated 는 anon 무영향) ──
+   clinical_images  anon_read=0 (status=200) — SEAL 前후 동일 기대
+   consent_forms    anon_read=0 (status=200) — SEAL 前후 동일 기대
+   message_logs     anon_read=0 (status=200) — SEAL 前후 동일 기대
+   service_charges  anon_read=0 (status=200) — SEAL 前후 동일 기대
+   checklists       anon_read=0 (status=200) — SEAL 前후 동일 기대
+   packages         anon_read=0 (status=200) — SEAL 前후 동일 기대
+
+── (4) cross-tenant denied ──
+   songdo-foot = 0/0 empty(latent) → 실 cross-tenant 세션 부재로 behavioral 직접 재현 불가.
+   격리 보장 근거: (a) predicate `(clinic_id=current_user_clinic_id()) OR is_admin_or_manager()`
+     byte-identical to canonical §A / package_payments_tenant_isolation(旣 behavioral 검증).
+   (b) songdo 활성화 즉시 forward 격리 봉인 발효(비-admin staff = own-clinic scope).
+
+ℹ️ NOT-YET-APPLIED (baseline만 — apply 후 재실행)

@@ -1,0 +1,710 @@
+=== CENSUS: T-20260819-foot-RLS-PERMISSIVE-CLINIC-GATE-SEAL (AC1, READ-ONLY, prod) ===
+    ref=rxlomoozakkjesdqjtvd · 2026-08-19T14:02:07.439Z
+
+
+── [A_clinics] clinics 지점 수 + 활성 판정 (single vs multi-tenant LIVE)
+[
+  {
+    "id": "74967aea-a60b-4da3-a0e7-9c997a930bc8",
+    "slug": "jongno-foot",
+    "name": "오블리브의원 서울 오리진점",
+    "customer_rows": 2517,
+    "staff_rows": 70
+  },
+  {
+    "id": "b4dc0de5-f007-4a57-8888-aabbccddeeff",
+    "slug": "songdo-foot",
+    "name": "오블리브 풋센터 송도",
+    "customer_rows": 0,
+    "staff_rows": 0
+  }
+]
+
+── [B_helpers] current_user_clinic_id / is_admin_or_manager helper 실재
+[
+  {
+    "proname": "current_user_clinic_id",
+    "prosecdef": true,
+    "ret": "uuid"
+  },
+  {
+    "proname": "is_admin_or_manager",
+    "prosecdef": true,
+    "ret": "boolean"
+  }
+]
+
+── [C_open_surface] ★ OPEN surface = permissive universal-true + RESTRICTIVE 부재 (tenant/PHI)
+[
+  {
+    "table_name": "claim_diagnoses",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{claim_diagnoses_auth_all}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "clinical_images",
+    "has_clinic_id": true,
+    "has_customer_id": true,
+    "offending_policies": "{auth_all}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "code_availability",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{code_availability_select}",
+    "offending_roles": [
+      "{anon,authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "consent_forms",
+    "has_clinic_id": true,
+    "has_customer_id": true,
+    "offending_policies": "{auth_users_all}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "diagnosis_folders",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{diagnosis_folders_read_all,diagnosis_folders_write_auth}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "diagnosis_sets",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{diagnosis_sets_read_all,diagnosis_sets_write_auth}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "handover_notes",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{handover_notes_select}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "health_maintenance_balances",
+    "has_clinic_id": true,
+    "has_customer_id": true,
+    "offending_policies": "{auth_all}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "message_logs",
+    "has_clinic_id": true,
+    "has_customer_id": true,
+    "offending_policies": "{message_logs_authenticated}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "notices",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{notices_select_for_authenticated}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "packages",
+    "has_clinic_id": true,
+    "has_customer_id": true,
+    "offending_policies": "{packages_read}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "payment_audit_logs",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{payment_audit_logs_open}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "quick_rx_buttons",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{staff_read_quick_rx_buttons}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "receipt_ocr_results",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{auth_all}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "redpay_unregistered_line_seen",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{redpay_unregistered_line_seen_read_all}",
+    "offending_roles": [
+      "{public}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "service_charges",
+    "has_clinic_id": true,
+    "has_customer_id": true,
+    "offending_policies": "{auth_all}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "timer_records",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{timer_records_authenticated_select}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "treatment_sets",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{authenticated_all_treatment_sets}",
+    "offending_roles": [
+      "{authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  },
+  {
+    "table_name": "waiting_board",
+    "has_clinic_id": true,
+    "has_customer_id": false,
+    "offending_policies": "{waiting_board_select}",
+    "offending_roles": [
+      "{anon,authenticated}"
+    ],
+    "has_restrictive_select_or_all": false
+  }
+]
+
+── [D_p0_tables_status] §C-3 P0 named tables 현행 RLS 정책 (drift 재확인)
+[
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_anon_read_deny",
+    "permissive": "RESTRICTIVE",
+    "cmd": "SELECT",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_anon_write_deny",
+    "permissive": "RESTRICTIVE",
+    "cmd": "INSERT",
+    "roles": "{anon}",
+    "using_expr": null
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "anon_checklist_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{anon}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "anon_checklist_write",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{anon}",
+    "using_expr": null
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "auth_users_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_admin_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_admin_or_manager()"
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_approved_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_consult_update",
+    "permissive": "PERMISSIVE",
+    "cmd": "UPDATE",
+    "roles": "{authenticated}",
+    "using_expr": "is_consultant_or_above()"
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_coord_insert",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{authenticated}",
+    "using_expr": null
+  },
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_coord_update",
+    "permissive": "PERMISSIVE",
+    "cmd": "UPDATE",
+    "roles": "{authenticated}",
+    "using_expr": "is_coordinator_or_above()"
+  },
+  {
+    "tablename": "clinical_images",
+    "policyname": "auth_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "consent_forms",
+    "policyname": "auth_users_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "consent_forms",
+    "policyname": "consent_forms_admin_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_admin_or_manager()"
+  },
+  {
+    "tablename": "consent_forms",
+    "policyname": "consent_forms_approved_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "consent_forms",
+    "policyname": "consent_forms_consult_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_consultant_or_above()"
+  },
+  {
+    "tablename": "consent_forms",
+    "policyname": "consent_forms_coord_iru",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{authenticated}",
+    "using_expr": null
+  },
+  {
+    "tablename": "message_logs",
+    "policyname": "message_logs_authenticated",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_tenant_isolation",
+    "permissive": "RESTRICTIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "(clinic_id = current_user_clinic_id())"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_admin_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_admin_or_manager()"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_approved_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_consult_insert",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{authenticated}",
+    "using_expr": null
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_staff_unlock_6menu",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])))"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_write",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])))"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_anon_deny",
+    "permissive": "RESTRICTIVE",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "anon_read_package_tiers",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{anon}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_admin_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_admin_or_manager()"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_approved_delete",
+    "permissive": "PERMISSIVE",
+    "cmd": "DELETE",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_approved_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_approved_update",
+    "permissive": "PERMISSIVE",
+    "cmd": "UPDATE",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_approved_write",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{authenticated}",
+    "using_expr": null
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_auth_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_admin_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_admin_or_manager()"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_approved_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_consult_insert",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{authenticated}",
+    "using_expr": null
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_consult_update",
+    "permissive": "PERMISSIVE",
+    "cmd": "UPDATE",
+    "roles": "{authenticated}",
+    "using_expr": "(is_consultant_or_above() AND (status <> ALL (ARRAY['refunded'::text, 'transferred'::text])))"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_delete_admin",
+    "permissive": "PERMISSIVE",
+    "cmd": "DELETE",
+    "roles": "{authenticated}",
+    "using_expr": "current_user_is_admin_or_manager()"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_insert",
+    "permissive": "PERMISSIVE",
+    "cmd": "INSERT",
+    "roles": "{authenticated}",
+    "using_expr": null
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_staff_unlock_6menu",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])))"
+  },
+  {
+    "tablename": "packages",
+    "policyname": "packages_update",
+    "permissive": "PERMISSIVE",
+    "cmd": "UPDATE",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['admin'::text, 'manager'::text, 'consultant'::text, 'coordinator'::text])))"
+  },
+  {
+    "tablename": "service_charges",
+    "policyname": "auth_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "services",
+    "policyname": "services_anon_deny",
+    "permissive": "RESTRICTIVE",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "services",
+    "policyname": "anon_service_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{anon}",
+    "using_expr": "true"
+  },
+  {
+    "tablename": "services",
+    "policyname": "services_admin_all",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "is_admin_or_manager()"
+  },
+  {
+    "tablename": "services",
+    "policyname": "services_approved_read",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "is_approved_user()"
+  },
+  {
+    "tablename": "services",
+    "policyname": "services_staff_unlock_6menu",
+    "permissive": "PERMISSIVE",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND (current_user_role() = ANY (ARRAY['consultant'::text, 'coordinator'::text, 'therapist'::text])))"
+  },
+  {
+    "tablename": "waiting_board",
+    "policyname": "waiting_board_select",
+    "permissive": "PERMISSIVE",
+    "cmd": "SELECT",
+    "roles": "{anon,authenticated}",
+    "using_expr": "true"
+  }
+]
+
+── [E_already_sealed] 이미 RESTRICTIVE(SELECT/ALL) 보유 테이블 (SEAL 완료분)
+[
+  {
+    "tablename": "checklists",
+    "policyname": "checklists_anon_read_deny",
+    "cmd": "SELECT",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "form_submissions",
+    "policyname": "fs_deleted_rows_director_only",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND ((deleted_at IS NULL) OR (current_user_role() = ANY (ARRAY['director'::text, 'admin'::text]))))"
+  },
+  {
+    "tablename": "form_templates",
+    "policyname": "form_templates_anon_deny",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "medical_charts",
+    "policyname": "mc_deleted_rows_director_only",
+    "cmd": "SELECT",
+    "roles": "{authenticated}",
+    "using_expr": "(is_approved_user() AND ((is_deleted = false) OR (current_user_role() = ANY (ARRAY['director'::text, 'admin'::text]))))"
+  },
+  {
+    "tablename": "package_payments",
+    "policyname": "package_payments_tenant_isolation",
+    "cmd": "ALL",
+    "roles": "{authenticated}",
+    "using_expr": "(clinic_id = current_user_clinic_id())"
+  },
+  {
+    "tablename": "package_tiers",
+    "policyname": "package_tiers_anon_deny",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "redpay_terminal_registry",
+    "policyname": "redpay_terminal_registry_anon_deny",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "room_role_mapping",
+    "policyname": "room_role_mapping_anon_deny",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  },
+  {
+    "tablename": "services",
+    "policyname": "services_anon_deny",
+    "cmd": "ALL",
+    "roles": "{anon}",
+    "using_expr": "false"
+  }
+]
+
+
+=== 격상 판정 요약 (§C-3) ===
+clinics total=2 · LIVE(customer|staff>0)=1
+OPEN surface(RESTRICTIVE 부재) = 19 tables:
+   · claim_diagnoses (clinic_id=true, customer_id=false) ← "{claim_diagnoses_auth_all}"
+   · clinical_images (clinic_id=true, customer_id=true) ← "{auth_all}"
+   · code_availability (clinic_id=true, customer_id=false) ← "{code_availability_select}"
+   · consent_forms (clinic_id=true, customer_id=true) ← "{auth_users_all}"
+   · diagnosis_folders (clinic_id=true, customer_id=false) ← "{diagnosis_folders_read_all,diagnosis_folders_write_auth}"
+   · diagnosis_sets (clinic_id=true, customer_id=false) ← "{diagnosis_sets_read_all,diagnosis_sets_write_auth}"
+   · handover_notes (clinic_id=true, customer_id=false) ← "{handover_notes_select}"
+   · health_maintenance_balances (clinic_id=true, customer_id=true) ← "{auth_all}"
+   · message_logs (clinic_id=true, customer_id=true) ← "{message_logs_authenticated}"
+   · notices (clinic_id=true, customer_id=false) ← "{notices_select_for_authenticated}"
+   · packages (clinic_id=true, customer_id=true) ← "{packages_read}"
+   · payment_audit_logs (clinic_id=true, customer_id=false) ← "{payment_audit_logs_open}"
+   · quick_rx_buttons (clinic_id=true, customer_id=false) ← "{staff_read_quick_rx_buttons}"
+   · receipt_ocr_results (clinic_id=true, customer_id=false) ← "{auth_all}"
+   · redpay_unregistered_line_seen (clinic_id=true, customer_id=false) ← "{redpay_unregistered_line_seen_read_all}"
+   · service_charges (clinic_id=true, customer_id=true) ← "{auth_all}"
+   · timer_records (clinic_id=true, customer_id=false) ← "{timer_records_authenticated_select}"
+   · treatment_sets (clinic_id=true, customer_id=false) ← "{authenticated_all_treatment_sets}"
+   · waiting_board (clinic_id=true, customer_id=false) ← "{waiting_board_select}"
+
+격상 트리거 미충족 or OPEN 0.
