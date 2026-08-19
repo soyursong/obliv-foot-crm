@@ -36,7 +36,7 @@ prod 실측 (Management API read-only introspection, 2026-08-19):
 |----|------|------|
 | schema_migrations `20260819200000` | ABSENT (`present=false`) | 미적용 = dry-run 무영속 정합 ✓ |
 | prod `calc_visit_copayment` | ABSENT (`present=false`) | 신규 genuine ADD (충돌 0) ✓ |
-| prod `calc_copayment` | PRESENT · args=`(p_service_id,p_customer_id,p_clinic_id,p_visit_date,p_surcharge_rate)` · body md5=`eb2637a4639a93bfe06eb3d8884377ea` | 무접촉 baseline — 마이그 내 CREATE/ALTER/DROP 0건(read-only CALL만) ✓ |
+| prod `calc_copayment` | PRESENT · args=`(p_service_id,p_customer_id,p_clinic_id,p_visit_date,p_surcharge_rate)` · **functiondef md5=`eb2637a4`** (`md5(pg_get_functiondef)`) · **prosrc(body) md5=`1d5d2837`** (`md5(prosrc)`) | 무접촉 baseline — 마이그 내 CREATE/ALTER/DROP 0건(read-only CALL만) ✓. **정정(2026-08-19T07:57Z, dev-foot 라이브 재실측)**: 구 기록 `body md5=eb2637a4` 은 실제로 **functiondef** md5 였음(라벨 오류). prosrc(body) md5 = `1d5d2837`. 둘 다 동일 미접촉 함수의 서로 다른 측정축 → **drift 아님**. supervisor GO-token PUSH 지적(prosrc 1d5d2837) 반영. |
 | prod `record_insurance_consult_payment` | PRESENT · 7-arg(v2) | v3 8-arg 로 ADDITIVE 대체(DEFAULT NULL → 7-arg caller 무회귀) ✓ |
 - 3자(원장 선언 ↔ prod 실재 ↔ 마이그 파일) divergence 0. calc_copayment body-drift 감시(C19) = 마이그가 calc_copayment 를 수정하지 않음(신규 calc_visit_copayment 가 v1.7 로직 verbatim mirror 내장) — supervisor C19 대조 대상.
 
