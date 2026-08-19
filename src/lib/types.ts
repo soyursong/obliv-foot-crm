@@ -801,14 +801,10 @@ export interface UserProfile {
   //   has_ops_authority(positive ABILITY)와 직교 축(negative-protection) → 별 컬럼(통합 금지, least-privilege).
   //   ⚠️ DB 컬럼은 마이그(..._exempt_from_restrictions_additive.sql.DDL_DIFF_HOLD) 적용 전까지 부재 → undefined(=false 취급, inert).
   exempt_from_restrictions?: boolean | null;
-  // T-20260819-foot-VIEWERONLY-WONJANG-ACCOUNT-ORIGIN — 뷰어전용(read-only) 계정 flag (ADDITIVE, negative-space).
-  //   true = 이 계정은 전(全) surface(의료·비의료 무구분)에서 write/발행/취소 액션이 차단되고 열람만 가능.
-  //   ★uniform 초크포인트: 의료 carve-out 없음(planner GATE A ★조종 결정, MSG-20260819-131818-pn41).
-  //     의료 write(canIssueProgressDocs 등)도 동일 flag 로 단락 — 부분 carve-out 은 fragile.
-  //   ★choke-point 코드는 inert: flag=true 부여 前까지 기존 계정 0 behavior change(has_ops_authority 선례 준용).
-  //   ⚠️ DB 컬럼(user_profiles.read_only)은 미적재(DDL_DIFF_HOLD) → 계정 LIVE 활성화(=문원장 medical 컨펌 +
-  //      김주연 identity 확인) 시점에 DA CONSULT 동반 landing. 그 전까지 profile.read_only=undefined(=false, inert).
-  read_only?: boolean | null;
+  // T-20260819-foot-VIEWERONLY-WONJANG-ACCOUNT-ORIGIN — 뷰어전용(read-only)은 UserProfile(user_profiles) 컬럼이
+  //   ★아니다★. 저장위치 = auth app_metadata.read_only(=Option B, planner 설계결정 2026-08-19). Option A(user_profiles.read_only
+  //   컬럼)는 db_change=TRUE(DA CONSULT+MIG-GATE) 유발 + has_ops_authority/exempt DDL_DIFF_HOLD 얽힘으로 REJECT.
+  //   → read_only 는 session.user.app_metadata.read_only(JWT claim)에서 읽는다(useReadOnly). 여기 컬럼 추가 금지.
 }
 
 /** T-20260623-foot-DOCCHART-PASTHX-TAB: 의사 진료차트 '과거력' 확정 이력 (append-only).

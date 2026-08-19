@@ -30,6 +30,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   isViewerOnly,
+  isReadOnlyFromAppMetadata,
   gateViewerWrite,
   canEditClinicMgmt,
   canEditConfirmedClosing,
@@ -69,6 +70,16 @@ test.describe('A. isViewerOnly atom', () => {
   test('A3: null/undefined subject → false (null-safe)', () => {
     expect(isViewerOnly(null)).toBe(false);
     expect(isViewerOnly(undefined)).toBe(false);
+  });
+
+  test('A4: ★Option B 소스★ isReadOnlyFromAppMetadata(app_metadata.read_only) — JWT claim reader', () => {
+    expect(isReadOnlyFromAppMetadata({ read_only: true })).toBe(true);
+    expect(isReadOnlyFromAppMetadata({ read_only: false })).toBe(false);
+    expect(isReadOnlyFromAppMetadata({})).toBe(false); // 미부여 = inert
+    expect(isReadOnlyFromAppMetadata(null)).toBe(false);
+    expect(isReadOnlyFromAppMetadata(undefined)).toBe(false);
+    // truthy 오탐 방지 — 문자열 'false'/'true' 는 === true 아님(엄격).
+    expect(isReadOnlyFromAppMetadata({ read_only: 'true' as unknown })).toBe(false);
   });
 });
 
@@ -154,12 +165,16 @@ test.describe('D. inert 불변식 (flag 부재 = 0 behavior change)', () => {
 // E. 정적 소스 가드 — 훅 배선 · DDL_DIFF_HOLD · 실계정 생성 미포함
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('E. 소스 구조 가드', () => {
-  test('E1: useReadOnly 훅이 useAuth+isViewerOnly 로 uniform 초크포인트 구성', () => {
+  test('E1: useReadOnly 훅이 ★Option B★ session.app_metadata.read_only 단일 소스 (user_profiles 컬럼 아님)', () => {
     const h = read('src/hooks/useReadOnly.ts');
     expect(h).toContain("import { useAuth } from '../lib/auth'");
-    expect(h).toContain("import { isViewerOnly } from '../lib/permissions'");
+    expect(h).toContain('isReadOnlyFromAppMetadata');
     expect(h).toContain('export function useReadOnly()');
-    expect(h).toContain('return isViewerOnly(profile)');
+    // Option B: session.user.app_metadata 에서 읽는다(profile.read_only 컬럼 참조 금지).
+    expect(h).toContain('session?.user?.app_metadata');
+    const hs = stripComments(h);
+    expect(hs).not.toContain('profile.read_only');
+    expect(hs).not.toContain('isViewerOnly(profile)');
   });
 
   test('E2: permissions.ts — isViewerOnly/gateViewerWrite 초크포인트 export + 3 predicate 단락', () => {
@@ -170,11 +185,12 @@ test.describe('E. 소스 구조 가드', () => {
     expect((p.match(/if \(isViewerOnly\(s\)\) return false;/g) || []).length).toBeGreaterThanOrEqual(3);
   });
 
-  test('E3: DDL_DIFF_HOLD — 본 티켓은 read_only 컬럼 마이그를 동반하지 않음(FE-only inert)', () => {
-    // 계정 LIVE 활성화(문원장 컨펌+identity) 시점에 DA CONSULT 동반 landing → 지금은 컬럼 미적재.
-    const t = read('src/lib/types.ts');
-    expect(t).toContain('read_only?: boolean | null');
-    expect(stripComments(t)).toContain('read_only?: boolean | null'); // 실코드(주석 아님)
+  test('E3: ★Option B (db_change=FALSE)★ — user_profiles.read_only 컬럼 미도입(Option A REJECT) · 마이그 미동반', () => {
+    // 저장위치 = app_metadata(JWT claim). UserProfile 에 read_only 컬럼 필드를 추가하지 않는다(Option A=db_change:true REJECT).
+    const t = stripComments(read('src/lib/types.ts'));
+    const up = t.slice(t.indexOf('export interface UserProfile'), t.indexOf('export interface UserProfile') + 900);
+    expect(up).not.toContain('read_only'); // UserProfile 실코드에 read_only 필드 부재(Option B)
+    // 본 브랜치 diff 에 신규 마이그 파일 없음은 배포전 게이트(db_change=false)에서 확인 — 여기선 소스 축만 단언.
   });
 
   test('E4: uniform 원칙 명문화 — medical carve-out 부재(의료 write 도 동일 단락)', () => {

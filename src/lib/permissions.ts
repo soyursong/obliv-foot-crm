@@ -324,6 +324,8 @@ export interface OpsAuthSubject {
   exempt_from_restrictions?: boolean | null;
   // T-20260819-foot-VIEWERONLY-WONJANG-ACCOUNT-ORIGIN: 뷰어전용(read-only) flag. true = 전 surface write 차단(열람만).
   //   exempt(회수-방지) 와 반대 방향의 negative-space — 역할이 가진 write 를 '전면 무력화'(least-privilege 극단).
+  //   ★저장위치 = auth app_metadata.read_only(JWT claim, Option B) — user_profiles 컬럼 ★아님★(db_change=FALSE).
+  //     호출부가 session.user.app_metadata.read_only 를 이 subject 필드로 주입(isReadOnlyFromAppMetadata). source-agnostic.
   read_only?: boolean | null;
 }
 
@@ -346,6 +348,18 @@ export interface OpsAuthSubject {
  */
 export function isViewerOnly(subject: OpsAuthSubject | null | undefined): boolean {
   return !!subject && subject.read_only === true;
+}
+
+/**
+ * auth app_metadata(JWT claim)에서 뷰어전용 여부를 읽는 canonical reader (Option B 소스).
+ *   session.user.app_metadata 를 그대로 넘긴다 → app_metadata.read_only === true 만 뷰어.
+ *   ★app_metadata 는 GoTrue 서버가 관리(위조불가) — user_metadata(사용자 편집가능)와 구분해 이것만 신뢰.
+ *   null/누락/false → false(inert). 어떤 계정도 미부여인 현 상태에선 항상 false = 0 behavior change.
+ */
+export function isReadOnlyFromAppMetadata(
+  appMetadata: Record<string, unknown> | null | undefined,
+): boolean {
+  return !!appMetadata && appMetadata.read_only === true;
 }
 
 /**
