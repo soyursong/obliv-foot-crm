@@ -22,6 +22,16 @@ import { Textarea } from '@/components/ui/textarea';
 //   ③ dirty=false(빈 입력)면 handleSave 내부 early-return 으로 no-op(불필요 저장 미발생)
 //   ④ 입력창 포커스 시에만 발화 → 모달/팝업(Ctrl+K 검색 등) 열림 시 오작동·회귀 없음.
 //   handleSave: 저장 진행 중(saving)이면 버튼 disabled 상태를 미러하여 중복 저장을 막는다.
+//
+// T-20260819-foot-CHART-CTRL-S-SAVE-SHORTCUT: 저장 storm 방어 하드닝(필수).
+//   배경 — foot 차트 저장 성능/장애 이슈 진행 중(CHARTSAVE-STORM 등). 단축키가 저장 호출량을
+//   증폭시키지 않도록 dirty-gate + inflight-lock 을 이중으로 강제한다.
+//   ⚠ `saving` prop 단독 가드의 한계: saving 은 부모 setState 로 갱신되는 비동기 prop 이라,
+//     Ctrl+S 홀드(자동반복)·연타 시 첫 keydown 이후 리렌더로 saving=true 가 반영되기 전
+//     추가 keydown 이 saving=false 를 보고 통과 → 저장 중복 발화(storm). 이를 두 축으로 차단:
+//       (a) e.repeat 가드 — 키 홀드 자동반복 keydown 은 즉시 무시(연타 아님 = 1회만).
+//       (b) 동기 inflightRef 락 — handleSave 진입 즉시 ref=true(리렌더 불요), finally 로 해제.
+//         비동기 saving prop 의 레이스 윈도우를 동기 ref 로 봉합.
 function isCtrlS(e: KeyboardEvent<HTMLTextAreaElement>): boolean {
   return (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S');
 }
@@ -79,13 +89,22 @@ function TreatmentMemoComposerInner({
     writeDraft(draftKey, text);
   }, [draftKey, text]);
 
+  // inflight-lock: handleSave 진입 즉시 동기 락 → 연타/자동반복 중복 저장(storm) 차단.
+  const inflightRef = useRef(false);
+
   const handleSave = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    const ok = await onSave(trimmed);
-    if (ok) {
-      setText('');
-      writeDraft(draftKey, '');
+    if (!trimmed) return;             // dirty-gate: 빈 입력이면 no-op
+    if (inflightRef.current) return;  // inflight-lock: 진행 중 재진입 차단(동기 · 리렌더 불요)
+    inflightRef.current = true;
+    try {
+      const ok = await onSave(trimmed);
+      if (ok) {
+        setText('');
+        writeDraft(draftKey, '');
+      }
+    } finally {
+      inflightRef.current = false;
     }
   }, [text, onSave, draftKey]);
 
@@ -93,8 +112,9 @@ function TreatmentMemoComposerInner({
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isCtrlS(e)) return;
     e.preventDefault();      // 브라우저 기본 저장 다이얼로그 차단 (AC-2)
+    if (e.repeat) return;    // storm 방어(a): 키 홀드 자동반복 keydown 무시 → 1회만
     if (saving) return;      // 저장 버튼 disabled 상태 미러 → 중복 저장 방지
-    void handleSave();       // dirty=false(빈 입력)면 handleSave 내부 early-return → no-op (AC-3)
+    void handleSave();       // dirty=false·inflight 는 handleSave 내부에서 이중 차단 (AC-3)
   }, [handleSave, saving]);
 
   return (
@@ -159,18 +179,28 @@ function TreatmentMemoEditorInner({
 }) {
   const [text, setText] = useState<string>(initialContent);
 
+  // inflight-lock: 수정 저장도 동기 락으로 연타/자동반복 중복 저장(storm) 차단.
+  const inflightRef = useRef(false);
+
   const handleSave = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    await onSave(trimmed);
+    if (!trimmed) return;             // dirty-gate: 빈 입력이면 no-op
+    if (inflightRef.current) return;  // inflight-lock: 진행 중 재진입 차단(동기 · 리렌더 불요)
+    inflightRef.current = true;
+    try {
+      await onSave(trimmed);
+    } finally {
+      inflightRef.current = false;
+    }
   }, [text, onSave]);
 
   // Ctrl/Cmd+S = '수정 저장' 버튼과 동일 저장 (기존 handleSave 재사용).
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isCtrlS(e)) return;
     e.preventDefault();      // 브라우저 기본 저장 다이얼로그 차단 (AC-2)
+    if (e.repeat) return;    // storm 방어(a): 키 홀드 자동반복 keydown 무시 → 1회만
     if (saving) return;      // 저장 버튼 disabled 상태 미러 → 중복 저장 방지
-    void handleSave();       // 빈 입력이면 handleSave 내부 early-return → no-op
+    void handleSave();       // 빈 입력·inflight 는 handleSave 내부에서 이중 차단
   }, [handleSave, saving]);
 
   return (
