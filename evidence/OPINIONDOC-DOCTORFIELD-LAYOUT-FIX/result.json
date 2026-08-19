@@ -1,0 +1,50 @@
+{
+  "ticket": "T-20260820-foot-OPINIONDOC-DOCTORFIELD-LAYOUT-FIX",
+  "metric": "진료의(의사 성명) 칸 — 직인 X좌표 / 이름 슬롯 좌표가 이름 길이에 불변인가",
+  "old": {
+    "short": {
+      "name": "문지은",
+      "valcell_left": 482.61,
+      "valcell_width": 251,
+      "seal_left": 525.56,
+      "seal_top": 20,
+      "name_left": 488.11,
+      "name_width": 31.14
+    },
+    "long": {
+      "name": "황보라영선우",
+      "valcell_left": 482.61,
+      "valcell_width": 251,
+      "seal_left": 556.7,
+      "seal_top": 20,
+      "name_left": 488.11,
+      "name_width": 62.28
+    },
+    "seal_left_delta": 31.14,
+    "name_left_delta": 0
+  },
+  "new": {
+    "short": {
+      "name": "문지은",
+      "valcell_left": 482.61,
+      "valcell_width": 251,
+      "seal_left": 674.11,
+      "seal_top": 20,
+      "name_left": 488.11,
+      "name_width": 184
+    },
+    "long": {
+      "name": "황보라영선우",
+      "valcell_left": 482.61,
+      "valcell_width": 251,
+      "seal_left": 674.11,
+      "seal_top": 20,
+      "name_left": 488.11,
+      "name_width": 184
+    },
+    "seal_left_delta": 0,
+    "name_left_delta": 0
+  },
+  "verdict_new_seal_stable": true,
+  "verdict_new_name_slot_stable": true
+}

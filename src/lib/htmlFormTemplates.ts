@@ -826,7 +826,12 @@ ${COMMON_STYLE}
         <td style="background:#f8f8f8; text-align:center;">면 허 번 호</td>
         <td>제&nbsp;{{doctor_license_no}}&nbsp;호</td>
         <td style="background:#f8f8f8; text-align:center; white-space:nowrap;">의 사 성 명</td>
-        <td>{{doctor_name}}&nbsp;&nbsp;{{doctor_seal_html}}</td>
+        <!-- T-20260820-foot-OPINIONDOC-DOCTORFIELD-LAYOUT-FIX: 진료의(의사 성명) 칸 = 이름 슬롯(가변 중앙) + 직인 슬롯(우측 고정 56px) 2슬롯 고정.
+             종전 doctor_name + nbsp + doctor_seal_html 의 inline flow 는 이름 길이(텍스트)에 따라 직인 X좌표가 밀려
+             발급할 때마다 진료의 칸의 위치·정렬이 흔들렸다(현장 신고, "아직도"). colgroup 으로 col4 폭(35%)은 이미 고정돼 있으나
+             셀 내부 content 는 여전히 reflow. 이제 flex 2슬롯 — 이름=flex:1(셀 내 항상 동일 영역·중앙정렬), 직인=flex 0 0 56px
+             (항상 셀 우측 고정). 텍스트(이름)만 바뀌고 위치/정렬은 불변(발급 로직·데이터·저장 무접촉, 표시 레이아웃만). -->
+        <td style="vertical-align:middle;"><div style="display:flex; align-items:center; width:100%;"><span style="flex:1 1 auto; text-align:center; white-space:nowrap; overflow:hidden;">{{doctor_name}}</span><span style="flex:0 0 56px; text-align:center;">{{doctor_seal_html}}</span></div></td>
       </tr>
     </tbody>
   </table>
