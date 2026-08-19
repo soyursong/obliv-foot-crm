@@ -495,9 +495,11 @@ const TimerCountdown = memo(function TimerCountdown({ endsAt }: { endsAt: Date }
   return (
     <span
       data-testid="card-timer-countdown"
+      // T-20260819-foot-DASHBOARD-LASER-FONT-BOLD: 고객박스 레이저 잔여시간/종료 표기 가독성 개선(현장 김주연 총괄, 스샷 F0BRANALJKE).
+      //   font-semibold(600)→font-bold(700) + 색 대비 강화(600→700 shade). 텍스트/데이터/계산/레이아웃 무변경(표시 스타일만).
       className={cn(
-        'tabular-nums font-mono font-semibold leading-none',
-        expired ? 'text-red-600' : warn ? 'text-amber-600' : 'text-blue-600',
+        'tabular-nums font-mono font-bold leading-none',
+        expired ? 'text-red-700' : warn ? 'text-amber-700' : 'text-blue-700',
       )}
       title="레이저 타이머 남은 시간"
     >
@@ -831,7 +833,7 @@ const DraggableCard = memo(function DraggableCard({
           {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 레이저 타이머 남은시간 카운트다운.
               위치 SSOT=총괄 빨간박스 스샷(F0BP02NKTLZ) = 하단 배지행 우측 끝(패키지 태그 우측 빈칸). ml-auto로 우측 정렬. */}
           {timerEndsAt && (
-            <span className="ml-auto pl-1 text-[10px]" data-testid="card-timer-countdown-row">
+            <span className="ml-auto pl-1 text-[11px]" data-testid="card-timer-countdown-row">
               <TimerCountdown endsAt={timerEndsAt} />
             </span>
           )}
@@ -1052,7 +1054,7 @@ const DraggableCard = memo(function DraggableCard({
         {/* T-20260808-foot-DASH-CUSTBOX-TIMER-COUNTDOWN: 레이저 타이머 남은시간 카운트다운(non-compact).
             위치 SSOT=총괄 빨간박스 스샷(F0BP02NKTLZ) = 하단 배지행 우측 끝(패키지 태그 우측 빈칸). ml-auto로 우측 정렬. */}
         {timerEndsAt && (
-          <span className="ml-auto pl-1 text-[9px]" data-testid="card-timer-countdown-row">
+          <span className="ml-auto pl-1 text-[10px]" data-testid="card-timer-countdown-row">
             <TimerCountdown endsAt={timerEndsAt} />
           </span>
         )}
