@@ -95,13 +95,30 @@ export function InsuranceGradeSelect({
   //   captureOpen 은 양방향 토글(패널 닫기·차트 전환 시 false)이라 deps 에 그대로 두면
   //   닫는 순간 manual_input 으로 되돌아가 본 티켓의 목적이 무산된다(rising edge 한정).
   //   등급·메모는 건드리지 않는다 — 편집 중 조회해도 입력이 보존돼야 한다.
+  //
+  //   T-20260819-...-STICKY-LATCH (rework 재작업):
+  //   REWORK(8df622a7)는 "편집 중 조회" 케이스만 막았다. 그러나 현장 primary 동선은
+  //   [건보조회](1구역, 편집모드와 무관) → 포털 육안확인 → 패널 닫기 → InsuranceGradeSelect [입력]
+  //   → 등급선택 → 저장. 이때 [입력]=startEdit 이 draftSource 를 재계산하는데, 그 시점
+  //   lookupInProgress(=captureOpen) 는 이미 false 라 manual_input 으로 되돌아간다(현장 미완 재발).
+  //   RC = "조회가 있었다"는 사실이 ephemeral draftSource 에만 있어 startEdit 이 덮어씀.
+  //   해소 = 조회 개시(rising edge)에 세션 sticky 래치를 걸고, startEdit 이 이를 소비한다.
+  //   래치는 저장 성공 또는 고객 전환 시 해제(교차 고객 오귀속 방지).
   const prevLookupRef = useRef(false);
+  const lookupLatchedRef = useRef(false);
   useEffect(() => {
     if (lookupInProgress && !prevLookupRef.current) {
+      lookupLatchedRef.current = true;
       setDraftSource('hira_lookup');
     }
     prevLookupRef.current = lookupInProgress;
   }, [lookupInProgress]);
+
+  // 고객 전환 시 조회 래치 초기화 — 이전 고객의 hira_lookup 이 다음 고객으로 새지 않도록.
+  useEffect(() => {
+    lookupLatchedRef.current = false;
+    prevLookupRef.current = false;
+  }, [customerId]);
 
   // 나이 자동(§3) — 나이 SSOT = fn_customer_birthdates RPC(서버파생 'YYYY-MM-DD', 세기 정확).
   //   REDEFINITION_RISK 정렬: 클라 세기-휴리스틱 신설 없이 RPC 재사용. clinicId 없으면 나이 추천 생략.
@@ -140,7 +157,10 @@ export function InsuranceGradeSelect({
 
   const startEdit = () => {
     setDraftGrade((grade ?? 'unverified') as InsuranceGrade);
-    setDraftSource((source ?? (lookupInProgress ? 'hira_lookup' : 'manual_input')) as InsuranceGradeSource);
+    // 이번 세션에 포털 조회가 있었으면(진행 중 or 래치) hira_lookup 우선 — rising-edge effect 와 동일한
+    //   "조회=출처" 규칙을 startEdit 에도 적용해, 조회 후 닫고 [입력]하는 primary 동선에서 귀속이 살아남는다.
+    const lookedUp = lookupInProgress || lookupLatchedRef.current;
+    setDraftSource((lookedUp ? 'hira_lookup' : (source ?? 'manual_input')) as InsuranceGradeSource);
     setDraftMemo(memo ?? '');
     // 판정 보조 입력은 매 편집 시 비움(이전 값 잔류 = 오판정 방지).
     setBenefitText('');
@@ -171,6 +191,9 @@ export function InsuranceGradeSelect({
       return;
     }
     toast.success('자격등급이 갱신되었습니다');
+    // 저장 성공 = 출처가 DB 에 영속됨 → 세션 조회 래치 소비(해제). 이후 재편집은 저장된 source 를 따른다.
+    lookupLatchedRef.current = false;
+    prevLookupRef.current = false;
     setEditing(false);
     refresh();
     onChanged?.();

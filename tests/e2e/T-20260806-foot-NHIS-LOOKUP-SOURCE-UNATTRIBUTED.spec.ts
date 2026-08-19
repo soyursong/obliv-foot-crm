@@ -99,9 +99,9 @@ test.describe('REWORK 구조: deps 정리 + rising-edge 분리', () => {
   test('AC-2: rising-edge 전용 effect 신설 — prevLookupRef + false→true 가드', () => {
     // useRef 로 이전 상태 추적
     expect(gradeSelectSrc).toMatch(/const\s+prevLookupRef\s*=\s*useRef\(false\)/);
-    // false→true(rising edge) 순간에만 hira_lookup 프리셋
+    // false→true(rising edge) 순간에만 hira_lookup 프리셋 (STICKY-LATCH: 사이에 래치 세팅 허용)
     expect(gradeSelectSrc).toMatch(
-      /if\s*\(\s*lookupInProgress\s*&&\s*!prevLookupRef\.current\s*\)\s*\{\s*setDraftSource\('hira_lookup'\)/,
+      /if\s*\(\s*lookupInProgress\s*&&\s*!prevLookupRef\.current\s*\)\s*\{[\s\S]*?setDraftSource\('hira_lookup'\)/,
     );
     // 이전 상태 갱신 + deps 는 lookupInProgress 단독
     expect(gradeSelectSrc).toMatch(/prevLookupRef\.current\s*=\s*lookupInProgress/);
@@ -113,10 +113,32 @@ test.describe('REWORK 구조: deps 정리 + rising-edge 분리', () => {
     expect(risingBlock).not.toContain('setDraftMemo');
   });
 
-  test('startEdit 프리셋(:143)은 무접촉 — source ?? (lookupInProgress ? ...) 유지', () => {
-    // startEdit 에는 기존값 우선 폴백이 정확히 1회 남는다(초기화 effect 에서는 제거됨).
-    const guarded = gradeSelectSrc.match(/source\s*\?\?\s*\(lookupInProgress\s*\?\s*'hira_lookup'\s*:\s*'manual_input'\)/g) ?? [];
-    expect(guarded.length).toBe(1);
+  // T-20260819-...-STICKY-LATCH: startEdit 이 세션 조회 래치를 소비하도록 재작업.
+  //   구 REWORK 는 startEdit 에 `source ?? (lookupInProgress ? ...)` 를 남겨, 조회 후 패널을
+  //   닫고 [입력]하면(그 시점 lookupInProgress=false) manual_input 으로 되돌아갔다(현장 미완 재발).
+  test('AC-5: 세션 조회 래치(lookupLatchedRef) 신설 + rising-edge 에서 세팅', () => {
+    expect(gradeSelectSrc).toMatch(/const\s+lookupLatchedRef\s*=\s*useRef\(false\)/);
+    // rising-edge effect 안에서 래치 on
+    const risingBlock =
+      gradeSelectSrc.match(/if\s*\(\s*lookupInProgress\s*&&\s*!prevLookupRef\.current[\s\S]*?\[lookupInProgress\]\s*\)/)?.[0] ?? '';
+    expect(risingBlock).toMatch(/lookupLatchedRef\.current\s*=\s*true/);
+  });
+
+  test('AC-5: startEdit 은 래치를 소비 — lookupInProgress || lookupLatchedRef.current 이면 hira_lookup', () => {
+    const startEditBlock = gradeSelectSrc.match(/const\s+startEdit\s*=[\s\S]*?setEditing\(true\)/)?.[0] ?? '';
+    expect(startEditBlock).toMatch(/lookupInProgress\s*\|\|\s*lookupLatchedRef\.current/);
+    expect(startEditBlock).toMatch(/lookedUp\s*\?\s*'hira_lookup'\s*:\s*\(source\s*\?\?\s*'manual_input'\)/);
+    // 구 버그 패턴(startEdit 내 source ?? (lookupInProgress ? ...))은 제거됐다.
+    const legacy = startEditBlock.match(/source\s*\?\?\s*\(lookupInProgress\s*\?\s*'hira_lookup'\s*:\s*'manual_input'\)/g) ?? [];
+    expect(legacy.length).toBe(0);
+  });
+
+  test('AC-5: 래치 해제 — 고객 전환 effect + 저장 성공 시', () => {
+    // customerId deps effect 에서 래치 초기화
+    expect(gradeSelectSrc).toMatch(/lookupLatchedRef\.current\s*=\s*false;[\s\S]*?\}\s*,\s*\[customerId\]\s*\)/);
+    // save() 성공 후 래치 소비
+    const saveBlock = gradeSelectSrc.match(/const\s+save\s*=\s*async[\s\S]*?onChanged\?\.\(\)/)?.[0] ?? '';
+    expect(saveBlock).toMatch(/lookupLatchedRef\.current\s*=\s*false/);
   });
 });
 
@@ -133,6 +155,8 @@ interface FormState {
   draftSource: Src;
   draftMemo: string;
   prevLookup: boolean;
+  lookupLatched: boolean; // T-20260819 STICKY-LATCH: 세션 조회 발생 래치
+  savedSource: Src | null; // DB 에 영속된 source (useInsuranceGrade.source 미러)
 }
 
 // InsuranceGradeSelect 초기화 effect(:88~92) — deps [grade, source, memo] 변경 시만.
@@ -142,16 +166,31 @@ function syncFromProps(s: FormState, grade: string | null, source: Src | null, m
     draftGrade: grade ?? 'unverified',
     draftSource: source ?? 'manual_input',
     draftMemo: memo ?? '',
+    savedSource: source,
   };
 }
-// rising-edge effect(:98~104) — lookupInProgress 변경 시. false→true 순간에만 hira_lookup.
+// rising-edge effect(:98~104) — lookupInProgress 변경 시. false→true 순간에만 hira_lookup + 래치 on.
 function onLookupChange(s: FormState, lookupInProgress: boolean): FormState {
   const next = { ...s };
   if (lookupInProgress && !s.prevLookup) {
     next.draftSource = 'hira_lookup';
+    next.lookupLatched = true;
   }
   next.prevLookup = lookupInProgress;
   return next;
+}
+// startEdit(:141~) — [입력/수정] 클릭. 세션 조회 래치를 소비.
+function startEdit(s: FormState, lookupInProgress: boolean): FormState {
+  const lookedUp = lookupInProgress || s.lookupLatched;
+  return {
+    ...s,
+    draftGrade: s.draftGrade,
+    draftSource: lookedUp ? 'hira_lookup' : (s.savedSource ?? 'manual_input'),
+  };
+}
+// save() 성공 — source 영속 + 래치 소비.
+function saveOk(s: FormState): FormState {
+  return { ...s, savedSource: s.draftSource, lookupLatched: false, prevLookup: false };
 }
 // 라디오(:onClick={() => setDraftSource(s)}) — 데스크 수동 선택.
 function radioSelect(s: FormState, sel: Src): FormState {
@@ -161,11 +200,15 @@ function radioSelect(s: FormState, sel: Src): FormState {
 function editInput(s: FormState, grade?: string, memo?: string): FormState {
   return { ...s, ...(grade !== undefined ? { draftGrade: grade } : {}), ...(memo !== undefined ? { draftMemo: memo } : {}) };
 }
+const initState = (): FormState => ({
+  draftGrade: 'unverified', draftSource: 'manual_input', draftMemo: '',
+  prevLookup: false, lookupLatched: false, savedSource: null,
+});
 
 test.describe('동작 기준(AC-4): 상태전이로 결함 A·B 차단', () => {
   test('DoD 1: [건보조회]→패널 닫기 후 draftSource 가 hira_lookup 유지 (결함 B 차단)', () => {
     // 신규 고객(source=null) 최초 로딩
-    let st: FormState = { draftGrade: 'unverified', draftSource: 'manual_input', draftMemo: '', prevLookup: false };
+    let st: FormState = initState();
     st = syncFromProps(st, null, null, null);
     expect(st.draftSource).toBe('manual_input');
 
@@ -179,7 +222,7 @@ test.describe('동작 기준(AC-4): 상태전이로 결함 A·B 차단', () => {
   });
 
   test('DoD 2: 편집 중 [건보조회] 토글 시 draftGrade·draftMemo 불변 (결함 A 차단)', () => {
-    let st: FormState = { draftGrade: 'unverified', draftSource: 'manual_input', draftMemo: '', prevLookup: false };
+    let st: FormState = initState();
     st = syncFromProps(st, null, null, null);
 
     // 데스크가 등급·메모 입력
@@ -196,7 +239,7 @@ test.describe('동작 기준(AC-4): 상태전이로 결함 A·B 차단', () => {
   });
 
   test('DoD 3(AC-3): 데스크가 수기 선택 후 패널 토글에도 수기 유지', () => {
-    let st: FormState = { draftGrade: 'unverified', draftSource: 'manual_input', draftMemo: '', prevLookup: false };
+    let st: FormState = initState();
     st = syncFromProps(st, null, null, null);
 
     // [건보조회] → hira_lookup 프리셋
@@ -213,7 +256,7 @@ test.describe('동작 기준(AC-4): 상태전이로 결함 A·B 차단', () => {
   });
 
   test('DoD 4: 딥링크 없이 등급만 변경 → manual_input (음성 대조)', () => {
-    let st: FormState = { draftGrade: 'unverified', draftSource: 'manual_input', draftMemo: '', prevLookup: false };
+    let st: FormState = initState();
     st = syncFromProps(st, null, null, null);
     // 조회 개시 없이 등급만 입력
     st = editInput(st, 'general');
@@ -221,10 +264,59 @@ test.describe('동작 기준(AC-4): 상태전이로 결함 A·B 차단', () => {
   });
 
   test('DoD 5: 기존 source 있는 고객 재편집 시 종전 source 유지', () => {
-    let st: FormState = { draftGrade: 'unverified', draftSource: 'manual_input', draftMemo: '', prevLookup: false };
+    let st: FormState = initState();
     // 기존 저장값 source='hira_lookup' 인 고객 로딩
     st = syncFromProps(st, 'general', 'hira_lookup', '기확인');
     expect(st.draftSource).toBe('hira_lookup'); // 프리셋이 기존값을 밀어내지 않음
+  });
+
+  // ── T-20260819-...-STICKY-LATCH: 현장 primary 동선 회귀 lock (구 REWORK 미완 재현) ──
+  test('DoD 6: [건보조회]→닫기→[입력]→저장 = hira_lookup (현장 primary 동선, 구버그 재발 차단)', () => {
+    // 신규 고객, InsuranceGradeSelect 는 표시모드(편집 아님)에서 시작
+    let st: FormState = initState();
+    st = syncFromProps(st, null, null, null);
+    expect(st.draftSource).toBe('manual_input');
+
+    // 1구역 [건보조회] 클릭 (편집모드와 무관) → 래치 on + hira_lookup
+    st = onLookupChange(st, true);
+    expect(st.lookupLatched).toBe(true);
+
+    // 포털 육안확인 후 캡처 패널 [닫기] (captureOpen true→false)
+    st = onLookupChange(st, false);
+
+    // 이제서야 InsuranceGradeSelect [입력] 클릭 → startEdit (구버그: 여기서 manual_input 복귀)
+    st = startEdit(st, false /* lookupInProgress 이미 false */);
+    expect(st.draftSource).toBe('hira_lookup'); // ← 래치 소비로 유지되어야 함(핵심 회귀 lock)
+
+    // 등급 선택 후 저장
+    st = editInput(st, 'general');
+    st = saveOk(st);
+    expect(st.savedSource).toBe('hira_lookup'); // DB 에 hira_lookup 영속
+  });
+
+  test('DoD 7: 조회 없이 표시모드→[입력]→저장 = manual_input (음성 대조, 오귀속 방지)', () => {
+    let st: FormState = initState();
+    st = syncFromProps(st, null, null, null);
+    // 조회 개시 없음 → [입력]
+    st = startEdit(st, false);
+    expect(st.draftSource).toBe('manual_input');
+    st = editInput(st, 'general');
+    st = saveOk(st);
+    expect(st.savedSource).toBe('manual_input');
+  });
+
+  test('DoD 8: 고객 전환 시 래치 리셋 — 이전 고객 hira_lookup 이 다음 고객으로 새지 않음', () => {
+    let st: FormState = initState();
+    st = onLookupChange(st, true); // 고객A 조회 → 래치 on
+    st = onLookupChange(st, false);
+    expect(st.lookupLatched).toBe(true);
+
+    // 고객 전환 effect(:[customerId]) → 래치/prev 리셋 모델
+    st = { ...st, lookupLatched: false, prevLookup: false };
+    st = syncFromProps(st, null, null, null); // 고객B(신규) 로딩
+    // 고객B 는 조회 없이 [입력] → manual_input
+    st = startEdit(st, false);
+    expect(st.draftSource).toBe('manual_input');
   });
 });
 
