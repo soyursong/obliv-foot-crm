@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { formatAmount, formatDateDots } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { useInsuranceGrade, calcCopaymentBatch } from '@/hooks/useInsurance';
+import { redistributeVisitCopaymentMap } from '@/lib/copayCalc';
 import {
   HIRA_CATEGORY_LABELS,
   INSURANCE_GRADE_LABELS,
@@ -104,15 +105,21 @@ export function InsuranceCopaymentPanel({ checkIn }: Props) {
         customerId,
         checkIn.clinic_id,
       );
+      // T-20260819-foot-COPAY-VISIT-GRAIN: 항목당 합산 → 방문 grain 재배분(의급 정액·노인 구간 총액 판정).
+      //   copayFromBase 1회(방문 총액) + 비례배분+잔차. 비급여/미비 항목은 무변경(단건 결과 유지).
+      const coveredIds = new Set(
+        services.filter((s) => s.is_insurance_covered === true).map((s) => s.id),
+      );
+      const visitMap = redistributeVisitCopaymentMap(map, coveredIds, grade);
       if (!cancelled) {
-        setResults(map);
+        setResults(visitMap);
         setCalcLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [selectedIds, customerId, checkIn.clinic_id]);
+  }, [selectedIds, customerId, checkIn.clinic_id, services, grade]);
 
   const totals = useMemo(() => {
     let base = 0;

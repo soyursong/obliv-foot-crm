@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatAmount, formatDateDots } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { useInsuranceGrade, calcCopaymentBatch } from '@/hooks/useInsurance';
+import { redistributeVisitCopaymentMap } from '@/lib/copayCalc';
 import {
   HIRA_CATEGORY_LABELS,
   INSURANCE_GRADE_LABELS,
@@ -132,8 +133,13 @@ export function Chart2InsuranceCalcPanel({
         customerId,
         clinicId,
       );
+      // T-20260819-foot-COPAY-VISIT-GRAIN: 항목당 합산 → 방문 grain 재배분(footBilling mirror).
+      const coveredIds = new Set(
+        services.filter((s) => s.is_insurance_covered === true).map((s) => s.id),
+      );
+      const visitMap = redistributeVisitCopaymentMap(map, coveredIds, grade);
       if (!cancelled) {
-        setResults(map);
+        setResults(visitMap);
         setCalcLoading(false);
       }
     })();
