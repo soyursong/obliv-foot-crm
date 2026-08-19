@@ -10,6 +10,20 @@
 --   (b) used(4종) 81 / matched 42       — ★gap 39: DA reconcile 필요(§FOLLOWUP anomaly-1)
 --   (c) 환불/비-used 회차 매칭          = 0  ✓
 --   (참고) 기존 flag_true & FK NULL     = 49 (pre-FK 마킹 — anomaly-2)
+--
+-- ★★ J4 APPLY 재시퀀싱 재실측 (2026-08-19 13:20 KST, read-only mutation 0, prod=rxlomoozakkjesdqjtvd) ★★
+--   증적 = scripts/T-20260724-foot-PKGSESSION-BACKFILL_resequence_prep_20260819.mjs
+--        + db-gate/T-20260724-foot-PKGSESSION_remeasure_20260819.json
+--   check_in_services 성장(936→4183행, 07-24→08-19)으로 count-exact set 재산출:
+--   (a) 마킹 예정 행수(to_mark)         = 316   (07-24=42 → C6 min(unpaired·mappable CIS, active used) 재적용, 억지채움 0)
+--        · C6 min-sum per-(check_in,type) 합산 = 316 == a_to_mark → 정합 PASS (81쪽 억지채움 아님)
+--        · 타입분포: unheated_laser 273 / podologue 27 / heated_laser 16
+--   (b) used(4종) 535 / matched 316     — gap 219 = A2(35) + B1_LEAKY(184) + X(0). used == matched+gap 정합 PASS
+--   (c) 환불/비-used 회차 매칭          = 0  ✓ (사후 assert 유지)
+--   (참고) G-B 스냅샷 316행 = prev_flag 전건 false / prev_psid 전건 NULL / target_ps 이미링크 0 (double-link 위험 0)
+--   (참고) 잔존 legacy flag_true&FK-null = 30 (전건 4-type 매핑O, backfill matched=0 → DA A2 Pop-C EXCLUDE·flag=true 유지=⑨ 정상)
+--   ⚠ 이상수치(스코프 42→316·7.5x, flip 매출이동 ₩4.3M→₩74.63M, B1_LEAKY 16→184, 316중 303 post-fix created)
+--     = FM3 총괄 재통지 + DA '42 count-exact' verdict 재확인 트리거. APPLY 前 planner/DA/총괄 재확인 필요(dev-foot FOLLOWUP 발행).
 BEGIN;
 
 WITH ps AS (
