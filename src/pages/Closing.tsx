@@ -1239,6 +1239,15 @@ export default function Closing() {
           ? originalByPkgPaymentId.get(r.parent_payment_id)
           : undefined;
       if (!orig) continue; // 고아 환불 → 자체 행 유지(fallback)
+      // ── T-20260819-foot-CLOSING-CASHSUM-REFUNDROW-100K-DROP (B-2, view-layer) ──────
+      //   교차수단 환불(환불행 method ≠ 원결제행 method)은 병합하지 않고 자체 행으로 렌더한다.
+      //   병합하면 환불행이 '원결제행 method 탭'으로 숨겨져(merged_refund=표시 스킵), 정작 총계
+      //   reduce 는 환불행 자체 method 로 -amount 차감 → 환불행 method 탭의 [화면행 합 ≠ 총계]
+      //   불일치가 발생한다(2026-08-18: 카드 원결제 100k → 현금 환불 → 현금탭 화면행 735,400 vs
+      //   현금 총계 635,400, 100k 갭). 같은 수단일 때만 원결제행에 annotate 병합하고, 교차수단은
+      //   고아 환불과 동일하게 자체 행(fallback)으로 남겨 환불행 method 탭에서 -amount 가 보이게 한다.
+      //   ★ 합계 불변(회귀 0): refund 행은 병합 여부와 무관하게 rows 에 잔존 → totals reduce 불변.
+      if (r.method !== orig.method) continue;
       r.merged_refund = true;                 // 표시에서 스킵(합계 reduce 에는 잔존)
       orig.refunded = true;
       orig.refund_amount = (orig.refund_amount ?? 0) + r.amount;
