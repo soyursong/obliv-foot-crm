@@ -1,0 +1,22 @@
+{
+  "ticket_id": "T-20260819-foot-INFLOW-KAKAO-CANONICAL-CODE-ADD",
+  "gate": "DB-GATE-GO",
+  "issued_by": "supervisor",
+  "issued_at": "2026-08-19T20:54:40.000Z",
+  "expires_at": "2026-08-19T21:54:40.000Z",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "migration_sha256": "7208cf17b55f9b5327b6f9ab3aa3718f4cd603f4bdced53fafa43b44941bd1a3",
+  "rollback_sha256": "8dc7dd3a891736c13bb8daf8d265add2b896def3e1dc453e1b792c2ff8c3febb",
+  "migration_version": "20260820120001",
+  "migration_name": "foot_inflow_kakao_canonical_code_add",
+  "migration_files": [
+    "supabase/migrations/20260820120001_foot_inflow_kakao_canonical_code_add.sql",
+    "supabase/migrations/20260820120001_foot_inflow_kakao_canonical_code_add.rollback.sql"
+  ],
+  "evidence_commit": "cc352c5d",
+  "key_id": "supv-dbgate-2026a",
+  "nonce": "7f6b7fc21c7ecad0",
+  "da_consult_reply": "MSG-20260819-120836-9pqg (DA CONSULT-REPLY verdict=Q1(a) inbound.kakao ADDITIVE CONDITIONAL-GO·series=inbound·naver_place/homepage peer·Q2 forward-only·DDL-0 carve 금지·foot-only overlay·§36 firewall NEUTRAL).",
+  "ceo_gate": "N/A — 순수 ADDITIVE(system_codes INSERT 1행 inbound.kakao·기존 11코드 DROP/rename/semantic/sort_order UPDATE 0·backfill 0·순소실 0·rollback=1행 DELETE+11코드 존치 가드) + DA GO → 대표 파괴게이트 면제(autonomy §3.1). DDL-0 carve 아님 → DB-GATE+물리 GO-token 필수(면제 아님).",
+  "precheck": "supervisor DB-GATE PASS: prod ground-truth 실측(mgmt API rxlomoozakkjesdqjtvd) inflow_channel 11코드·inbound.kakao count=0·inbound.etc.requires_reason=true·inbound.homepage sort_order=3(kakao tiebreak peer). C26 arbiter=system_codes_code_type_code_key UNIQUE(code_type,code) 실재 → ON CONFLICT 유효(42P10 무). C38 collision: deployset scope PASS(collisions=[])·ledger slot 20260820120001 ABSENT(fresh)·RLS seal 20260819230000 존치 untouched. seed=1행 INSERT ON CONFLICT DO NOTHING 멱등+BEGIN/COMMIT assertion(kakao=1·total>=12·etc 무변). rollback=1행 DELETE+rest=11 가드. dryrun BEGIN..ROLLBACK 무영속. C5 build OK. C13 ancestry PASS(prod=cc352c5d). C16/C24 PASS. C29/C30 live foot bundle env PASS(ref1+sb_publishable_1·commit==cc352c5d). C36 anon-grant lint PASS(FAIL0/WARN0). C18/C21 DA HOLD·RETRACT CLEAR."
+}
