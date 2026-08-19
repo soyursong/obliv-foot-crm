@@ -322,6 +322,44 @@ export interface OpsAuthSubject {
   has_ops_authority?: boolean | null;
   // T-20260620-foot-SUPERADMIN-EXEMPT: 상시예외 flag(제한 토글 적용 제외). has_ops_authority(positive)와 직교 축(negative-protection).
   exempt_from_restrictions?: boolean | null;
+  // T-20260819-foot-VIEWERONLY-WONJANG-ACCOUNT-ORIGIN: 뷰어전용(read-only) flag. true = 전 surface write 차단(열람만).
+  //   exempt(회수-방지) 와 반대 방향의 negative-space — 역할이 가진 write 를 '전면 무력화'(least-privilege 극단).
+  read_only?: boolean | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260819-foot-VIEWERONLY-WONJANG-ACCOUNT-ORIGIN — 뷰어전용(read-only) 계정 write 초크포인트 (SSOT, 1지점).
+//   planner GATE A ★조종 결정(MSG-20260819-131818-pn41): FE choke-point = useReadOnly() + permissions.ts write predicate 단락.
+//   ★uniform — 의료 carve-out 하지 말 것. 초크포인트가 uniform 이라 medical 부분예외가 오히려 fragile +
+//     계정의 진료 VIEW(PHI) 접근 자체가 문원장 컨펌 대상 → 코드는 uniform 유지, 컨펌 게이트는 '계정 LIVE 활성화' 단계에 배치.
+//   ★inert 보장: read_only 컬럼 미적재(DDL_DIFF_HOLD) → 모든 기존 계정 read_only=undefined → isViewerOnly=false →
+//     write predicate 무변경(0 behavior change, scenario3 안전). flag=true 부여는 계정 LIVE 활성화 시점(HOLD).
+//   ★role 문자열만 받는 write predicate(canEditCustomer 등)는 subject 미보유라 이 축을 볼 수 없음 →
+//     그 surface 의 write 차단은 FE useReadOnly() 초크포인트(컴포넌트 레벨, uniform)로 강제. gateViewerWrite 는
+//     subject 를 넘길 수 있는 호출부용 uniform wrapper(role-string predicate 결과를 감싼다).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 뷰어전용(read-only) 계정 여부 — write 초크포인트의 단일 atom. null/undefined 안전(false).
+ *   ★grant 아님(순수 negative): 어떤 접근도 부여하지 않고, write 를 '무력화'만 한다.
+ *   ★열람(read)·PermKey 메뉴 접근(canAccess)에는 영향 없음 — 뷰어는 메뉴를 보되 write 만 막힌다.
+ */
+export function isViewerOnly(subject: OpsAuthSubject | null | undefined): boolean {
+  return !!subject && subject.read_only === true;
+}
+
+/**
+ * write 권한을 뷰어전용 축으로 uniform 단락하는 wrapper.
+ *   gateViewerWrite(subject, allowed) = 뷰어전용이면 무조건 false, 아니면 allowed 그대로.
+ *   role-string write predicate(canEditCustomer(role) 등) 결과를 subject 와 함께 감싸 uniform 초크포인트를 만든다.
+ *   예) gateViewerWrite(profile, canEditCustomer(profile?.role))
+ */
+export function gateViewerWrite(
+  subject: OpsAuthSubject | null | undefined,
+  allowed: boolean,
+): boolean {
+  if (isViewerOnly(subject)) return false;
+  return allowed;
 }
 
 /**
@@ -360,6 +398,8 @@ export function canEditClinicMgmt(subject: OpsAuthSubject | UserRole | null | un
   const s: OpsAuthSubject | null | undefined =
     typeof subject === 'string' ? { role: subject } : subject;
   if (!s) return false;
+  // T-20260819-foot-VIEWERONLY: 뷰어전용 계정은 진료관리 write 차단(uniform 초크포인트, 의료 carve-out 없음).
+  if (isViewerOnly(s)) return false;
   if (s.has_ops_authority === true) return true;
   if (s.role === 'admin') return true;
   // ── T-20260620-foot-MUNJIEUN-CLINICMGMT-LOCKOUT (P0 STOPGAP, 옵션 B / DB-0 / reversible) ──
@@ -462,6 +502,9 @@ export function canIssueProgressDocs(
 ): boolean {
   const s: OpsAuthSubject | null | undefined =
     typeof subject === 'string' ? { role: subject } : subject;
+  // T-20260819-foot-VIEWERONLY: 뷰어전용 계정은 경과분석지 발행(의료 write) 차단.
+  //   ★uniform — 의료 carve-out 없음(planner GATE A). 진료 write 도 동일 flag 로 단락.
+  if (isViewerOnly(s)) return false;
   const role = s?.role;
   if (!role) return false;
   return PROGRESS_DOCS_ISSUE_ROLES.includes(role);
@@ -487,6 +530,8 @@ export function canEditConfirmedClosing(
   const s: OpsAuthSubject | null | undefined =
     typeof subject === 'string' ? { role: subject } : subject;
   if (!s) return false;
+  // T-20260819-foot-VIEWERONLY: 뷰어전용 계정은 일마감 확정수정 write 차단(uniform 초크포인트).
+  if (isViewerOnly(s)) return false;
   if (s.has_ops_authority === true) return true;
   const role = s.role;
   if (!role) return false;
