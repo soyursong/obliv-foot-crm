@@ -1,0 +1,19 @@
+{
+ "ticket_id": "T-20260819-foot-COPAY-VISIT-GRAIN",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "issued_at": "2026-08-19T07:19:40.086Z",
+ "expires_at": "2026-08-19T08:49:40.086Z",
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "bdd1d2b4cf55081c200043fc164f45ca358b6324bb6d16c99c986ed38f2b35ca",
+ "migration_version": "20260819200000",
+ "migration_file": "supabase/migrations/20260819200000_foot_calc_visit_copayment_additive.sql",
+ "bound_commit": "bb7980d448e1e6dd030988fcad19e53d428028d6",
+ "lane": "migration-file-ddl-additive-money-rpc",
+ "change_class": "ADDITIVE money-billing-logic (foot 본인부담 방문 grain 교정). (1) +1 NEW FUNCTION calc_visit_copayment(UUID[],UUID,UUID,DATE,NUMERIC) SECURITY INVOKER — footBilling.fillBillItemCopayment mirror(방문총액 pool→등급 copay 1회→비례배분+잔차, tie-break 결정론·멱등). (2) record_insurance_consult_payment DROP(7-arg v2)/CREATE(8-arg v3, p_visit_service_ids UUID[] DEFAULT NULL) co-deploy 원자 — NULL(=기존 7-arg 호출)→v2 legacy path byte-identical(회귀0·backward-compat by construction). (3) calc_copayment UNTOUCHED(마이그 내 CREATE/ALTER/DROP 0건). 소급 UPDATE 0(BACKFILL 별건). REVOKE PUBLIC/GRANT authenticated(anon 미부여). reversible=rollback.sql(DROP both + recreate v2 verbatim). db_change=true(CREATE FUNCTION=DDL·강등 없음).",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "a60f8b80b17ad8f7",
+ "da_consult_reply": "DA CONSULT-REPLY MSG-20260819-132529-kma1 / da_decision_foot_copay_visit_grain_billing_contract_20260819.md (verdict C1~C4 + H1~H10 + ADDENDUM#1). design A(ADDITIVE) GO: calc_copayment in-place 존치 + 신규 calc_visit_copayment(server AUTHORITY 재산출·C4) + record RPC visit-grain. db_change=true 유지(DA Q3 정정). Gate-B(DA) GO ≠ apply 허가.",
+ "ceo_gate": "N/A — DA-blessed ADDITIVE(신규 함수 + backward-compat param 추가) · 비-PHI-스키마 · 소급 파괴 DML 0 · reversible. autonomy §3.1 CEO 파괴게이트 면제(규정준수 버그fix·기존 청구행 UPDATE 0). money-path이나 데이터 파괴 아님.",
+ "precheck": "DB-GATE PASS(2026-08-19, supervisor authoritative, 판정시각 라이브 introspection). C0 fresh(prior NO-GO 0·qa_result empty) · C3 rollback present(rollback.sql: DROP calc_visit_copayment + DROP v3 + recreate v2 7-arg 20260725180000 verbatim) · C4/billing-contract code-gate PASS(DA design A GO·money AUTHORITY=record_insurance_consult_payment 서버 재산출·downstream verbatim) · C11/C12 prod-real(mgmt introspection rxlomoozakkjesdqjtvd) · C18/C21 CLEAN(signals+MQ COPAY 대상 활성 DA HOLD/RETRACT 0) · C19 body-drift: calc_copayment 마이그 내 DDL 0건=무접촉(prod prosrc md5 1d5d2837 유지·불변) / NEW calc_visit_copayment = calc_copayment v1.7 formula verbatim mirror 실측(의급 LEAST(1000,총액)·노인4구간 FLOOR100·정률·면제·data_incomplete BLOCK 분기 일치) · C23 N/A(둘 다 SECURITY INVOKER·secdef=false) · MIG-GATE 4필드 재확인 + 라이브 introspection 교차확증: (a)prod calc_visit_copayment ABSENT=genuine ADD (b)record_insurance_consult_payment 현행 7-arg 단일 overload=DROP IF EXISTS 대상 정확 (c)schema_migrations 20260819200000 미등록=ledger 충돌0 (d)dev-foot dry-run 무영속 PASS(post-probe 3오브젝트 absent)와 정합. ⚠ NOTE(non-blocking): dev-foot ledger 기록 calc_copayment baseline md5=eb2637a4 ≠ 라이브 prosrc md5=1d5d2837 — 본 마이그가 calc_copayment 무접촉이라 apply 영향 0이나 C19 baseline 기록 부정확 → dev-foot 정정 통지. apply route = MIG-GATE 러너(dev-foot pinned-worktree fail-closed, bb7980d4). executor=dev-foot(apply) · supervisor(GO-token 발행 + POST-VERIFY 게이트). POST-VERIFY 8항 = 의급 합계 min(1000,총액) · 노인 36,594→10,900 · 정률(general/foreigner/infant) 회귀0 · client footBilling↔server calc_visit_copayment 동일값(DoD#4) · footBilling.ts:473/:1015 무접촉 · 소급0 · autodraft/EDI verbatim(재산출0) · 멱등 재호출 no-op."
+}
