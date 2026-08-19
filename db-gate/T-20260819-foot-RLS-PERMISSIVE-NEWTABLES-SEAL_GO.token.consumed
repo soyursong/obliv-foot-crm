@@ -1,0 +1,22 @@
+{
+  "ticket_id": "T-20260819-foot-RLS-PERMISSIVE-NEWTABLES-SEAL",
+  "leg": "leg2",
+  "consumed": true,
+  "consumed_at": "2026-08-20T00:36:09+09:00",
+  "go_token": "db-gate/T-20260819-foot-RLS-PERMISSIVE-NEWTABLES-SEAL_GO.token.json",
+  "nonce": "9665790d58caf955",
+  "key_id": "supv-dbgate-2026a",
+  "migration": "supabase/migrations/20260820000000_foot_rls_permissive_newtables_seal.sql",
+  "migration_sha256": "3c54fc438bb86049be97e0b705a4ada85b86f8d0765c87262ec5574ea2e74735",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "apply_ts_utc": "2026-08-19T15:36:09Z",
+  "issued_at": "2026-08-20T00:24:06+09:00",
+  "expires_at": "2026-08-20T01:24:06+09:00",
+  "apply_within_ttl": true,
+  "guard": "db_apply_guard.sh",
+  "applier": "dev-foot",
+  "ledger_registered": true,
+  "postcheck": "PASS (11 restrictive present + 11 permissive retained ADDITIVE)",
+  "effective_probe_ac4": "PASS 17/17 (jongno rw preserved · cross-clinic seal+write-block · admin bypass · anon blocked+auth read preserved · org-global not-lockout · audit INSERT unbroken · regression 0)",
+  "rows_affected": "DDL only — 11 CREATE POLICY, 0 data rows mutated"
+}
