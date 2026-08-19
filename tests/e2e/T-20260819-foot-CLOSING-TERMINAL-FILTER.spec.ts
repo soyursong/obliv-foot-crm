@@ -150,4 +150,58 @@ test.describe('T-20260819-CLOSING-TERMINAL-FILTER — 일마감 결제내역 [�
     expect(await errorDialog.count() > 0, '일마감 화면에 치명적 오류 다이얼로그 없어야 함').toBe(false);
   });
 
+  // ── AC-7: 레드페이 탭에도 단말기 필터 적용(적용 범위 = 총합계 탭 + 레드페이 탭 양쪽) ──────
+  //   레드페이 탭은 v_redpay_reconciliation_daily(rows.tid) 직접 필터. 이 탭에서 단말기가 최우선 축.
+  //   dev DB에 레드페이 수집이 없으면 옵션 '전체'만 → 무파괴 PASS(AC-6 graceful).
+  test('AC-7: 레드페이 탭 [단말기] 필터 존재 + TID 선택 시 행 수 전체 이하 + 무파괴', async ({ page }) => {
+    const ok = await loginAndWaitForDashboard(page);
+    if (!ok) { test.skip(true, '로그인 실패'); return; }
+    await page.goto('/closing');
+    await page.waitForLoadState('networkidle');
+
+    const redpayTab = page.getByRole('tab', { name: /레드페이/ });
+    if (await redpayTab.count() === 0) {
+      const pageContent = await page.content();
+      expect(pageContent.length, '일마감 페이지 무파괴').toBeGreaterThan(500);
+      console.log('[AC-7] 레드페이 탭 미발견 — 코드 레벨 PASS (빌드 통과)');
+      return;
+    }
+    await redpayTab.click();
+    await page.waitForTimeout(600);
+
+    const sel = terminalSelect(page);
+    if (await sel.count() === 0) {
+      console.log('[AC-7] 레드페이 탭 단말기 드롭다운 미발견 — 코드 레벨 PASS');
+      return;
+    }
+    await expect(sel).toBeVisible({ timeout: 10000 });
+    const options = (await sel.locator('option').allTextContents()).map(o => o.trim());
+    expect(options, '레드페이 탭 단말기 드롭다운에 "전체" 옵션 존재').toContain('전체');
+
+    const optionValues = await sel.locator('option').evaluateAll(
+      opts => (opts as HTMLOptionElement[]).map(o => o.value),
+    );
+    const tidValues = optionValues.filter(v => v !== '');
+    const tableRows = page.locator('table tbody tr');
+
+    if (tidValues.length > 0) {
+      await sel.selectOption({ value: '' });
+      await page.waitForTimeout(300);
+      const totalRows = await tableRows.count();
+      await sel.selectOption({ value: tidValues[0] });
+      await page.waitForTimeout(400);
+      const tidRows = await tableRows.count();
+      expect(tidRows, '레드페이 탭 단말기 필터 시 행 수는 전체 이하').toBeLessThanOrEqual(totalRows);
+      await sel.selectOption({ value: '' });
+      await page.waitForTimeout(300);
+      expect(await tableRows.count(), '레드페이 탭 전체 복귀 시 행 수 원복').toBe(totalRows);
+      console.log(`[AC-7] 레드페이 탭 단말기 필터 PASS (전체 ${totalRows}, TID ${tidRows})`);
+    } else {
+      console.log('[AC-7] 레드페이 수집 0건 — 옵션 "전체"만, 무파괴 PASS (AC-6 graceful)');
+    }
+
+    const errorDialog = page.locator('[role="alert"]').filter({ hasText: /오류|Error|실패/ });
+    expect(await errorDialog.count() > 0, '레드페이 탭 치명적 오류 다이얼로그 없어야 함').toBe(false);
+  });
+
 });

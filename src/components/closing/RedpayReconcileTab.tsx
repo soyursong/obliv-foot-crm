@@ -119,6 +119,32 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
     },
   });
 
+  // ── T-20260819-foot-CLOSING-TERMINAL-FILTER (AC-7): 레드페이 탭 단말기(TID) 필터 ──────────
+  //   레드페이 결제는 전건 TID 보유 → 이 탭에서 단말기 필터가 최우선 축. 대조 뷰(rows)의 tid 로 직접 필터.
+  //   옵션은 당일 전체 rows 의 distinct TID(정렬), 표시/카운트는 필터 반영. 미선택('')=기존동작.
+  const [terminalFilter, setTerminalFilter] = useState('');
+  // 단말기 사람용 라벨(redpay_terminal_registry SSOT) — 없으면 TID 원문 폴백. 미배포/에러 비차단([]).
+  const { data: terminalRegistry = [] } = useQuery<{ tid: string | null; terminal_label: string | null }[]>({
+    queryKey: ['redpay-terminal-registry', clinicId],
+    enabled: !!clinicId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('redpay_terminal_registry')
+        .select('tid, terminal_label')
+        .eq('domain', 'foot')
+        .eq('active', true);
+      if (error) return [];
+      return (data ?? []) as { tid: string | null; terminal_label: string | null }[];
+    },
+  });
+  const terminalLabelByTid = new Map<string, string>();
+  for (const t of terminalRegistry) if (t.tid && t.terminal_label) terminalLabelByTid.set(t.tid, t.terminal_label);
+  const terminalOptions = [...new Set(rows.map(r => r.tid).filter((t): t is string => !!t))].sort();
+  const terminalOptionLabel = (tid: string): string => {
+    const label = terminalLabelByTid.get(tid);
+    return label ? `${label} ·${tid.slice(-4)}` : tid;
+  };
+
   // ── 미배정 결제함 유입률 (T-20260729-foot-REDPAY-PLANB-UNASSIGNED-INFLOW-METRIC) ──
   //   read-only 운영지표 — pending_payment.status(expired|failed) count only.
   //   ★ payments / 매출 split 무접점(redpayPlanbInflowMetric lib이 JOIN 금지 계약 보유).
@@ -176,8 +202,12 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
     return ta.localeCompare(tb);
   });
 
-  const matchedCount = sorted.filter(r => RECON_META[r.recon_status]?.matched).length;
-  const mismatchCount = sorted.length - matchedCount;
+  // T-20260819-foot-CLOSING-TERMINAL-FILTER (AC-7): 단말기 필터 적용 목록(표시/카운트 기준).
+  //   미선택('')이면 sorted 와 동일 → 기존동작 무회귀.
+  const sortedByTerminal = terminalFilter ? sorted.filter(r => (r.tid ?? '') === terminalFilter) : sorted;
+
+  const matchedCount = sortedByTerminal.filter(r => RECON_META[r.recon_status]?.matched).length;
+  const mismatchCount = sortedByTerminal.length - matchedCount;
 
   // ── 설치검증 추정 분류 (T-20260803 INSTALLVERIFY) ─────────────────────────────
   //   서버뷰(v_redpay_installverify_pairs) 4조건 판정 소비 + 세션 override(되돌림) 반영.
@@ -185,11 +215,11 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
   const [hideInstallVerify, setHideInstallVerify] = useState(false);
   const [overridden, setOverridden] = useState<Set<string>>(new Set());
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const installVerifyCount = countInstallVerifyPresumed(sorted, overridden);
-  // 표시 목록: 필터 ON 이면 설치검증 추정 건 접기. 원본 데이터 무접촉(재노출 가능).
+  const installVerifyCount = countInstallVerifyPresumed(sortedByTerminal, overridden);
+  // 표시 목록: 단말기 필터(sortedByTerminal) → 설치검증 추정 접기 순으로 적용. 원본 데이터 무접촉(재노출 가능).
   const visible = hideInstallVerify
-    ? sorted.filter((r) => !isInstallVerifyPresumed(r, overridden))
-    : sorted;
+    ? sortedByTerminal.filter((r) => !isInstallVerifyPresumed(r, overridden))
+    : sortedByTerminal;
   const revertInstallVerify = (rowId: string) =>
     setOverridden((prev) => {
       const next = new Set(prev);
@@ -233,7 +263,7 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border bg-card p-3 text-center">
           <div className="text-xs text-muted-foreground mb-1">레드페이 수집</div>
-          <div className="tabular-nums font-semibold text-lg">{sorted.length}건</div>
+          <div className="tabular-nums font-semibold text-lg">{sortedByTerminal.length}건</div>
         </div>
         <div className="rounded-lg border bg-emerald-50 border-emerald-200 p-3 text-center">
           <div className="text-xs text-emerald-700 mb-1">매칭</div>
@@ -332,7 +362,31 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
       {/* 대조 목록 (CRM 수납 ↔ 레드페이) — read-only */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">레드페이 · CRM 수납 대조</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-sm">레드페이 · CRM 수납 대조</CardTitle>
+            {/* T-20260819-foot-CLOSING-TERMINAL-FILTER (AC-7): 단말기(TID) 필터 — 이 탭에서 최우선 축.
+                옵션 = 당일 레드페이 결제의 단말 TID(전체 + TID별). 매칭 0건이면 '전체'만(기존동작). */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground shrink-0">단말기</span>
+              <select
+                value={terminalFilter}
+                onChange={e => setTerminalFilter(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none"
+              >
+                <option value="">전체</option>
+                {terminalOptions.map(tid => (
+                  <option key={tid} value={tid}>{terminalOptionLabel(tid)}</option>
+                ))}
+              </select>
+              {terminalFilter && (
+                <button
+                  onClick={() => setTerminalFilter('')}
+                  className="text-xs text-muted-foreground hover:text-foreground px-1"
+                  title="필터 초기화"
+                >✕</button>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-auto">
@@ -352,15 +406,21 @@ export function RedpayReconcileTab({ date, clinicId }: { date: string; clinicId:
                 {isLoading && (
                   <tr><td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">불러오는 중…</td></tr>
                 )}
-                {!isLoading && sorted.length === 0 && (
+                {!isLoading && sortedByTerminal.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                      레드페이 자동수집 결제가 없습니다.
-                      <div className="text-xs mt-1 opacity-70">카드단말기 결제가 발생하면 이 목록에 자동으로 쌓입니다.</div>
+                      {terminalFilter
+                        ? '선택한 단말기로 수집된 레드페이 결제가 없습니다.'
+                        : '레드페이 자동수집 결제가 없습니다.'}
+                      <div className="text-xs mt-1 opacity-70">
+                        {terminalFilter
+                          ? '단말기 필터를 «전체»로 되돌리면 전체 목록을 볼 수 있어요.'
+                          : '카드단말기 결제가 발생하면 이 목록에 자동으로 쌓입니다.'}
+                      </div>
                     </td>
                   </tr>
                 )}
-                {!isLoading && sorted.length > 0 && visible.length === 0 && (
+                {!isLoading && sortedByTerminal.length > 0 && visible.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                       설치검증 추정 {installVerifyCount}건이 접혀 있습니다.
