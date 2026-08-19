@@ -105,6 +105,8 @@ interface PaymentRow {
   payment_attempt_id?: string | null;
   external_approval_no?: string | null;
   accounting_date?: string | null;
+  /** T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 결제 단말기 TID(레드페이/CAT 승인응답 영속분). 현금/이체 등 TID 없는 건 NULL. */
+  external_tid?: string | null;
 }
 
 interface PackagePaymentRow {
@@ -132,6 +134,8 @@ interface PackagePaymentRow {
   // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3): 플랜A 짝맞춤 판별자(package_payments 축).
   payment_attempt_id?: string | null;
   external_approval_no?: string | null;
+  /** T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 결제 단말기 TID(package_payments.external_tid 기존 컬럼). 없으면 NULL. */
+  external_tid?: string | null;
 }
 
 interface UnpaidCheckIn {
@@ -280,6 +284,9 @@ interface EnrichedRow {
   row_accounting_date?: string | null;
   /** 원거래 할부 개월(취소 HALBU=원거래 동일값). */
   pay_installment?: number | null;
+  /** T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 결제 단말기 TID(payments/package_payments.external_tid).
+   *  단말기별 매출 집계(terminalTotals)의 그룹핑 키. 현금/이체·수기 등 TID 미보유 건 → null('미지정 단말기'로 집계). */
+  external_tid?: string | null;
 }
 
 // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-3/VG-4) — 결제행이 플랜A(단말기 직결결제)인지 결정론 판별.
@@ -453,7 +460,8 @@ export default function Closing() {
         // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: created_by + processor JOIN 추가(SalesPatientTab 패턴 REUSE).
         //   환불 이력 '처리자' = payments.created_by(refund_single_payment RPC 캡처) → user_profiles.name.
         //   FK 기본명 payments_created_by_fkey (prod 확인·20260717140000 마이그 dryrun §2 검증필). 과거행 NULL → '—'.
-        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id, created_by, payment_attempt_id, external_approval_no, accounting_date, processor:user_profiles!payments_created_by_fkey(name)')
+        // T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: external_tid 추가(단말기별 조회축 — 기존 컬럼 재사용, db 변경 없음)
+        .select('id, amount, method, payment_type, created_at, customer_id, installment, memo, check_in_id, status, cash_receipt_issued, cash_receipt_type, taxable_amount, tax_exempt_amount, linked_payment_id, created_by, payment_attempt_id, external_approval_no, external_tid, accounting_date, processor:user_profiles!payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .gte('created_at', start)
         .lte('created_at', end)
@@ -514,7 +522,8 @@ export default function Closing() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('package_payments')
-        .select('id, package_id, amount, method, payment_type, created_at, accounting_date, customer_id, installment, memo, parent_payment_id, created_by, payment_attempt_id, external_approval_no, processor:user_profiles!package_payments_created_by_fkey(name)')
+        // T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: external_tid 추가(단말기별 조회축 — 기존 컬럼 재사용, db 변경 없음)
+        .select('id, package_id, amount, method, payment_type, created_at, accounting_date, customer_id, installment, memo, parent_payment_id, created_by, payment_attempt_id, external_approval_no, external_tid, processor:user_profiles!package_payments_created_by_fkey(name)')
         .eq('clinic_id', clinic!.id)
         .eq('accounting_date', date)
         .order('created_at', { ascending: true });
@@ -522,6 +531,33 @@ export default function Closing() {
       return (data ?? []) as unknown as PackagePaymentRow[];
     },
   });
+
+  // ── T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 레드페이 단말기 레지스트리(TID→표시명 매핑) ──
+  //   redpay_terminal_registry(T-20260711-foot-REDPAY-TERMINAL-REGISTRY-TABLE) = 단말기 화이트리스트 SSOT.
+  //   tid(레드페이 TID) → terminal_label('풋(VAN)'/'풋(멀티)'/'풋(무선)' 등 사람용 라벨) 매핑.
+  //   조회 전용(read-only) — 신규 컬럼/테이블 없음(db_change=false). active 무관 전건 로드(과거 결제의 폐기 TID 라벨도 표기).
+  const { data: terminalRegistry = [] } = useQuery<Array<{ tid: string | null; terminal_label: string | null }>>({
+    queryKey: ['closing-redpay-terminal-registry', clinic?.id],
+    enabled: !!clinic,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('redpay_terminal_registry')
+        .select('tid, terminal_label')
+        .eq('domain', 'foot');
+      if (error) throw error;
+      return (data ?? []) as Array<{ tid: string | null; terminal_label: string | null }>;
+    },
+  });
+
+  // tid → terminal_label Map. 라벨 미존재 tid 는 raw tid 로 표기(폴백).
+  const terminalLabelByTid = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of terminalRegistry) {
+      if (t.tid) m.set(t.tid, t.terminal_label ?? t.tid);
+    }
+    return m;
+  }, [terminalRegistry]);
 
   // ── T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT [FOLD]: 전 기간 환불 합계 ──
   //   AC-B1/AC-B2: 완전환불행 재환불 차단 + 교차일(원결제일≠환불일) 환불 배지.
@@ -1134,6 +1170,8 @@ export default function Closing() {
         external_approval_no: p.external_approval_no ?? null,
         row_accounting_date: p.accounting_date ?? null,
         pay_installment: p.installment ?? null,
+        // T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 단말기별 집계 키
+        external_tid: p.external_tid ?? null,
       });
     }
 
@@ -1188,6 +1226,8 @@ export default function Closing() {
         external_approval_no: p.external_approval_no ?? null,
         row_accounting_date: p.accounting_date ?? null,
         pay_installment: p.installment ?? null,
+        // T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 단말기별 집계 키
+        external_tid: p.external_tid ?? null,
       });
     }
 
@@ -1359,6 +1399,36 @@ export default function Closing() {
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [enrichedRows]);
+
+  // ── T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 단말기(TID)별 매출 집계 ──────────
+  //   요구: 일마감 결제내역을 [담당자]·[결제수단]에 더해 [단말기(TID)]별로도 조회(ADDITIVE, 기존 두 축 불변).
+  //   ★ 그룹핑 키 = 레드페이 TID(external_tid). 표시명 = terminal_label 매핑(없으면 raw TID).
+  //   ★ 산식 축 재사용: staffTotals 와 동일하게 enrichedRows(필터 무관) + net(refund → 음수) 로 집계 →
+  //     단말기별 총합 = 담당자별 총합 = 결제수단별 총합(전체 합계) 정확 일치(누락/중복 0).
+  //   ★ TID 없는 건(현금/이체·수기·TID 미보유 카드)은 '미지정 단말기' 버킷으로 누락 없이 포함 → 합계 tie-out 보장.
+  //     '미지정 단말기'는 항상 최하단 정렬(금액과 무관).
+  const UNASSIGNED_TERMINAL = '미지정 단말기';
+  const terminalTotals = useMemo<Array<{ key: string; label: string; tid: string | null; total: number; card: number; cash: number; transfer: number }>>(() => {
+    const map = new Map<string, { key: string; label: string; tid: string | null; total: number; card: number; cash: number; transfer: number }>();
+    for (const r of enrichedRows) {
+      const tid = r.external_tid ?? null;
+      const key = tid ?? UNASSIGNED_TERMINAL;
+      const label = tid ? (terminalLabelByTid.get(tid) ?? tid) : UNASSIGNED_TERMINAL;
+      const existing = map.get(key) ?? { key, label, tid, total: 0, card: 0, cash: 0, transfer: 0 };
+      const amt = r.payment_type === 'refund' ? -r.amount : r.amount;
+      existing.total += amt;
+      if (r.method === 'card' || r.method === 'membership') existing.card += amt;
+      else if (r.method === 'cash') existing.cash += amt;
+      else if (r.method === 'transfer') existing.transfer += amt;
+      map.set(key, existing);
+    }
+    return [...map.values()].sort((a, b) => {
+      // '미지정 단말기'는 항상 최하단
+      if (a.key === UNASSIGNED_TERMINAL) return 1;
+      if (b.key === UNASSIGNED_TERMINAL) return -1;
+      return b.total - a.total;
+    });
+  }, [enrichedRows, terminalLabelByTid]);
 
   // ── T-20260717-foot-CLOSING-REFUND-STATS-MISSING: 금일 환불 별도 집계 섹션(표시 전용) ──
   //   [REOPEN 실제 요구] '차감 여부'는 이미 정상(refundAmount가 grossTotal에서 NET 차감).
@@ -2771,6 +2841,62 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       </td>
                       <td className="py-1.5 px-3 text-right tabular-nums text-sm text-emerald-700">
                         {formatAmount(staffTotals.reduce((s, x) => s + x.total, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* T-20260819-foot-CLOSING-TERMINAL-TID-VIEW-ADD: 단말기(TID)별 매출 집계 (담당자별/결제수단별과 병존 — 전체 기준, 필터 무관) */}
+          {terminalTotals.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">단말기별 매출</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="py-1.5 px-3 text-left font-medium">단말기</th>
+                      <th className="py-1.5 px-2 text-right font-medium">카드</th>
+                      <th className="py-1.5 px-2 text-right font-medium">현금</th>
+                      <th className="py-1.5 px-2 text-right font-medium">이체</th>
+                      <th className="py-1.5 px-3 text-right font-medium">합계</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {terminalTotals.map(({ key, label, tid, total, card, cash, transfer }) => (
+                      <tr key={key} className="border-b">
+                        <td className="py-1.5 px-3">
+                          {label}
+                          {/* 라벨과 raw TID 가 다를 때만 TID 병기(별칭 매핑된 경우 식별용) */}
+                          {tid && tid !== label && (
+                            <span className="ml-1.5 text-[10px] text-muted-foreground tabular-nums">{tid}</span>
+                          )}
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{card !== 0 ? formatAmount(card) : '-'}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{cash !== 0 ? formatAmount(cash) : '-'}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{transfer !== 0 ? formatAmount(transfer) : '-'}</td>
+                        <td className="py-1.5 px-3 text-right tabular-nums font-medium text-emerald-700">{formatAmount(total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold bg-muted/50">
+                      <td className="py-1.5 px-3 text-sm">합계</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        {formatAmount(terminalTotals.reduce((s, x) => s + x.card, 0))}
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        {formatAmount(terminalTotals.reduce((s, x) => s + x.cash, 0))}
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">
+                        {formatAmount(terminalTotals.reduce((s, x) => s + x.transfer, 0))}
+                      </td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-sm text-emerald-700">
+                        {formatAmount(terminalTotals.reduce((s, x) => s + x.total, 0))}
                       </td>
                     </tr>
                   </tfoot>
