@@ -375,6 +375,28 @@ export function canEditClinicMgmt(subject: OpsAuthSubject | UserRole | null | un
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260819-foot-CHARTPHRASE-EDIT-DIRECTOR-ONLY — 상용구(고객차트) 편집 대표원장 tier 전용 게이트.
+//   현장 발주(문지은 대표원장 U0ALGAAAJAV, footcare C0ATE5P6JTH): 진료차트(고객차트)에서 쓰는
+//     상용구(customer_chart)의 등록·수정·삭제를 대표원장만. 직원(치료사·데스크)·봉직의=읽기전용(선택만).
+//   ★경로 A 채택(feasibility 확정): 대표원장 tier = canEditClinicMgmt 와 동일 정의
+//     (has_ops_authority=true || admin escape || director stopgap, manager 제외 = 의료 surface read-only).
+//     별 role-set 복제 대신 canEditClinicMgmt 로 위임 → ROLE-MATRIX-3TIER-RBAC 단일 SSOT. has_ops_authority
+//     컬럼 landing + director stopgap 제거 시 이 게이트도 자동 수렴(봉직의 자동 read-only, AC-1/AC-3/AC-4).
+//     형제 T-20260620-foot-OPINIONPHRASE-EDIT-DIRECTOR-ONLY(소견서 상용구)와 동형 tier 재사용.
+//   ★restrictive-only: 기존 customer_chart 편집(canEditStaffAreaPhrase=7역할)을 대표원장 tier로 좁힘(신규 제약만).
+//     대표원장 기존 권한 무변경(AC-3). read/select(진료차트 삽입)은 canEdit 비경유(목록 항상 노출) = AC-2 보존.
+//   ★db_change=FALSE(FE-only, feasibility 확정): director/admin DB write 는 admin_write_phrase_templates
+//     ({admin,manager,director}, all-type) 로 旣허용 → lock-out-in-disguise 아님(문지은 director write 성공).
+//     staff DB write(staffarea_write_phrases, 7역할)는 잔존 → API 직접우회 false-read-only 가능(AC-4 배포
+//     handoff 時 responder 통해 대표원장에 투명고지). 서버측 진성 read-only 강화는 별 follow-up leg
+//     (db_change:true·DA CONSULT·MIG-GATE)로 분리 — 본 leg 는 FE 게이트로 종결.
+export function canEditCustomerChartPhrase(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  return canEditClinicMgmt(subject);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260620-foot-PHRASE-MGMT-DOCTOR-HIDE — 서비스관리>상용구 관리 노출 게이트
 //   확정 스펙(김주연 총괄, slack ts 1781924207.232909, 옵션2/A안):
 //     "봉직의/일반의사만 비노출, 대표원장(문지은 원장님)은 그대로 이용 가능."

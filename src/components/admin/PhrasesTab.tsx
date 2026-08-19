@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { canEditStaffAreaPhrase, canEditClinicMgmt } from '@/lib/permissions';
+import { canEditStaffAreaPhrase, canEditClinicMgmt, canEditCustomerChartPhrase } from '@/lib/permissions';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -400,10 +400,18 @@ export default function PhrasesTab({ lockedType }: PhrasesTabProps = {}) {
   //   정본 헬퍼로 정합. Phase A admin-only 하드코딩이 director(문지은 대표원장) 락아웃 유발 → canEditClinicMgmt 로 교체.
   //   staff-area 분기(펜/고객차트)는 기존 canEditStaffAreaPhrase 유지(무변경). §11.1: medical_chart picker = 진료관리 영역.
   //   동반: phrase_templates[medical_chart] RLS write 에 director ADDITIVE({admin,manager}→{admin,manager,director}).
-  const isMedchartSurface = lockedType === 'medical_chart';
-  const canEdit = isMedchartSurface
-    ? canEditClinicMgmt(profile)
-    : canEditStaffAreaPhrase(profile?.role);
+  // T-20260819-foot-CHARTPHRASE-EDIT-DIRECTOR-ONLY: 상용구(고객차트=customer_chart) 편집을 대표원장 tier
+  //   전용으로 좁힘(restrictive-only). 발주=문지은 대표원장 본인(medical_confirm_gate=satisfied_by_request_origin).
+  //   · medical_chart(진료차트, 의사영역) = canEditClinicMgmt (기존, 무변경).
+  //   · customer_chart(고객차트) = canEditCustomerChartPhrase (=canEditClinicMgmt 위임, 대표원장 tier). ★신규 게이트.
+  //   · pen_chart(펜차트, 직원영역) = canEditStaffAreaPhrase (기존 7역할, 무변경).
+  //   read/select(진료차트 삽입)은 canEdit 비경유(목록 항상 노출) → AC-2 읽기전용 보존.
+  const canEdit =
+    lockedType === 'medical_chart'
+      ? canEditClinicMgmt(profile)
+      : lockedType === 'customer_chart'
+        ? canEditCustomerChartPhrase(profile)
+        : canEditStaffAreaPhrase(profile?.role);
   const { data: phrases = [], isLoading } = usePhraseTemplates();
   const upsert = useUpsertPhrase();
   const del = useDeletePhrase();
