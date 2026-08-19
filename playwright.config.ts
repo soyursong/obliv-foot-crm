@@ -197,6 +197,11 @@ export default defineConfig({
         // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: cachedStorageList/invalidateStorageList
         //   실 함수 구동 + counting fake 로 storage.list() 호출빈도 계측 + 소스 정적 가드. auth/DB/server 불요·결정론.
         '**/T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX.spec.ts',
+        // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF (배치 3 회귀 락·재발 4차 종결조건):
+        //   [A] 실 export(cachedStorageListResult/signedOriginalUrls/signStable dedup/negative) counting-fake 계측 +
+        //   [B] 소스 정적 가드 G-1(렌더루프)/G-3(크로스-realm invalidate)/G-4(memo useCallback)/G-5(루프 클래스 락)
+        //   + G-8/G-12/MEDCHART-GATE. auth/DB/server 불요·결정론.
+        '**/T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF.spec.ts',
         // T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE: 클라캐시 잔여배선 완결(비의료 4 site) — cachedStorageList
         //   실 함수 구동(counting fake) + 4 site 소스 정적 가드 + MedicalChartPanel 격리 락. auth/DB/server 불요·결정론.
         '**/T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE.spec.ts',
@@ -800,6 +805,9 @@ export default defineConfig({
         // T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX: unit 전용(counting fake + 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260818-foot-STORAGELIST-EMERGENCY-COMPUTE-RELIEF-HOTFIX.spec.ts',
+        // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF: unit 전용(counting fake + 소스 정적 가드 회귀 락) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF.spec.ts',
         // T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE: unit 전용(counting fake + 소스 가드) →
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         '**/T-20260818-foot-STORAGE-LIST-CALLREDUCE-CACHE.spec.ts',

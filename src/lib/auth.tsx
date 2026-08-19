@@ -8,6 +8,9 @@ import { clearAllChartDrafts } from './chartDraft';
 // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c), spec §3.3 회귀축/PHI): 로그아웃 시
 //   (c) write-buffer 로컬 큐 전체 폐기(PHI payload 잔류 방지 — clearAllChartDrafts 선례 준용).
 import { writeBuffer } from './resilience/writeBufferInstance';
+// T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF (FIX-5, PHI 위생): 로그아웃 시
+//   localStorage 로 승격된 storage.list() 캐시(경로에 customerId 포함) 전량 폐기.
+import { clearAllStorageListCache } from './photoUrl';
 
 interface AuthState {
   loading: boolean;
@@ -118,6 +121,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearAllChartDrafts();
     // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): (c) write-buffer 로컬 큐도 폐기(PHI 잔류 방지).
     writeBuffer.discardAll();
+    // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF (FIX-5): storage.list() 공유 캐시(PHI 경로) 폐기.
+    clearAllStorageListCache();
     try {
       await supabase.auth.signOut();
       setSession(null);

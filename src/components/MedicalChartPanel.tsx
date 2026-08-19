@@ -51,7 +51,7 @@ import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { toast } from '@/lib/toast';
 import { rxFreqCore } from '@/lib/rxFormat';
 // T-20260807-foot-ZONE2-GREENBOX-CHART-BINDING (③): zone2 펜차트 read-only 뷰어 — PenChartTab.loadSavedCharts 의 signed-URL 헬퍼 재사용(egress transform 썸네일).
-import { signedThumbUrls, signedOriginalUrl } from '@/lib/photoUrl';
+import { signedThumbUrls, signedOriginalUrls } from '@/lib/photoUrl';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, FileText, Loader2, Lock, Pill, Search, Trash2, X } from 'lucide-react';
@@ -2254,14 +2254,20 @@ export default function MedicalChartPanel({
         .from('photos')
         .list(storagePath, { limit: 50, sortBy: { column: 'created_at', order: 'desc' } });
       if (files && files.length > 0) {
-        const paths = files
-          .filter((f) => f.name && !f.name.startsWith('.'))
-          .map((f) => `${storagePath}/${f.name}`);
-        const { data: urls } = await supabase.storage.from('photos').createSignedUrls(paths, 3600);
+        // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF §6-A(정합성 결함, MEDCHART-GATE 대상 아님):
+        //   기존 코드는 (a) .filter(...) 후 위치 인덱스 i 로 paths[i] 참조(서명 하나 실패 시 뒤가 전부 밀림)
+        //   (b) files[i] 로 '거르지 않은 원본'을 같은 i 로 참조(.emptyFolderPlaceholder 등 dot 파일 1개만
+        //   있어도 이름·날짜가 어긋남) — 진료이미지에 다른 파일의 이름이 붙는 결함. 필터를 매핑 '후'로
+        //   뒤집고, name 은 걸러낸 배열(filtered)에서, signedUrl 은 위치가 아닌 path 로 매칭한다.
+        //   FIX-4-B: 원본 배치 서명(signedOriginalUrls, createSignedUrls 1회 + datum.path 매칭 + data:null
+        //   가드 + urlCache seeding). ⚠ .list() 호출부(위)는 MEDCHART-GATE 로 무접촉.
+        const filtered = files.filter((f) => f.name && !f.name.startsWith('.'));
+        const paths = filtered.map((f) => `${storagePath}/${f.name}`);
+        const byPath = await signedOriginalUrls('photos', paths);
         setTreatImages(
-          (urls ?? [])
-            .filter((u) => u.signedUrl)
-            .map((u, i) => ({ path: paths[i], signedUrl: u.signedUrl as string, name: files[i]?.name ?? '' }))
+          filtered
+            .map((f, i) => ({ path: paths[i], signedUrl: byPath.get(paths[i]) ?? '', name: f.name }))
+            .filter((x) => x.signedUrl)
         );
       }
     } catch {
@@ -2286,19 +2292,23 @@ export default function MedicalChartPanel({
       const filtered = (files ?? []).filter((f) => f.name && !f.id?.endsWith('/') && f.id);
       if (filtered.length === 0) { setPenCharts([]); return; }
       const paths = filtered.map((f) => `${storagePath}/${f.name}`);
-      const [thumbs, originals] = await Promise.all([
+      // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-4-B: 원본 배치 서명(2N→N+1).
+      //   원본은 signedOriginalUrls(createSignedUrls 1회, path→url Map)로 배치 서명(datum.path 매칭 +
+      //   data:null 가드 + urlCache seeding). 썸네일(transform)은 서버 토큰 서명이라 배치 불가 → 건당 유지.
+      const [thumbs, originalsByPath] = await Promise.all([
         signedThumbUrls('photos', paths, { width: 640, quality: 70, resize: 'contain' }),
-        Promise.all(paths.map((p) => signedOriginalUrl('photos', p))),
+        signedOriginalUrls('photos', paths),
       ]);
       setPenCharts(
         filtered
           .map((file, i) => {
             const tsMatch = file.name.match(/^(?:[a-z]+_)?(\d{10,})/i);
             const ts = tsMatch ? parseInt(tsMatch[1], 10) : 0;
+            const original = originalsByPath.get(paths[i]) ?? '';
             return {
               name: file.name,
-              url: originals[i] ?? '',
-              thumbUrl: thumbs[i] ?? originals[i] ?? '',
+              url: original,
+              thumbUrl: thumbs[i] ?? original,
               uploadedAt: ts ? new Date(ts).toISOString() : '',
             };
           })

@@ -31,6 +31,8 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { consumeOneSession } from '@/lib/consumeSession';
 import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
+// T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-12: receipt 업로드 전 다운스케일(장축 1600·JPEG q0.80).
+import { downscaleReceiptImage } from '@/lib/formImageDownscale';
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 // T-20260618-foot-STAFF-CHART2-RRN-NOSAVE (Option B): 주민번호 값 조회 권한 게이트(FE 안내문 전용)
@@ -279,10 +281,12 @@ function useMemoHistory(opts: {
   const [editingText, setEditingText] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-8(#3): 자유텍스트 message.includes 절 제거.
+  //   message.includes(table)/schema cache 는 안정 계약(code) 위에 얹혀 "테이블 부재" 판정을 상한 없이
+  //   확장 → RLS/timeout 등 진짜 에러를 오분류해 고객메모·상담메모 입력창을 은닉했다. 테이블 부재는
+  //   PGRST205 + 42P01(code)로 닫힌다(고객 전환 시 :288 useEffect 가 복귀).
   const isTableMissing = (error: { message?: string; code?: string }) =>
-    !!error.message?.includes('schema cache') ||
-    !!error.message?.includes(table) ||
-    error.code === 'PGRST205';
+    error.code === 'PGRST205' || error.code === '42P01';
 
   // customer 변경 시 reset
   useEffect(() => {
@@ -1065,7 +1069,10 @@ function ReceiptUploadSection({
     setUploading(true);
     let uploadedOk = false;
     try {
-      for (const file of Array.from(files)) {
+      for (const rawFile of Array.from(files)) {
+        // FIX-12: receipt prefix 전용 다운스케일(장축 1600px·JPEG q0.80). 실측 저장크기 과다 완화.
+        //   비파괴 — 재인코딩이 원본보다 크거나 예외 시 원본 그대로 통과(업로드 비차단).
+        const { file } = await downscaleReceiptImage(rawFile);
         const ext = file.name.split('.').pop() ?? 'jpg';
         const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
         const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
@@ -3163,6 +3170,13 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const [referralNameText, setReferralNameText] = useState('');
   // T-20260513-foot-C21-TAB-RESTRUCTURE-B: 진료이미지 출력용 URL 목록
   const [treatmentImageUrls, setTreatmentImageUrls] = useState<string[]>([]);
+  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-1: 무한 렌더루프 정지 — 참조 안정 콜백.
+  //   기존 JSX 인라인 화살표 prop(부모 렌더마다 새 함수 identity)은 →
+  //   자식 load useCallback([storagePath, onUrlsLoaded]) 재생성 → useEffect 재실행 → onUrlsLoaded(새 배열)
+  //   → setState → 부모 재렌더 → 처음으로. setState 는 참조 안정하므로 deps [] 로 고정한다.
+  const handleTreatmentUrlsLoaded = useCallback((urls: string[]) => {
+    setTreatmentImageUrls(urls);
+  }, []);
   // T-20260513-foot-C21-INPUT-ALWAYS-ACTIVE: 예약메모 인라인 편집 상태
   const [resvMemoInputs, setResvMemoInputs] = useState<Record<string, string>>({});
   // T-20260615-foot-RESVTAB-MEMO-ICON-SCROLLFIX AC-1: 예약메모 표시(✏️)↔편집폼 토글 대상 예약 id (null=전부 display-only)
@@ -3498,6 +3512,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       // T-20260520-foot-MEMO-HISTORY: 메모 히스토리는 lazy load (탭 진입 시 로드)
       setTreatmentMemos([]);
       setTreatmentMemosLoaded(false);
+      // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-8(②): 오분류로 치료메모 입력창이 숨겨졌을 때
+      //   고객 전환 시 복귀 경로(setTreatmentMemoUnavailable(false)) 신설 — useMemoHistory:288 과 동형.
+      //   FIX-8(①)이 오분류를 차단하지만, 남아도 회복 가능하게 한다(한쪽만이면 반쪽).
+      setTreatmentMemoUnavailable(false);
       // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 요약블록용 치료메모 최신 1건 reset (eager 로드는 별도 useEffect)
       setLatestTreatmentMemo(null);
 
@@ -5226,10 +5244,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
 
     if (error) {
       // AC-3 (T-20260520-foot-MEMO-SAVE-ERR): 테이블 미존재 / 스키마 캐시 오류 → graceful fallback
-      const isTableMissing =
-        error.message?.includes('schema cache') ||
-        error.message?.includes('customer_treatment_memos') ||
-        (error as { code?: string }).code === 'PGRST205';
+      // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-8: 자유텍스트 message.includes 절 제거.
+      //   테이블명 매칭은 안정 계약(code) 위에 얹혀 "테이블 부재" 판정을 상한 없이 확장 → RLS/timeout 등
+      //   진짜 에러를 오분류해 입력창을 은닉했다. 테이블 부재는 PGRST205 + 42P01(code)로 닫힌다.
+      const code = (error as { code?: string }).code;
+      const isTableMissing = code === 'PGRST205' || code === '42P01';
       if (isTableMissing) {
         console.warn('[TreatmentMemo] 테이블 미존재 — graceful fallback 적용');
         setTreatmentMemoUnavailable(true);
@@ -5306,7 +5325,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
 
   // 새 메모 저장 — T-20260716 INPUT-LAG-DATALOSS-RCA: 입력 상태를 <TreatmentMemoComposer>가 로컬 소유.
   //   본 함수는 text를 인자로 받아 DB INSERT만 담당(저장 시점·트리거·payload 무변경). 성공 시 true 반환.
-  const saveNewTreatmentMemo = async (text: string): Promise<boolean> => {
+  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-7: useCallback 으로 참조 고정.
+  //   미고정 시 부모(무한루프 보유)가 재렌더될 때마다 새 identity 가 memo(TreatmentMemoComposer)를 무력화 →
+  //   입력 중 자식 재렌더 = 07-16 처방 상쇄(재발 3차). deps=[customer,profile] 는 입력 구간엔 불변이다.
+  const saveNewTreatmentMemo = useCallback(async (text: string): Promise<boolean> => {
     const content = text.trim();
     if (!customer || !content) return false;
     setSavingNewMemo(true);
@@ -5325,10 +5347,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
         .single();
       if (error) {
         // AC-3: 테이블 미존재 시 친절한 안내 (raw 에러 노출 금지)
-        const isTableMissing =
-          error.message?.includes('schema cache') ||
-          error.message?.includes('customer_treatment_memos') ||
-          (error as { code?: string }).code === 'PGRST205';
+        // FIX-8: 자유텍스트 절 제거 — 테이블 부재는 PGRST205 + 42P01(code)로만 판정(오분류 차단).
+        const code = (error as { code?: string }).code;
+        const isTableMissing = code === 'PGRST205' || code === '42P01';
         if (isTableMissing) {
           toast.error('치료메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
           setTreatmentMemoUnavailable(true);
@@ -5346,10 +5367,13 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     } finally {
       setSavingNewMemo(false);
     }
-  };
+  }, [customer, profile]);
 
   // 메모 수정 저장 — 입력 상태는 <TreatmentMemoEditor>가 로컬 소유. text 인자로 UPDATE만 담당.
-  const saveTreatmentMemoEdit = async (text: string): Promise<boolean> => {
+  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-7: useCallback 고정. 본문이 editingMemoId 를
+  //   읽으므로 deps 에 포함 → 편집 시작/종료마다 identity 가 바뀌는 것은 정상(목적은 '편집 중 키 입력'
+  //   구간의 안정이며 그 구간에서는 불변이다).
+  const saveTreatmentMemoEdit = useCallback(async (text: string): Promise<boolean> => {
     const content = text.trim();
     if (!editingMemoId || !content) return false;
     setSavingEditMemo(true);
@@ -5377,7 +5401,10 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     );
     setEditingMemoId(null);
     return true;
-  };
+  }, [editingMemoId]);
+
+  // FIX-7(M2): TreatmentMemoEditor onCancel 참조 안정화 — 인라인 화살표는 어떤 조건에서도 memo 를 무력화한다.
+  const handleCancelMemoEdit = useCallback(() => setEditingMemoId(null), []);
 
   // 메모 삭제 — T-20260624-foot-CHART2-MEMO-EDIT-DELETE: hard-delete → soft-delete(의료법 §22-3/§40 진료기록 보존).
   //   치료메모는 진료기록 → 물리삭제 금지. deleted_at 마킹으로 목록에서만 숨김(데이터 보존).
@@ -8415,7 +8442,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                 </div>
                 <TreatmentImagesSection
                   customerId={customer.id}
-                  onUrlsLoaded={(urls) => setTreatmentImageUrls(urls)}
+                  onUrlsLoaded={handleTreatmentUrlsLoaded}
                 />
               </div>
               {/* 발톱 치료 before·after 일자별 이력 (AC-6) */}
@@ -9931,7 +9958,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                             initialContent={memo.content}
                             saving={savingEditMemo}
                             onSave={saveTreatmentMemoEdit}
-                            onCancel={() => setEditingMemoId(null)}
+                            onCancel={handleCancelMemoEdit}
                           />
                         ) : (
                           <>

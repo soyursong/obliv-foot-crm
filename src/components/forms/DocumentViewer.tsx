@@ -15,6 +15,9 @@ import { format } from 'date-fns';
 import { Download, Eye, FileText, Image as ImageIcon, ClipboardCheck, RefreshCw } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { supabase } from '@/lib/supabase';
+// T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-6: raw .list() → 캐시/dedup 래퍼.
+//   cachedStorageListResult 는 에러를 {files,error} 로 표면화하므로 기존 토스트/폴백을 잃지 않는다.
+import { cachedStorageListResult, invalidateStorageList } from '@/lib/photoUrl';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -67,9 +70,11 @@ export function DocumentViewer({ customerId, compact = false }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     const folder = `customer/${customerId}`;
-    const { data: list, error } = await supabase.storage
-      .from('documents')
-      .list(folder, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
+    // FIX-6: cachedStorageListResult 로 캐시/dedup 경유 + 에러 표면 유지(실패 시 토스트·폴백 보존).
+    const { files: list, error } = await cachedStorageListResult('documents', folder, {
+      limit: 100,
+      sortBy: { column: 'created_at', order: 'desc' },
+    });
 
     if (error) {
       toast.error(`파일 조회 실패: ${error.message}`);
@@ -112,6 +117,13 @@ export function DocumentViewer({ customerId, compact = false }: Props) {
     setLoading(false);
   }, [customerId]);
 
+  // FIX-6: 명시적 새로고침은 캐시(5분 TTL)를 먼저 무효화한 뒤 재조회 — 새 업로드분 즉시 반영.
+  //   (마운트/탭전환의 자동 load 는 캐시 HIT 를 노려 그대로 둔다.)
+  const refresh = useCallback(() => {
+    invalidateStorageList('documents', `customer/${customerId}`);
+    load();
+  }, [customerId, load]);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -144,7 +156,7 @@ export function DocumentViewer({ customerId, compact = false }: Props) {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground">업로드된 양식 ({files.length})</span>
-          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={load}>
+          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={refresh}>
             <RefreshCw className="h-3 w-3" />
             새로고침
           </Button>
@@ -164,7 +176,7 @@ export function DocumentViewer({ customerId, compact = false }: Props) {
         <span className="text-xs font-semibold text-muted-foreground">
           업로드된 양식·서명 ({files.length}건)
         </span>
-        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={load}>
+        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={refresh}>
           <RefreshCw className="h-3 w-3" /> 새로고침
         </Button>
       </div>

@@ -22,6 +22,15 @@
 export const FORM_MAX_UPLOAD_WIDTH = 1588;
 
 /**
+ * T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-12: 영수증(receipt) 업로드 다운스케일 상한.
+ *   장축(long edge) 1600px · JPEG q0.80 (2026-08-19 AI솔루션 팀장 승인값).
+ *   실측(§6-H): receipt 중앙 2,562KB·최대 9.41MB → 약 250~500KB. 버킷 2,106MB → 약 200MB.
+ *   ⚠ receipt prefix 전용. treatment-images·pen-chart 는 임상 판독 화질 불변(무접촉).
+ */
+export const RECEIPT_MAX_LONG_EDGE = 1600;
+export const RECEIPT_JPEG_QUALITY = 0.80;
+
+/**
  * AC-2 사용자 안내(무음 변환 금지). 다운스케일이 발생한 caller 가 *반드시 보이는* 토스트로
  * 노출한다(toast.confirm/warning — toast.info/success 는 묵음 처리되므로 사용 금지).
  */
@@ -147,5 +156,77 @@ export async function downscaleFormImage(
       width: 0,
       height: 0,
     };
+  }
+}
+
+/**
+ * T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-12: 영수증 이미지 다운스케일(장축 상한 + JPEG 재인코딩).
+ *
+ * @param file    업로드 대상 이미지 File (receipt prefix 전용)
+ * @param maxLongEdge 장축(가로/세로 중 큰 쪽) 상한(기본 RECEIPT_MAX_LONG_EDGE=1600)
+ * @param quality JPEG 품질(기본 RECEIPT_JPEG_QUALITY=0.80)
+ * @returns       저장용 File + 다운스케일/재인코딩 발생 여부 + 치수 메타
+ *
+ * 폼 가드(downscaleFormImage)와의 차이:
+ *   - 폭(width)이 아니라 **장축(long edge)** 기준으로 축소한다(세로가 긴 영수증 촬영 커버).
+ *   - 장축이 상한 이하여도 **JPEG q0.80 으로 재인코딩**해 과대 크기(고품질 원본)를 압축한다.
+ *   - ⚠ 절대 원본을 부풀리지 않는다 — 재인코딩 결과가 원본보다 크면 원본을 그대로 통과시킨다.
+ * decode/canvas 예외 시 원본 통과(업로드 비차단 — 형 가드와 동일 규율).
+ * ⚠ 임상 이미지가 아니므로 receipt 에만 적용한다(§6-H). treatment-images 는 별건·원장 확인.
+ */
+export async function downscaleReceiptImage(
+  file: File,
+  maxLongEdge: number = RECEIPT_MAX_LONG_EDGE,
+  quality: number = RECEIPT_JPEG_QUALITY,
+): Promise<FormImageDownscaleResult> {
+  // 이미지가 아니면 무변환 통과.
+  if (!file.type.startsWith('image/')) {
+    return { file, downscaled: false, originalWidth: 0, originalHeight: 0, width: 0, height: 0 };
+  }
+  let loaded: { img: HTMLImageElement; url: string } | null = null;
+  try {
+    loaded = await loadImage(file);
+    const { img, url } = loaded;
+    const ow = img.naturalWidth;
+    const oh = img.naturalHeight;
+    URL.revokeObjectURL(url);
+    if (!ow || !oh) {
+      return { file, downscaled: false, originalWidth: ow, originalHeight: oh, width: ow, height: oh };
+    }
+
+    // 장축 기준 스케일(≤1 → 확대 금지). 상한 이하면 원본 치수 유지(재인코딩만).
+    const longEdge = Math.max(ow, oh);
+    const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+    const targetW = Math.max(1, Math.round(ow * scale));
+    const targetH = Math.max(1, Math.round(oh * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return { file, downscaled: false, originalWidth: ow, originalHeight: oh, width: ow, height: oh };
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', quality),
+    );
+    // 재인코딩이 원본보다 크거나 실패하면 원본 그대로(부풀림 방지).
+    if (!blob || blob.size >= file.size) {
+      return { file, downscaled: false, originalWidth: ow, originalHeight: oh, width: ow, height: oh };
+    }
+    const outFile = new File([blob], withExt(file.name, 'image/jpeg'), {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    });
+    return { file: outFile, downscaled: true, originalWidth: ow, originalHeight: oh, width: targetW, height: targetH };
+  } catch {
+    if (loaded) {
+      try { URL.revokeObjectURL(loaded.url); } catch { /* noop */ }
+    }
+    return { file, downscaled: false, originalWidth: 0, originalHeight: 0, width: 0, height: 0 };
   }
 }

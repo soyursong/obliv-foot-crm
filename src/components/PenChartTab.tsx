@@ -90,7 +90,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
-import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
+import { signedThumbUrls, signedOriginalUrls, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -102,6 +102,17 @@ import { HealthQResultsPanel } from '@/components/HealthQResultsPanel';
 //   + stem 결속 헬퍼(첨부 prefix / 파일명→stem). save/handleDelete cascade 에서도 동일 규칙 재사용.
 import { PenChartAttachPanel, penChartAttachPrefix, stemFromChartName } from '@/components/PenChartAttachPanel';
 // T-20260523-foot-PENCHART-FORM-AUTOFILL AC-R4: SignaturePad UI 제거 (하단 서명란 불필요)
+
+// T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-3(부수): document 단위 sender id.
+//   BroadcastChannel 은 같은 채널명이면 같은 document 의 다른 BC 객체에도 배달되므로, 팝업이 저장
+//   브로드캐스트를 던지면 팝업 자신의 구독자(:1446)가 자기 메시지를 받아 불필요한 .list() 1회를 돈다.
+//   sender 를 실어 자기 메시지를 걸러낸다(팝업→메인 크로스-realm 배달은 그대로 통과).
+const BROADCAST_SENDER_ID: string = (() => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch { /* fall through */ }
+  return `pcs-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+})();
 
 // ─── 상용구 데이터 ───
 // T-20260517-foot-PENCHART-FORM: 자주 사용하는 텍스트 템플릿
@@ -1034,6 +1045,10 @@ export function PenChartTab({
   const [placedItems, setPlacedItems] = useState<PlacedItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-9: handleDrawSave same-tick 재진입 동기 가드.
+  //   disabled={saving} 는 리렌더 후에야 반영되므로 same-tick 연타를 못 막는다. useRef 동기 가드로 차단.
+  //   축 B(업로드 지연) 구간에서 연타 시 40MB 캔버스+12MB dataURL 다중 생존을 막는다.
+  const savingRef = useRef(false);
   const [hasDrawing, setHasDrawing] = useState(false);
   const [selectedChart, setSelectedChart] = useState<SavedChart | null>(null);
   // T-20260622-foot-PENCHART-EDITBTN: 수정 모드 — 저장된 차트를 배경으로 다시 열어 이어 편집.
@@ -1205,6 +1220,22 @@ export function PenChartTab({
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
   const undoStackRef = useRef<ImageData[]>([]);
   const UNDO_LIMIT = 10;
+  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-10: Undo 스택을 개수가 아니라 바이트로 상한(140MB).
+  //   개수 10 은 양식 크기를 무시 → 환불동의서 3p(40.8MB×10=408MB)·3탭 공유 시 1.7GB.
+  //   140MB = A4(13.6MB) 10회 유지 · 건강문진 2p 5회 · 환불동의서 3p ~3회가 성립하도록 고른 값.
+  //   ImageData 1장 최대 40.8MB < 140MB 라 단일 항목이 상한을 넘지 않는다(최소 1장 유지 보장).
+  const UNDO_MAX_BYTES = 140 * 1024 * 1024;
+  const imageDataBytes = (im: ImageData): number => im.data?.byteLength ?? im.width * im.height * 4;
+  const capUndoStackBytes = () => {
+    const stack = undoStackRef.current;
+    if (stack.length > UNDO_LIMIT) stack.shift(); // 개수 상한(A4 10회 유지) — 큰 양식은 아래 바이트 상한이 결정
+    let total = 0;
+    for (const im of stack) total += imageDataBytes(im);
+    while (stack.length > 1 && total > UNDO_MAX_BYTES) {
+      const removed = stack.shift();
+      if (removed) total -= imageDataBytes(removed);
+    }
+  };
   // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: async pre-capture — getImageData를 획 시작(hot path) 밖으로 이동
   // 매 onPointerUp 후 rAF에서 캡처 → onPointerDown 시 이미 준비된 ImageData를 stack에 적재 (sync 없음)
   const pendingUndoDataRef = useRef<ImageData | null>(null);
@@ -1347,18 +1378,22 @@ export function PenChartTab({
     const filtered = files.filter((f) => f.name && !f.id?.endsWith('/'));
     const paths = filtered.map((f) => `${storagePath}/${f.name}`);
     // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 목록=transform 프리뷰(width 640) / 편집·확대·다운로드=원본.
-    //   원본 signed URL 은 캐시 안정화(signedOriginalUrl)로 재서명·브라우저 재다운로드 감축.
-    const [thumbs, originals] = await Promise.all([
+    //   원본 signed URL 은 캐시 안정화(signedOriginalUrls)로 재서명·브라우저 재다운로드 감축.
+    // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-4-B: 원본 배치 서명(콜드 로드 2N→N+1).
+    //   원본은 signedOriginalUrls(createSignedUrls 1회, path→url Map · datum.path 매칭 · data:null 가드 ·
+    //   urlCache seeding)로 배치. 썸네일(transform)은 서버 토큰 서명이라 배치 불가 → 건당 유지.
+    const [thumbs, originalsByPath] = await Promise.all([
       signedThumbUrls('photos', paths, { width: 640, quality: 70, resize: 'contain' }),
-      Promise.all(paths.map((p) => signedOriginalUrl('photos', p))),
+      signedOriginalUrls('photos', paths),
     ]);
     const charts = filtered.map((file, i) => {
       const tsMatch = file.name.match(/^(\d+)/);
       const ts = tsMatch ? parseInt(tsMatch[1], 10) : 0;
+      const original = originalsByPath.get(paths[i]) ?? '';
       return {
         name: file.name,
-        url: originals[i] ?? '',
-        thumbUrl: thumbs[i] ?? originals[i] ?? '',
+        url: original,
+        thumbUrl: thumbs[i] ?? original,
         uploadedAt: ts ? new Date(ts).toISOString() : '',
       };
     });
@@ -1436,23 +1471,29 @@ export function PenChartTab({
   // BroadcastChannel: Chrome/Firefox/Edge/Safari 15.4+
   // storage event: Safari < 15.4, 구형 iPad 폴백용
   useEffect(() => {
-    const handleUpdate = (cId: string) => {
-      if (cId === customerId) loadSavedCharts();
+    const handleUpdate = (cId: string, sender?: string) => {
+      if (sender && sender === BROADCAST_SENDER_ID) return; // 자기 document 가 던진 메시지 무시(부수)
+      if (cId !== customerId) return;
+      // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-3: 크로스-realm 저장분 반영.
+      //   팝업(다른 document)이 저장 후 그 document 의 캐시만 비운다 → 메인 창은 최대 5분(구 30초) stale.
+      //   메인 창에서도 무효화해야 방금 저장한 차트가 즉시 목록에 나타난다(현장 "3-4번 시도 끝에 됨").
+      invalidateStorageList('photos', storagePath);
+      loadSavedCharts();
     };
 
     // BroadcastChannel (현대 브라우저)
     let bc: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
       bc = new BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE);
-      bc.onmessage = (e: MessageEvent) => handleUpdate(e.data?.customerId);
+      bc.onmessage = (e: MessageEvent) => handleUpdate(e.data?.customerId, e.data?.sender);
     }
 
     // localStorage storage 이벤트 (Safari < 15.4 폴백, 다른 탭/윈도우에서 발화)
     const onStorage = (e: StorageEvent) => {
       if (e.key === BROADCAST_CHANNELS.PENCHART_UPDATE && e.newValue) {
         try {
-          const payload = JSON.parse(e.newValue) as { customerId: string };
-          handleUpdate(payload.customerId);
+          const payload = JSON.parse(e.newValue) as { customerId: string; sender?: string };
+          handleUpdate(payload.customerId, payload.sender);
         } catch { /* 무시 */ }
       }
     };
@@ -2295,7 +2336,7 @@ export function PenChartTab({
     }
     if (pendingUndoDataRef.current !== null) {
       undoStackRef.current.push(pendingUndoDataRef.current);
-      if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift();
+      capUndoStackBytes(); // FIX-10: 개수 대신 바이트 상한(140MB)으로 오래된 것부터 폐기
       pendingUndoDataRef.current = null;
     }
   }, []);
@@ -3211,6 +3252,9 @@ export function PenChartTab({
   const handleDrawSave = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // FIX-9: same-tick 재진입 가드 (setSaving/disabled 보다 앞서 동기 차단).
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       // T-20260609-foot-PENCHART-TOOLS-UX-6FIX #6: 저장 직전 미확정 텍스트 입력 자동 commit.
@@ -3396,12 +3440,12 @@ export function PenChartTab({
         // BroadcastChannel (현대 브라우저)
         try {
           const bc = new BroadcastChannel(BROADCAST_CHANNELS.PENCHART_UPDATE);
-          bc.postMessage({ customerId });
+          bc.postMessage({ customerId, sender: BROADCAST_SENDER_ID });
           bc.close();
         } catch { /* BroadcastChannel 미지원 환경 무시 */ }
         // localStorage storage 이벤트 폴백 (Safari < 15.4 / 구형 iPad)
         try {
-          localStorage.setItem(BROADCAST_CHANNELS.PENCHART_UPDATE, JSON.stringify({ customerId, ts: Date.now() }));
+          localStorage.setItem(BROADCAST_CHANNELS.PENCHART_UPDATE, JSON.stringify({ customerId, sender: BROADCAST_SENDER_ID, ts: Date.now() }));
         } catch { /* 무시 */ }
         setTimeout(() => window.close(), 150);
       }
@@ -3420,6 +3464,7 @@ export function PenChartTab({
     } finally {
       // T-20260610-foot-PENCHART-6FIX-REFIX A: 저장 가드 리셋(onBlur 미발화 시 잔류 방지)
       textBtnHandlingRef.current = false;
+      savingRef.current = false; // FIX-9: 재진입 가드 해제
       setSaving(false);
     }
   };
