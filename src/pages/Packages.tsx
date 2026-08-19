@@ -18,6 +18,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
+import { consumeOneSession } from '@/lib/consumeSession';
 import { useAuth } from '@/lib/auth';
 import { isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
@@ -2068,17 +2069,18 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
   const save = async () => {
     if ((available[sessionType] ?? 0) <= 0) { toast.error('남은 회차가 없습니다'); return; }
     setSubmitting(true);
-    const { count } = await supabase.from('package_sessions').select('*', { count: 'exact', head: true }).eq('package_id', pkg.id);
-    const nextNumber = (count ?? 0) + 1;
-    // T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK: 당일 최근 체크인에 자동연결(AC-1). 0건이면 NULL(AC-3, 차감 자체는 막지 않음).
-    //   (기존 T-20260609-foot-PKGSESS-CHECKIN-LINK 의 "NULL 고정" 동작을 자동연결로 대체)
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: pkg.id, session_number: nextNumber, session_type: sessionType,
-      surcharge, surcharge_memo: surchargeMemo.trim() || null, status: 'used',
-      check_in_id: linkCheckIn?.id ?? null,
+    // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
+    //   (단일 writer). 회차 INSERT + 대응 CIS(flag∧FK) co-set 원자 수행. session_number 서버 원자 MAX+1.
+    // T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK: 당일 최근 체크인 자동연결(AC-1). 0건이면 NULL(AC-3, 차감 미차단).
+    const { error } = await consumeOneSession({
+      packageId: pkg.id,
+      sessionType,
+      surcharge,
+      surchargeMemo: surchargeMemo.trim() || null,
+      checkInId: linkCheckIn?.id ?? null,
     });
     setSubmitting(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    if (error) { toast.error(`저장 실패: ${error}`); return; }
     toast.success('회차 소진 완료');
     onDone();
   };

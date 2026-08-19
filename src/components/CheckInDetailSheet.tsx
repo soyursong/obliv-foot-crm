@@ -34,6 +34,7 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
+import { consumeOneSession } from '@/lib/consumeSession';
 import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
@@ -2692,25 +2693,19 @@ function SessionUseInSheetDialog({
     setSubmitting(true);
     // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
     try {
-      const { count } = await supabase
-        .from('package_sessions')
-        .select('*', { count: 'exact', head: true })
-        .eq('package_id', pkg.id);
-      const nextNumber = (count ?? 0) + 1;
-
-      const { error } = await supabase.from('package_sessions').insert({
-        package_id: pkg.id,
-        session_number: nextNumber,
-        session_type: sessionType,
+      // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
+      //   (단일 writer). 회차 INSERT + 대응 CIS(flag∧FK) co-set 원자 수행. session_number 서버 원자 MAX+1.
+      const { error } = await consumeOneSession({
+        packageId: pkg.id,
+        sessionType,
         surcharge: surcharge || 0,
-        surcharge_memo: surchargeMemo.trim() || null,
-        status: 'used',
+        surchargeMemo: surchargeMemo.trim() || null,
         // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 현재 내원 귀속 → 통계 정확매칭
-        check_in_id: checkInId ?? null,
+        checkInId: checkInId ?? null,
       });
 
       if (error) {
-        toast.error(`저장 실패: ${error.message}`);
+        toast.error(`저장 실패: ${error}`);
         return;
       }
       toast.success('패키지 회차 소진 완료');
