@@ -4097,6 +4097,8 @@ function IssueDialog({
     // T-20260710-foot-RRN-REGISTER-ERR-ISSUE-FROMCHART2 AC2: 미저장 2번차트 → 저장 확인 후 발급(구값 발급 방지).
     if (!(await ensureChartSavedBeforePublish())) return;
     setSaving(true);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 saving 플래그 해제 보장
+    try {
     const isFallback = template.id.startsWith('fallback-');
 
     // T-20260630-foot-SERIAL-RPC-FE-REWIRE: 출력 확정 시 발번 경로 = DB RPC(issue_foot_doc_serial).
@@ -4130,7 +4132,6 @@ function IssueDialog({
         .single();
       if (error || !inserted?.id) {
         toast.error(`발행 기록 저장 실패: ${error?.message ?? '행 생성 실패'}`);
-        setSaving(false);
         return;
       }
 
@@ -4208,9 +4209,14 @@ function IssueDialog({
       printJpg(printValues);
     }
 
-    setSaving(false);
     toast.success(`${template.name_ko} 발행 완료`);
     onIssued();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 문서 저장/출력 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── T-20260731-foot-FIRSTVISIT-MGMTRECORD-CONTENT-SAVE-PERSIST: 저장/발행 field_data 페이로드 ──

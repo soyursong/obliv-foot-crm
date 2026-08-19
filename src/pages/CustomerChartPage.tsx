@@ -356,40 +356,55 @@ function useMemoHistory(opts: {
   const saveNew = async () => {
     if (!customerId || !clinicId || !newText.trim()) return;
     setSavingNew(true);
-    const { data, error } = await supabase
-      .from(table)
-      .insert({
-        customer_id: customerId,
-        clinic_id: clinicId,
-        content: newText.trim(),
-        created_by: authorEmail,
-        created_by_name: authorName,
-      })
-      .select(SELECT).single();
-    setSavingNew(false);
-    if (error) {
-      if (isTableMissing(error as { message?: string; code?: string })) {
-        toast.error('메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
-        setUnavailable(true);
-      } else toast.error(`저장 실패: ${error.message}`);
-      return;
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B 확장): finally 로 게이팅 플래그 해제 보장
+    //   (핸드오프 스캐너 미열거분 — 동일 계열. throw 시 savingNew 고착 → 저장 버튼 영구 비활성)
+    try {
+      const { data, error } = await supabase
+        .from(table)
+        .insert({
+          customer_id: customerId,
+          clinic_id: clinicId,
+          content: newText.trim(),
+          created_by: authorEmail,
+          created_by_name: authorName,
+        })
+        .select(SELECT).single();
+      if (error) {
+        if (isTableMissing(error as { message?: string; code?: string })) {
+          toast.error('메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
+          setUnavailable(true);
+        } else toast.error(`저장 실패: ${error.message}`);
+        return;
+      }
+      if (data) setMemos(prev => [data as TreatmentMemoEntry, ...prev]);
+      setNewText('');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 메모 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingNew(false);
     }
-    if (data) setMemos(prev => [data as TreatmentMemoEntry, ...prev]);
-    setNewText('');
   };
 
   const saveEdit = async () => {
     if (!editingId || !editingText.trim()) return;
     setSavingEdit(true);
     const now = new Date().toISOString();
-    const { error } = await supabase
-      .from(table)
-      .update({ content: editingText.trim(), updated_at: now })
-      .eq('id', editingId);
-    setSavingEdit(false);
-    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
-    setMemos(prev => prev.map(m => m.id === editingId ? { ...m, content: editingText.trim(), updated_at: now } : m));
-    setEditingId(null); setEditingText('');
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B 확장): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase
+        .from(table)
+        .update({ content: editingText.trim(), updated_at: now })
+        .eq('id', editingId);
+      if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+      setMemos(prev => prev.map(m => m.id === editingId ? { ...m, content: editingText.trim(), updated_at: now } : m));
+      setEditingId(null); setEditingText('');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 메모 수정 중단', e);
+      toast.error('수정이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   // T-20260624-foot-CHART2-MEMO-EDIT-DELETE: hard-delete → soft-delete(deleted_at 마킹). 기록 보존(의료법).
@@ -3921,16 +3936,25 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   ): Promise<{ error: { code?: string; message?: string } | null }> => {
     if (!customer) return { error: null };
     setSavingField(true);
-    const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
-    setSavingField(false);
-    if (error) {
-      if (!opts?.suppressToast) toast.error(`저장 실패: ${error.message}`);
-      return { error };
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B 확장): finally 로 게이팅 플래그 해제 보장
+    //   (핸드오프 스캐너 미열거분 — 동일 계열. throw 시 savingField 고착 → 필드 저장 UI 영구 잠김)
+    try {
+      const { error } = await supabase.from('customers').update(patch).eq('id', customer.id);
+      if (error) {
+        if (!opts?.suppressToast) toast.error(`저장 실패: ${error.message}`);
+        return { error };
+      }
+      setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
+      // AC-8 쌍방연동 — 1번차트에 변경 알림 (방문경로·고객메모·기타메모 등)
+      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+      return { error: null };
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 고객 필드 저장 중단', e);
+      if (!opts?.suppressToast) toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+      return { error: { message: e instanceof Error ? e.message : String(e) } };
+    } finally {
+      setSavingField(false);
     }
-    setCustomer((prev) => prev ? { ...prev, ...patch } : prev);
-    // AC-8 쌍방연동 — 1번차트에 변경 알림 (방문경로·고객메모·기타메모 등)
-    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
-    return { error: null };
   };
 
   // T-20260724-foot-ASSIGN-CHARTOWNER-DISTRIB-SYNC (AC-1, 차트→금일 배분이력 하향전파):
@@ -4070,36 +4094,43 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     if (!customer) return;
     setSavingCertNo(true);
     const value = certNoText.trim() || null;
-    const { data, error } = await supabase
-      .from('customers')
-      .update({ insurance_cert_no: value })
-      .eq('id', customer.id)
-      .select('id');
-    setSavingCertNo(false);
-    if (error) {
-      // T-20260709-foot-INSURANCE-CERTNO-SAVE-TOAST: 컬럼 미적용 window(PGRST204 schema cache /
-      //   42703 undefined_column / "column ... does not exist")만 준비중 안내로 치환.
-      //   기존엔 맨 앞 /insurance_cert_no/ alternative 가 컬럼명 포함 모든 에러(마이그 착지 후 RLS 등
-      //   무관 에러 포함)를 "준비 중"으로 오분류 → 실제 저장 실패를 스태프에게 감추는 함정.
-      //   컬럼 부재 시그니처로 좁혀 마이그 착지 후엔 진짜 에러가 노출되도록 견고화.
-      if (/PGRST204|42703|schema cache|column\s.*insurance_cert_no.*does not exist/i.test(error.message)) {
-        toast.warning('보험 증번호 저장 기능이 준비 중입니다. 잠시 후 다시 시도해 주세요.');
-      } else {
-        toast.error(`보험 증번호 저장 실패: ${error.message}`);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({ insurance_cert_no: value })
+        .eq('id', customer.id)
+        .select('id');
+      if (error) {
+        // T-20260709-foot-INSURANCE-CERTNO-SAVE-TOAST: 컬럼 미적용 window(PGRST204 schema cache /
+        //   42703 undefined_column / "column ... does not exist")만 준비중 안내로 치환.
+        //   기존엔 맨 앞 /insurance_cert_no/ alternative 가 컬럼명 포함 모든 에러(마이그 착지 후 RLS 등
+        //   무관 에러 포함)를 "준비 중"으로 오분류 → 실제 저장 실패를 스태프에게 감추는 함정.
+        //   컬럼 부재 시그니처로 좁혀 마이그 착지 후엔 진짜 에러가 노출되도록 견고화.
+        if (/PGRST204|42703|schema cache|column\s.*insurance_cert_no.*does not exist/i.test(error.message)) {
+          toast.warning('보험 증번호 저장 기능이 준비 중입니다. 잠시 후 다시 시도해 주세요.');
+        } else {
+          toast.error(`보험 증번호 저장 실패: ${error.message}`);
+        }
+        return;
       }
-      return;
+      // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: rows-affected 검증(사일런트 유실 방어).
+      //   RLS 거부/스코프 불일치 시 error=null + 0-row 반환 → 낙관 반영(setCustomer)+거짓 성공 toast 로
+      //   DB 실재와 divergence. .select() 로 반영 행을 회수해 0-row 를 저장 실패로 판정하고 로컬 상태를
+      //   저장 전 값으로 유지한다.
+      if (!data || data.length === 0) {
+        toast.error('보험 증번호 저장 실패: 저장 대상을 찾지 못했습니다. 권한 또는 접속 상태를 확인한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      setCustomer((prev) => (prev ? { ...prev, insurance_cert_no: value } : prev));
+      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+      toast.success('보험 증번호가 저장되었습니다');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 보험 증번호 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingCertNo(false);
     }
-    // T-20260721-foot-WRITE-ROWCHECK-SILENTLOSS-GUARD: rows-affected 검증(사일런트 유실 방어).
-    //   RLS 거부/스코프 불일치 시 error=null + 0-row 반환 → 낙관 반영(setCustomer)+거짓 성공 toast 로
-    //   DB 실재와 divergence. .select() 로 반영 행을 회수해 0-row 를 저장 실패로 판정하고 로컬 상태를
-    //   저장 전 값으로 유지한다.
-    if (!data || data.length === 0) {
-      toast.error('보험 증번호 저장 실패: 저장 대상을 찾지 못했습니다. 권한 또는 접속 상태를 확인한 뒤 다시 시도해 주세요.');
-      return;
-    }
-    setCustomer((prev) => (prev ? { ...prev, insurance_cert_no: value } : prev));
-    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
-    toast.success('보험 증번호가 저장되었습니다');
   };
 
   // T-20260513-foot-C21-PHONE-EDIT-BTN: 핸드폰번호 저장 (010-XXXX-XXXX 유효성 검증)
@@ -4569,61 +4600,68 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       return;
     }
     setSavingSession(true);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: useSessionDlg.packageId,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 재계산(stale nextSession 보정)
-      session_number: nextSessionNumberFor(useSessionDlg.packageId),
-      session_type: sessionDlgForm.sessionType,
-      session_date: sessionDlgForm.sessionDate,
-      performed_by: sessionDlgForm.therapistId,
-      status: 'used',
-      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 차감일 == 최근 내원일(KST)일 때만 귀속(통계 정확매칭), 아니면 NULL 근사
-      check_in_id:
-        latestCheckIn?.checked_in_at &&
-        seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
-          ? latestCheckIn.id
-          : null,
-    });
-    setSavingSession(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase.from('package_sessions').insert({
+        package_id: useSessionDlg.packageId,
+        // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 재계산(stale nextSession 보정)
+        session_number: nextSessionNumberFor(useSessionDlg.packageId),
+        session_type: sessionDlgForm.sessionType,
+        session_date: sessionDlgForm.sessionDate,
+        performed_by: sessionDlgForm.therapistId,
+        status: 'used',
+        // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 차감일 == 최근 내원일(KST)일 때만 귀속(통계 정확매칭), 아니면 NULL 근사
+        check_in_id:
+          latestCheckIn?.checked_in_at &&
+          seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
+            ? latestCheckIn.id
+            : null,
+      });
+      if (error) { toast.error(`저장 실패: ${error.message}`); return; }
 
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 회차사용 다이얼로그 차감도 check_ins.package_id 링크
-    {
-      const dlgDeductCheckInId =
-        latestCheckIn?.checked_in_at &&
-        seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
-          ? latestCheckIn.id
-          : null;
-      await linkCheckInPackage(useSessionDlg.packageId, dlgDeductCheckInId);
+      // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 회차사용 다이얼로그 차감도 check_ins.package_id 링크
+      {
+        const dlgDeductCheckInId =
+          latestCheckIn?.checked_in_at &&
+          seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
+            ? latestCheckIn.id
+            : null;
+        await linkCheckInPackage(useSessionDlg.packageId, dlgDeductCheckInId);
+      }
+
+      // 패키지 세션 + 잔여횟수 새로고침
+      if (packages.length > 0) {
+        const pkgIds = packages.map((p) => p.id);
+        const { data: sessData } = await supabase
+          .from('package_sessions')
+          .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
+          .in('package_id', pkgIds)
+          .order('session_number', { ascending: true });
+        setPackageSessions(
+          (sessData ?? []).map((s: Record<string, unknown>) => ({
+            id: s.id as string,
+            package_id: s.package_id as string,
+            session_number: s.session_number as number,
+            session_type: s.session_type as string,
+            session_date: s.session_date as string,
+            performed_by: s.performed_by as string | null,
+            staff_name: (s.staff as { name: string } | null)?.name ?? null,
+            status: s.status as string,
+            memo: s.memo as string | null,
+          })),
+        );
+        // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
+        const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
+        setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
+      }
+
+      setUseSessionDlg(null);
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 회차 차감 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingSession(false);
     }
-
-    // 패키지 세션 + 잔여횟수 새로고침
-    if (packages.length > 0) {
-      const pkgIds = packages.map((p) => p.id);
-      const { data: sessData } = await supabase
-        .from('package_sessions')
-        .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
-        .in('package_id', pkgIds)
-        .order('session_number', { ascending: true });
-      setPackageSessions(
-        (sessData ?? []).map((s: Record<string, unknown>) => ({
-          id: s.id as string,
-          package_id: s.package_id as string,
-          session_number: s.session_number as number,
-          session_type: s.session_type as string,
-          session_date: s.session_date as string,
-          performed_by: s.performed_by as string | null,
-          staff_name: (s.staff as { name: string } | null)?.name ?? null,
-          status: s.status as string,
-          memo: s.memo as string | null,
-        })),
-      );
-      // T-20260522-foot-PERF-TUNING OPT-4: sessData 재사용 → remaining 클라이언트 집계 (N RPC 제거)
-      const remainingArr = computeRemainingFromSessionRows(packages, (sessData ?? []) as _SessRow[]);
-      setPackages((prev) => prev.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? prev[i]?.remaining ?? null })));
-    }
-
-    setUseSessionDlg(null);
   };
 
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 패키지 세션 + 잔여횟수 공통 새로고침
@@ -4690,42 +4728,48 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     if (!editSessionDlg) return;
     if (!editSessionForm.therapistId) { toast.error('치료사를 선택해주세요.'); return; }
     setSavingEditSession(true);
-
-    const typeChanged = editSessionForm.sessionType !== editSessionDlg.session_type;
-    const patch: {
-      session_type: string;
-      session_date: string;
-      performed_by: string;
-      unit_price?: number;
-    } = {
-      session_type: editSessionForm.sessionType,
-      session_date: editSessionForm.sessionDate,
-      performed_by: editSessionForm.therapistId,
-    };
-    // AC1/AC2/AC3: 유형이 실제로 바뀐 경우에만 차감 스냅샷 단가를 새 유형 단가로 재계산.
-    if (typeChanged) {
-      let pkg: PkgUnitPrices | null | undefined = packages.find((p) => p.id === editSessionDlg.package_id);
-      // 상태에 대상 패키지 단가가 없을 때만 DB 폴백(0 단가 오기입 방지).
-      if (!pkg) {
-        const { data } = await supabase
-          .from('packages')
-          .select('heated_unit_price, unheated_unit_price, iv_unit_price, podologe_unit_price, trial_unit_price, reborn_unit_price')
-          .eq('id', editSessionDlg.package_id)
-          .maybeSingle();
-        pkg = (data ?? null) as PkgUnitPrices | null;
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const typeChanged = editSessionForm.sessionType !== editSessionDlg.session_type;
+      const patch: {
+        session_type: string;
+        session_date: string;
+        performed_by: string;
+        unit_price?: number;
+      } = {
+        session_type: editSessionForm.sessionType,
+        session_date: editSessionForm.sessionDate,
+        performed_by: editSessionForm.therapistId,
+      };
+      // AC1/AC2/AC3: 유형이 실제로 바뀐 경우에만 차감 스냅샷 단가를 새 유형 단가로 재계산.
+      if (typeChanged) {
+        let pkg: PkgUnitPrices | null | undefined = packages.find((p) => p.id === editSessionDlg.package_id);
+        // 상태에 대상 패키지 단가가 없을 때만 DB 폴백(0 단가 오기입 방지).
+        if (!pkg) {
+          const { data } = await supabase
+            .from('packages')
+            .select('heated_unit_price, unheated_unit_price, iv_unit_price, podologe_unit_price, trial_unit_price, reborn_unit_price')
+            .eq('id', editSessionDlg.package_id)
+            .maybeSingle();
+          pkg = (data ?? null) as PkgUnitPrices | null;
+        }
+        patch.unit_price = sessionTypeUnitPrice(pkg, editSessionForm.sessionType);
       }
-      patch.unit_price = sessionTypeUnitPrice(pkg, editSessionForm.sessionType);
-    }
 
-    const { error } = await supabase
-      .from('package_sessions')
-      .update(patch)
-      .eq('id', editSessionDlg.id);
-    setSavingEditSession(false);
-    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
-    toast.success('시술내역이 수정되었습니다.');
-    await refreshPackageData(packages);
-    setEditSessionDlg(null);
+      const { error } = await supabase
+        .from('package_sessions')
+        .update(patch)
+        .eq('id', editSessionDlg.id);
+      if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+      toast.success('시술내역이 수정되었습니다.');
+      await refreshPackageData(packages);
+      setEditSessionDlg(null);
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 시술내역 수정 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingEditSession(false);
+    }
   };
 
   // T-20260511-foot-C21-PKG-USAGE-EDIT: 시술내역 삭제 (잔여횟수 자동 재계산)
@@ -4775,45 +4819,52 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const saveEditPkg = async () => {
     if (!editPkgDlg || !customer) return;
     setSavingEditPkg(true);
-    const editHeated = parseInt(editPkgForm.heated_sessions) || 0;
-    const editUnheated = parseInt(editPkgForm.unheated_sessions) || 0;
-    const editPodologe = parseInt(editPkgForm.podologe_sessions) || 0;
-    const editIv = parseInt(editPkgForm.iv_sessions) || 0;
-    const editTrial = parseInt(editPkgForm.trial_sessions) || 0;
-    const editReborn = parseInt(editPkgForm.reborn_sessions) || 0;
-    const updates = {
-      package_name: editPkgForm.package_name.trim() || editPkgDlg.package_name,
-      total_amount: parseAmount(editPkgForm.total_amount),
-      // T-20260608-foot-ACTIVE-PKG-NOTFOUND-DEDUCT-FAIL: 편집 시 total_sessions를 개별 회차 합으로 재계산.
-      // (이전: 개별 컬럼만 갱신하고 total_sessions 미갱신 → 잔여 집계·표시 드리프트 → 활성 패키지 오판정)
-      total_sessions: editHeated + editUnheated + editPodologe + editIv + editTrial + editReborn,
-      heated_sessions: editHeated,
-      heated_unit_price: parseAmount(editPkgForm.heated_unit_price),
-      unheated_sessions: editUnheated,
-      unheated_unit_price: parseAmount(editPkgForm.unheated_unit_price),
-      podologe_sessions: editPodologe,
-      podologe_unit_price: parseAmount(editPkgForm.podologe_unit_price),
-      iv_sessions: editIv,
-      iv_unit_price: parseAmount(editPkgForm.iv_unit_price),
-      trial_sessions: editTrial,
-      trial_unit_price: parseAmount(editPkgForm.trial_unit_price),
-      reborn_sessions: editReborn,
-      reborn_unit_price: parseAmount(editPkgForm.reborn_unit_price),
-    };
-    const { error } = await supabase.from('packages').update(updates).eq('id', editPkgDlg.id);
-    setSavingEditPkg(false);
-    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
-    setEditPkgDlg(null);
-    // 목록 갱신 (T-20260522-foot-PERF-TUNING OPT-4 패턴 재사용)
-    const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });
-    const pkgs = (pkgRes.data ?? []) as Package[];
-    if (pkgs.length > 0) {
-      const pkgIds = pkgs.map((p) => p.id);
-      const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
-      const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
-      setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
-    } else {
-      setPackages([]);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const editHeated = parseInt(editPkgForm.heated_sessions) || 0;
+      const editUnheated = parseInt(editPkgForm.unheated_sessions) || 0;
+      const editPodologe = parseInt(editPkgForm.podologe_sessions) || 0;
+      const editIv = parseInt(editPkgForm.iv_sessions) || 0;
+      const editTrial = parseInt(editPkgForm.trial_sessions) || 0;
+      const editReborn = parseInt(editPkgForm.reborn_sessions) || 0;
+      const updates = {
+        package_name: editPkgForm.package_name.trim() || editPkgDlg.package_name,
+        total_amount: parseAmount(editPkgForm.total_amount),
+        // T-20260608-foot-ACTIVE-PKG-NOTFOUND-DEDUCT-FAIL: 편집 시 total_sessions를 개별 회차 합으로 재계산.
+        // (이전: 개별 컬럼만 갱신하고 total_sessions 미갱신 → 잔여 집계·표시 드리프트 → 활성 패키지 오판정)
+        total_sessions: editHeated + editUnheated + editPodologe + editIv + editTrial + editReborn,
+        heated_sessions: editHeated,
+        heated_unit_price: parseAmount(editPkgForm.heated_unit_price),
+        unheated_sessions: editUnheated,
+        unheated_unit_price: parseAmount(editPkgForm.unheated_unit_price),
+        podologe_sessions: editPodologe,
+        podologe_unit_price: parseAmount(editPkgForm.podologe_unit_price),
+        iv_sessions: editIv,
+        iv_unit_price: parseAmount(editPkgForm.iv_unit_price),
+        trial_sessions: editTrial,
+        trial_unit_price: parseAmount(editPkgForm.trial_unit_price),
+        reborn_sessions: editReborn,
+        reborn_unit_price: parseAmount(editPkgForm.reborn_unit_price),
+      };
+      const { error } = await supabase.from('packages').update(updates).eq('id', editPkgDlg.id);
+      if (error) { toast.error(`수정 실패: ${error.message}`); return; }
+      setEditPkgDlg(null);
+      // 목록 갱신 (T-20260522-foot-PERF-TUNING OPT-4 패턴 재사용)
+      const pkgRes = await supabase.from('packages').select('*').eq('customer_id', customer.id).order('created_at', { ascending: false });
+      const pkgs = (pkgRes.data ?? []) as Package[];
+      if (pkgs.length > 0) {
+        const pkgIds = pkgs.map((p) => p.id);
+        const { data: sessData } = await supabase.from('package_sessions').select('package_id, session_type, status').in('package_id', pkgIds);
+        const remainingArr = computeRemainingFromSessionRows(pkgs, (sessData ?? []) as _SessRow[]);
+        setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+      } else {
+        setPackages([]);
+      }
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 구매 패키지 수정 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingEditPkg(false);
     }
   };
 
@@ -4821,12 +4872,19 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const softDeletePkg = async () => {
     if (!deletePkgDlg) return;
     setDeletingPkg(true);
-    const { error } = await supabase.from('packages').update({ status: 'cancelled' }).eq('id', deletePkgDlg.id);
-    setDeletingPkg(false);
-    if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
-    // 목록에서 즉시 제거 (AC-2/AC-5: 비노출)
-    setPackages((prev) => prev.filter((p) => p.id !== deletePkgDlg.id));
-    setDeletePkgDlg(null);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase.from('packages').update({ status: 'cancelled' }).eq('id', deletePkgDlg.id);
+      if (error) { toast.error(`삭제 실패: ${error.message}`); return; }
+      // 목록에서 즉시 제거 (AC-2/AC-5: 비노출)
+      setPackages((prev) => prev.filter((p) => p.id !== deletePkgDlg.id));
+      setDeletePkgDlg(null);
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 패키지 삭제 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setDeletingPkg(false);
+    }
   };
 
   // 우편번호 카카오 주소검색 팝업 (Kakao Postcode API)
@@ -4917,59 +4975,66 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     // T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·스태프 (i)soft): 차트 미니예약(재진) out-of-window soft 경고.
     if (!(await confirmStaffResvWindow(resvMiniForm.date, resvMiniForm.startTime))) return;
     setSavingResvMini(true);
-    // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 미니예약(재진 동선) 유입경로 canonical 상속.
-    //   재진 = 재입력 요구 없이 고객 최초유입(customers.first_inflow_channel) 상속(DA: 구환 미갱신·forward-only).
-    //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
-    const inheritedInflowMini = await fetchCustomerFirstInflow(customer.id);
-    const { data: newResv, error } = await supabase.from('reservations').insert({
-      customer_id: customer.id,
-      clinic_id: customer.clinic_id,
-      customer_name: customer.name,
-      customer_phone: customer.phone ?? null,
-      reservation_date: resvMiniForm.date,
-      reservation_time: resvMiniForm.startTime,
-      visit_type: 'returning',  // 재진으로 자동 생성
-      booking_memo: resvMiniForm.memo || null,
-      status: 'confirmed',
-      inflow_channel: inheritedInflowMini,
-      created_by: profile?.id ?? null,
-      // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 미니예약(재진 동선) = 어드민 수기 → manual.
-      created_via: RESERVATION_CREATED_VIA.MANUAL,
-      // T-20260524-foot-DESIG-BIDIRECT AC-3: preferred_therapist_id = 선택된 지정치료사 또는 기존 지정치료사
-      preferred_therapist_id: resvMiniForm.designatedTherapistId || customer.designated_therapist_id || null,
-    }).select('id').single();
-    setSavingResvMini(false);
-    if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
-    // T-20260524-foot-DESIG-BIDIRECT AC-2: 새 지정 치료사 선택 시 customers.designated_therapist_id 역동기화 (REST UPDATE)
-    // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
-    if (resvMiniForm.designatedTherapistId && resvMiniForm.designatedTherapistId !== (customer.designated_therapist_id ?? '')) {
-      await supabase
-        .from('customers')
-        .update({ designated_therapist_id: resvMiniForm.designatedTherapistId })
-        .eq('id', customer.id);
-      setDesignatedTherapistId(resvMiniForm.designatedTherapistId);
-      setCustomer(prev => prev ? { ...prev, designated_therapist_id: resvMiniForm.designatedTherapistId } : prev);
-    }
-    // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
-    // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
-    {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      if (newResv && customer.pending_healer_flag && resvMiniForm.date > todayStr) {
-        await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
-        await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
-        setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 미니예약(재진 동선) 유입경로 canonical 상속.
+      //   재진 = 재입력 요구 없이 고객 최초유입(customers.first_inflow_channel) 상속(DA: 구환 미갱신·forward-only).
+      //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
+      const inheritedInflowMini = await fetchCustomerFirstInflow(customer.id);
+      const { data: newResv, error } = await supabase.from('reservations').insert({
+        customer_id: customer.id,
+        clinic_id: customer.clinic_id,
+        customer_name: customer.name,
+        customer_phone: customer.phone ?? null,
+        reservation_date: resvMiniForm.date,
+        reservation_time: resvMiniForm.startTime,
+        visit_type: 'returning',  // 재진으로 자동 생성
+        booking_memo: resvMiniForm.memo || null,
+        status: 'confirmed',
+        inflow_channel: inheritedInflowMini,
+        created_by: profile?.id ?? null,
+        // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 미니예약(재진 동선) = 어드민 수기 → manual.
+        created_via: RESERVATION_CREATED_VIA.MANUAL,
+        // T-20260524-foot-DESIG-BIDIRECT AC-3: preferred_therapist_id = 선택된 지정치료사 또는 기존 지정치료사
+        preferred_therapist_id: resvMiniForm.designatedTherapistId || customer.designated_therapist_id || null,
+      }).select('id').single();
+      if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+      // T-20260524-foot-DESIG-BIDIRECT AC-2: 새 지정 치료사 선택 시 customers.designated_therapist_id 역동기화 (REST UPDATE)
+      // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
+      if (resvMiniForm.designatedTherapistId && resvMiniForm.designatedTherapistId !== (customer.designated_therapist_id ?? '')) {
+        await supabase
+          .from('customers')
+          .update({ designated_therapist_id: resvMiniForm.designatedTherapistId })
+          .eq('id', customer.id);
+        setDesignatedTherapistId(resvMiniForm.designatedTherapistId);
+        setCustomer(prev => prev ? { ...prev, designated_therapist_id: resvMiniForm.designatedTherapistId } : prev);
       }
+      // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
+      // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
+      {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        if (newResv && customer.pending_healer_flag && resvMiniForm.date > todayStr) {
+          await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
+          await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
+          setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+        }
+      }
+      // 예약 목록 새로고침
+      const { data: resvData } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('reservation_date', { ascending: false })
+        .limit(30);
+      setReservations((resvData ?? []) as Reservation[]);
+      setOpenResvMiniPopup(false);
+      setResvMiniForm({ date: '', startTime: '', memo: '', designatedTherapistId: '' });
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 미니 예약 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingResvMini(false);
     }
-    // 예약 목록 새로고침
-    const { data: resvData } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('customer_id', customer.id)
-      .order('reservation_date', { ascending: false })
-      .limit(30);
-    setReservations((resvData ?? []) as Reservation[]);
-    setOpenResvMiniPopup(false);
-    setResvMiniForm({ date: '', startTime: '', memo: '', designatedTherapistId: '' });
   };
 
   // C23-DETAIL-SIMPLIFY: 예약 탭 저장 (고객메모 + 기타메모)
@@ -4978,17 +5043,24 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const saveResvDetail = async () => {
     if (!customer) return;
     setSavingResvDetail(true);
-    const { error } = await supabase.from('customers').update({
-      memo: resvDetailForm.etcMemo || null,
-    }).eq('id', customer.id);
-    setSavingResvDetail(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    setCustomer((prev) => prev ? {
-      ...prev,
-      memo: resvDetailForm.etcMemo || null,
-    } : prev);
-    // AC-8 쌍방연동 — 1번차트에 변경 알림
-    localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase.from('customers').update({
+        memo: resvDetailForm.etcMemo || null,
+      }).eq('id', customer.id);
+      if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+      setCustomer((prev) => prev ? {
+        ...prev,
+        memo: resvDetailForm.etcMemo || null,
+      } : prev);
+      // AC-8 쌍방연동 — 1번차트에 변경 알림
+      localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 예약 상세 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingResvDetail(false);
+    }
   };
 
   // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
@@ -5084,16 +5156,23 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       })[0];
     if (!nextResv || !customer) return;
     setConfirmingVisit(true);
-    // T-20260714-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (rename 분기 A): 라벨 방문예정→내원예정 / 방문안함→부재.
-    //   비파괴 — reservation_memo_history 는 append-only 타임라인(자유텍스트). 기존 '[방문확인] 방문 예정' 행은
-    //   불변 보존(무손실), 신규 기록만 새 라벨 사용. DB CHECK/enum 없음 = 값 마이그 0.
-    const content = willVisit ? '[방문확인] 내원예정' : '[방문확인] 부재';
-    await insertReservationMemo(nextResv.id, customer.clinic_id, content, profile?.name ?? null);
-    setConfirmingVisit(false);
-    if (willVisit) {
-      toast.success('내원예정으로 기록되었습니다');
-    } else {
-      toast.info('부재로 기록되었습니다');
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-C): throw 원 미식별이나 JS 예외로도 동일 잠김 → finally 해제
+    try {
+      // T-20260714-FOOT-PREVCALL-VISITCONFIRM-SYNC-RENAME (rename 분기 A): 라벨 방문예정→내원예정 / 방문안함→부재.
+      //   비파괴 — reservation_memo_history 는 append-only 타임라인(자유텍스트). 기존 '[방문확인] 방문 예정' 행은
+      //   불변 보존(무손실), 신규 기록만 새 라벨 사용. DB CHECK/enum 없음 = 값 마이그 0.
+      const content = willVisit ? '[방문확인] 내원예정' : '[방문확인] 부재';
+      await insertReservationMemo(nextResv.id, customer.clinic_id, content, profile?.name ?? null);
+      if (willVisit) {
+        toast.success('내원예정으로 기록되었습니다');
+      } else {
+        toast.info('부재로 기록되었습니다');
+      }
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 방문 확인 기록 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setConfirmingVisit(false);
     }
   };
 
@@ -5105,32 +5184,39 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const saveAlt = async (newStatus: boolean) => {
     if (!customer) return;
     setSavingAlt(true);
-    const now = new Date().toISOString();
-    const { error } = await supabase.from('customers').update({
-      alt_status: newStatus,
-      alt_activated_at: newStatus ? now : null,
-      alt_detail: altDetail.trim() || null,
-    }).eq('id', customer.id);
-    setSavingAlt(false);
-    if (error) { toast.error(`ALT 저장 실패: ${error.message}`); return; }
-    setAltStatus(newStatus);
-    setCustomer((prev) => prev ? {
-      ...prev,
-      alt_status: newStatus,
-      alt_activated_at: newStatus ? now : null,
-      alt_detail: altDetail.trim() || null,
-    } : prev);
-    // AC-11: ALT ON 시 고정 메모 자동 삽입
-    if (newStatus && customer.id && customer.clinic_id) {
-      await insertAltPinnedMemo({
-        customerId: customer.id,
-        clinicId: customer.clinic_id,
-        altDetail: altDetail.trim() || null,
-        authorName: profile?.name ?? null,
-      });
-      toast.success('ALT 활성화 — 고정 메모 추가됨');
-    } else if (!newStatus) {
-      toast.success('ALT 해제 — 배지 제거 및 레이저코드 차단 해제');
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('customers').update({
+        alt_status: newStatus,
+        alt_activated_at: newStatus ? now : null,
+        alt_detail: altDetail.trim() || null,
+      }).eq('id', customer.id);
+      if (error) { toast.error(`ALT 저장 실패: ${error.message}`); return; }
+      setAltStatus(newStatus);
+      setCustomer((prev) => prev ? {
+        ...prev,
+        alt_status: newStatus,
+        alt_activated_at: newStatus ? now : null,
+        alt_detail: altDetail.trim() || null,
+      } : prev);
+      // AC-11: ALT ON 시 고정 메모 자동 삽입
+      if (newStatus && customer.id && customer.clinic_id) {
+        await insertAltPinnedMemo({
+          customerId: customer.id,
+          clinicId: customer.clinic_id,
+          altDetail: altDetail.trim() || null,
+          authorName: profile?.name ?? null,
+        });
+        toast.success('ALT 활성화 — 고정 메모 추가됨');
+      } else if (!newStatus) {
+        toast.success('ALT 해제 — 배지 제거 및 레이저코드 차단 해제');
+      }
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] ALT 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingAlt(false);
     }
   };
 
@@ -5230,34 +5316,42 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     const content = text.trim();
     if (!customer || !content) return false;
     setSavingNewMemo(true);
-    const { data, error } = await supabase
-      .from('customer_treatment_memos')
-      .insert({
-        customer_id: customer.id,
-        clinic_id: customer.clinic_id,
-        content,
-        created_by: profile?.email ?? null,
-        created_by_name: profile?.name ?? null,
-      })
-      .select('id, content, created_by, created_by_name, created_at, updated_at')
-      .single();
-    setSavingNewMemo(false);
-    if (error) {
-      // AC-3: 테이블 미존재 시 친절한 안내 (raw 에러 노출 금지)
-      const isTableMissing =
-        error.message?.includes('schema cache') ||
-        error.message?.includes('customer_treatment_memos') ||
-        (error as { code?: string }).code === 'PGRST205';
-      if (isTableMissing) {
-        toast.error('치료메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
-        setTreatmentMemoUnavailable(true);
-      } else {
-        toast.error(`저장 실패: ${error.message}`);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { data, error } = await supabase
+        .from('customer_treatment_memos')
+        .insert({
+          customer_id: customer.id,
+          clinic_id: customer.clinic_id,
+          content,
+          created_by: profile?.email ?? null,
+          created_by_name: profile?.name ?? null,
+        })
+        .select('id, content, created_by, created_by_name, created_at, updated_at')
+        .single();
+      if (error) {
+        // AC-3: 테이블 미존재 시 친절한 안내 (raw 에러 노출 금지)
+        const isTableMissing =
+          error.message?.includes('schema cache') ||
+          error.message?.includes('customer_treatment_memos') ||
+          (error as { code?: string }).code === 'PGRST205';
+        if (isTableMissing) {
+          toast.error('치료메모 기능 준비 중입니다. 잠시 후 다시 시도해주세요.');
+          setTreatmentMemoUnavailable(true);
+        } else {
+          toast.error(`저장 실패: ${error.message}`);
+        }
+        return false;
       }
+      if (data) setTreatmentMemos(prev => [data as TreatmentMemoEntry, ...prev]);
+      return true;
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 치료메모 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
       return false;
+    } finally {
+      setSavingNewMemo(false);
     }
-    if (data) setTreatmentMemos(prev => [data as TreatmentMemoEntry, ...prev]);
-    return true;
   };
 
   // 메모 수정 저장 — 입력 상태는 <TreatmentMemoEditor>가 로컬 소유. text 인자로 UPDATE만 담당.
@@ -5452,107 +5546,126 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     }
     const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
     setSavingC22Deduct(true);
-    // AC2: 같은 내원·같은 패키지 재차감 감지 → 즉시 INSERT 금지, 이중선택 모달
-    const deductCheckInId = computeDeductCheckInId(c22DeductForm.sessionDate);
-    if (deductCheckInId) {
-      const existing = await findSameCheckinSession(targetPkg.id, deductCheckInId);
-      if (existing) {
-        setSavingC22Deduct(false);
-        setDupDeductModal({
-          targetPkgId: targetPkg.id,
-          deductCheckInId,
-          existingSessionId: existing.id,
-          existingSessionNumber: existing.session_number,
-          existingPerformedBy: existing.performed_by,
-          usedCount,
-          therapistId: c22DeductForm.therapistId,
-          treatmentType: c22DeductForm.treatmentType,
-          sessionDate: c22DeductForm.sessionDate,
-          source: 'c22',
-        });
-        return;
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // AC2: 같은 내원·같은 패키지 재차감 감지 → 즉시 INSERT 금지, 이중선택 모달
+      const deductCheckInId = computeDeductCheckInId(c22DeductForm.sessionDate);
+      if (deductCheckInId) {
+        const existing = await findSameCheckinSession(targetPkg.id, deductCheckInId);
+        if (existing) {
+          setDupDeductModal({
+            targetPkgId: targetPkg.id,
+            deductCheckInId,
+            existingSessionId: existing.id,
+            existingSessionNumber: existing.session_number,
+            existingPerformedBy: existing.performed_by,
+            usedCount,
+            therapistId: c22DeductForm.therapistId,
+            treatmentType: c22DeductForm.treatmentType,
+            sessionDate: c22DeductForm.sessionDate,
+            source: 'c22',
+          });
+          return;
+        }
       }
+      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 치료실 체류구간 파생(무차단, 파생불가 시 NULL)
+      const dwell = await deriveTreatmentDwell(deductCheckInId);
+      const { error } = await supabase.from('package_sessions').insert({
+        package_id: targetPkg.id,
+        // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
+        session_number: nextSessionNumberFor(targetPkg.id),
+        session_type: c22DeductForm.treatmentType,
+        session_date: c22DeductForm.sessionDate,
+        performed_by: c22DeductForm.therapistId,
+        status: 'used',
+        check_in_id: deductCheckInId,
+        // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
+        treatment_started_at: dwell.started_at,
+        treatment_ended_at: dwell.ended_at,
+      });
+      if (error) {
+        // AC3: raw "duplicate key ... unique_package_checkin" 토스트 금지 → graceful 흡수
+        if (isDupCheckinError(error)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
+        toast.error(`차감 실패: ${error.message}`); return;
+      }
+      // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 성공 → check_ins.package_id 링크 (write-path fix)
+      await linkCheckInPackage(targetPkg.id, deductCheckInId);
+      await refreshPackageSessionsAndRemaining();
+      resetDeductFormAfterSave();
+      toast.success('회차 차감 완료');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] C22 회차 차감 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingC22Deduct(false);
     }
-    // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 치료실 체류구간 파생(무차단, 파생불가 시 NULL)
-    const dwell = await deriveTreatmentDwell(deductCheckInId);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: targetPkg.id,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
-      session_number: nextSessionNumberFor(targetPkg.id),
-      session_type: c22DeductForm.treatmentType,
-      session_date: c22DeductForm.sessionDate,
-      performed_by: c22DeductForm.therapistId,
-      status: 'used',
-      check_in_id: deductCheckInId,
-      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
-      treatment_started_at: dwell.started_at,
-      treatment_ended_at: dwell.ended_at,
-    });
-    setSavingC22Deduct(false);
-    if (error) {
-      // AC3: raw "duplicate key ... unique_package_checkin" 토스트 금지 → graceful 흡수
-      if (isDupCheckinError(error)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
-      toast.error(`차감 실패: ${error.message}`); return;
-    }
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 성공 → check_ins.package_id 링크 (write-path fix)
-    await linkCheckInPackage(targetPkg.id, deductCheckInId);
-    await refreshPackageSessionsAndRemaining();
-    resetDeductFormAfterSave();
-    toast.success('회차 차감 완료');
   };
 
   // AC2 ①: 당일 대체 치료사 전담 → 기존 회차 performed_by UPDATE (회차 추가 소진 없음)
   const handleDupChangeTherapistOnly = async () => {
     if (!dupDeductModal || dupDeductBusy) return;
     setDupDeductBusy(true);
-    const { error } = await supabase
-      .from('package_sessions')
-      .update({ performed_by: dupDeductModal.therapistId })
-      .eq('id', dupDeductModal.existingSessionId);
-    if (error) { setDupDeductBusy(false); toast.error(`치료사 변경 실패: ${error.message}`); return; }
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 기존 회차(같은 내원)도 check_ins.package_id 링크 보정
-    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
-    await refreshPackageSessionsAndRemaining();
-    if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
-    setDupDeductBusy(false);
-    resetDeductFormAfterSave();
-    setDupDeductModal(null);
-    if (dupDeductModal.source !== 'healer') toast.success('당일 담당 치료사 변경 완료 (회차 추가 차감 없음)');
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase
+        .from('package_sessions')
+        .update({ performed_by: dupDeductModal.therapistId })
+        .eq('id', dupDeductModal.existingSessionId);
+      if (error) { toast.error(`치료사 변경 실패: ${error.message}`); return; }
+      // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 기존 회차(같은 내원)도 check_ins.package_id 링크 보정
+      await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
+      await refreshPackageSessionsAndRemaining();
+      if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
+      resetDeductFormAfterSave();
+      setDupDeductModal(null);
+      if (dupDeductModal.source !== 'healer') toast.success('당일 담당 치료사 변경 완료 (회차 추가 차감 없음)');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 당일 담당 치료사 변경 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setDupDeductBusy(false);
+    }
   };
 
   // AC2 ②: 하루 두 번 시술(ⓠ1=B) → 새 회차 INSERT (session_number+1, 회차 추가 소진)
   const handleDupAddSession = async () => {
     if (!dupDeductModal || dupDeductBusy) return;
     setDupDeductBusy(true);
-    // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 같은 내원 추가 차감 레코드에도 dwell 주입(양 핸들러 dup 경유 공통, 무차단)
-    const dupDwell = await deriveTreatmentDwell(dupDeductModal.deductCheckInId);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: dupDeductModal.targetPkgId,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
-      session_number: nextSessionNumberFor(dupDeductModal.targetPkgId),
-      session_type: dupDeductModal.treatmentType,
-      session_date: dupDeductModal.sessionDate,
-      performed_by: dupDeductModal.therapistId,
-      status: 'used',
-      check_in_id: dupDeductModal.deductCheckInId,
-      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
-      treatment_started_at: dupDwell.started_at,
-      treatment_ended_at: dupDwell.ended_at,
-    });
-    if (error) {
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 같은 내원 추가 차감 레코드에도 dwell 주입(양 핸들러 dup 경유 공통, 무차단)
+      const dupDwell = await deriveTreatmentDwell(dupDeductModal.deductCheckInId);
+      const { error } = await supabase.from('package_sessions').insert({
+        package_id: dupDeductModal.targetPkgId,
+        // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
+        session_number: nextSessionNumberFor(dupDeductModal.targetPkgId),
+        session_type: dupDeductModal.treatmentType,
+        session_date: dupDeductModal.sessionDate,
+        performed_by: dupDeductModal.therapistId,
+        status: 'used',
+        check_in_id: dupDeductModal.deductCheckInId,
+        // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
+        treatment_started_at: dupDwell.started_at,
+        treatment_ended_at: dupDwell.ended_at,
+      });
+      if (error) {
+        // 제약 마이그(20260611230000)가 prod 미적용이면 23505 잔존 가능 → graceful
+        if (isDupCheckinError(error)) { toast.error('같은 날 추가 차감 설정이 아직 반영되지 않았어요. 관리자에게 문의해 주세요.'); return; }
+        toast.error(`추가 차감 실패: ${error.message}`); return;
+      }
+      // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 같은 내원 추가 차감도 check_ins.package_id 링크
+      await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
+      await refreshPackageSessionsAndRemaining();
+      if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
+      resetDeductFormAfterSave();
+      setDupDeductModal(null);
+      if (dupDeductModal.source !== 'healer') toast.success('1회차 추가 차감 완료');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 같은 내원 추가 차감 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
       setDupDeductBusy(false);
-      // 제약 마이그(20260611230000)가 prod 미적용이면 23505 잔존 가능 → graceful
-      if (isDupCheckinError(error)) { toast.error('같은 날 추가 차감 설정이 아직 반영되지 않았어요. 관리자에게 문의해 주세요.'); return; }
-      toast.error(`추가 차감 실패: ${error.message}`); return;
     }
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 같은 내원 추가 차감도 check_ins.package_id 링크
-    await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
-    await refreshPackageSessionsAndRemaining();
-    if (dupDeductModal.source === 'healer') await applyHealerFlagForCustomer();
-    setDupDeductBusy(false);
-    resetDeductFormAfterSave();
-    setDupDeductModal(null);
-    if (dupDeductModal.source !== 'healer') toast.success('1회차 추가 차감 완료');
   };
 
   // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 저장
@@ -5564,55 +5677,62 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const saveDesignatedTherapist = async (newTherapistId: string) => {
     if (!customer) return;
     setSavingDesignatedTherapist(true);
-    const { data: updatedRows, error } = await supabase
-      .from('customers')
-      .update({ designated_therapist_id: newTherapistId || null })
-      .eq('id', customer.id)
-      .select('id');
-    setSavingDesignatedTherapist(false);
-    if (error) {
-      toast.error(`지정 치료사 저장 실패: ${error.message}`);
-      return;
-    }
-    // 0-row: RLS 투명 차단(권한 부족) 또는 고객 ID 불일치
-    if (!updatedRows || updatedRows.length === 0) {
-      toast.error('지정 치료사 저장 실패: 권한 오류 (관리자에게 문의)');
-      return;
-    }
-    setDesignatedTherapistId(newTherapistId);
-    setCustomer(prev => prev ? { ...prev, designated_therapist_id: newTherapistId || null } : prev);
-    // AC-R1 (2026-05-23): 지정 치료사 변경 시 차감 폼 자동 동기화 제거 — 수기 선택 방식
-
-    // T-20260524-foot-THERAPIST-BISYNC AC-1: 2번차트 → 미래 재진 예약 순방향 동기화
-    // AC-4: newTherapistId 있을 때만 (미지정 해제 시 예약은 유지)
-    // preferred_therapist_id IS NULL인 것만 채움 (수기 우선 원칙 — 기존 지정 덮어쓰지 않음)
-    if (newTherapistId) {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const { error: resvErr } = await supabase
-        .from('reservations')
-        .update({ preferred_therapist_id: newTherapistId })
-        .eq('customer_id', customer.id)
-        .eq('visit_type', 'returning')
-        .eq('status', 'confirmed')
-        .gte('reservation_date', todayStr)
-        .is('preferred_therapist_id', null);
-      if (resvErr) {
-        console.warn('[BISYNC AC-1] 순방향 예약 동기화 부분 실패:', resvErr.message);
-      } else {
-        // 로컬 state 즉시 반영 (리로드 없이 UI 갱신)
-        setReservations(prev => prev.map(r =>
-          r.visit_type === 'returning' &&
-          r.status === 'confirmed' &&
-          r.reservation_date >= todayStr &&
-          !r.preferred_therapist_id
-            ? { ...r, preferred_therapist_id: newTherapistId }
-            : r
-        ));
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { data: updatedRows, error } = await supabase
+        .from('customers')
+        .update({ designated_therapist_id: newTherapistId || null })
+        .eq('id', customer.id)
+        .select('id');
+      if (error) {
+        toast.error(`지정 치료사 저장 실패: ${error.message}`);
+        return;
       }
-    }
+      // 0-row: RLS 투명 차단(권한 부족) 또는 고객 ID 불일치
+      if (!updatedRows || updatedRows.length === 0) {
+        toast.error('지정 치료사 저장 실패: 권한 오류 (관리자에게 문의)');
+        return;
+      }
+      setDesignatedTherapistId(newTherapistId);
+      setCustomer(prev => prev ? { ...prev, designated_therapist_id: newTherapistId || null } : prev);
+      // AC-R1 (2026-05-23): 지정 치료사 변경 시 차감 폼 자동 동기화 제거 — 수기 선택 방식
 
-    const therapistName = therapistList.find(t => t.id === newTherapistId)?.name;
-    toast.success(therapistName ? `지정 치료사: ${therapistName}` : '지정 치료사 해제');
+      // T-20260524-foot-THERAPIST-BISYNC AC-1: 2번차트 → 미래 재진 예약 순방향 동기화
+      // AC-4: newTherapistId 있을 때만 (미지정 해제 시 예약은 유지)
+      // preferred_therapist_id IS NULL인 것만 채움 (수기 우선 원칙 — 기존 지정 덮어쓰지 않음)
+      if (newTherapistId) {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const { error: resvErr } = await supabase
+          .from('reservations')
+          .update({ preferred_therapist_id: newTherapistId })
+          .eq('customer_id', customer.id)
+          .eq('visit_type', 'returning')
+          .eq('status', 'confirmed')
+          .gte('reservation_date', todayStr)
+          .is('preferred_therapist_id', null);
+        if (resvErr) {
+          console.warn('[BISYNC AC-1] 순방향 예약 동기화 부분 실패:', resvErr.message);
+        } else {
+          // 로컬 state 즉시 반영 (리로드 없이 UI 갱신)
+          setReservations(prev => prev.map(r =>
+            r.visit_type === 'returning' &&
+            r.status === 'confirmed' &&
+            r.reservation_date >= todayStr &&
+            !r.preferred_therapist_id
+              ? { ...r, preferred_therapist_id: newTherapistId }
+              : r
+          ));
+        }
+      }
+
+      const therapistName = therapistList.find(t => t.id === newTherapistId)?.name;
+      toast.success(therapistName ? `지정 치료사: ${therapistName}` : '지정 치료사 해제');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 지정 치료사 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingDesignatedTherapist(false);
+    }
   };
 
   // T-20260516-foot-HEALER-RESV-BTN v2: 힐러예약 플래그 토글 → T-20260522-foot-PKG-HEALER-DEDUCT에서 handleHealerDeduct로 통합됨.
@@ -5645,62 +5765,66 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     }
 
     setSavingHealerDeduct(true);
-
-    // 2. 패키지 회차 차감 (saveC22Deduct 동일 로직)
-    const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
-    // AC2: 같은 내원·같은 패키지 재차감 감지 → 모달로 분기 (source='healer' → 모달 처리 후 힐러 플래그 이어감)
-    const deductCheckInId = computeDeductCheckInId(c22DeductForm.sessionDate);
-    if (deductCheckInId) {
-      const existing = await findSameCheckinSession(targetPkg.id, deductCheckInId);
-      if (existing) {
-        setSavingHealerDeduct(false);
-        setDupDeductModal({
-          targetPkgId: targetPkg.id,
-          deductCheckInId,
-          existingSessionId: existing.id,
-          existingSessionNumber: existing.session_number,
-          existingPerformedBy: existing.performed_by,
-          usedCount,
-          therapistId: c22DeductForm.therapistId,
-          treatmentType: c22DeductForm.treatmentType,
-          sessionDate: c22DeductForm.sessionDate,
-          source: 'healer',
-        });
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // 2. 패키지 회차 차감 (saveC22Deduct 동일 로직)
+      const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
+      // AC2: 같은 내원·같은 패키지 재차감 감지 → 모달로 분기 (source='healer' → 모달 처리 후 힐러 플래그 이어감)
+      const deductCheckInId = computeDeductCheckInId(c22DeductForm.sessionDate);
+      if (deductCheckInId) {
+        const existing = await findSameCheckinSession(targetPkg.id, deductCheckInId);
+        if (existing) {
+          setDupDeductModal({
+            targetPkgId: targetPkg.id,
+            deductCheckInId,
+            existingSessionId: existing.id,
+            existingSessionNumber: existing.session_number,
+            existingPerformedBy: existing.performed_by,
+            usedCount,
+            therapistId: c22DeductForm.therapistId,
+            treatmentType: c22DeductForm.treatmentType,
+            sessionDate: c22DeductForm.sessionDate,
+            source: 'healer',
+          });
+          return;
+        }
+      }
+      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 힐러 예약後 차감도 일반 차감과 동일하게 dwell 주입(무차단)
+      const healerDwell = await deriveTreatmentDwell(deductCheckInId);
+      const { error: deductError } = await supabase.from('package_sessions').insert({
+        package_id: targetPkg.id,
+        // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
+        session_number: nextSessionNumberFor(targetPkg.id),
+        session_type: c22DeductForm.treatmentType,
+        session_date: c22DeductForm.sessionDate,
+        performed_by: c22DeductForm.therapistId,
+        status: 'used',
+        check_in_id: deductCheckInId,
+        // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
+        treatment_started_at: healerDwell.started_at,
+        treatment_ended_at: healerDwell.ended_at,
+      });
+      if (deductError) {
+        // AC3: raw 23505 토스트 금지
+        if (isDupCheckinError(deductError)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
+        toast.error(`차감 실패: ${deductError.message}`);
         return;
       }
-    }
-    // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 힐러 예약後 차감도 일반 차감과 동일하게 dwell 주입(무차단)
-    const healerDwell = await deriveTreatmentDwell(deductCheckInId);
-    const { error: deductError } = await supabase.from('package_sessions').insert({
-      package_id: targetPkg.id,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
-      session_number: nextSessionNumberFor(targetPkg.id),
-      session_type: c22DeductForm.treatmentType,
-      session_date: c22DeductForm.sessionDate,
-      performed_by: c22DeductForm.therapistId,
-      status: 'used',
-      check_in_id: deductCheckInId,
-      // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
-      treatment_started_at: healerDwell.started_at,
-      treatment_ended_at: healerDwell.ended_at,
-    });
-    if (deductError) {
+
+      // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 힐러 차감 성공 → check_ins.package_id 링크
+      await linkCheckInPackage(targetPkg.id, deductCheckInId);
+      await refreshPackageSessionsAndRemaining();
+      // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
+      resetDeductFormAfterSave();
+
+      // 3. 힐러 플래그 ON
+      await applyHealerFlagForCustomer();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 힐러 예약 후 차감 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
       setSavingHealerDeduct(false);
-      // AC3: raw 23505 토스트 금지
-      if (isDupCheckinError(deductError)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
-      toast.error(`차감 실패: ${deductError.message}`);
-      return;
     }
-
-    // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 힐러 차감 성공 → check_ins.package_id 링크
-    await linkCheckInPackage(targetPkg.id, deductCheckInId);
-    await refreshPackageSessionsAndRemaining();
-    // AC-R1 (2026-05-23): 힐러차감 후 리셋 — 지정 치료사 자동세팅 제거
-    resetDeductFormAfterSave();
-
-    // 3. 힐러 플래그 ON
-    await applyHealerFlagForCustomer();
-    setSavingHealerDeduct(false);
   };
 
   // T-20260522-foot-PKG-HEALER-DEDUCT: 힐러 플래그 ON (토글 아닌 SET — 차감과 동시이므로 항상 ON)
@@ -5741,6 +5865,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       return;
     }
     setSavingEditResv(true);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
     // T-20260714-foot-RESCHED-HIST-MISSING: 수정 전 원본(날짜/시간) 캡처 — 감사 로그(변경이력) 기록용.
     //   기존 버그: 고객차트 예약수정 저장 경로만 reservation_logs insert 가 누락되어 날짜/시간 변경이
     //   '예약 변경 이력'에 남지 않았다(다른 경로 — 예약관리 드래그·상세팝업 — 는 정상 기록).
@@ -5755,7 +5881,7 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       updatePayload.preferred_therapist_id = editResvForm.therapistId || null;
     }
     const { error } = await supabase.from('reservations').update(updatePayload).eq('id', editResvId);
-    if (error) { setSavingEditResv(false); toast.error(`수정 실패: ${error.message}`); return; }
+    if (error) { toast.error(`수정 실패: ${error.message}`); return; }
 
     // T-20260714-foot-RESCHED-HIST-MISSING: 예약 변경 이력 기록(reservation_logs).
     //   canonical 패턴 재사용(Reservations.tsx save() / Dashboard executeSlotDrag / ReservationDetailPopup).
@@ -5778,7 +5904,6 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       });
     }
 
-    setSavingEditResv(false);
     // T-20260524-foot-DESIG-BIDIRECT AC-2: 재진 예약 치료사 수기 변경 시 → designated_therapist_id 역동기화 (REST UPDATE)
     // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
     if (
@@ -5804,6 +5929,12 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     setEditResvId(null);
     // AC-8 쌍방연동 — 예약메모 변경 시 1번차트에 알림
     if (customer) localStorage.setItem(STORAGE_KEYS.CUSTOMER_REFRESH, JSON.stringify({ customerId: customer.id, ts: Date.now() }));
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 예약 수정 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingEditResv(false);
+    }
   };
 
   // T-20260508-foot-C22-RESV-EDIT: CRM 시간대 연동 — 미니예약창/수정모달 슬롯
@@ -5970,63 +6101,70 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     // T-20260816-foot-JONGNO-OPHOURS-WRITEGATE (Phase2·스태프 (i)soft): 차트 인라인 슬롯예약(재진) out-of-window soft 경고.
     if (!(await confirmStaffResvWindow(inlineResvDate, time))) return;
     setSavingInlineResv(true);
-    // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 인라인 슬롯예약(재진 동선) 유입경로 canonical 상속.
-    //   재진 = 고객 최초유입(customers.first_inflow_channel) 상속(재입력 없음·forward-only·first-write-wins).
-    //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
-    const inheritedInflowInline = await fetchCustomerFirstInflow(customer.id);
-    const { data: newResv, error } = await supabase.from('reservations').insert({
-      customer_id: customer.id,
-      clinic_id: customer.clinic_id,
-      customer_name: customer.name,
-      customer_phone: customer.phone ?? null,
-      reservation_date: inlineResvDate,
-      reservation_time: time,
-      visit_type: 'returning',
-      booking_memo: inlineResvMemo.trim() || null,
-      status: 'confirmed',
-      inflow_channel: inheritedInflowInline,
-      created_by: profile?.id ?? null,
-      // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 인라인 슬롯예약(재진 동선) = 어드민 수기 → manual.
-      created_via: RESERVATION_CREATED_VIA.MANUAL,
-      // T-20260524-foot-THERAPIST-BISYNC: 선택된 치료사 저장 (AC-2)
-      preferred_therapist_id: inlineResvTherapistId || null,
-    }).select('id').single();
-    setSavingInlineResv(false);
-    if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
-    // T-20260524-foot-DESIG-BIDIRECT AC-2: 치료사 수기 선택 저장 → customers.designated_therapist_id 역동기화 (REST UPDATE)
-    // AC-3: visit_type = 'returning'만 (이 함수는 항상 returning이므로 조건 충족)
-    // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
-    if (inlineResvTherapistId && inlineResvTherapistId !== (customer.designated_therapist_id ?? '')) {
-      await supabase
-        .from('customers')
-        .update({ designated_therapist_id: inlineResvTherapistId })
-        .eq('id', customer.id);
-      setDesignatedTherapistId(inlineResvTherapistId);
-      setCustomer(prev => prev ? { ...prev, designated_therapist_id: inlineResvTherapistId } : prev);
-    }
-    // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
-    // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
-    {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      if (newResv && customer.pending_healer_flag && inlineResvDate > todayStr) {
-        await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
-        await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
-        setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // T-20260810-foot-INFLOW-RESV-COVERAGE-COMPLETE: 차트 인라인 슬롯예약(재진 동선) 유입경로 canonical 상속.
+      //   재진 = 고객 최초유입(customers.first_inflow_channel) 상속(재입력 없음·forward-only·first-write-wins).
+      //   §36 방화벽: inflow 축(reservations.inflow_channel)만 접촉 — referral_source/source_system 무저촉·매핑/치환 0.
+      const inheritedInflowInline = await fetchCustomerFirstInflow(customer.id);
+      const { data: newResv, error } = await supabase.from('reservations').insert({
+        customer_id: customer.id,
+        clinic_id: customer.clinic_id,
+        customer_name: customer.name,
+        customer_phone: customer.phone ?? null,
+        reservation_date: inlineResvDate,
+        reservation_time: time,
+        visit_type: 'returning',
+        booking_memo: inlineResvMemo.trim() || null,
+        status: 'confirmed',
+        inflow_channel: inheritedInflowInline,
+        created_by: profile?.id ?? null,
+        // T-20260628-crm-RESV-CREATED-VIA-FILL §2: 차트 인라인 슬롯예약(재진 동선) = 어드민 수기 → manual.
+        created_via: RESERVATION_CREATED_VIA.MANUAL,
+        // T-20260524-foot-THERAPIST-BISYNC: 선택된 치료사 저장 (AC-2)
+        preferred_therapist_id: inlineResvTherapistId || null,
+      }).select('id').single();
+      if (error) { toast.error(`예약 저장 실패: ${error.message}`); return; }
+      // T-20260524-foot-DESIG-BIDIRECT AC-2: 치료사 수기 선택 저장 → customers.designated_therapist_id 역동기화 (REST UPDATE)
+      // AC-3: visit_type = 'returning'만 (이 함수는 항상 returning이므로 조건 충족)
+      // T-20260524-foot-DESIG-SAVE-ERR: RPC → REST UPDATE 전환 (RPC 미생성 대응)
+      if (inlineResvTherapistId && inlineResvTherapistId !== (customer.designated_therapist_id ?? '')) {
+        await supabase
+          .from('customers')
+          .update({ designated_therapist_id: inlineResvTherapistId })
+          .eq('id', customer.id);
+        setDesignatedTherapistId(inlineResvTherapistId);
+        setCustomer(prev => prev ? { ...prev, designated_therapist_id: inlineResvTherapistId } : prev);
       }
+      // AC-8+AC-11: pending_healer_flag → 신규 예약에 healer_flag 자동 적용 후 1회 소모
+      // AC-11: 당일(오늘) 예약에는 적용 금지 — 다음날 이후(> today)만 소모. 당일 고객박스 노란색 전환 방지.
+      {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        if (newResv && customer.pending_healer_flag && inlineResvDate > todayStr) {
+          await supabase.from('reservations').update({ healer_flag: true }).eq('id', newResv.id);
+          await supabase.from('customers').update({ pending_healer_flag: false }).eq('id', customer.id);
+          setCustomer(prev => prev ? { ...prev, pending_healer_flag: false } : prev);
+        }
+      }
+      toast.success(`${inlineResvDate} ${time} 예약 등록 완료`);
+      // 예약 이력 즉시 갱신
+      const { data: resvData } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('reservation_date', { ascending: false })
+        .limit(30);
+      setReservations((resvData ?? []) as Reservation[]);
+      // 슬롯 그리드 갱신 (방금 만든 예약 반영)
+      await loadInlineResvSlots(inlineResvDate);
+      // T-20260524-foot-DESIG-BIDIRECT: 지정 치료사 선택 리셋 (다음 예약 시 빈 상태 — AC-4)
+      setInlineResvTherapistId('');
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 인라인 슬롯예약 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSavingInlineResv(false);
     }
-    toast.success(`${inlineResvDate} ${time} 예약 등록 완료`);
-    // 예약 이력 즉시 갱신
-    const { data: resvData } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('customer_id', customer.id)
-      .order('reservation_date', { ascending: false })
-      .limit(30);
-    setReservations((resvData ?? []) as Reservation[]);
-    // 슬롯 그리드 갱신 (방금 만든 예약 반영)
-    await loadInlineResvSlots(inlineResvDate);
-    // T-20260524-foot-DESIG-BIDIRECT: 지정 치료사 선택 리셋 (다음 예약 시 빈 상태 — AC-4)
-    setInlineResvTherapistId('');
   };
 
   const totalPaid =
@@ -11170,10 +11308,17 @@ function PackagePurchaseFromTemplateDialog({
     // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형은 구성에서 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
     //   매핑 가능한 라인이 없으면 null(미태깅) 저장(CHECK nullable 허용). 값 출처만 수동→자동, 집계 무회귀.
     setSubmitting(true);
-    const { error } = await supabase.from('packages').insert(buildPackageInsertPayload());
-    setSubmitting(false);
-    if (error) { toast.error(`생성 실패: ${error.message}`); return; }
-    onCreated();
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase.from('packages').insert(buildPackageInsertPayload());
+      if (error) { toast.error(`생성 실패: ${error.message}`); return; }
+      onCreated();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 구입 티켓 생성 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // ★T-20260807-foot-CONSULTROOM-PLANA-PKG-PAY-LOCATION-CORRECT(AC-1) — [결제 및 티켓 생성] 전송 직전 훅.
@@ -11199,48 +11344,55 @@ function PackagePurchaseFromTemplateDialog({
     if (!insuranceSplitValid) { toast.error(`급여(${coveredSessions})+비급여(${noncoveredSessions}) 회차 합이 총 ${totalSessions}회와 일치해야 합니다`); return; }
     // T-20260715-foot-BUYTICKET-STATTAG-AUTOMAP: 시술유형 자동 파생(수동 선택 폐지) → 필수-선택 차단 제거.
     setSubmitting(true);
-    // 1) 템플릿 저장
-    const { error: tmplErr } = await supabase.from('package_templates').insert({
-      clinic_id: clinicId,
-      name: packageName.trim(),
-      heated_sessions: heated, heated_unit_price: heatedUnitPrice, heated_upgrade_available: heatedUpgrade,
-      unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice, unheated_upgrade_available: unheatedUpgrade,
-      podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
-      iv_company: ivCompany.trim() || null, iv_sessions: iv, iv_unit_price: ivUnitPrice,
-      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
-      trial_sessions: trial, trial_unit_price: trialUnitPrice,
-      total_price: grandTotal, price_override: priceOverride,
-      memo: memo.trim() || null, sort_order: 0, is_active: true,
-      updated_at: new Date().toISOString(),
-    });
-    if (tmplErr) { toast.error(`템플릿 저장 실패: ${tmplErr.message}`); setSubmitting(false); return; }
-    // 2) 패키지 생성
-    const { error: pkgErr } = await supabase.from('packages').insert({
-      clinic_id: clinicId, customer_id: customerId,
-      package_name: packageName.trim(), package_type: 'template', template_id: null,
-      total_sessions: totalSessions, heated_sessions: heated, heated_unit_price: heatedUnitPrice,
-      unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice,
-      iv_sessions: iv, iv_unit_price: ivUnitPrice, preconditioning_sessions: precon,
-      podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
-      iv_company: ivCompany.trim() || null, shot_upgrade: heatedUpgrade, af_upgrade: unheatedUpgrade,
-      // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
-      trial_sessions: trial, trial_unit_price: trialUnitPrice,
-      // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목 (packages 전용 — package_templates에는 미반영)
-      reborn_sessions: reborn, reborn_unit_price: rebornUnitPrice,
-      upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal,
-      // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM: 진료비 UI 제거 → 0 고정 저장(컬럼 보존).
-      consultation_fee: 0, paid_amount: 0,
-      // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷.
-      treatment_type: treatmentType || null,
-      reference_price: referencePrice > 0 ? referencePrice : null,
-      // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여/비급여 회차 split (nullable·미입력=NULL).
-      covered_sessions: coveredSessions,
-      noncovered_sessions: noncoveredSessions,
-      status: 'active', memo: memo.trim() || null,
-    });
-    setSubmitting(false);
-    if (pkgErr) { toast.error(`패키지 생성 실패: ${pkgErr.message}`); return; }
-    onCreated();
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // 1) 템플릿 저장
+      const { error: tmplErr } = await supabase.from('package_templates').insert({
+        clinic_id: clinicId,
+        name: packageName.trim(),
+        heated_sessions: heated, heated_unit_price: heatedUnitPrice, heated_upgrade_available: heatedUpgrade,
+        unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice, unheated_upgrade_available: unheatedUpgrade,
+        podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
+        iv_company: ivCompany.trim() || null, iv_sessions: iv, iv_unit_price: ivUnitPrice,
+        // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+        trial_sessions: trial, trial_unit_price: trialUnitPrice,
+        total_price: grandTotal, price_override: priceOverride,
+        memo: memo.trim() || null, sort_order: 0, is_active: true,
+        updated_at: new Date().toISOString(),
+      });
+      if (tmplErr) { toast.error(`템플릿 저장 실패: ${tmplErr.message}`); return; }
+      // 2) 패키지 생성
+      const { error: pkgErr } = await supabase.from('packages').insert({
+        clinic_id: clinicId, customer_id: customerId,
+        package_name: packageName.trim(), package_type: 'template', template_id: null,
+        total_sessions: totalSessions, heated_sessions: heated, heated_unit_price: heatedUnitPrice,
+        unheated_sessions: unheated, unheated_unit_price: unheatedUnitPrice,
+        iv_sessions: iv, iv_unit_price: ivUnitPrice, preconditioning_sessions: precon,
+        podologe_sessions: podologe, podologe_unit_price: podologeUnitPrice,
+        iv_company: ivCompany.trim() || null, shot_upgrade: heatedUpgrade, af_upgrade: unheatedUpgrade,
+        // T-20260522-foot-PKG-TRIAL: 체험권 5번째 항목
+        trial_sessions: trial, trial_unit_price: trialUnitPrice,
+        // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 6번째 항목 (packages 전용 — package_templates에는 미반영)
+        reborn_sessions: reborn, reborn_unit_price: rebornUnitPrice,
+        upgrade_surcharge: upgradeSurcharge, total_amount: grandTotal,
+        // T-20260708-foot-PKGBUY-DLG-CONSULTFEE-RM: 진료비 UI 제거 → 0 고정 저장(컬럼 보존).
+        consultation_fee: 0, paid_amount: 0,
+        // T-20260708 통계(B안): 시술유형 태깅 + 기준정가 스냅샷.
+        treatment_type: treatmentType || null,
+        reference_price: referencePrice > 0 ? referencePrice : null,
+        // T-20260808-foot-PENCHART-INSURANCE-SPLIT-PHASE2: 급여/비급여 회차 split (nullable·미입력=NULL).
+        covered_sessions: coveredSessions,
+        noncovered_sessions: noncoveredSessions,
+        status: 'active', memo: memo.trim() || null,
+      });
+      if (pkgErr) { toast.error(`패키지 생성 실패: ${pkgErr.message}`); return; }
+      onCreated();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 템플릿 저장 후 패키지 생성 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const cn2 = (...classes: string[]) => classes.filter(Boolean).join(' ');
@@ -11970,40 +12122,46 @@ function PackageAddonDialog({
     if (!selectedPkg) { toast.error('패키지를 선택하세요'); return; }
     if (totalAdded === 0) { toast.error('추가할 항목을 1회 이상 입력하세요'); return; }
     setSubmitting(true);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      // packages row UPDATE: 기존 값에 합산
+      const updates: Record<string, number | string | null> = {
+        total_sessions: selectedPkg.total_sessions + totalAdded,
+        total_amount: selectedPkg.total_amount + finalAddAmount,
+      };
+      if (heated > 0) {
+        updates.heated_sessions = (selectedPkg.heated_sessions ?? 0) + heated;
+        if (heatedUnitPrice > 0) updates.heated_unit_price = heatedUnitPrice;
+      }
+      if (unheated > 0) {
+        updates.unheated_sessions = (selectedPkg.unheated_sessions ?? 0) + unheated;
+        if (unheatedUnitPrice > 0) updates.unheated_unit_price = unheatedUnitPrice;
+      }
+      if (podologe > 0) {
+        updates.podologe_sessions = (selectedPkg.podologe_sessions ?? 0) + podologe;
+        if (podologeUnitPrice > 0) updates.podologe_unit_price = podologeUnitPrice;
+      }
+      if (iv > 0) {
+        updates.iv_sessions = (selectedPkg.iv_sessions ?? 0) + iv;
+        if (ivUnitPrice > 0) updates.iv_unit_price = ivUnitPrice;
+        if (ivCompany.trim()) updates.iv_company = ivCompany.trim();
+      }
+      // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 합산
+      if (reborn > 0) {
+        updates.reborn_sessions = (selectedPkg.reborn_sessions ?? 0) + reborn;
+        if (rebornUnitPrice > 0) updates.reborn_unit_price = rebornUnitPrice;
+      }
 
-    // packages row UPDATE: 기존 값에 합산
-    const updates: Record<string, number | string | null> = {
-      total_sessions: selectedPkg.total_sessions + totalAdded,
-      total_amount: selectedPkg.total_amount + finalAddAmount,
-    };
-    if (heated > 0) {
-      updates.heated_sessions = (selectedPkg.heated_sessions ?? 0) + heated;
-      if (heatedUnitPrice > 0) updates.heated_unit_price = heatedUnitPrice;
+      const { error } = await supabase.from('packages').update(updates).eq('id', selectedPkg.id);
+      if (error) { toast.error(`합산 실패: ${error.message}`); return; }
+      toast.success(`「${selectedPkg.package_name}」에 항목 추가 완료 (+${totalAdded}회 / +${formatAmount(finalAddAmount)})`);
+      onDone();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 패키지 항목 추가 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSubmitting(false);
     }
-    if (unheated > 0) {
-      updates.unheated_sessions = (selectedPkg.unheated_sessions ?? 0) + unheated;
-      if (unheatedUnitPrice > 0) updates.unheated_unit_price = unheatedUnitPrice;
-    }
-    if (podologe > 0) {
-      updates.podologe_sessions = (selectedPkg.podologe_sessions ?? 0) + podologe;
-      if (podologeUnitPrice > 0) updates.podologe_unit_price = podologeUnitPrice;
-    }
-    if (iv > 0) {
-      updates.iv_sessions = (selectedPkg.iv_sessions ?? 0) + iv;
-      if (ivUnitPrice > 0) updates.iv_unit_price = ivUnitPrice;
-      if (ivCompany.trim()) updates.iv_company = ivCompany.trim();
-    }
-    // T-20260608-foot-PKG-REBORN-ITEM: Re:Born 합산
-    if (reborn > 0) {
-      updates.reborn_sessions = (selectedPkg.reborn_sessions ?? 0) + reborn;
-      if (rebornUnitPrice > 0) updates.reborn_unit_price = rebornUnitPrice;
-    }
-
-    const { error } = await supabase.from('packages').update(updates).eq('id', selectedPkg.id);
-    setSubmitting(false);
-    if (error) { toast.error(`합산 실패: ${error.message}`); return; }
-    toast.success(`「${selectedPkg.package_name}」에 항목 추가 완료 (+${totalAdded}회 / +${formatAmount(finalAddAmount)})`);
-    onDone();
   };
 
   const cn2 = (...classes: string[]) => classes.filter(Boolean).join(' ');

@@ -1131,41 +1131,49 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
   const saveNotes = async (): Promise<boolean> => {
     if (!checkIn) return true;
     setSaving(true);
-    const notesObj = { ...(checkIn.notes as Record<string, unknown> ?? {}), text: notes };
-    // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 부위를 treatment_memo.foot_site 서브키로 저장.
-    //   값(shape {side,toe})만 저장 — 표시문자열('L1')은 formatFootSite로 파생(저장 금지). null이면 키 제거.
-    //   FIX(T-…-TOGGLE-INPUT): 완전한 값(side∈L/R AND toe 1~5)일 때만 기록. 불완전값(toe=0 등)은 키 제거 — DB 불완전 적재 차단.
-    const memoObj: Record<string, unknown> = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
-    if (isCompleteFootSite(footSite)) memoObj.foot_site = footSite;
-    else delete memoObj.foot_site;
-    const { error } = await supabase
-      .from('check_ins')
-      .update({
-        notes: notesObj,
-        treatment_memo: memoObj,
-        doctor_note: doctorNote || null,
-        // 진료종류 필드 저장 (T-20260430-foot-TREATMENT-LABEL) — DB 호환성 유지
-        consultation_done: consultationDone,
-        treatment_kind: treatmentKind || null,
-        preconditioning_done: preconditioningDone,
-        pododulle_done: pododulleDone,
-        laser_minutes: laserMinutes,
-        // 진료 기록 간소화 필드 (T-20260504-foot-TREATMENT-SIMPLIFY)
-        assigned_counselor_id: assignedCounselorId || null,
-        treatment_category: treatmentCategory || null,
-        treatment_contents: treatmentContents.length > 0 ? treatmentContents : null,
-      })
-      .eq('id', checkIn.id);
-    setSaving(false);
-    if (error) {
-      toast.error('저장 실패');
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const notesObj = { ...(checkIn.notes as Record<string, unknown> ?? {}), text: notes };
+      // T-20260612-foot-CHART-INTAKE-TOGGLE-INPUT: 좌우+발가락 부위를 treatment_memo.foot_site 서브키로 저장.
+      //   값(shape {side,toe})만 저장 — 표시문자열('L1')은 formatFootSite로 파생(저장 금지). null이면 키 제거.
+      //   FIX(T-…-TOGGLE-INPUT): 완전한 값(side∈L/R AND toe 1~5)일 때만 기록. 불완전값(toe=0 등)은 키 제거 — DB 불완전 적재 차단.
+      const memoObj: Record<string, unknown> = { ...(checkIn.treatment_memo ?? {}), details: treatmentMemo };
+      if (isCompleteFootSite(footSite)) memoObj.foot_site = footSite;
+      else delete memoObj.foot_site;
+      const { error } = await supabase
+        .from('check_ins')
+        .update({
+          notes: notesObj,
+          treatment_memo: memoObj,
+          doctor_note: doctorNote || null,
+          // 진료종류 필드 저장 (T-20260430-foot-TREATMENT-LABEL) — DB 호환성 유지
+          consultation_done: consultationDone,
+          treatment_kind: treatmentKind || null,
+          preconditioning_done: preconditioningDone,
+          pododulle_done: pododulleDone,
+          laser_minutes: laserMinutes,
+          // 진료 기록 간소화 필드 (T-20260504-foot-TREATMENT-SIMPLIFY)
+          assigned_counselor_id: assignedCounselorId || null,
+          treatment_category: treatmentCategory || null,
+          treatment_contents: treatmentContents.length > 0 ? treatmentContents : null,
+        })
+        .eq('id', checkIn.id);
+      if (error) {
+        toast.error('저장 실패');
+        return false;
+      }
+      toast.success('메모 저장됨');
+      setIsDirty(false);
+      dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
+      onUpdated();
+      return true;
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 체크인 메모 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
       return false;
+    } finally {
+      setSaving(false);
     }
-    toast.success('메모 저장됨');
-    setIsDirty(false);
-    dirtyRef.current = false; // T-20260603-foot-CHART-UNSAVED-GUARD AC-2
-    onUpdated();
-    return true;
   };
 
   // T-20260613-foot-FIELDBATCH item3: 1번차트 "저장 후 닫기" — 2번차트(CustomerChartSheet)와 동일 동작.
@@ -1260,35 +1268,48 @@ export function CheckInDetailSheet({ checkIn, customerMode, onClose, onUpdated, 
     setLinkQuery(query);
     if (!checkIn || query.trim().length < 1) { setLinkResults([]); return; }
     setLinkSearching(true);
-    const { data } = await supabase
-      .from('customers')
-      .select('id, name, chart_number, phone')
-      .eq('clinic_id', checkIn.clinic_id)
-      .ilike('name', `%${query.trim()}%`)
-      .order('created_at', { ascending: false })
-      .limit(8);
-    setLinkResults((data ?? []) as { id: string; name: string; chart_number: string | null; phone: string | null }[]);
-    setLinkSearching(false);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-C): throw 원 미식별이나 JS 예외로도 동일 잠김 → finally 해제
+    try {
+      const { data } = await supabase
+        .from('customers')
+        .select('id, name, chart_number, phone')
+        .eq('clinic_id', checkIn.clinic_id)
+        .ilike('name', `%${query.trim()}%`)
+        .order('created_at', { ascending: false })
+        .limit(8);
+      setLinkResults((data ?? []) as { id: string; name: string; chart_number: string | null; phone: string | null }[]);
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 고객 검색 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setLinkSearching(false);
+    }
   };
 
   const handleLinkCustomer = async (customerId: string) => {
     if (!checkIn || linkSaving) return;
     setLinkSaving(true);
-    const { error } = await supabase
-      .from('check_ins')
-      .update({ customer_id: customerId })
-      .eq('id', checkIn.id);
-    if (error) {
-      toast.error(`고객 연결 실패: ${error.message}`);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { error } = await supabase
+        .from('check_ins')
+        .update({ customer_id: customerId })
+        .eq('id', checkIn.id);
+      if (error) {
+        toast.error(`고객 연결 실패: ${error.message}`);
+        return;
+      }
+      toast.success('고객 연결 완료 — 차트를 엽니다');
+      setLinkResults([]);
+      setLinkQuery('');
+      openChart(customerId);
+      onUpdated();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 고객 연결 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
       setLinkSaving(false);
-      return;
     }
-    toast.success('고객 연결 완료 — 차트를 엽니다');
-    setLinkResults([]);
-    setLinkQuery('');
-    setLinkSaving(false);
-    openChart(customerId);
-    onUpdated();
   };
   // ──────────────────────────────────────────────────────────────────────────────
 
@@ -2669,31 +2690,37 @@ function SessionUseInSheetDialog({
       return;
     }
     setSubmitting(true);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
+    try {
+      const { count } = await supabase
+        .from('package_sessions')
+        .select('*', { count: 'exact', head: true })
+        .eq('package_id', pkg.id);
+      const nextNumber = (count ?? 0) + 1;
 
-    const { count } = await supabase
-      .from('package_sessions')
-      .select('*', { count: 'exact', head: true })
-      .eq('package_id', pkg.id);
-    const nextNumber = (count ?? 0) + 1;
+      const { error } = await supabase.from('package_sessions').insert({
+        package_id: pkg.id,
+        session_number: nextNumber,
+        session_type: sessionType,
+        surcharge: surcharge || 0,
+        surcharge_memo: surchargeMemo.trim() || null,
+        status: 'used',
+        // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 현재 내원 귀속 → 통계 정확매칭
+        check_in_id: checkInId ?? null,
+      });
 
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: pkg.id,
-      session_number: nextNumber,
-      session_type: sessionType,
-      surcharge: surcharge || 0,
-      surcharge_memo: surchargeMemo.trim() || null,
-      status: 'used',
-      // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 현재 내원 귀속 → 통계 정확매칭
-      check_in_id: checkInId ?? null,
-    });
-
-    setSubmitting(false);
-    if (error) {
-      toast.error(`저장 실패: ${error.message}`);
-      return;
+      if (error) {
+        toast.error(`저장 실패: ${error.message}`);
+        return;
+      }
+      toast.success('패키지 회차 소진 완료');
+      onDone();
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 패키지 회차 소진 저장 중단', e);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSubmitting(false);
     }
-    toast.success('패키지 회차 소진 완료');
-    onDone();
   };
 
   return (
