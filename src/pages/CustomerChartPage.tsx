@@ -8,6 +8,7 @@ import { PenChartTab } from '@/components/PenChartTab';
 // T-20260809-foot-PENCHART-EDITABLE-INCHARTFORM-REWORK: 펜차트(자동기록용) 편집형(수정·저장·출력) 초록박스.
 //   parent(T-20260808-...-2CHART, READ-ONLY 별도 탭) supersede — 별도 탭 폐지, 새 차트 작성 양식(펜차트 탭) 내부 배치.
 import { EditableAutoVisitLogBox } from '@/components/EditableAutoVisitLogBox';
+import { AutoRxDxRecordBox } from '@/components/AutoRxDxRecordBox';
 // T-20260730-foot-RRN-CLIPBOARD-COPY-NHIS: 주민번호 앞/뒷자리 클립보드 복사 버튼(공용)
 import { RrnCopyButtons } from '@/components/insurance/RrnCopyButtons';
 // T-20260716-foot-MEDCHART-THERAPISTMEMO-INPUT-LAG-DATALOSS-RCA: 치료메모 입력 격리(랙 해소 + draft 무손실)
@@ -55,6 +56,7 @@ import { confirmStaffChange } from '@/lib/staffChangeConfirm'; // T-20260814-foo
 import type { CheckIn, Customer, Package, PackageRemaining, PackageTemplate, Reservation, VisitType } from '@/lib/types';
 // T-20260806-foot-RX-PERSIST-FORWARDFIX: 처방전 발행 이력 canonical SSOT = form_submissions(처방전). 발행 이력 축 투영 헬퍼.
 import { mapRxIssuanceRows, RX_ISSUANCE_FORM_KEY, type RxIssuanceRow, type RawFormSubmissionRow } from '@/lib/rxIssuanceHistory';
+import { buildAutoRxDxRecords, type AutoRxDxRecord } from '@/lib/autoRxDxRecord';
 import { TREATMENT_TYPES, treatmentTypeLabel, type PackageTreatmentType, visitRouteOptionsFor, VISIT_CALL_RESULT_LABEL } from '@/lib/types';
 // T-20260725-foot-VISITCALL-RECEIVER-404-POPUP-MISS (RC-1b): 예방콜 결과 read-only 배지(상태 무관)
 import { VisitCallResultBadge } from '@/components/VisitCallResultBadge';
@@ -3054,6 +3056,9 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   //   DocumentPrintPanel 이 이전 발행분 재출력 인터셉트/프리필 없이 빈 신규 발행으로 진입. '서류 재출력'(false)=STAGE2 유지.
   const [docReissueNewMode, setDocReissueNewMode] = useState(false);
   const [prescriptions, setPrescriptions] = useState<RxIssuanceRow[]>([]);
+  // T-20260818-foot-PENCHART-AUTORECORD-CRMDATA-DOCFORM-AUTOFILL: 2번차트 [펜차트 자동기록용] 위치에
+  //   CRM 데이터(처방약 rx_items·상병코드 dx_items) 자동 생성/표시 — 동일 rxRes(rx_standard) 재투영(신규 쿼리 0).
+  const [rxDxAutoRecords, setRxDxAutoRecords] = useState<AutoRxDxRecord[]>([]);
   const [consentEntries, setConsentEntries] = useState<{ form_type: string; signed_at: string }[]>([]);
   // T-20260519-foot-PENCHART-FORMS: printed_at nullable 대응 → signed_at 폴백
   // T-20260520-foot-PENCHART-VIEW-SPLIT: field_data 추가 (canvas_file 조회용)
@@ -3652,7 +3657,13 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
             .order('signed_at', { ascending: false }),
         ]);
         setPrescriptions(mapRxIssuanceRows((rxRes.data ?? []) as RawFormSubmissionRow[]));
+        // T-20260818-foot-PENCHART-AUTORECORD-CRMDATA-DOCFORM-AUTOFILL: 동일 rxRes(rx_standard) 재투영 —
+        //   구조화 rx_items(수량) + 상병코드(diag_code_N) → 2번차트 [펜차트 자동기록용] 자동 생성 소스.
+        setRxDxAutoRecords(buildAutoRxDxRecords((rxRes.data ?? []) as RawFormSubmissionRow[]));
         setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
+      } else {
+        // 체크인 이력 없는 환자(발행 대상 부재) → 이전 환자 잔존 방지(빈 상태 리셋, AC-3).
+        setRxDxAutoRecords([]);
       }
 
       // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 로드
@@ -9021,6 +9032,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     clinicId={customer.clinic_id}
                     customerId={customer.id}
                     checkInId={latestCheckIn?.id}
+                    customerName={customer.name}
+                    customerChartNumber={customer.chart_number?.toString() ?? null}
+                    customerRrn={rrnFull ?? null}
+                  />
+                  {/* T-20260818-foot-PENCHART-AUTORECORD-CRMDATA-DOCFORM-AUTOFILL: 2번차트 [펜차트 자동기록용]
+                      위치에 CRM 데이터(처방약 rx_items·상병코드 dx_items) 자동 생성/표시(read-only). 데이터소스 정본=
+                      PaymentMiniWindow 저장 form_submissions(rx_standard) — 상위 rxRes 재투영(신규 쿼리 0, AC-2). */}
+                  <AutoRxDxRecordBox
+                    records={rxDxAutoRecords}
+                    loading={loading}
                     customerName={customer.name}
                     customerChartNumber={customer.chart_number?.toString() ?? null}
                     customerRrn={rrnFull ?? null}
