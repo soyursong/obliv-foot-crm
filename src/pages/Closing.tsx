@@ -64,6 +64,8 @@ import MonthlyComparisonSection from '@/components/stats/MonthlyComparisonSectio
 // T-20260809-foot-DAYCLOSE-TOTALREVENUE-REDESIGN: 통계>MTM매출 [이번달 목표매출]·[실장별 일별매출] 뷰 재사용(신규 산식 창작 0).
 import MonthlyTargetSection from '@/components/stats/MonthlyTargetSection';
 import { fetchMonthlyComparison, fetchStaffDailyBreakdown, type MonthlyComparison, type StaffDailyBreakdown } from '@/lib/mtmSales';
+// T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: '총 매출' 표(일자별비교·실장별일별) 화면표시값 그대로 .xlsx.
+import { buildMonthlyCompareSheet, buildStaffDailySheet, downloadRevenueWorkbook, compactDate, type RevenueSheetSpec } from '@/lib/closingRevenueExport';
 // T-20260811-foot-SALESAGG-THERAPIST-TAB: 매출집계>담당치료사별(SalesStaffTab)을 일마감 신규 탭으로 미러(내용 그대로 연동).
 //   기존 컴포넌트/산식/필터 그대로 재사용 — 신규 산식/쿼리 창작 0. 필터바도 매출집계와 동일 UX(기간·검색).
 import { SalesStaffTab } from '@/components/sales/SalesStaffTab';
@@ -1638,6 +1640,26 @@ export default function Closing() {
     toast.success('Excel 다운로드 완료');
   };
 
+  // ── T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: '총 매출' 탭 엑셀 내보내기 ──────────
+  //   화면(MonthlyComparisonSection)에 보이는 두 표를 재구성 없이 그대로 시트화 —
+  //   시트1 '일자별매출비교(당월vs전월)' + 시트2 '실장별일별매출'(한 파일 2시트, AC-2).
+  //   목표매출(MonthlyTargetSection)은 매출표가 아닌 목표라 제외. db_change=false.
+  const exportTotalRevenue = () => {
+    const sheets: RevenueSheetSpec[] = [];
+    if (monthlyCompare && monthlyCompare.points.length > 0) {
+      sheets.push(buildMonthlyCompareSheet(monthlyCompare));
+    }
+    if (staffDaily && staffDaily.staff.length > 0) {
+      sheets.push(buildStaffDailySheet(staffDaily));
+    }
+    if (sheets.length === 0) {
+      toast.info('다운로드할 매출 데이터가 없습니다.');
+      return;
+    }
+    downloadRevenueWorkbook(sheets, `일마감_총매출_${compactDate(date)}`);
+    toast.success('Excel 다운로드 완료');
+  };
+
   // ── PDF 내보내기 (결제내역 탭) ──────────────────────────
   // 새 창에 인쇄 친화 HTML을 띄우고 자동 인쇄 다이얼로그 호출
   // 사용자가 "PDF로 저장" 옵션 선택 → 한글 안전 PDF 생성 (별도 패키지 불필요)
@@ -2902,6 +2924,20 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             순서: 1)이번달 목표매출(read-only) 2)전월대비 매출추이(2단 15일) 3)실장별 일별매출.
             item5 접근권한: canViewTotalRevenue(has_ops_authority) 게이트 — 트리거 숨김 + NAV-BOUNCE(위 useEffect). */}
         <TabsContent value="compare" className="space-y-4">
+          {/* T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: 화면 표시 두 표(일자별비교·실장별일별)를
+              그대로 .xlsx(한 파일 2시트)로. 로딩 중이거나 데이터 없으면 비활성. */}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="closing-totalrev-export-btn"
+              disabled={compareLoading || staffDailyLoading || (!monthlyCompare?.points.length && !staffDaily?.staff.length)}
+              onClick={exportTotalRevenue}
+            >
+              엑셀 다운로드
+            </Button>
+          </div>
           {/* 1. 이번달 목표 매출 — 통계 대시보드 [이번달 목표매출] 뷰 재사용, [수정] 버튼만 제거(read-only). */}
           <MonthlyTargetSection clinicId={clinic?.id} refISO={date} readOnly />
           {/* 2. 전월 대비 매출 추이(2단 15일) + 3. 실장별 일별 매출 — 통계 공유 렌더러(MonthlyComparisonSection).
@@ -2926,7 +2962,12 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
         {canViewTherapistSales && (
           <TabsContent value="therapist_sales" className="space-y-4">
             <SalesFilterBar value={therapistSalesFilter} onChange={setTherapistSalesFilter} />
-            <SalesStaffTab filter={therapistSalesFilter} />
+            {/* T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: '총매출(치료)' 표 화면표시값 그대로 .xlsx (표 내부 버튼). */}
+            <SalesStaffTab
+              filter={therapistSalesFilter}
+              enableExcelExport
+              exportFilenameBase="일마감_총매출치료"
+            />
           </TabsContent>
         )}
       </Tabs>
