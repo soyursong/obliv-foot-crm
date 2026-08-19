@@ -36,9 +36,9 @@
 --     (0~10 정수 gap 부재 → fractional 대신 tie-break 로 peer 배치 · 순수 INSERT-only 보존.)
 --
 -- 선례 동형: 20260801230000_foot_inflow_channel_intake_lane.sql (11코드 최초 시드).
--- 롤백: 20260819230000_foot_inflow_kakao_canonical_code_add.rollback.sql (inbound.kakao 1행 DELETE).
+-- 롤백: 20260820120001_foot_inflow_kakao_canonical_code_add.rollback.sql (inbound.kakao 1행 DELETE).
 -- 적용 방법 (supervisor DB-GATE + GO-token 후):
---   supabase db push --file supabase/migrations/20260819230000_foot_inflow_kakao_canonical_code_add.sql
+--   supabase db push --file supabase/migrations/20260820120001_foot_inflow_kakao_canonical_code_add.sql
 -- =====================================================
 
 BEGIN;

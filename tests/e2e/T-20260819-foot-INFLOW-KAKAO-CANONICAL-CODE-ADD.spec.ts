@@ -8,7 +8,7 @@
  *   SSOT = da_decision_foot_inflow_kakao_canonical_code_add_20260819.md.
  *
  * 구현(요약):
- *   · migration 20260819230000_foot_inflow_kakao_canonical_code_add.sql
+ *   · migration 20260820120001_foot_inflow_kakao_canonical_code_add.sql
  *       - system_codes INSERT 1행: inbound.kakao (label='카톡', series='inbound', sort_order=3, requires_reason=false)
  *       - 순수 ADDITIVE: 기존 11코드 DROP/rename/semantic/sort_order UPDATE 0 · backfill 0 · forward-only.
  *       - foot-only overlay(default-available): code_availability is_available=false 행 미삽입 → foot 전 clinic 노출.

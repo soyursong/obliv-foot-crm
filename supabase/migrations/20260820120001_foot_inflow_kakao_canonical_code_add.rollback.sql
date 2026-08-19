@@ -6,7 +6,7 @@
 --       코드 목록에서만 사라짐 → 향후 라벨 미매핑 시 legacy 사슬(source_ref)로 graceful fall-through.
 --       필요 시 별도 데이터 정정(SOP)으로 처리 — 본 롤백은 코드 시드만 원복.
 --
--- 적용: supabase db push --file supabase/migrations/20260819230000_foot_inflow_kakao_canonical_code_add.rollback.sql
+-- 적용: supabase db push --file supabase/migrations/20260820120001_foot_inflow_kakao_canonical_code_add.rollback.sql
 
 BEGIN;
 
