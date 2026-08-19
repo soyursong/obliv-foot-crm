@@ -3074,6 +3074,11 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   // T-20260511-foot-C2-PKG-MERGE-ADDON: 기존 패키지에 항목 추가
   const [openPackageAddon, setOpenPackageAddon] = useState(false);
   const [loading, setLoading] = useState(true);
+  // T-20260819-foot-CHARTLOAD-LOADING-STUCK-FIX11A: 차트 초기 로드 실패 시 복구 가능한 에러/재시도 상태.
+  //   로드 쿼리가 throw 하면 finally 에서 loading 을 해제하고 여기에 에러를 착지시켜 영구 "불러오는 중…"을 방지한다.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  //   [다시 시도] 클릭 시 nonce 를 증가시켜 로드 useEffect 를 재실행(새로고침 없이 복구).
+  const [reloadNonce, setReloadNonce] = useState(0);
   // T-20260527-foot-MEDCHART-TAB-REAPPEAR: 진료차트 패널 열림 상태 (데이터 유무 무관 항상 렌더 가능)
   const [medicalChartOpen, setMedicalChartOpen] = useState(false);
   // T-20260609-foot-VISITLOG-NAMING-CLARIFY: ?medchart 진입 시 고객 로드 후 진료차트 패널 1회 자동 오픈.
@@ -3458,204 +3463,216 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
 
   useEffect(() => {
     if (!customerId || !profile) return;
+    setLoadError(null);
     setLoading(true);
     (async () => {
-      const { data: custData } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('id', customerId)
-        .single();
-      if (!custData) { setLoading(false); return; }
-      setCustomer(custData as Customer);
-      // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 초기화
-      setDesignatedTherapistId((custData as Customer).designated_therapist_id ?? '');
-      setAddressText((custData as Customer).address ?? '');
-      setAddressDetailText((custData as Customer).address_detail ?? '');
-      setEmailText((custData as Customer).customer_email ?? '');
-      setPassportText((custData as Customer).passport_number ?? '');
-      // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호 현재값 로드
-      setCertNoText((custData as Customer).insurance_cert_no ?? '');
-      // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 현재값 로드
-      // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: read-fallback(customer_note ?? customer_memo)로
-      // 레거시 customer_memo(신설 전 9건) 표시 연속성 보존 → 예약팝업 read와 동일 규칙(양방향 sync 정합).
-      setCustomerNoteText((custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '');
-      // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 로드값 = baseline 스냅샷(정본). 이후 미편집 통합저장은 이 값과 diff 0 → customer_note 미포함(무clobber).
-      customerNoteBaseline.current = (custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '';
-      setReferralNameText((custData as Customer).referral_name ?? '');
-      setPostalCodeText((custData as Customer).postal_code ?? '');
-      // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
-      setResvDetailForm({
-        date: '', startTime: '',
-        memo: (custData as Customer).customer_memo ?? '',
-        etcMemo: (custData as Customer).memo ?? '',
-      });
-      // AC-6 쌍방연동: consultationStaffId 초기값을 Zone 1 assigned_staff_id 와 동기화
-      setConsultationStaffId((custData as Customer).assigned_staff_id ?? '');
-      // T-20260522-foot-ALT-BADGE: ALT 초기값 로드 (S2)
-      setAltStatus((custData as Customer).alt_status ?? false);
-      setAltDetail((custData as Customer).alt_detail ?? '');
-      // T-20260520-foot-MEMO-HISTORY: 메모 히스토리는 lazy load (탭 진입 시 로드)
-      setTreatmentMemos([]);
-      setTreatmentMemosLoaded(false);
-      // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 요약블록용 치료메모 최신 1건 reset (eager 로드는 별도 useEffect)
-      setLatestTreatmentMemo(null);
+      // T-20260819-foot-CHARTLOAD-LOADING-STUCK-FIX11A: 차트 초기 로드 전체를 try/catch/finally 로 감싼다.
+      //   어떤 쿼리가 throw 해도 finally 에서 loading(진행 게이트)을 반드시 해제 → 영구 "불러오는 중…" 제거.
+      //   catch: 실패를 삼켜 white-screen/무한로딩으로 남기지 않음 — 복구 가능한 에러/재시도 상태로 착지.
+      //   부분 성공 데이터(throw 이전 setter 반영분)는 그대로 보존. 정상 경로 동작 무변(방어코드만 추가).
+      try {
+        const { data: custData } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', customerId)
+          .single();
+        if (!custData) { return; }
+        setCustomer(custData as Customer);
+        // T-20260522-foot-DESIGNATED-THERAPIST: 지정 치료사 초기화
+        setDesignatedTherapistId((custData as Customer).designated_therapist_id ?? '');
+        setAddressText((custData as Customer).address ?? '');
+        setAddressDetailText((custData as Customer).address_detail ?? '');
+        setEmailText((custData as Customer).customer_email ?? '');
+        setPassportText((custData as Customer).passport_number ?? '');
+        // T-20260707-foot-CHART2-INSURANCE-CERTNO-FIELD: 보험 증번호 현재값 로드
+        setCertNoText((custData as Customer).insurance_cert_no ?? '');
+        // T-20260623-foot-CHART2-CUSTMEMO-RENAME-ADD: 1구역 고객메모 현재값 로드
+        // T-20260715-foot-RESVDETAIL-CUSTMEMO-C2Z1-SYNC: read-fallback(customer_note ?? customer_memo)로
+        // 레거시 customer_memo(신설 전 9건) 표시 연속성 보존 → 예약팝업 read와 동일 규칙(양방향 sync 정합).
+        setCustomerNoteText((custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '');
+        // T-20260814-foot-CUSTMEMO-PERSIST-VANISH-FIX: 로드값 = baseline 스냅샷(정본). 이후 미편집 통합저장은 이 값과 diff 0 → customer_note 미포함(무clobber).
+        customerNoteBaseline.current = (custData as Customer).customer_note ?? (custData as Customer).customer_memo ?? '';
+        setReferralNameText((custData as Customer).referral_name ?? '');
+        setPostalCodeText((custData as Customer).postal_code ?? '');
+        // C23-DETAIL-SIMPLIFY: 2-3 상세 패널 폼 데이터 초기화
+        setResvDetailForm({
+          date: '', startTime: '',
+          memo: (custData as Customer).customer_memo ?? '',
+          etcMemo: (custData as Customer).memo ?? '',
+        });
+        // AC-6 쌍방연동: consultationStaffId 초기값을 Zone 1 assigned_staff_id 와 동기화
+        setConsultationStaffId((custData as Customer).assigned_staff_id ?? '');
+        // T-20260522-foot-ALT-BADGE: ALT 초기값 로드 (S2)
+        setAltStatus((custData as Customer).alt_status ?? false);
+        setAltDetail((custData as Customer).alt_detail ?? '');
+        // T-20260520-foot-MEMO-HISTORY: 메모 히스토리는 lazy load (탭 진입 시 로드)
+        setTreatmentMemos([]);
+        setTreatmentMemosLoaded(false);
+        // T-20260622-foot-CHART2-11FIX-MEMO-INSURANCE item3: 요약블록용 치료메모 최신 1건 reset (eager 로드는 별도 useEffect)
+        setLatestTreatmentMemo(null);
 
-      // T-20260522-foot-PERF-TUNING OPT-5: staff 2쿼리 → 1쿼리 + 클라이언트 분기
-      // + staff / 6 main data / 2 checklist 전체 병렬 실행 (이전: staff → 6 main → N RPC → sessions → checklists)
-      const clinicId = (custData as Customer).clinic_id;
-      const [
-        staffAllRes,
-        pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes,
-        clRes, subRes, hqRes,
-      ] = await Promise.all([
-        // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
-        // T-20260523-foot-PKG-DEDUCT-THERAPIST bugfix: display_name 컬럼 미존재 → 쿼리 400 에러 → 치료사 드롭다운 비어있음
-        // display_name 컬럼은 별도 migration(20260523050000)으로 추가될 예정. UI는 display_name||name fallback 유지.
-        supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true).is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
-          .in('role', ['consultant', 'coordinator', 'director', 'therapist']).order('name', { ascending: true }),
-        // 6 main data (기존 병렬 그룹)
-        supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
-        supabase.from('check_ins').select('*').eq('customer_id', customerId).order('checked_in_at', { ascending: false }).limit(50),
-        // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: status='active' allow-list(fail-closed).
-        //   무필터 시 status IN('cancelled','deleted') 유령행이 totalPaid/feePayments 합산·표시에 혼입됨.
-        supabase.from('payments').select('*').eq('customer_id', customerId).eq('status', 'active').order('created_at', { ascending: false }).limit(50),
-        supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
-        supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30),
-        supabase.from('check_ins').select('*').eq('customer_id', customerId).neq('status', 'cancelled').order('checked_in_at', { ascending: false }).limit(100),
-        // T-20260519-foot-CHART-BEFORE-CHECKIN AC-2: checklists + form_submissions 병렬 선행 (customerId만 필요)
-        // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: started_at 컬럼은 checklists 테이블에 미존재 →
-        //   매 차트 오픈마다 400(42703) 발생 + 체크리스트 로드 실패. select 에서 사용처 없는 started_at 제거.
-        supabase.from('checklists').select('id, completed_at, checklist_data').eq('customer_id', customerId)
-          .not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(10),
-        supabase.from('form_submissions').select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
-          .eq('customer_id', customerId).eq('is_deleted', false).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
-        // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 (clinic 스코프 — RLS도 동일 강제)
-        supabase.from('health_q_results').select('id, form_type, form_data, submitted_at, created_at')
-          .eq('customer_id', customerId).eq('clinic_id', clinicId).order('submitted_at', { ascending: false }).limit(10),
-      ]);
-
-      // staff 분기: role별 분류
-      // T-20260522-foot-STAFF-NAME-UNIFY: display_name 포함
-      const allStaff = (staffAllRes.data ?? []) as {id: string; name: string; display_name: string | null; role: string}[];
-      setStaffList(allStaff.filter((s) => ['consultant', 'coordinator', 'director'].includes(s.role)));
-      setTherapistList(allStaff.filter((s) => s.role === 'therapist'));
-
-      const pkgs = (pkgRes.data ?? []) as Package[];
-
-      // T-20260522-foot-PERF-TUNING OPT-4: package_sessions 1회 조회 → remaining 클라이언트 집계
-      // (이전: N × get_package_remaining RPC 호출)
-      if (pkgs.length > 0) {
-        const pkgIds = pkgs.map((p) => p.id);
-        const { data: sessData } = await supabase
-          .from('package_sessions')
-          .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
-          .in('package_id', pkgIds)
-          .order('session_number', { ascending: true });
-        setPackageSessions(
-          (sessData ?? []).map((s: Record<string, unknown>) => ({
-            id: s.id as string,
-            package_id: s.package_id as string,
-            session_number: s.session_number as number,
-            session_type: s.session_type as string,
-            session_date: s.session_date as string,
-            performed_by: s.performed_by as string | null,
-            staff_name: (s.staff as { name: string } | null)?.name ?? null,
-            status: s.status as string,
-            memo: s.memo as string | null,
-          })),
-        );
-        // sessData를 재사용해 remaining 계산 — N RPC 완전 제거
-        const remainingArr = computeRemainingFromSessionRows(
-          pkgs,
-          (sessData ?? []) as _SessRow[],
-        );
-        setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
-      } else {
-        setPackages([]);
-      }
-
-      setVisits((visitRes.data ?? []) as CheckIn[]);
-      setPayments((payRes.data ?? []) as Payment[]);
-      setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
-      const resvRows = (resvRes.data ?? []) as Reservation[];
-      setReservations(resvRows);
-      // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2): 예약메모 SoT(reservation_memo_history) 대표 1줄 맵 로드
-      void fetchResvMemoMap(resvRows.map((r) => r.id)).then(setResvMemoMap);
-
-      const ciHistory = (ciHistRes.data ?? []) as CheckIn[];
-      setCheckInHistory(ciHistory);
-      setLatestCheckIn(ciHistory[0] ?? null);
-      // T-20260602-foot-SLOT-DWELL-TIME (B안): 방문이력 갱신 시 체류시간 재로딩 트리거
-      setSlotDwellLoaded(false);
-      setSlotDwell([]);
-      // T-20260629-foot-CHART2-DWELL-ROOMNUM: 방 번호 표기 데이터도 동반 리셋(slotDwellLoaded 게이트와 함께 재로딩)
-      setDwellRoomLogs([]);
-
-      const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
-      setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; checklist_data: Record<string, unknown> }[]);
-      // T-20260520-foot-PENCHART-REFINE AC-1:
-      // builtin 템플릿 저장 시 template_id FK 없음 → JOIN 결과 null → template_key null
-      // field_data.form_key fallback 으로 [내용보기] 활성화 보장
-      setSubmissionEntries(
-        (subRes.data ?? []).map((s: Record<string, unknown>) => ({
-          check_in_id: s.check_in_id as string,
-          template_key: (s.form_templates as { form_key: string } | null)?.form_key
-            ?? ((s.field_data as Record<string, unknown> | null)?.form_key as string | undefined),
-          printed_at: (s.printed_at as string | null) ?? null,
-          signed_at:  (s.signed_at  as string | null) ?? null,
-          field_data: (s.field_data as Record<string, unknown> | null) ?? null,
-        }))
-      );
-      // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 결과 적재
-      setHealthQResults((hqRes.data ?? []) as HQResult[]);
-
-      if (checkInIds.length > 0) {
-        const [rxRes, consentRes] = await Promise.all([
-          // T-20260806-foot-RX-PERSIST-FORWARDFIX (AC2/VG1/VG3):
-          //   ★ canonical SSOT = form_submissions(처방전 = form_key 'rx_standard'). DA-20260806-foot-RX-PERSIST-SSOT.
-          //   [폐기] dead 'prescriptions' 테이블 조회 — INSERT 코드 전무(skeleton)라 항상 0건 → 처방 이력 미표시(실사고).
-          //     되살리기·write 신설 금지(dual-source drift 안티패턴). 발행 이력 = form_submissions 단일 원장.
-          //   VG1: form_templates!inner(form_key='rx_standard')로 처방전만 필터(소견서/KOH/진단서 혼입 0).
-          //   VG3: 발행 이력 축(form_submissions)만 소비 — 처방 기록 축(medical_charts.prescription_items) 조인 금지.
-          //   VG2: 투영은 mapRxIssuanceRows 화이트리스트(교부일·처방의료인·진단·교부번호·약품명) — RRN/풀전화/차트번호 미노출.
-          supabase
-            .from('form_submissions')
-            .select('id, printed_at, created_at, field_data, form_templates!inner(form_key)')
-            .eq('customer_id', customerId)
-            .eq('is_deleted', false)
-            .eq('form_templates.form_key', RX_ISSUANCE_FORM_KEY)
-            .order('printed_at', { ascending: false, nullsFirst: false })
-            .limit(20),
-          supabase
-            .from('consent_forms')
-            .select('form_type, signed_at')
-            .in('check_in_id', checkInIds)
-            .order('signed_at', { ascending: false }),
+        // T-20260522-foot-PERF-TUNING OPT-5: staff 2쿼리 → 1쿼리 + 클라이언트 분기
+        // + staff / 6 main data / 2 checklist 전체 병렬 실행 (이전: staff → 6 main → N RPC → sessions → checklists)
+        const clinicId = (custData as Customer).clinic_id;
+        const [
+          staffAllRes,
+          pkgRes, visitRes, payRes, pkgPayRes, resvRes, ciHistRes,
+          clRes, subRes, hqRes,
+        ] = await Promise.all([
+          // C2-STAFF-DROPDOWN: 담당자(consultant/coordinator/director) + 치료사 1쿼리 통합
+          // T-20260523-foot-PKG-DEDUCT-THERAPIST bugfix: display_name 컬럼 미존재 → 쿼리 400 에러 → 치료사 드롭다운 비어있음
+          // display_name 컬럼은 별도 migration(20260523050000)으로 추가될 예정. UI는 display_name||name fallback 유지.
+          supabase.from('staff').select('id, name, role').eq('clinic_id', clinicId).eq('active', true).is('deleted_at', null) // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
+            .in('role', ['consultant', 'coordinator', 'director', 'therapist']).order('name', { ascending: true }),
+          // 6 main data (기존 병렬 그룹)
+          supabase.from('packages').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }),  // T-20260520-foot-PKG-SORT
+          supabase.from('check_ins').select('*').eq('customer_id', customerId).order('checked_in_at', { ascending: false }).limit(50),
+          // T-20260721-foot-CHARTPAGE-SOFTVOID-PAYMENT-PHANTOM: status='active' allow-list(fail-closed).
+          //   무필터 시 status IN('cancelled','deleted') 유령행이 totalPaid/feePayments 합산·표시에 혼입됨.
+          supabase.from('payments').select('*').eq('customer_id', customerId).eq('status', 'active').order('created_at', { ascending: false }).limit(50),
+          supabase.from('package_payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+          supabase.from('reservations').select('*').eq('customer_id', customerId).order('reservation_date', { ascending: false }).limit(30),
+          supabase.from('check_ins').select('*').eq('customer_id', customerId).neq('status', 'cancelled').order('checked_in_at', { ascending: false }).limit(100),
+          // T-20260519-foot-CHART-BEFORE-CHECKIN AC-2: checklists + form_submissions 병렬 선행 (customerId만 필요)
+          // T-20260613-foot-DUMMY-CHART-FIELD-NOTOPEN: started_at 컬럼은 checklists 테이블에 미존재 →
+          //   매 차트 오픈마다 400(42703) 발생 + 체크리스트 로드 실패. select 에서 사용처 없는 started_at 제거.
+          supabase.from('checklists').select('id, completed_at, checklist_data').eq('customer_id', customerId)
+            .not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(10),
+          supabase.from('form_submissions').select('check_in_id, printed_at, signed_at, field_data, form_templates!template_id(form_key)')
+            .eq('customer_id', customerId).eq('is_deleted', false).order('printed_at', { ascending: false, nullsFirst: false }).limit(30),
+          // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 (clinic 스코프 — RLS도 동일 강제)
+          supabase.from('health_q_results').select('id, form_type, form_data, submitted_at, created_at')
+            .eq('customer_id', customerId).eq('clinic_id', clinicId).order('submitted_at', { ascending: false }).limit(10),
         ]);
-        setPrescriptions(mapRxIssuanceRows((rxRes.data ?? []) as RawFormSubmissionRow[]));
-        setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
+
+        // staff 분기: role별 분류
+        // T-20260522-foot-STAFF-NAME-UNIFY: display_name 포함
+        const allStaff = (staffAllRes.data ?? []) as {id: string; name: string; display_name: string | null; role: string}[];
+        setStaffList(allStaff.filter((s) => ['consultant', 'coordinator', 'director'].includes(s.role)));
+        setTherapistList(allStaff.filter((s) => s.role === 'therapist'));
+
+        const pkgs = (pkgRes.data ?? []) as Package[];
+
+        // T-20260522-foot-PERF-TUNING OPT-4: package_sessions 1회 조회 → remaining 클라이언트 집계
+        // (이전: N × get_package_remaining RPC 호출)
+        if (pkgs.length > 0) {
+          const pkgIds = pkgs.map((p) => p.id);
+          const { data: sessData } = await supabase
+            .from('package_sessions')
+            .select('id, package_id, session_number, session_type, session_date, performed_by, status, memo, staff:performed_by(name)')
+            .in('package_id', pkgIds)
+            .order('session_number', { ascending: true });
+          setPackageSessions(
+            (sessData ?? []).map((s: Record<string, unknown>) => ({
+              id: s.id as string,
+              package_id: s.package_id as string,
+              session_number: s.session_number as number,
+              session_type: s.session_type as string,
+              session_date: s.session_date as string,
+              performed_by: s.performed_by as string | null,
+              staff_name: (s.staff as { name: string } | null)?.name ?? null,
+              status: s.status as string,
+              memo: s.memo as string | null,
+            })),
+          );
+          // sessData를 재사용해 remaining 계산 — N RPC 완전 제거
+          const remainingArr = computeRemainingFromSessionRows(
+            pkgs,
+            (sessData ?? []) as _SessRow[],
+          );
+          setPackages(pkgs.map((p, i) => ({ ...p, remaining: remainingArr[i] ?? null })));
+        } else {
+          setPackages([]);
+        }
+
+        setVisits((visitRes.data ?? []) as CheckIn[]);
+        setPayments((payRes.data ?? []) as Payment[]);
+        setPkgPayments((pkgPayRes.data ?? []) as PackagePayment[]);
+        const resvRows = (resvRes.data ?? []) as Reservation[];
+        setReservations(resvRows);
+        // T-20260720-foot-CHART2-RESV-SYNC-BUG (증상2): 예약메모 SoT(reservation_memo_history) 대표 1줄 맵 로드
+        void fetchResvMemoMap(resvRows.map((r) => r.id)).then(setResvMemoMap);
+
+        const ciHistory = (ciHistRes.data ?? []) as CheckIn[];
+        setCheckInHistory(ciHistory);
+        setLatestCheckIn(ciHistory[0] ?? null);
+        // T-20260602-foot-SLOT-DWELL-TIME (B안): 방문이력 갱신 시 체류시간 재로딩 트리거
+        setSlotDwellLoaded(false);
+        setSlotDwell([]);
+        // T-20260629-foot-CHART2-DWELL-ROOMNUM: 방 번호 표기 데이터도 동반 리셋(slotDwellLoaded 게이트와 함께 재로딩)
+        setDwellRoomLogs([]);
+
+        const checkInIds = ciHistory.map((ci: CheckIn) => ci.id);
+        setChecklistEntries((clRes.data ?? []) as { id: string; completed_at: string | null; checklist_data: Record<string, unknown> }[]);
+        // T-20260520-foot-PENCHART-REFINE AC-1:
+        // builtin 템플릿 저장 시 template_id FK 없음 → JOIN 결과 null → template_key null
+        // field_data.form_key fallback 으로 [내용보기] 활성화 보장
+        setSubmissionEntries(
+          (subRes.data ?? []).map((s: Record<string, unknown>) => ({
+            check_in_id: s.check_in_id as string,
+            template_key: (s.form_templates as { form_key: string } | null)?.form_key
+              ?? ((s.field_data as Record<string, unknown> | null)?.form_key as string | undefined),
+            printed_at: (s.printed_at as string | null) ?? null,
+            signed_at:  (s.signed_at  as string | null) ?? null,
+            field_data: (s.field_data as Record<string, unknown> | null) ?? null,
+          }))
+        );
+        // T-20260602-foot-CHART2-HEALTHQ-VIEWER: 자가작성 발건강질문지 결과 적재
+        setHealthQResults((hqRes.data ?? []) as HQResult[]);
+
+        if (checkInIds.length > 0) {
+          const [rxRes, consentRes] = await Promise.all([
+            // T-20260806-foot-RX-PERSIST-FORWARDFIX (AC2/VG1/VG3):
+            //   ★ canonical SSOT = form_submissions(처방전 = form_key 'rx_standard'). DA-20260806-foot-RX-PERSIST-SSOT.
+            //   [폐기] dead 'prescriptions' 테이블 조회 — INSERT 코드 전무(skeleton)라 항상 0건 → 처방 이력 미표시(실사고).
+            //     되살리기·write 신설 금지(dual-source drift 안티패턴). 발행 이력 = form_submissions 단일 원장.
+            //   VG1: form_templates!inner(form_key='rx_standard')로 처방전만 필터(소견서/KOH/진단서 혼입 0).
+            //   VG3: 발행 이력 축(form_submissions)만 소비 — 처방 기록 축(medical_charts.prescription_items) 조인 금지.
+            //   VG2: 투영은 mapRxIssuanceRows 화이트리스트(교부일·처방의료인·진단·교부번호·약품명) — RRN/풀전화/차트번호 미노출.
+            supabase
+              .from('form_submissions')
+              .select('id, printed_at, created_at, field_data, form_templates!inner(form_key)')
+              .eq('customer_id', customerId)
+              .eq('is_deleted', false)
+              .eq('form_templates.form_key', RX_ISSUANCE_FORM_KEY)
+              .order('printed_at', { ascending: false, nullsFirst: false })
+              .limit(20),
+            supabase
+              .from('consent_forms')
+              .select('form_type, signed_at')
+              .in('check_in_id', checkInIds)
+              .order('signed_at', { ascending: false }),
+          ]);
+          setPrescriptions(mapRxIssuanceRows((rxRes.data ?? []) as RawFormSubmissionRow[]));
+          setConsentEntries((consentRes.data ?? []) as { form_type: string; signed_at: string }[]);
+        }
+
+        // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 로드
+        const { data: msgData } = await supabase
+          .from('message_logs')
+          .select('*')
+          .eq('customer_id', customerId)
+          .order('sent_at', { ascending: false })
+          .limit(50);
+        setMessageLogs((msgData ?? []) as MessageLog[]);
+
+        // T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs)
+        const { data: nlData } = await (supabase.from('notification_logs') as any)
+          .select('id, event_type, channel, status, body_rendered, sent_at, created_at, error_message')
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        setNotificationLogs((nlData ?? []) as NotificationLog[]);
+
+      } catch (e) {
+        // 로드 쿼리 throw → 화면을 무한로딩/white-screen 으로 남기지 않음. loadError 착지 + 부분 데이터 보존.
+        console.error('[CHARTLOAD-FIX11A] 차트 초기 로드 실패', e);
+        setLoadError(e instanceof Error ? e.message : '차트 정보를 불러오지 못했습니다.');
+      } finally {
+        setLoading(false);
       }
-
-      // T-20260513-foot-C21-TAB-RESTRUCTURE-C: 메시지 이력 로드
-      const { data: msgData } = await supabase
-        .from('message_logs')
-        .select('*')
-        .eq('customer_id', customerId)
-        .order('sent_at', { ascending: false })
-        .limit(50);
-      setMessageLogs((msgData ?? []) as MessageLog[]);
-
-      // T-20260525-foot-MESSAGING-V1 AC-3: 자동 SMS 발송 이력 (notification_logs)
-      const { data: nlData } = await (supabase.from('notification_logs') as any)
-        .select('id, event_type, channel, status, body_rendered, sent_at, created_at, error_message')
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      setNotificationLogs((nlData ?? []) as NotificationLog[]);
-
-      setLoading(false);
     })();
-  }, [customerId, profile]);
+  }, [customerId, profile, reloadNonce]);
 
   // T-20260609-foot-VISITLOG-NAMING-CLARIFY: ?medchart deep-link → 고객 로드 완료 후 진료차트 패널 자동 오픈(1회).
   useEffect(() => {
@@ -6193,6 +6210,24 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     return (
       <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
         불러오는 중...
+      </div>
+    );
+  }
+
+  // T-20260819-foot-CHARTLOAD-LOADING-STUCK-FIX11A: 초기 로드 쿼리가 throw 해 고객조차 못 불러온 경우
+  //   영구 "불러오는 중…" 대신 복구 가능한 에러 + [다시 시도] 착지(새로고침 불필요).
+  //   (custData 성공 후 후속 쿼리만 throw 한 경우 customer 는 존재 → 아래 차트가 부분 데이터로 렌더됨.)
+  if (loadError && !customer) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <div>차트 정보를 불러오지 못했습니다.</div>
+        <button
+          type="button"
+          onClick={() => { setLoadError(null); setReloadNonce((n) => n + 1); }}
+          className="rounded-md bg-teal-600 px-4 py-2 text-white hover:bg-teal-700"
+        >
+          다시 시도
+        </button>
       </div>
     );
   }
