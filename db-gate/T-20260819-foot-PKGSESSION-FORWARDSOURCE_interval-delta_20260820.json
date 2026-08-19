@@ -1,0 +1,172 @@
+{
+  "ticket": "T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE",
+  "task": "MSG-20260820-021600-ytt1 (step7 interval-delta READ-ONLY prep)",
+  "method": "316 CTE 문자동일 (backfill.sql / resequence_prep_20260819.mjs). delta = 현 matched \\ 프리즈 316 cis_id",
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "remeasured_at_kst": "2026-08-20 02:28:10.508535",
+  "landing": {
+    "main_kst": "2026-08-20 01:56:37",
+    "prod_kst": "2026-08-20 02:00:00"
+  },
+  "freeze316_kst": "2026-08-19 13:20:14",
+  "frozen316_count": 316,
+  "baseline": {
+    "cis_total": 4342,
+    "flag_true_fk_null": 30,
+    "flag_true_fk_set": 174,
+    "flag_false_fk_set": 0,
+    "cis_max_created_kst": "2026-08-19 20:13:13.657774"
+  },
+  "current_matched_count": 328,
+  "overlap_frozen_still_matched": 316,
+  "frozen_dropped_from_matched": 0,
+  "frozen_dropped_ids": [],
+  "delta_count": 12,
+  "delta_prev_flag": {
+    "false": 12,
+    "true": 0,
+    "null": 0
+  },
+  "delta_all_prev_psid_null": true,
+  "delta_type_dist": {
+    "unheated_laser": 12
+  },
+  "delta_created_min": "2026-08-19 15:53:56.27649",
+  "delta_created_max": "2026-08-19 20:06:36.56763",
+  "delta_created_after_main_land": 0,
+  "delta_created_after_prod_live": 0,
+  "delta_after_landing_rows": [],
+  "bounded_stop_confirmed": true,
+  "delta_by_date": {
+    "2026-08-19": 12
+  },
+  "gb_preimage": [
+    {
+      "cis_id": "3b70b214-20db-4f99-802d-865df86d1dba",
+      "target_psid": "655962cd-e7e9-4e91-aee0-f620bd728112",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 200000,
+      "created_kst": "2026-08-19 15:53:56.27649"
+    },
+    {
+      "cis_id": "8b2b39bd-37b1-4be4-a1b8-49a961ece298",
+      "target_psid": "e06b7586-571d-41a7-bb74-d8da1d3aff42",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 300000,
+      "created_kst": "2026-08-19 15:58:58.25364"
+    },
+    {
+      "cis_id": "96763186-ef0f-44e5-bb7b-aa4a2a92ba63",
+      "target_psid": "b5b3f91d-e9e8-4303-9317-1e593a419dd0",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 240000,
+      "created_kst": "2026-08-19 16:12:02.68444"
+    },
+    {
+      "cis_id": "c476bdc9-7752-4d37-9d26-c163e99d266a",
+      "target_psid": "b8bfb278-86b9-4332-af6c-310ee16d8a8f",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 200000,
+      "created_kst": "2026-08-19 16:30:56.734493"
+    },
+    {
+      "cis_id": "f89e656f-bdf1-42fb-ac93-fbf6c95a5e76",
+      "target_psid": "4304adfd-59f8-4f1d-8651-cf40e5b4df30",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 260000,
+      "created_kst": "2026-08-19 16:40:52.505756"
+    },
+    {
+      "cis_id": "8bf0908a-6840-4c86-89a5-e0d084249597",
+      "target_psid": "81886373-23ae-4acb-9491-333cf698f4ea",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 200000,
+      "created_kst": "2026-08-19 16:46:58.980615"
+    },
+    {
+      "cis_id": "4f4cc338-7847-4574-8626-e68db9d50fbc",
+      "target_psid": "67761afc-f551-4624-80bf-09148e0d9584",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 260000,
+      "created_kst": "2026-08-19 17:45:29.77918"
+    },
+    {
+      "cis_id": "544189d5-8b09-47ec-8281-ecdf217f2644",
+      "target_psid": "b75f073f-9d2a-43dc-9673-c9cfe5e17115",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 240000,
+      "created_kst": "2026-08-19 18:28:45.337052"
+    },
+    {
+      "cis_id": "1dab177c-b06e-4cfc-a069-9eae8d859c91",
+      "target_psid": "ca4e3d1e-7c5c-457e-8da4-3ffe4ca60f6e",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 200000,
+      "created_kst": "2026-08-19 18:54:31.02519"
+    },
+    {
+      "cis_id": "3dd4f5a7-d20b-4194-8c39-73711100f673",
+      "target_psid": "cc3c76da-34bb-4719-8d75-f101b6bda285",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 280000,
+      "created_kst": "2026-08-19 19:12:27.703095"
+    },
+    {
+      "cis_id": "2b7f0080-7f35-4765-b8eb-08a339728bba",
+      "target_psid": "57a86c73-03fc-46af-a57f-4e807985f5a5",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 210000,
+      "created_kst": "2026-08-19 19:15:49.478349"
+    },
+    {
+      "cis_id": "c01bed16-9cdd-48e7-866c-2423e617ebd6",
+      "target_psid": "83544042-1ecd-43b0-a8a1-8f410e598d43",
+      "session_type": "unheated_laser",
+      "prev_psid": null,
+      "prev_flag": false,
+      "price": 230000,
+      "created_kst": "2026-08-19 20:06:36.56763"
+    }
+  ],
+  "gc2_price_sum": 2820000,
+  "delta_service_subtotal": [
+    {
+      "service_name": "비가열성 진균증 레이저 치료",
+      "service_code": "SZ035",
+      "n": 12,
+      "subtotal": 2820000
+    }
+  ],
+  "delta_distinct_target_psid": 12,
+  "delta_target_dup_within": 0,
+  "delta_target_overlap_with_frozen": 0,
+  "delta_target_already_linked": 0,
+  "delta_prepaid_yes": 0,
+  "delta_prepaid_no": 12,
+  "delta_provenance": {
+    "pay=0|perf=1|price=1|surch=0": 12
+  },
+  "delta_dominant_chartpage": 12
+}
