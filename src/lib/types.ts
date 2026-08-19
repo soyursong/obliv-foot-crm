@@ -982,7 +982,11 @@ export interface ReservationRegistrar {
 //   모두 이 단일 SSOT(visitRouteOptionsFor) 경유 노출. '네이버' 존치·rename 없음('네이버야' 문자열 미도입).
 //   DA CONSULT-REPLY v2(MSG-20260716-005653-nh69, SUPERSEDES pvs0): '공홈'→route_std `homepage`(신규 canonical, owned homepage=organic). CHECK=7값(기존6+공홈), '네이버야'/8값 무효.
 //   ⚠ DB CHECK(customers/reservations)에 '공홈' ADD 동반 필수(20260716160000_foot_visit_route_gonghom_add.sql). system_codes 무접촉.
-export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인바운드', '워크인', '지인소개', '공홈'] as const;
+// T-20260819-foot-INFLOW-KAKAO-INBOUND-ADD (김주연 총괄, ch C0ATE5P6JTH · U0ATDB587PV): 현장 "인바운드(카톡) 추가해줘".
+//   '카톡'(카카오톡 인바운드) 신규 ADDITIVE 추가. 라벨=(a) flat '카톡' 확정(DA Q4, MSG-20260819-115858-45sj) — '인바운드(카톡)' 컴파운드 REJECT('네이버'=flat 선례·집계 clean). 인바운드 계열이므로 표시 순서상 '인바운드' 직후 배치.
+//   DA CONSULT-REPLY GO(MSG-20260819-115858-45sj): foot-LOCAL visit_route CHECK 값 1개 add=순수 ADDITIVE·기존 7값/행/집계 불변·backfill 0·§36 firewall NEUTRAL·foot-only(cross-CRM DECOUPLE). CHECK=8값(기존7+카톡).
+//   ⚠ DB CHECK(customers/reservations)에 '카톡' ADD 동반 필수(20260819210000_foot_visit_route_kakao_add.sql). system_codes 무접촉. VISIT_ROUTE_TO_ASSIGN_LEAD_SOURCE(배정 라우팅·money-adjacent) 무접촉=WALK_IN 안전폴백(별건 planner 라우팅 결정).
+export const VISIT_ROUTE_OPTIONS = ['TM', '네이버', '인바운드', '카톡', '워크인', '지인소개', '공홈'] as const;
 /** 신규 드롭다운 미노출 legacy 보존값(CHECK·표시는 허용). '인콜'은 A안에서 '인바운드'로 수렴됐으나 기존행 표시 보존. */
 export const VISIT_ROUTE_LEGACY = ['인콜'] as const;
 export type VisitRoute = (typeof VISIT_ROUTE_OPTIONS)[number] | (typeof VISIT_ROUTE_LEGACY)[number];
