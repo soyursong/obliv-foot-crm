@@ -423,6 +423,9 @@ export default function Closing() {
   const [staffFilter, setStaffFilter] = useState('');
   /** T-20260530-foot-CLOSING-PAYMETHOD-FILTER: 결제내역 결제수단 필터 ('' = 전체) */
   const [methodFilter, setMethodFilter] = useState('');
+  /** T-20260819-foot-CLOSING-TERMINAL-FILTER: 결제내역 단말기(레드페이 TID) 필터 ('' = 전체).
+   *  담당자·결제수단과 AND 결합. TID→결제 매핑은 read-only 뷰(v_redpay_reconciliation_daily)에서만 파생. */
+  const [terminalFilter, setTerminalFilter] = useState('');
   /** T-20260522-foot-CLOSING-REFUND: 환불 처리 대상 결제 행
    *  T-20260713-foot-CLOSING-REFUND-PAYTYPE-GROUPING-ITEMSELECT: 단일행 → 고객의 환불 가능 행 묶음(배열).
    *    환불창이 유형별(패키지/진료비/단건) 구분 표기 + 항목 선택(체크박스) UI 로 확장됨. */
@@ -791,6 +794,44 @@ export default function Closing() {
         .order('pay_time', { ascending: true, nullsFirst: true });
       if (error) throw error;
       return (data ?? []) as ManualPaymentRow[];
+    },
+  });
+
+  // ── T-20260819-foot-CLOSING-TERMINAL-FILTER: 단말기(레드페이 TID) 필터 소스 ──────────────
+  //   [feasibility] 신규 컬럼/스키마 0 — TID↔결제 매핑은 기존 read-only 뷰 v_redpay_reconciliation_daily
+  //     (T-20260708 REDPAY-CLOSING-TAB, security_invoker=호출자 clinic RLS)의 (matched_payment_id, tid) 를
+  //     그대로 소비한다. 레드페이 raw 앵커 행에서 CRM 단건 결제(payments.id)에 매칭된 단말 TID 가 표면화됨.
+  //     ★ FE 조인/매칭 재계산 금지 계약 준수 — 뷰가 산출한 매칭 결과만 읽어 payment_id→tid Map 을 만든다.
+  //   AC-6(레드페이 미활성/테스트모드): 뷰가 빈 목록이면 옵션 없음 → 드롭다운은 '전체'만(기존동작). 에러도 비차단([]).
+  const { data: redpayTidRows = [] } = useQuery<{ matched_payment_id: string | null; tid: string | null }[]>({
+    queryKey: ['closing-redpay-tidmap', clinic?.id, date],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_redpay_reconciliation_daily')
+        .select('matched_payment_id, tid')
+        .eq('clinic_id', clinic!.id)
+        .eq('close_date', date);
+      // 뷰 미배포/권한 등 어떤 에러도 일마감 화면을 막지 않는다(필터는 부가기능) → 조용히 빈 목록.
+      if (error) return [];
+      return (data ?? []) as { matched_payment_id: string | null; tid: string | null }[];
+    },
+  });
+
+  // ── 단말기 사람용 라벨 (redpay_terminal_registry SSOT, T-20260711 REGISTRY-TABLE) ──────────
+  //   terminal_label(풋(VAN)/풋(멀티)/풋(무선) 등) 을 드롭다운 표기에 사용(태블릿 가독성). authenticated read-all.
+  //   미배포/에러 시 라벨 없이 TID 원문 표기로 폴백(비차단).
+  const { data: terminalRegistry = [] } = useQuery<{ tid: string | null; terminal_label: string | null }[]>({
+    queryKey: ['closing-redpay-terminal-registry', clinic?.id],
+    enabled: !!clinic,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('redpay_terminal_registry')
+        .select('tid, terminal_label')
+        .eq('domain', 'foot')
+        .eq('active', true);
+      if (error) return [];
+      return (data ?? []) as { tid: string | null; terminal_label: string | null }[];
     },
   });
 
@@ -1296,16 +1337,57 @@ export default function Closing() {
     return set.length > 0 ? set : [r];
   };
 
+  // ── T-20260819-foot-CLOSING-TERMINAL-FILTER: 단말기 필터 파생 상태 ──────────────────────
+  //   payment_id → TID Map (레드페이 매칭된 CRM 단건 결제만 존재). 뷰 산출 결과 소비만(FE 재계산 0).
+  const terminalTidByPaymentId = useMemo<Map<string, string>>(() => {
+    const m = new Map<string, string>();
+    for (const r of redpayTidRows) {
+      if (r.matched_payment_id && r.tid) m.set(r.matched_payment_id, r.tid);
+    }
+    return m;
+  }, [redpayTidRows]);
+  // TID → 사람용 라벨(풋(VAN)/풋(멀티) 등). 레지스트리 없으면 라벨 없음(TID 원문 폴백).
+  const terminalLabelByTid = useMemo<Map<string, string>>(() => {
+    const m = new Map<string, string>();
+    for (const r of terminalRegistry) {
+      if (r.tid && r.terminal_label) m.set(r.tid, r.terminal_label);
+    }
+    return m;
+  }, [terminalRegistry]);
+  // 드롭다운 옵션 = 당일 결제에 실제 매칭된 단말 TID 목록(정렬). 매칭 0건이면 '전체'만 노출(기존동작).
+  const terminalOptions = useMemo<string[]>(
+    () => [...new Set(terminalTidByPaymentId.values())].sort(),
+    [terminalTidByPaymentId],
+  );
+  // 옵션 표기: '풋(멀티) ·9476'(라벨 + TID 끝 4자리). 라벨 없으면 TID 원문.
+  const terminalOptionLabel = (tid: string): string => {
+    const label = terminalLabelByTid.get(tid);
+    return label ? `${label} ·${tid.slice(-4)}` : tid;
+  };
+
   // C2-MANAGER-PAYMENT-MAP: 담당자 필터 적용
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-3: NULL → '미지정' 통일
   // T-20260530-foot-CLOSING-PAYMETHOD-FILTER: 담당자 + 결제수단 AND 결합
+  // T-20260819-foot-CLOSING-TERMINAL-FILTER: + 단말기(레드페이 TID) AND 결합.
+  //   단말기 매핑은 payments(단건) 축에만 존재 → 패키지/수기/미매칭 단건은 필터 시 제외(레드페이 TID 없음, AC).
+  //   원결제행=payment_id, (병합·자체) 환불행=linked_payment_id(원결제)로 TID 조회 → 원결제·환불이 같이 남아
+  //   합계(net) reduce 정합 유지(회귀 0).
   const filteredEnrichedRows = useMemo<EnrichedRow[]>(() => {
-    if (!staffFilter && !methodFilter) return enrichedRows;
-    return enrichedRows.filter(r =>
-      (!staffFilter || (r.staff_name ?? '미지정') === staffFilter) &&
-      (!methodFilter || r.method === methodFilter)
-    );
-  }, [enrichedRows, staffFilter, methodFilter]);
+    if (!staffFilter && !methodFilter && !terminalFilter) return enrichedRows;
+    return enrichedRows.filter(r => {
+      if (staffFilter && (r.staff_name ?? '미지정') !== staffFilter) return false;
+      if (methodFilter && r.method !== methodFilter) return false;
+      if (terminalFilter) {
+        let tid: string | undefined;
+        if (r.source === 'payment') {
+          const key = r.payment_type === 'refund' ? (r.linked_payment_id ?? undefined) : (r.payment_id ?? undefined);
+          tid = key ? terminalTidByPaymentId.get(key) : undefined;
+        }
+        if (tid !== terminalFilter) return false;
+      }
+      return true;
+    });
+  }, [enrichedRows, staffFilter, methodFilter, terminalFilter, terminalTidByPaymentId]);
 
   // ── T-20260715-foot-DAYCLOSE-LIST-PATIENT-GROUP: 동일 환자(차트번호+성함) 건 그룹 묶음 ──
   //   현장(김주연 총괄) 요청: 결제 시각순으로 흩어진 동일 환자 건을 최초 결제 시각 아래로 묶어 표시.
@@ -2281,6 +2363,28 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 {methodFilter && (
                   <button
                     onClick={() => setMethodFilter('')}
+                    className="text-xs text-muted-foreground hover:text-foreground px-1"
+                    title="필터 초기화"
+                  >✕</button>
+                )}
+              </div>
+              {/* T-20260819-foot-CLOSING-TERMINAL-FILTER: 단말기(레드페이 TID) 필터 드롭다운 — 담당자·결제수단과 AND 결합.
+                  옵션 = 당일 결제에 매칭된 단말 TID(레드페이 자동수집). 매칭 0건이면 '전체'만(기존동작). */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground shrink-0">단말기</span>
+                <select
+                  value={terminalFilter}
+                  onChange={e => setTerminalFilter(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none"
+                >
+                  <option value="">전체</option>
+                  {terminalOptions.map(tid => (
+                    <option key={tid} value={tid}>{terminalOptionLabel(tid)}</option>
+                  ))}
+                </select>
+                {terminalFilter && (
+                  <button
+                    onClick={() => setTerminalFilter('')}
                     className="text-xs text-muted-foreground hover:text-foreground px-1"
                     title="필터 초기화"
                   >✕</button>
