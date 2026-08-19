@@ -1,0 +1,25 @@
+{
+ "ticket_id": "T-20260819-foot-RLS-PERMISSIVE-NEWTABLES-SEAL",
+ "gate": "DB-GATE-GO",
+ "issued_by": "supervisor",
+ "ttl_sec": 3600,
+ "prod_ref": "rxlomoozakkjesdqjtvd",
+ "migration_sha256": "3c54fc438bb86049be97e0b705a4ada85b86f8d0765c87262ec5574ea2e74735",
+ "rollback_sha256": "c60f96c5ae55cd4889cd42c97c470f805e55afa802d0df38fb522d56644cddfe",
+ "migration_version": "20260820000000",
+ "migration_name": "foot_rls_permissive_newtables_seal",
+ "migration_files": [
+  "supabase/migrations/20260820000000_foot_rls_permissive_newtables_seal.sql",
+  "supabase/migrations/20260820000000_foot_rls_permissive_newtables_seal.rollback.sql"
+ ],
+ "evidence_commit": "a2b1464e",
+ "key_id": "supv-dbgate-2026a",
+ "nonce": "9665790d58caf955",
+ "da_consult_reply": "MSG-20260819-232851-tcs9 (DA CONSULT-REPLY: Q1 신규 PHI/금융 5테이블 WITHIN-ENVELOPE GO(조건부·fingerprint 매치·config census MOOT) / Q2 config census-gated 3-way partition. SSOT da_decision_foot_rls_permissive_newtables_clinicgate_seal_20260819.md, 부모 §A/§C coherence-extension). AC-1 apply-gate=supervisor.",
+ "ceo_gate": "N/A — exposure-REDUCING ADDITIVE(CREATE RESTRICTIVE POLICY x11 only·permissive DROP 0·데이터 mutation 0·신규 컬럼/타입/enum/테이블 0·완전가역 DROP 1줄/정책) + DA Gate-B GO → 대표 파괴게이트 §3.1 면제(autonomy). 자매 crm-RLS-PERMISSIVE-CLINIC-GATE-SEAL(deployed 23:32) 동형 선례.",
+ "precheck": "supervisor MIG-GATE/DDL-diff GO. [scope] Q1 5(hmb·payment_audit_logs·receipt_ocr·claim_diagnoses·handover_notes) + Q2-A 4(diagnosis_folders·diagnosis_sets·notices·room_role_mapping) + Q2-C 2(code_availability·redpay_unregistered_line_seen anon_deny) = 11 policy. EXCLUDE 7(B carve-out/governance/lane-b) 문서화 일치. [predicate] (clinic_id=current_user_clinic_id()) OR is_admin_or_manager() — foot 캐노니컬, crm get_user_role 미사용 확인. [grain] ALL=7(USING+WITH CHECK)·SELECT=2(payment_audit_logs read-seal·room_role_mapping)·anon-deny=2. payment_audit_logs SELECT read-seal 정합(census: SECDEF trigger 부재 + FE INSERT clinic_id `?? null` nullable → ALL WITH CHECK 시 감사 INSERT 파손 H3 → read 누수만 봉쇄). [PREFLIGHT] 11테이블 실재+RLS ENABLE+helper 실재+gated-9 clinic_id NULL=0(H3 apply-시점 drift 재확인)+멱등 abort. [VERIFY] post-DDL canonical(ALL7/SELECT2/anon2) + ADDITIVE 불변식(permissive 11 존치). [dryrun] no-persistence PASS(신규 11 부재/무영속 + offending permissive 11 존치, postprobe absent). [rollback] 대칭 DROP 11(permissive 무접촉→원상복구). [tenancy] jongno data-bearing(2517/70)·songdo LATENT(0/0)→forward-protective·회귀0. [C18/C21] DA HOLD·RETRACT signals+MQ+ticket fresh-read CLEAR(status=deploy-ready·block_reason 공란·deploy_hold 부재·applied_at 공란). [C20] apply_before_go 부재(applied_at 공란). [C19] N/A(CREATE POLICY only·RPC 재정의 0). 자매 named-7 SEAL=distinct 테이블(stomp 없음).",
+ "issued_at_epoch": 1787153046.002789,
+ "issued_at": "2026-08-20T00:24:06+09:00",
+ "expires_at_epoch": 1787156646.002789,
+ "expires_at": "2026-08-20T01:24:06+09:00"
+}

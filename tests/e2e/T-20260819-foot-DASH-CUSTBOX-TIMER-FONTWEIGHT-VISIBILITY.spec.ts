@@ -1,5 +1,6 @@
 /**
- * E2E spec — T-20260819-foot-DASHBOARD-LASER-FONT-BOLD
+ * E2E spec — T-20260819-foot-DASH-CUSTBOX-TIMER-FONTWEIGHT-VISIBILITY
+ *   (canonical; supersedes 중복티켓 T-20260819-foot-DASHBOARD-LASER-FONT-BOLD — 동일 요청·동일 스샷 F0BRANALJKE·동일 thread 1787127169.194009)
  * 대시보드 고객박스 "레이저 잔여시간"("남은 N분 N초") + 종료("완료") 표기 가독성 개선.
  * 현장(김주연 총괄, C0ATE5P6JTH) 스샷 F0BRANALJKE — 폰트/굵기 때문에 너무 안보임.
  *

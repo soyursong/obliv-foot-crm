@@ -495,7 +495,8 @@ const TimerCountdown = memo(function TimerCountdown({ endsAt }: { endsAt: Date }
   return (
     <span
       data-testid="card-timer-countdown"
-      // T-20260819-foot-DASHBOARD-LASER-FONT-BOLD: 고객박스 레이저 잔여시간/종료 표기 가독성 개선(현장 김주연 총괄, 스샷 F0BRANALJKE).
+      // T-20260819-foot-DASH-CUSTBOX-TIMER-FONTWEIGHT-VISIBILITY (canonical; supersedes 중복 T-20260819-foot-DASHBOARD-LASER-FONT-BOLD):
+      //   고객박스 레이저 잔여시간/종료 표기 가독성 개선(현장 김주연 총괄, 스샷 F0BRANALJKE).
       //   font-semibold(600)→font-bold(700) + 색 대비 강화(600→700 shade). 텍스트/데이터/계산/레이아웃 무변경(표시 스타일만).
       className={cn(
         'tabular-nums font-mono font-bold leading-none',
