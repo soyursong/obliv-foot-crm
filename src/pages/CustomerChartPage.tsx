@@ -779,14 +779,23 @@ function CustomerStorageImageSection({
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-A): storage upload 는 연결끊김/중단 시
+    //   throw 한다 → setUploading(false) 미도달 → 업로드 버튼 영구 비활성(새로고침만이 복구).
+    //   try/finally 로 어떤 경로로든 uploading 플래그 해제를 보장한다.
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop() ?? 'jpg';
+        const path = `${storagePath}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
+        if (error) toast.error(`업로드 실패: ${error.message}`);
+      }
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 업로드 중단', e);
+      toast.error('업로드가 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    setUploading(false);
-    e.target.value = '';
     invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
   };
@@ -1538,19 +1547,30 @@ function TreatmentImagesSection({
     setUploading(true);
     const arr = Array.from(files);
     const total = arr.length;
+    let done = 0;
     let failed = 0;
     // T-20260818-foot-PHOTOUP-WAIT-ERRORMSG-FIX (AC-1): 처리 중에는 오류 토스트 미노출.
     //   업로드 지연/일시오류를 루프 중 즉시 toast.error 로 띄워 '저장 중'을 "대기 오류"로 오인시키던 문제 교정.
     //   실패는 모아서 완료 후 1회 안내(AC-2). 저장 성공/실패 판정 로직 자체는 불변.
-    for (const file of arr) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      // T-20260517: 파일명에 type 접두사 포함
-      const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
-      if (error) failed++;
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-A): storage upload throw 시 setUploading(false)
+    //   미도달 → 업로드 버튼 영구 비활성 + 재진입 가드에 막혀 새로고침만이 복구. try/catch/finally 로
+    //   플래그 해제 보장 + 부분 성공 보존(done 까지는 실제 업로드됨).
+    try {
+      for (const file of arr) {
+        const ext = file.name.split('.').pop() ?? 'jpg';
+        // T-20260517: 파일명에 type 접두사 포함
+        const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
+        if (error) failed++;
+        done++;
+      }
+    } catch (err) {
+      console.error('[MEDIMG-UPLOAD] 업로드 중단', err);
+      failed = total - done; // 남은 건은 실패로 계산(부분 성공 보존)
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    setUploading(false);
-    e.target.value = '';
     invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
     // AC-2: 완료 후 정확한 피드백. toast.success 는 wrapper 묵음(noop) → 완료 확인은 toast.confirm.
@@ -2068,18 +2088,32 @@ function TreatmentImagesSection({
     //   toast.error('업로드 실패')를 띄워, '저장 중'인 상태를 현장이 "대기 오류"로 오인했다.
     //   → 실패는 카운트만 모아 두고(저장 성공/실패 판정 로직 자체는 불변), 처리 중에는
     //     '저장 중' 로딩 오버레이만 보이게 한다. 정확한 결과 안내는 완료 후 1회(AC-2).
-    for (const { blob, previewUrl } of capturedBlobs) {
-      const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
-      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
-      if (error) failed++;
-      URL.revokeObjectURL(previewUrl);
-      done++;
-      setUploadProgress({ done, total });
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§2): storage upload 는 연결끊김/중단 시
+    //   { error } 가 아니라 throw 한다(storage-js dist/index.mjs:441-448). throw 가 나면
+    //   아래 setUploadProgress(null)·stopStream·setCameraOpen(false) 에 도달하지 못해
+    //   '저장 중' 오버레이 영구 표시 + 셔터/완료/취소 전부 비활성 → 카메라를 닫을 수조차 없다.
+    //   → 루프를 try 로 감싸고 catch 로 흡수해 정상 종료 흐름(모달 닫힘)에 합류시킨다.
+    //     finally 로 uploadProgress 를 어떤 경로로든 반드시 해제한다.
+    try {
+      for (const { blob, previewUrl } of capturedBlobs) {
+        const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
+        const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
+        if (error) failed++;
+        URL.revokeObjectURL(previewUrl);
+        done++;
+        setUploadProgress({ done, total });
+      }
+    } catch (e) {
+      console.error('[MEDIMG-UPLOAD] 업로드 중단', e);
+      failed = total - done; // 남은 건은 실패로 계산(부분 성공 보존 — done 까지는 실제 업로드됨)
+    } finally {
+      setUploadProgress(null); // 🔴 어떤 경로로든 반드시 해제(오버레이/셔터/취소 잠금 해제)
     }
+    // 중단 경로에서 루프가 순회하지 못한 blob preview URL 정리(revokeObjectURL 은 idempotent).
+    capturedBlobs.forEach((b) => URL.revokeObjectURL(b.previewUrl));
     stopStream();
     setCapturedBlobs([]);
     setCameraOpen(false);
-    setUploadProgress(null);
     invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
     // AC-2: 완료 후 정확한 피드백(성공/실패 건수 반영). 판정 결과는 실제 upload error 기준(불변).

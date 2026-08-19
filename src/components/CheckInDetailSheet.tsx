@@ -351,15 +351,23 @@ function Chart1TreatmentImages({ customerId }: { customerId: string }) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 신규분 cacheControl 부여(브라우저/CDN 캐시 창).
-      const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
-      if (error) toast.error(`업로드 실패: ${error.message}`);
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-A): storage upload throw 시 setUploading(false)
+    //   미도달 → 업로드 버튼 영구 비활성(새로고침만이 복구). try/catch/finally 로 플래그 해제 보장.
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop() ?? 'jpg';
+        const path = `${storagePath}/${uploadType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        // T-20260718-foot-STORAGE-EGRESS-THUMBNAIL-TRANSFORM: 신규분 cacheControl 부여(브라우저/CDN 캐시 창).
+        const { error } = await supabase.storage.from('photos').upload(path, file, { contentType: file.type, ...PHOTO_UPLOAD_OPTS });
+        if (error) toast.error(`업로드 실패: ${error.message}`);
+      }
+    } catch (err) {
+      console.error('[MEDIMG-UPLOAD] 업로드 중단', err);
+      toast.error('업로드가 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
     }
-    setUploading(false);
-    e.target.value = '';
     invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
     await load();
   };

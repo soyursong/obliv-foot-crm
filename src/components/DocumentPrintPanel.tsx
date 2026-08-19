@@ -5283,43 +5283,50 @@ function InvoiceDialog({
       return;
     }
     setSaving(true);
-
-    let pdfUrl: string | null = null;
-    if (file) {
-      const path = `receipts/${checkIn.id}/invoice_${Date.now()}_${file.name}`;
-      const { error: upErr } = await supabase.storage
-        .from('documents')
-        .upload(path, file, { contentType: file.type });
-      if (upErr) {
-        toast.error(`파일 업로드 실패: ${upErr.message}`);
-        setSaving(false);
-        return;
+    // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-A): storage upload/createSignedUrl 및 DB insert 는
+    //   연결끊김/중단 시 throw 한다 → setSaving(false) 미도달 → 저장 버튼 영구 비활성(새로고침만이 복구).
+    //   try/catch/finally 로 saving 플래그 해제를 어떤 경로로든 보장한다.
+    try {
+      let pdfUrl: string | null = null;
+      if (file) {
+        const path = `receipts/${checkIn.id}/invoice_${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage
+          .from('documents')
+          .upload(path, file, { contentType: file.type });
+        if (upErr) {
+          toast.error(`파일 업로드 실패: ${upErr.message}`);
+          return;
+        }
+        const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600 * 24 * 365);
+        pdfUrl = data?.signedUrl ?? path;
       }
-      const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600 * 24 * 365);
-      pdfUrl = data?.signedUrl ?? path;
+
+      const today = new Date().toISOString().slice(0, 10);
+      const { error } = await supabase.from('insurance_receipts').insert({
+        clinic_id: checkIn.clinic_id,
+        check_in_id: checkIn.id,
+        customer_id: checkIn.customer_id,
+        receipt_type: 'detail',
+        receipt_no: receiptNo || null,
+        consult_amount: 0,
+        treatment_amount: paidAmount,
+        insurance_covered: insuranceCovered,
+        non_covered: nonCovered,
+        total_amount: insuranceCovered + nonCovered,
+        paid_amount: paidAmount,
+        pdf_url: pdfUrl,
+        issue_date: today,
+      });
+
+      if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+      toast.success('진료비 영수증 등록 완료');
+      onSaved();
+    } catch (err) {
+      console.error('[MEDIMG-UPLOAD] 저장 중단', err);
+      toast.error('저장이 중단되었습니다 — 잠시 후 다시 시도해 주세요');
+    } finally {
+      setSaving(false);
     }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const { error } = await supabase.from('insurance_receipts').insert({
-      clinic_id: checkIn.clinic_id,
-      check_in_id: checkIn.id,
-      customer_id: checkIn.customer_id,
-      receipt_type: 'detail',
-      receipt_no: receiptNo || null,
-      consult_amount: 0,
-      treatment_amount: paidAmount,
-      insurance_covered: insuranceCovered,
-      non_covered: nonCovered,
-      total_amount: insuranceCovered + nonCovered,
-      paid_amount: paidAmount,
-      pdf_url: pdfUrl,
-      issue_date: today,
-    });
-
-    setSaving(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
-    toast.success('진료비 영수증 등록 완료');
-    onSaved();
   };
 
   return (
