@@ -23,6 +23,7 @@
 | #2 | 2026 의원 환산지수 95.6원/점 | 전사 | (본 문서에서 신규 아카이빙) |
 | #3 | 심평원 외래 본인부담기준표 | verified | [CIT-2026-002](./CIT-2026-002-hira-outpatient-copay-standard.md) |
 | #4 | 65세 이상 노인 외래 정액제 4구간 | 전사 | (본 문서에서 신규 아카이빙) |
+| #5 | 등급별 본인부담(의원급 1차 외래) v1.6 | 근거체인 + verbatim pending | [CIT-2026-006](./CIT-2026-006-medical-aid-enforcement-decree-table1.md)(의급 1·2종 별표1) |
 
 > ⚠️ **CIT-2026-001 정합 주의**: `CIT-2026-001` 은 "국민건강보험법 시행령 **별표2 제19조 제1항** — '100원 미만은 제외한다'" 를 verbatim 으로 기재하고 있으나, 이는 **2026-07-15 dev-foot 규정 실조사(MSG-20260715-043047-n54m)에서 미검증으로 정정**됐다 (별표2는 부담률(%) table 축, 100원 절사 근거 조문과 별개). 아래 블록 #1은 정정된 검증 상태를 따른다. **2026-07-16 `CIT-2026-001` per-file 본문도 정합 완료** (T-20260716-foot-CIT-BYPYO2-VERBATIM-RECONCILE): 별표2 verbatim = pending 강등, 근거체인 = 검증본(심평원 표 + 시행령 제22조1항→복지부 고시)으로 재지정. CIT-2026-001 본문의 별표2 verbatim 은 law.go.kr 정상화 후 재확인 대상 — CIT-2026-001 frontmatter `verbatim_status: pending_lawgokr` marker 로 추적(외부 사이트 종속, 티켓 done 조건 아님).
 
@@ -126,10 +127,20 @@
 > 미검증 전사로 판단, 확정 verbatim 에서 제외한다. law.go.kr 정상화 후 시행령 별표2 노인 외래 정액제
 > 원문을 재확인하여 verbatim 확정 후 이 블록에 전사할 것.
 
+### ⚠️ [grain 확인] 4구간 판정 = 방문 급여 총액 기준 (항목별 판정 금지)
+
+- `T-20260819-foot-COPAY-VISIT-GRAIN`: 노인 외래 4구간은 **방문당(visit) 급여 총액** 위에서 구간을 판정한다.
+  한 방문에 급여 항목이 N개면 **항목별로 각각 구간 판정하지 말고**, 총액을 합산한 뒤 그 총액으로 구간을
+  결정한다(항목별 구간 판정 = 공단 과다청구 결함). 예: 방문 총액 36,594원 → 25,000원 **초과** → 30% 구간
+  → FLOOR(36,594×0.30/100)×100 = **10,900원**.
+- ★ 본 블록 #4 활성 표(≤15,000 = **정액 1,500원**)는 이미 `T-20260720-foot-COPAY-GRADE-BRANCH-MISSING`
+  에서 종전 "10%" 오기재가 정정 완료돼 있다(재확인 결과 = 현행 표 정합, 추가 정정 불요).
+
 ### 적용
 
 - 65세 이상(elderly_flat) 환자 외래 본인부담금 산정 근거. 정률구간 원단위 = 100원 미만 절사(FLOOR).
 - 경계는 이하(≤) inclusive — 정확히 15,000/20,000/25,000원인 수가는 낮은 구간에 귀속.
+- **구간 판정 base = 방문 급여 총액(visit grain)** — 항목별 판정 금지(T-20260819-foot-COPAY-VISIT-GRAIN).
 
 ---
 
@@ -147,8 +158,8 @@
 | general | 30% 정률 (유지) | 시행령 별표2 의원 외래 30% |
 | low_income_1 (차상위 희귀·중증난치·중증) | **0원 (면제)** | 시행령 별표2 제3호 라목 / HIRA HIRAA030056020130 |
 | low_income_2 (차상위 만성·18세미만) | **정액 1,000원 = LEAST(1000, base)** | 시행령 별표2 제3호 라목 (14%는 입원/병원급 rate) |
-| medical_aid_1 (의료급여 1종) | **정액 1,000원 = LEAST(1000, base)** (유지) | 의료급여법 시행령 별표1 |
-| medical_aid_2 (의료급여 2종) | **정액 1,000원 = LEAST(1000, base)** | 의료급여법 시행령 별표1 (15%는 병원급 외래 rate) |
+| medical_aid_1 (의료급여 1종) | **정액 1,000원 = LEAST(1000, base)** (유지) | 의료급여법 시행령 별표1 → 정본 per-file [CIT-2026-006](./CIT-2026-006-medical-aid-enforcement-decree-table1.md) |
+| medical_aid_2 (의료급여 2종) | **정액 1,000원 = LEAST(1000, base)** | 의료급여법 시행령 별표1 (15%는 병원급 외래 rate) → 정본 per-file [CIT-2026-006](./CIT-2026-006-medical-aid-enforcement-decree-table1.md) |
 | infant (6세미만) | 21% (유지) | 6세미만 의원외래 = 성인 30%×70% |
 | elderly_flat (65세+) | 4구간(정액1,500/10%/20%/30%, 이하=≤) (유지) | 블록 #4 |
 | foreigner | (요율등급 아님 — 아래 §foreigner 참조) | — |
@@ -170,3 +181,7 @@
 - RPC `calc_copayment` v1.6 · `copayCalc.ts`(copayFromBase) · `footBilling.ts`(computeFootBilling /
   fillBillItemCopayment / buildFootBillDetailItems) 가 **단일 SSOT 헬퍼 copayFromBase** 로 이 표를 소비(병렬 재계산 경로 없음).
 - 소급 = 범위 밖(forward-only). 과거 오요율 적재분 backfill = 별건 defer(`cross_crm_data_correction_backfill_sop`).
+- ⚠ **정액/구간 grain = 방문당(visit)** (T-20260819-foot-COPAY-VISIT-GRAIN): 정액(의급 1·2종·차상위)의
+  `LEAST(1000, base)` 와 노인 4구간 판정의 `base` 는 **1회 방문의 급여 총액**이다 — 항목당 계산 금지.
+  한 방문 N개 급여 항목 → 본인부담 합계 = `LEAST(1000, Σbase)`(정액) / 4구간(Σbase)(노인). 정본 근거:
+  [CIT-2026-006](./CIT-2026-006-medical-aid-enforcement-decree-table1.md)(의급) + 블록 #4(노인).
