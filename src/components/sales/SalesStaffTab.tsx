@@ -1110,7 +1110,8 @@ export function SalesStaffTab({ filter, enableExcelExport = false, exportFilenam
         const header = ['치료사/장비명', '역할', '시술 건수', '지정환자수', '치료 매출', '화장품 매출', '환불 차감액', '순 실적'];
         const body = payRowsWithCosmetic.map((s) => {
           const net = s.treatmentRevenue - s.refundAmount;
-          const isTher = s.role === 'therapist';
+          const staffRole = s.role;
+          const isTher = staffRole === 'therapist';
           return [
             s.staffName,
             isTher ? '치료사' : '장비명',

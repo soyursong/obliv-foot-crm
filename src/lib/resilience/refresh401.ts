@@ -95,7 +95,8 @@ export function classifyToken(
   if (!token) return { live: false, anon: true, expired: false };
   const payload = decodeJwtPayload(token);
   if (!payload) return { live: false, anon: true, expired: false };
-  const role = typeof payload.role === 'string' ? (payload.role as string) : '';
+  const roleClaim = payload.role;
+  const role = typeof roleClaim === 'string' ? roleClaim : '';
   const exp = typeof payload.exp === 'number' ? (payload.exp as number) : 0;
   const anon = role !== 'authenticated';
   // exp 미존재(0)면 만료판정 불가 → 만료 아님으로 취급(role 만으로 판정).
