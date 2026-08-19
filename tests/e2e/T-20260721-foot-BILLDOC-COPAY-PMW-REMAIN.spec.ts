@@ -164,9 +164,14 @@ test.describe('T-20260721 소스 와이어링 가드', () => {
     expect(dpp).toContain('applyBillReceiptNewCategoryTokens');
   });
 
-  test('단계 B: PaymentMiniWindow 두 발행 경로 모두 applyBillReceiptNewCategoryTokens 호출', () => {
+  test('단계 B: PaymentMiniWindow 발행 경로에서 applyBillReceiptNewCategoryTokens 호출', () => {
+    // T-20260819-foot-COPAY-E2E-PREEXISTING-RED-CLEANUP (test-only rebase):
+    //   원 단언 = >=2 (handleDocPrint + [출력 및 수납] 2 경로). 이후 T-20260727-foot-PMW-PKG-DOC-SETTLE-4REQ
+    //   요건④로 [출력 및 수납](handleDocAndSettle) 진입점이 제거·단일 발행 경로로 통합되어 호출 site 가
+    //   구조적으로 1 개가 됨(2968a347/7ab24e81 identical=1 = 부모 impl 회귀 아님). 통합 아키텍처 기준
+    //   >=1 로 재정합 — 핵심 불변식(토큰 주입 배선 존재 + footBilling SSOT 소비)은 그대로 가드.
     const calls = pmw.match(/applyBillReceiptNewCategoryTokens\(autoValues,/g) ?? [];
-    expect(calls.length).toBeGreaterThanOrEqual(2); // handleDocPrint + 출력+수납
+    expect(calls.length).toBeGreaterThanOrEqual(1); // 통합 단일 발행 경로(구 handleDocPrint + 출력+수납 통합)
     expect(pmw).toContain("from '@/lib/footBilling'");
   });
 

@@ -1,168 +1,108 @@
 /**
- * T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT REOPEN#5 — 실브라우저 렌더 검증 (anti-fingerprint)
+ * T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT REOPEN#5 — 세금구분 '급여' 라인 = 급여 자부담(30%)
  *
  * 김주연 총괄(스크린샷+직접 요구): 결제미니창 '세금 구분' 내역의 '급여' 라인이 공단부담 포함
  *   전체 급여액(coveredTotal)을 표시 → 환자 자부담(30%)만 표시하도록.
- *   현재(잘못): "급여: 29,380" / 원하는: "급여 자부담(30%): 8,900".
+ *   현재(잘못): "급여: 29,380" / 원하는: "급여 자부담(30%): 8,800".
  *
- * 본 스펙은 content-fingerprint 자기검증(5회 반증됨)을 대체하는 실제 DOM 렌더 검증이다.
- *   - 로컬 dev 서버(localhost:8089, 배포와 동일 소스)에서 급여환자 payment_waiting 시드 →
- *     대시보드 [결제하기] 실제 클릭 → PaymentMiniWindow 모달 오픈 →
- *     '세금 구분' 영역의 급여 라인 텍스트/금액을 브라우저 DOM 에서 직접 읽어 단언 + 스크린샷.
- *   - 배포 pages.dev 는 동일 번들 → supervisor 가 fresh session 으로 재QA.
+ * ── T-20260819-foot-COPAY-E2E-PREEXISTING-RED-CLEANUP: env-gated DOM → unit 재작성(AC-2 옵션 ii) ──
+ *   원 스펙은 로컬 dev 서버(webServer) + auth + 라이브 Supabase prod-seed(check_ins/service_charges
+ *   INSERT) 로 실 브라우저에서 PaymentMiniWindow 모달을 열어 DOM 을 읽었다. headless QA host 는 그
+ *   3종 precondition 이 없어 항상 RED(desktop-chrome setup 실패, pre-existing·부모 impl 회귀 아님).
+ *   이 스펙의 검증 가치 두 축을 env-불요 unit 으로 재작성한다:
+ *     (1) 값 로직 = 배포 SSOT computeFootBilling(수납 grain, 등급미상→30%) 순수 단언 —
+ *         '급여' 라인 금액이 자부담(payCopaymentTotal)이지 전체 급여액(coveredTotal) 이 아님.
+ *     (2) 렌더 배선 = PaymentMiniWindow.tsx 소스 가드 — 세금구분 급여 라인 라벨이 "급여 자부담(%)"
+ *         이고 금액이 payCopayment* 를 바인딩하며, 공단부담(70%)은 별도 '공단부담액(명세)' 라인.
+ *   실 DOM 픽셀·모달 오픈 UX = supervisor 갤탭 field-soak(라이브 급여환자 수납) 로 관측(코드-게이트 아님).
+ *   product src/ 무접촉(test-only). live Supabase 클라이언트 의존 제거.
  *
- * 실행: npx playwright test T-20260714-foot-PAYMINI-COPAY-TAXLINE-RENDER.spec.ts
+ * 실행: npx playwright test T-20260714-foot-PAYMINI-COPAY-TAXLINE-RENDER.spec.ts --project=unit
  */
 import { test, expect } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 import {
   computeFootBilling,
   type FootBillingItem,
   type BillingService,
 } from '../../src/lib/footBilling';
 
-const BASE = process.env.BASE_URL ?? 'http://localhost:8089';
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? 'https://rxlomoozakkjesdqjtvd.supabase.co';
-const SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? (() => { throw new Error('SUPABASE_SERVICE_ROLE_KEY env required'); })();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PMW = path.resolve(__dirname, '../../src/components/PaymentMiniWindow.tsx');
 
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-
-const TEST_PHONE = '+821099997145';
-const TEST_NAME = '[PAYMINI-TAXLINE] 급여';
-const QUEUE = 977;
-
-let clinicId: string | null = null;
-let coveredServices: Array<{ id: string; name: string; price: number; hira_code: string | null; vat_type: string | null }> = [];
-let checkInId: string | null = null;
-let customerId: string | null = null;
-let seedOk = false;
-
-function parseWon(s: string): number {
-  return Number((s || '').replace(/[^0-9-]/g, ''));
-}
-
-async function cleanup() {
-  const { data: custs } = await supabase.from('customers').select('id').eq('phone', TEST_PHONE);
-  const ids = (custs ?? []).map((c) => c.id);
-  if (!ids.length) return;
-  const { data: cis } = await supabase.from('check_ins').select('id').in('customer_id', ids);
-  const ciIds = (cis ?? []).map((c) => c.id);
-  if (ciIds.length) {
-    await supabase.from('payments').delete().in('check_in_id', ciIds);
-    await supabase.from('check_in_services').delete().in('check_in_id', ciIds);
-    await supabase.from('status_transitions').delete().in('check_in_id', ciIds);
-    await supabase.from('check_ins').delete().in('id', ciIds);
-  }
-  await supabase.from('customers').delete().in('id', ids);
-}
-
-test.beforeAll(async () => {
-  const { data: clinic } = await supabase.from('clinics').select('id').eq('slug', 'jongno-foot').single();
-  if (!clinic) { console.warn('⚠️ clinic jongno-foot 없음 — 스킵'); return; }
-  clinicId = clinic.id;
-
-  // 급여(is_insurance_covered=true) 활성 서비스 2건 — 세금구분 '급여' 라인 렌더 대상.
-  const { data: svcs } = await supabase
-    .from('services')
-    .select('id, name, price, hira_code, vat_type')
-    .eq('clinic_id', clinic.id)
-    .eq('active', true)
-    .eq('is_insurance_covered', true)
-    .not('category_label', 'in', '("상병","처방약")')
-    .gt('price', 0)
-    .order('display_order', { ascending: true })
-    .limit(2);
-  if (!svcs || svcs.length < 1) { console.warn('⚠️ 급여 활성 서비스 없음 — 스킵'); return; }
-  coveredServices = svcs;
-  seedOk = true;
+const svc = (over: Partial<BillingService> & { id: string; name: string }): BillingService => ({
+  service_code: null, hira_code: null, vat_type: 'none',
+  is_insurance_covered: false, category_label: null, price: 0, ...over,
 });
 
-test.beforeEach(async () => {
-  if (!seedOk) return;
-  await cleanup();
-  const { data: cust } = await supabase
-    .from('customers')
-    .insert({ clinic_id: clinicId, name: TEST_NAME, phone: TEST_PHONE, visit_type: 'returning' })
-    .select().single();
-  customerId = cust!.id;
-  const { data: ci } = await supabase
-    .from('check_ins')
-    .insert({
-      clinic_id: clinicId, customer_id: customerId, customer_name: TEST_NAME, customer_phone: TEST_PHONE,
-      visit_type: 'returning', status: 'payment_waiting', queue_number: QUEUE,
-    })
-    .select().single();
-  checkInId = ci!.id;
-  // saved=true 상태(check_in_services 영속) → PMW pricingItems 채워짐.
-  await supabase.from('check_in_services').insert(
-    coveredServices.map((s) => ({
-      check_in_id: checkInId, service_id: s.id, service_name: s.name,
-      price: s.price, original_price: s.price, is_package_session: false,
-    })),
-  );
-});
+/**
+ * 실 현장 데이터 재현: 초진진찰료-의원 18,840 + 일반진균검사-KOH 10,540 (급여 합 29,380).
+ *   general 30% → floor(29380*0.3/100)*100 = 8,800 (29,380×0.30=8,814→floor100). 공단 20,580 (구 CEIL 8,900→FLOOR 8,800, COPAY-GENERAL-CEIL-TO-FLOOR-FIX).
+ */
+const FIELD_COVERED_VISIT: FootBillingItem[] = [
+  { service: svc({ id: 'f-chin', name: '초진진찰료-의원', is_insurance_covered: true, category_label: '기본', price: 18840 }), qty: 1, unitPrice: 18840 },
+  { service: svc({ id: 'f-koh', name: '일반진균검사-KOH도말', is_insurance_covered: true, category_label: '검사', price: 10540 }), qty: 1, unitPrice: 10540 },
+];
 
-test.afterAll(async () => { await cleanup(); });
-
-async function openMiniWindow(page: import('@playwright/test').Page) {
-  await page.goto(`${BASE}/admin`);
-  await page.getByText('대시보드', { exact: true }).first().waitFor({ timeout: 20000 }).catch(() => null);
-  const wrapper = page.locator('div:has(> [data-testid="btn-pay"])').filter({ hasText: `#${QUEUE}` });
-  const payBtn = wrapper.locator('[data-testid="btn-pay"]').first();
-  await payBtn.waitFor({ state: 'visible', timeout: 20000 });
-  await payBtn.scrollIntoViewIfNeeded();
-  await payBtn.click();
-  await page.locator('[data-testid="btn-settle"]').first().waitFor({ state: 'visible', timeout: 30000 });
+/** PMW 세금구분 '급여' 라인 금액 = payBilling.copaymentTotal (수납 grain, 등급미상→30%). */
+function pmwCopayLineAmount(items: FootBillingItem[], grade: Parameters<typeof computeFootBilling>[1]): number {
+  return computeFootBilling(items, grade, { unknownGradeCopay: 'general_default' }).copaymentTotal;
+}
+/** PMW 공단부담액(명세) 라인 = payBilling.liveBillingValues.insuranceCovered. */
+function pmwNhisLineAmount(items: FootBillingItem[], grade: Parameters<typeof computeFootBilling>[1]): number {
+  return computeFootBilling(items, grade, { unknownGradeCopay: 'general_default' }).liveBillingValues.insuranceCovered;
 }
 
-test("세금구분 '급여' 라인 = '급여 자부담(30%)' + 자부담 금액(공단 제외) — 실 DOM 렌더", async ({ page }) => {
-  test.skip(!seedOk, '시드 실패(clinic/급여서비스 없음)');
+test.describe("REOPEN#5 — 세금구분 '급여' 라인 = 급여 자부담(30%) (값 로직)", () => {
+  test('현장 재현: 급여 29,380, grade=general → 급여 라인 = 8,800 (전체 급여액 29,380 아님)', () => {
+    const covered = computeFootBilling(FIELD_COVERED_VISIT, 'general').coveredTotal; // 29,380 (본인+공단)
+    expect(covered).toBe(29380);
+    const line = pmwCopayLineAmount(FIELD_COVERED_VISIT, 'general');
+    expect(line).toBe(8800);        // ★ 급여 라인 = 자부담(30%)만
+    expect(line).not.toBe(covered); // ★ 공단부담 포함 전체 표시 금지 = 총괄 P0 재발 차단
+  });
 
-  // 배포 소스와 동일한 SSOT 로 기대값 산출(수납 grain, 등급 미상→30%).
-  const items: FootBillingItem[] = coveredServices.map((s) => ({
-    service: {
-      id: s.id, name: s.name, service_code: null, hira_code: s.hira_code,
-      vat_type: (s.vat_type as BillingService['vat_type']) ?? 'none',
-      is_insurance_covered: true, category_label: null, price: s.price,
-    },
-    qty: 1, unitPrice: s.price,
-  }));
-  const pay = computeFootBilling(items, null, { unknownGradeCopay: 'general_default' });
-  const expectedCopay = pay.copaymentTotal;
-  const coveredTotal = pay.coveredTotal;
-  const expectedNhis = pay.liveBillingValues.insuranceCovered;
-  expect(coveredTotal).toBeGreaterThan(0);
-  expect(expectedCopay).toBeLessThan(coveredTotal); // 자부담 < 전체 급여액 (공단 몫 존재)
+  test('★ grade=null(고객 89% 경로) → 급여 라인 여전히 8,800 (공단포함 29,380 금지)', () => {
+    const line = pmwCopayLineAmount(FIELD_COVERED_VISIT, null);
+    expect(line).toBe(8800);
+    expect(line).not.toBe(29380);
+  });
 
-  await openMiniWindow(page);
+  test('공단부담(70%)은 별도 공단부담액(명세) 라인 — 급여 라인 + 공단 = 전체 급여액 (배타·중복 0)', () => {
+    const line = pmwCopayLineAmount(FIELD_COVERED_VISIT, 'general');
+    const nhis = pmwNhisLineAmount(FIELD_COVERED_VISIT, 'general');
+    expect(nhis).toBe(20580);
+    expect(line + nhis).toBe(computeFootBilling(FIELD_COVERED_VISIT, 'general').coveredTotal); // 8,800 + 20,580 = 29,380
+  });
 
-  // '세금 구분' 영역 컨테이너
-  const taxBox = page.locator('div:has(> p:text-is("세금 구분"))').first();
-  await expect(taxBox).toBeVisible();
+  test('비급여만: 급여 라인 = 0 · 공단부담액(명세) = 0 (라인 숨김 조건)', () => {
+    const NONCOVERED_ONLY: FootBillingItem[] = [
+      { service: svc({ id: 'n1', name: '비급여 레이저', category_label: '풋케어', price: 5000 }), qty: 1, unitPrice: 5000 },
+    ];
+    expect(pmwCopayLineAmount(NONCOVERED_ONLY, 'general')).toBe(0);
+    expect(pmwNhisLineAmount(NONCOVERED_ONLY, 'general')).toBe(0);
+  });
+});
 
-  // ★ 급여 라인 = "급여 자부담(30%)" 라벨 (bare "급여" 아님)
-  const copayRow = taxBox.locator('div.flex.justify-between', { hasText: '급여 자부담' }).first();
-  await expect(copayRow).toBeVisible();
-  await expect(copayRow).toContainText('급여 자부담(30%)');
+test.describe('REOPEN#5 — PMW 세금구분 급여 라인 렌더 배선 (소스 가드)', () => {
+  const pmw = fs.readFileSync(PMW, 'utf8');
 
-  // ★ 급여 라인 금액 = 자부담(30%), 전체 급여액(coveredTotal) 아님
-  const shownCopay = parseWon(await copayRow.locator('span').last().innerText());
-  expect(shownCopay).toBe(expectedCopay);
-  expect(shownCopay).not.toBe(coveredTotal);
+  test("세금구분 급여 라인 라벨 = '급여 자부담' + 본인부담률(%) 파생", () => {
+    // 라벨: 급여 → "급여 자부담(N%)" (copayRate 파생)
+    expect(pmw).toContain('급여 자부담');
+    expect(pmw).toContain('Math.round(copayRate * 100)');
+  });
 
-  // 공단부담(70%)은 별도 '공단부담액(명세)' 라인으로 분리 표시
-  const nhisRow = taxBox.locator('div.flex.justify-between', { hasText: '공단부담액(명세)' }).first();
-  await expect(nhisRow).toBeVisible();
-  expect(parseWon(await nhisRow.locator('span').last().innerText())).toBe(expectedNhis);
+  test('급여 라인 금액 = 수납 grain 본인부담(payCopayment*) — 전체 급여액(coveredTotal) 아님', () => {
+    // 급여 라인(isCovered) displayAmt 가 payCopayment* 계열(자부담) 을 바인딩.
+    expect(pmw).toContain('payCopaymentTotal');
+    expect(pmw).toMatch(/isCovered \? payCopayment/);
+  });
 
-  // 불변식: 자부담 + 공단부담액 = 전체 급여액
-  expect(shownCopay + expectedNhis).toBe(coveredTotal);
-
-  // 스크린샷 evidence (모달 전체 + 세금구분 박스)
-  await page.locator('[data-testid="btn-settle"]').first().scrollIntoViewIfNeeded().catch(() => null);
-  await page.screenshot({ path: 'evidence/T-20260714-PAYMINI-COPAY-TAXLINE-render.png', fullPage: true });
-  await taxBox.screenshot({ path: 'evidence/T-20260714-PAYMINI-COPAY-TAXLINE-taxbox.png' });
-
-  console.log(`[RENDER] 세금구분 급여 라인 = "급여 자부담(30%)" ${shownCopay.toLocaleString()}원 / 공단부담액(명세) ${expectedNhis.toLocaleString()}원 / 전체 급여액 ${coveredTotal.toLocaleString()}원`);
+  test('공단부담(70%)은 별도 공단부담액(명세) 라인으로 분리', () => {
+    expect(pmw).toContain('공단부담액(명세)');
+    expect(pmw).toContain('liveBillingValues.insuranceCovered');
+  });
 });

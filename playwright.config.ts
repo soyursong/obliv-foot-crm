@@ -776,6 +776,16 @@ export default defineConfig({
         //   mock executor) — 멱등키-once·enqueue-before-send·23505 A/B/C 감별·0-row 멱등·response-loss·TTL 폐기·
         //   signOut 큐폐기·flush 재진입가드. auth/DB/server/page 불요·결정론(db_change=false). 실 UX = supervisor field-soak.
         '**/T-20260818-foot-REFRESH401-RESILIENCE-PILOT-STEP2-writebuffer.spec.ts',
+        // T-20260819-foot-COPAY-E2E-PREEXISTING-RED-CLEANUP: copay E2E pre-existing RED 17건 정리.
+        //   4 spec 모두 순수(fs-grep + computeFootBilling/getTaxClass SSOT 단언, page/live-Supabase 미사용) →
+        //   unit 전용 등록으로 desktop-chrome(auth.setup/webServer/prod-seed) 의존 제거 → 결정론 GREEN.
+        //   (A) COPAY-MINI-BUG/BILLDOC = static guard drift 를 신 아키텍처(footBilling.ts SSOT)로 test-only 재정합.
+        //   (B) PAYMINI-COPAY-BALANCE-SPLIT = 이미 순수 computeFootBilling 단언(재분류만) /
+        //       PAYMINI-COPAY-TAXLINE-RENDER = 실 DOM 렌더 → 순수함수+PMW 소스 렌더가드로 재작성(AC-2 옵션 ii).
+        '**/T-20260526-foot-COPAY-MINI-BUG.spec.ts',
+        '**/T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN.spec.ts',
+        '**/T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT.spec.ts',
+        '**/T-20260714-foot-PAYMINI-COPAY-TAXLINE-RENDER.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -915,6 +925,13 @@ export default defineConfig({
         //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
         //   (FIX-REQUEST MSG-20260730-024921-h69j §결함2: 자격증명 없는 워크트리/CI 회귀가드 무력화 방지.)
         '**/T-20260729-foot-RX-PRINT-PATH-CONSISTENCY.spec.ts',
+        // T-20260819-foot-COPAY-E2E-PREEXISTING-RED-CLEANUP: copay 4 spec = unit 전용(순수 SSOT 단언) →
+        //   무-project 실행(supervisor QA) 시 desktop-chrome 매칭→setup(TEST_PASSWORD)/webServer/prod-seed
+        //   유입 차단. unit 에서만 실행(결정론 GREEN, env-불요).
+        '**/T-20260526-foot-COPAY-MINI-BUG.spec.ts',
+        '**/T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN.spec.ts',
+        '**/T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT.spec.ts',
+        '**/T-20260714-foot-PAYMINI-COPAY-TAXLINE-RENDER.spec.ts',
       ],
     },
     {

@@ -2,7 +2,7 @@
  * E2E Spec — T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT (REOPEN, RC-hardened)
  *
  * 현장 P0(김주연 총괄): 급여환자 수납 시 결제 미니창(PaymentMiniWindow) 수납잔액이 공단부담금까지
- *   합산돼 환자에게 과청구되던 문제. 배포+사내 QA PASS 후에도 시크릿 브라우저에서 재현(자부담 8,900 기대
+ *   합산돼 환자에게 과청구되던 문제. 배포+사내 QA PASS 후에도 시크릿 브라우저에서 재현(자부담 8,800 기대
  *   vs 공단 포함 표시). 현장 수기 등록 지속 = 운영 중단 수준.
  *
  * ── RC (E2E PASS ↔ 현장 FAIL divergence) ──────────────────────────────────────
@@ -16,13 +16,21 @@
  * ── 수정(REOPEN) ──────────────────────────────────────────────────────────────
  *   수납 grain 은 computeFootBilling(items, grade, { unknownGradeCopay: 'general_default' }) 사용.
  *   등급 미상 급여 방문의 본인부담을 외래 급여 기본률 general(30%)로 산정 → grade=general/null 모두
- *   자부담 8,900(현장 기대) 로 수렴. 서류출력(default 'covered_full')은 DOCPRINT-RECUR 그대로 — 회귀 0.
+ *   자부담 8,800(현장 기대) 로 수렴. 서류출력(default 'covered_full')은 DOCPRINT-RECUR 그대로 — 회귀 0.
  *
  *   수납잔액(환자 실수납, payments 기록) = 급여 본인부담금 + 비급여 전액. 공단부담금 제외.
  *   PMW: const payBilling = computeFootBilling(items, grade, { unknownGradeCopay: 'general_default' })
  *        const payableTotal = payBilling.copaymentTotal + nonCoveredTotal
  *
- * 실행: npx playwright test T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT.spec.ts
+ * ── T-20260819-foot-COPAY-E2E-PREEXISTING-RED-CLEANUP: 값 드리프트 재정합(test-only) ─────────────
+ *   본 스펙은 이미 순수 computeFootBilling 단언(page/live-Supabase 미사용)이나, 급여 29,380 방문의
+ *   본인부담 기대값이 구 CEIL era 값(8,900 = ceil(8,814))으로 남아 있어 pre-existing RED 였다.
+ *   외래 정률 rounding 은 T-20260715-foot-COPAY-GENERAL-CEIL-TO-FLOOR-FIX 로 **100원 FLOOR**(초과징수
+ *   정정, copayFromBase v1.5)로 확정 → 29,380×0.30=8,814 → floor100 = **8,800**, 공단 20,580.
+ *   현 SSOT 값으로 재정합(product 무접촉·test-only). unit 프로젝트 등록으로 auth/webServer 불요.
+ *   ※ MIXED(30,000×0.30=9,000)은 100원 배수라 CEIL=FLOOR 동일 → 무변경.
+ *
+ * 실행: npx playwright test T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT.spec.ts --project=unit
  */
 
 import { test, expect } from '@playwright/test';
@@ -63,8 +71,8 @@ const MIXED_VISIT: FootBillingItem[] = [
 /**
  * ★ 실 현장 데이터 재현 (RC 재발 방지의 핵심): 초진진찰료-의원 18,840 + 일반진균검사-KOH 10,540.
  *   둘 다 is_insurance_covered=true, hira_code=NULL (라이브 급여 서비스 실제 형태). 급여 합 29,380.
- *   general 30% → ceil(29380*0.3/100)*100 = 8,900 (총괄 기대값). 비급여 0.
- *   현장 급여환자 대다수가 insurance_grade=null → grade=null 도 동일하게 8,900 이어야 한다.
+ *   general 30% → floor(29380*0.3/100)*100 = 8,800 (29,380×0.30=8,814→floor100) (총괄 기대값). 비급여 0.
+ *   현장 급여환자 대다수가 insurance_grade=null → grade=null 도 동일하게 8,800 이어야 한다.
  */
 const FIELD_COVERED_VISIT: FootBillingItem[] = [
   { service: svc({ id: 'f-chin', name: '초진진찰료-의원', is_insurance_covered: true, category_label: '기본', vat_type: 'none', price: 18840 }), qty: 1, unitPrice: 18840 },
@@ -72,23 +80,23 @@ const FIELD_COVERED_VISIT: FootBillingItem[] = [
 ];
 
 test.describe('T-20260714 REOPEN — 수납잔액 = 본인부담금(등급미상=30%) + 비급여 (공단부담금 제외)', () => {
-  test('현장 재현: 급여 29,380(초진+KOH), grade=general → 수납잔액 8,900 (공단 20,480 제외)', () => {
+  test('현장 재현: 급여 29,380(초진+KOH), grade=general → 수납잔액 8,800 (공단 20,580 제외)', () => {
     const pay = computeFootBilling(FIELD_COVERED_VISIT, 'general', { unknownGradeCopay: 'general_default' });
     expect(pay.coveredTotal).toBe(29380);
-    expect(pay.copaymentTotal).toBe(8900);       // ceil(29380*0.3/100)*100
-    expect(pay.liveBillingValues.insuranceCovered).toBe(20480); // 공단부담액(명세)
+    expect(pay.copaymentTotal).toBe(8800);       // 29,380×0.30=8,814 → floor100 = 8,800
+    expect(pay.liveBillingValues.insuranceCovered).toBe(20580); // 공단부담액(명세)
     expect(pay.nonCoveredTotal).toBe(0);
-    expect(pmwPayableTotal(FIELD_COVERED_VISIT, 'general')).toBe(8900);
+    expect(pmwPayableTotal(FIELD_COVERED_VISIT, 'general')).toBe(8800);
     // ★ 수납잔액 ≠ 총 진료비(공단 미포함 구조 증명).
     expect(pmwPayableTotal(FIELD_COVERED_VISIT, 'general')).not.toBe(pay.grandTotal);
   });
 
-  test('★ RC 재발 방지: 급여 29,380, grade=null(고객 89% 경로) → 수납잔액 여전히 8,900 (공단 포함 금지)', () => {
+  test('★ RC 재발 방지: 급여 29,380, grade=null(고객 89% 경로) → 수납잔액 여전히 8,800 (공단 포함 금지)', () => {
     // 과거 버그: grade=null → DOCPRINT-RECUR(본인=전액) 폴백 → payable=29,380(공단 포함) = 현장 FAIL.
-    // 수정 후: unknownGradeCopay='general_default' → 30% 본인부담 → 8,900.
+    // 수정 후: unknownGradeCopay='general_default' → 30% 본인부담 → 8,800.
     const payable = pmwPayableTotal(FIELD_COVERED_VISIT, null);
-    expect(payable).toBe(8900);
-    expect(pmwInsuranceCovered(FIELD_COVERED_VISIT, null)).toBe(20480); // 공단부담액도 grade=general 과 동일 수렴
+    expect(payable).toBe(8800);
+    expect(pmwInsuranceCovered(FIELD_COVERED_VISIT, null)).toBe(20580); // 공단부담액도 grade=general 과 동일 수렴
     // 현장 FAIL 값(공단 포함 전액)과 명시적으로 달라야 한다.
     const buggyFullInclNhis = computeFootBilling(FIELD_COVERED_VISIT, null).grandTotal; // = 29,380 (default 폴백)
     expect(buggyFullInclNhis).toBe(29380);
@@ -150,15 +158,15 @@ test.describe('T-20260714 REOPEN — 서류출력 경로(default) DOCPRINT-RECUR
 
   test('default vs 수납 grain 분리 증명: 동일 급여방문(grade=null)에서 문서=전액 / 수납=30%', () => {
     const docCopay = computeFootBilling(FIELD_COVERED_VISIT, null).copaymentTotal;                    // 29,380 (문서)
-    const payCopay = computeFootBilling(FIELD_COVERED_VISIT, null, { unknownGradeCopay: 'general_default' }).copaymentTotal; // 8,900 (수납)
+    const payCopay = computeFootBilling(FIELD_COVERED_VISIT, null, { unknownGradeCopay: 'general_default' }).copaymentTotal; // 8,800 (수납)
     expect(docCopay).toBe(29380);
-    expect(payCopay).toBe(8900);
+    expect(payCopay).toBe(8800);
     expect(docCopay).not.toBe(payCopay); // 두 grain 이 의도적으로 분리됨(서류 회귀 없이 수납만 수정)
   });
 
   test('유효 등급(general)은 문서/수납 grain 동일 (분기는 등급 미상에서만 발생)', () => {
-    expect(computeFootBilling(FIELD_COVERED_VISIT, 'general').copaymentTotal).toBe(8900);
-    expect(computeFootBilling(FIELD_COVERED_VISIT, 'general', { unknownGradeCopay: 'general_default' }).copaymentTotal).toBe(8900);
+    expect(computeFootBilling(FIELD_COVERED_VISIT, 'general').copaymentTotal).toBe(8800);
+    expect(computeFootBilling(FIELD_COVERED_VISIT, 'general', { unknownGradeCopay: 'general_default' }).copaymentTotal).toBe(8800);
   });
 });
 
@@ -171,7 +179,7 @@ test.describe('T-20260714 REOPEN — 공단부담액(명세) 라인 & grain 배�
   test('수납잔액 + 공단부담액(명세) = 총 진료비 (grade=null, 배타 불변식 — 공단이 0 으로 붕괴하지 않음)', () => {
     const grand = computeFootBilling(FIELD_COVERED_VISIT, null).grandTotal; // 29,380
     expect(pmwPayableTotal(FIELD_COVERED_VISIT, null) + pmwInsuranceCovered(FIELD_COVERED_VISIT, null)).toBe(grand);
-    expect(pmwInsuranceCovered(FIELD_COVERED_VISIT, null)).toBeGreaterThan(0); // 자부담 8,900 인데 공단 0 인 모순 금지
+    expect(pmwInsuranceCovered(FIELD_COVERED_VISIT, null)).toBeGreaterThan(0); // 자부담 8,800 인데 공단 0 인 모순 금지
   });
 
   test('비급여만: 공단부담액(명세) = 0 → 라인 숨김(insCovered>0 조건)', () => {
@@ -187,7 +195,7 @@ test.describe('T-20260714 REOPEN — 공단부담액(명세) 라인 & grain 배�
  * REOPEN#5 (김주연 총괄, 스크린샷+직접 요구) — 세금구분 '급여' 라인 자체를 자부담(30%)으로.
  *   REOPEN#4 disambiguation: 총괄이 보는 곳은 하단 '수납잔액' 총액이 아니라 결제미니창 내
  *   '세금 구분' 내역의 '급여' 라인. 그 라인이 공단부담 포함 전체 급여액(coveredTotal, 29,380)을
- *   표시하던 것을 → 환자 자부담만(payCopaymentTotal, 8,900) + 라벨 "급여"→"급여 자부담(30%)"로.
+ *   표시하던 것을 → 환자 자부담만(payCopaymentTotal, 8,800) + 라벨 "급여"→"급여 자부담(30%)"로.
  *
  * PMW 렌더: totalByTax 맵의 cls==='급여' 행 금액 = payCopaymentTotal(=payBilling.copaymentTotal),
  *   라벨 = `급여 자부담(${round(copayRate*100)}%)`. 공단부담(70%)은 별도 '공단부담액(명세)' 라인.
@@ -199,24 +207,24 @@ test.describe("REOPEN#5 — 세금구분 '급여' 라인 = 급여 자부담(30%)
     return computeFootBilling(items, grade, { unknownGradeCopay: 'general_default' }).copaymentTotal;
   }
 
-  test('현장 재현: 급여 29,380, grade=general → 급여 라인 = 8,900 (전체 급여액 29,380 아님)', () => {
+  test('현장 재현: 급여 29,380, grade=general → 급여 라인 = 8,800 (전체 급여액 29,380 아님)', () => {
     const covered = computeFootBilling(FIELD_COVERED_VISIT, 'general').coveredTotal; // 29,380 (전체=본인+공단)
     expect(covered).toBe(29380);
     const line = pmwCoveredTaxLineAmount(FIELD_COVERED_VISIT, 'general');
-    expect(line).toBe(8900);          // ★ 급여 라인 = 자부담(30%)만
+    expect(line).toBe(8800);          // ★ 급여 라인 = 자부담(30%)만
     expect(line).not.toBe(covered);   // ★ 공단부담 포함 전체(29,380) 표시 금지 = 총괄 P0 재발 차단
   });
 
-  test('★ grade=null(고객 89% 경로) → 급여 라인 여전히 8,900 (공단포함 29,380 금지)', () => {
+  test('★ grade=null(고객 89% 경로) → 급여 라인 여전히 8,800 (공단포함 29,380 금지)', () => {
     const line = pmwCoveredTaxLineAmount(FIELD_COVERED_VISIT, null);
-    expect(line).toBe(8900);
+    expect(line).toBe(8800);
     expect(line).not.toBe(29380);
   });
 
   test('세금구분 급여 라인 + 공단부담액(명세) = 전체 급여액 (배타·중복 0)', () => {
     const line = pmwCoveredTaxLineAmount(FIELD_COVERED_VISIT, 'general');
     const nhis = pmwInsuranceCovered(FIELD_COVERED_VISIT, 'general');
-    expect(line + nhis).toBe(computeFootBilling(FIELD_COVERED_VISIT, 'general').coveredTotal); // 8,900 + 20,480 = 29,380
+    expect(line + nhis).toBe(computeFootBilling(FIELD_COVERED_VISIT, 'general').coveredTotal); // 8,800 + 20,580 = 29,380
   });
 
   test('혼합 방문: 급여 라인 = 본인 9,000 (비급여 5,000·공단 21,000 과 무혼입)', () => {
