@@ -140,7 +140,18 @@ export function InsuranceGradeSelect({
 
   const startEdit = () => {
     setDraftGrade((grade ?? 'unverified') as InsuranceGrade);
-    setDraftSource((source ?? (lookupInProgress ? 'hira_lookup' : 'manual_input')) as InsuranceGradeSource);
+    // T-20260819-foot-NHIS-MANUAL-CAPTURE-IMPL (HG#3 잔여 — startEdit :143 양방향 토글 제거):
+    //   기존: 저장 source 우선, null 이면 조회중 여부(lookupInProgress)에 따라 갈리던 삼항 토글.
+    //   결함(신규고객 source=null): [건보조회]로 조회 개시(rising-edge → draftSource=hira) →
+    //   패널 닫기(lookupInProgress=false) → [입력] 진입 시 이 라인이 manual_input 으로 draftSource 를
+    //   clobber → 저장 시 출처가 manual_input 으로 오복귀(P0 attribution 오류·오청구 벡터).
+    //   기존고객(source!=null)은 `source ??` short-circuit 로 안전했으나, 신규고객만 미보정 잔존이었다.
+    //   수정: 조회 개시로 이미 hira_lookup attribution 이 선 draftSource 는 보존(신규/기존 공통).
+    //   그 외엔 저장된 source(기존고객) 또는 manual_input(신규). lookupInProgress 재평가 제거 —
+    //   rising-edge effect(:98~104)를 hira_lookup 의 유일한 setter 로 일원화(HG#3 SSOT).
+    setDraftSource((prev) =>
+      prev === 'hira_lookup' ? prev : ((source ?? 'manual_input') as InsuranceGradeSource),
+    );
     setDraftMemo(memo ?? '');
     // 판정 보조 입력은 매 편집 시 비움(이전 값 잔류 = 오판정 방지).
     setBenefitText('');

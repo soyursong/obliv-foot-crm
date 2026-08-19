@@ -113,10 +113,14 @@ test.describe('REWORK 구조: deps 정리 + rising-edge 분리', () => {
     expect(risingBlock).not.toContain('setDraftMemo');
   });
 
-  test('startEdit 프리셋(:143)은 무접촉 — source ?? (lookupInProgress ? ...) 유지', () => {
-    // startEdit 에는 기존값 우선 폴백이 정확히 1회 남는다(초기화 effect 에서는 제거됨).
-    const guarded = gradeSelectSrc.match(/source\s*\?\?\s*\(lookupInProgress\s*\?\s*'hira_lookup'\s*:\s*'manual_input'\)/g) ?? [];
-    expect(guarded.length).toBe(1);
+  test('startEdit 프리셋(:143) — 양방향 토글 제거됨 (T-20260819-...-IMPL HG#3 잔여 fix)', () => {
+    // T-20260819-foot-NHIS-MANUAL-CAPTURE-IMPL: startEdit 의 `source ?? (lookupInProgress ? ...)`
+    //   양방향 토글은 신규고객(source=null) 조회개시 후 [입력] 진입 시 hira_lookup 을 manual_input 으로
+    //   clobber 하는 P0 attribution 결함 → 완전 제거. 소스 전역에서 이 토글 잔재 0건이어야 한다.
+    const legacyToggle = gradeSelectSrc.match(/source\s*\?\?\s*\(lookupInProgress\s*\?\s*'hira_lookup'\s*:\s*'manual_input'\)/g) ?? [];
+    expect(legacyToggle.length).toBe(0);
+    // startEdit 은 hira_lookup(조회개시 attribution) 보존 분기로 대체됨.
+    expect(gradeSelectSrc).toMatch(/prev\s*===\s*'hira_lookup'\s*\?\s*prev\s*:\s*\(\(source\s*\?\?\s*'manual_input'\)/);
   });
 });
 
