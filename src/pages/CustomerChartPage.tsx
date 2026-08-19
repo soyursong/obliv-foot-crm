@@ -29,6 +29,7 @@ import { ResultCard, type HQResult } from '@/components/HealthQResultsPanel';
 import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
+import { consumeOneSession } from '@/lib/consumeSession';
 import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { STORAGE_KEYS, BROADCAST_CHANNELS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
@@ -4445,23 +4446,23 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       return;
     }
     setSavingSession(true);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: useSessionDlg.packageId,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 재계산(stale nextSession 보정)
-      session_number: nextSessionNumberFor(useSessionDlg.packageId),
-      session_type: sessionDlgForm.sessionType,
-      session_date: sessionDlgForm.sessionDate,
-      performed_by: sessionDlgForm.therapistId,
-      status: 'used',
+    // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
+    //   (단일 writer). RPC 가 회차 INSERT + 대응 CIS(flag∧FK) co-set 을 원자 수행(forward-source 소스닫힘).
+    //   session_number 는 서버 원자 MAX+1(구 nextSessionNumberFor 레이스 제거).
+    const { error } = await consumeOneSession({
+      packageId: useSessionDlg.packageId,
+      sessionType: sessionDlgForm.sessionType,
+      sessionDate: sessionDlgForm.sessionDate,
+      performedBy: sessionDlgForm.therapistId,
       // T-20260609-foot-PKGSESS-CHECKIN-LINK (AC2): 차감일 == 최근 내원일(KST)일 때만 귀속(통계 정확매칭), 아니면 NULL 근사
-      check_in_id:
+      checkInId:
         latestCheckIn?.checked_in_at &&
         seoulISODate(latestCheckIn.checked_in_at) === sessionDlgForm.sessionDate
           ? latestCheckIn.id
           : null,
     });
     setSavingSession(false);
-    if (error) { toast.error(`저장 실패: ${error.message}`); return; }
+    if (error) { toast.error(`저장 실패: ${error}`); return; }
 
     // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 회차사용 다이얼로그 차감도 check_ins.package_id 링크
     {
@@ -4637,15 +4638,8 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     await refreshPackageData(packages);
   };
 
-  // T-20260612-foot-USAGEHIST-DELETE-RESTORE: soft-delete row가 session_number를 점유한 채 남으므로
-  //   신규 회차번호는 'used' 개수가 아니라 해당 패키지 전체 row(삭제 포함) 최대 session_number + 1 로 산출.
-  //   UNIQUE(package_id, session_number) 충돌 방지 — 마지막/중간 회차 삭제 후 재차감 시나리오 가드.
-  const nextSessionNumberFor = (packageId: string): number => {
-    const nums = packageSessions
-      .filter((s) => s.package_id === packageId)
-      .map((s) => s.session_number);
-    return (nums.length ? Math.max(...nums) : 0) + 1;
-  };
+  // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 회차번호 산출은 서버 consume_one_session 이
+  //   원자 MAX+1(package_id 전체 row, 삭제 포함)로 수행 → 구 클라 nextSessionNumberFor 제거(레이스 제거).
 
   // T-20260522-foot-PKG-EDIT-DEL: 구매 패키지 수정 저장
   const saveEditPkg = async () => {
@@ -5351,24 +5345,23 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     }
     // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 치료실 체류구간 파생(무차단, 파생불가 시 NULL)
     const dwell = await deriveTreatmentDwell(deductCheckInId);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: targetPkg.id,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
-      session_number: nextSessionNumberFor(targetPkg.id),
-      session_type: c22DeductForm.treatmentType,
-      session_date: c22DeductForm.sessionDate,
-      performed_by: c22DeductForm.therapistId,
-      status: 'used',
-      check_in_id: deductCheckInId,
+    // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
+    //   (단일 writer). 회차 INSERT + 대응 CIS co-set 원자 수행. session_number 서버 원자 MAX+1.
+    const { error } = await consumeOneSession({
+      packageId: targetPkg.id,
+      sessionType: c22DeductForm.treatmentType,
+      sessionDate: c22DeductForm.sessionDate,
+      performedBy: c22DeductForm.therapistId,
+      checkInId: deductCheckInId,
       // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
-      treatment_started_at: dwell.started_at,
-      treatment_ended_at: dwell.ended_at,
+      treatmentStartedAt: dwell.started_at,
+      treatmentEndedAt: dwell.ended_at,
     });
     setSavingC22Deduct(false);
     if (error) {
       // AC3: raw "duplicate key ... unique_package_checkin" 토스트 금지 → graceful 흡수
-      if (isDupCheckinError(error)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
-      toast.error(`차감 실패: ${error.message}`); return;
+      if (isDupCheckinError({ message: error })) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
+      toast.error(`차감 실패: ${error}`); return;
     }
     // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 차감 성공 → check_ins.package_id 링크 (write-path fix)
     await linkCheckInPackage(targetPkg.id, deductCheckInId);
@@ -5402,24 +5395,23 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     setDupDeductBusy(true);
     // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 같은 내원 추가 차감 레코드에도 dwell 주입(양 핸들러 dup 경유 공통, 무차단)
     const dupDwell = await deriveTreatmentDwell(dupDeductModal.deductCheckInId);
-    const { error } = await supabase.from('package_sessions').insert({
-      package_id: dupDeductModal.targetPkgId,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
-      session_number: nextSessionNumberFor(dupDeductModal.targetPkgId),
-      session_type: dupDeductModal.treatmentType,
-      session_date: dupDeductModal.sessionDate,
-      performed_by: dupDeductModal.therapistId,
-      status: 'used',
-      check_in_id: dupDeductModal.deductCheckInId,
+    // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
+    //   (단일 writer). 같은 check_in 2회 시술 추가차감도 서버 원자 MAX+1 로 session_number 상이 → UNIQUE 자연 허용.
+    const { error } = await consumeOneSession({
+      packageId: dupDeductModal.targetPkgId,
+      sessionType: dupDeductModal.treatmentType,
+      sessionDate: dupDeductModal.sessionDate,
+      performedBy: dupDeductModal.therapistId,
+      checkInId: dupDeductModal.deductCheckInId,
       // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
-      treatment_started_at: dupDwell.started_at,
-      treatment_ended_at: dupDwell.ended_at,
+      treatmentStartedAt: dupDwell.started_at,
+      treatmentEndedAt: dupDwell.ended_at,
     });
     if (error) {
       setDupDeductBusy(false);
       // 제약 마이그(20260611230000)가 prod 미적용이면 23505 잔존 가능 → graceful
-      if (isDupCheckinError(error)) { toast.error('같은 날 추가 차감 설정이 아직 반영되지 않았어요. 관리자에게 문의해 주세요.'); return; }
-      toast.error(`추가 차감 실패: ${error.message}`); return;
+      if (isDupCheckinError({ message: error })) { toast.error('같은 날 추가 차감 설정이 아직 반영되지 않았어요. 관리자에게 문의해 주세요.'); return; }
+      toast.error(`추가 차감 실패: ${error}`); return;
     }
     // T-20260724-foot-CHART2-PKG-TXSELECT-STATE-LOSS: 같은 내원 추가 차감도 check_ins.package_id 링크
     await linkCheckInPackage(dupDeductModal.targetPkgId, dupDeductModal.deductCheckInId);
@@ -5547,24 +5539,23 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
     }
     // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 힐러 예약後 차감도 일반 차감과 동일하게 dwell 주입(무차단)
     const healerDwell = await deriveTreatmentDwell(deductCheckInId);
-    const { error: deductError } = await supabase.from('package_sessions').insert({
-      package_id: targetPkg.id,
-      // T-20260612-foot-USAGEHIST-DELETE-RESTORE: 삭제 row 점유 대비 전체 최대+1 (UNIQUE 충돌 방지)
-      session_number: nextSessionNumberFor(targetPkg.id),
-      session_type: c22DeductForm.treatmentType,
-      session_date: c22DeductForm.sessionDate,
-      performed_by: c22DeductForm.therapistId,
-      status: 'used',
-      check_in_id: deductCheckInId,
+    // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
+    //   (단일 writer). 회차 INSERT + 대응 CIS co-set 원자 수행. session_number 서버 원자 MAX+1.
+    const { error: deductError } = await consumeOneSession({
+      packageId: targetPkg.id,
+      sessionType: c22DeductForm.treatmentType,
+      sessionDate: c22DeductForm.sessionDate,
+      performedBy: c22DeductForm.therapistId,
+      checkInId: deductCheckInId,
       // T-20260706-foot-DEDUCT-SLOT-DWELL-INJECT AC1: 슬롯 치료 시작~종료 구간 주입
-      treatment_started_at: healerDwell.started_at,
-      treatment_ended_at: healerDwell.ended_at,
+      treatmentStartedAt: healerDwell.started_at,
+      treatmentEndedAt: healerDwell.ended_at,
     });
     if (deductError) {
       setSavingHealerDeduct(false);
       // AC3: raw 23505 토스트 금지
-      if (isDupCheckinError(deductError)) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
-      toast.error(`차감 실패: ${deductError.message}`);
+      if (isDupCheckinError({ message: deductError })) { toast.error('이미 오늘 내원으로 차감된 회차가 있어요. 잠시 후 다시 시도해 주세요.'); return; }
+      toast.error(`차감 실패: ${deductError}`);
       return;
     }
 
