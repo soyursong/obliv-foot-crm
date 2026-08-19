@@ -2525,20 +2525,25 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       .select('service_id')
       .eq('check_in_id', checkIn.id);
     const already = new Set((existing ?? []).map((r) => r.service_id as string));
-    const rows: Array<Record<string, unknown>> = [];
-    for (const svc of covered) {
-      if (already.has(svc.id)) continue;
-      const { data: calc, error: calcErr } = await supabase.rpc('calc_copayment', {
-        p_service_id: svc.id,
-        p_customer_id: checkIn.customer_id,
-        p_clinic_id: checkIn.clinic_id,
-        p_visit_date: visitDate,
-      });
-      if (calcErr) {
-        console.warn('service_charges 스냅샷 calc_copayment 실패:', svc.id, calcErr.message);
-        continue;
-      }
-      const r = (Array.isArray(calc) ? calc[0] : calc) as {
+    // ── T-20260819-foot-COPAY-VISIT-GRAIN: 방문 grain 재산출 ──────────────────────────────
+    //   전 급여항목 집합(covered)을 calc_visit_copayment(server AUTHORITY)로 1회 pool → per-item 배분.
+    //   기존 per-item calc_copayment 루프 합산(의급 N×1000 / 노인 항목별 구간)의 grain 결함 해소.
+    //   pool 은 전 covered 위에서 산출하되 INSERT 는 미적재분만(이미 v3 원자 write-path 가 적재한 항목은 skip).
+    const visitIds = covered.map((s) => s.id);
+    const { data: vcalc, error: vcalcErr } = await supabase.rpc('calc_visit_copayment', {
+      p_service_ids: visitIds,
+      p_customer_id: checkIn.customer_id,
+      p_clinic_id: checkIn.clinic_id,
+      p_visit_date: visitDate,
+    });
+    if (vcalcErr) {
+      console.warn('service_charges 스냅샷 calc_visit_copayment 실패:', vcalcErr.message);
+      return;
+    }
+    const byId = new Map<
+      string,
+      {
+        service_id: string;
         base_amount: number;
         insurance_covered_amount: number;
         copayment_amount: number;
@@ -2546,7 +2551,24 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         applied_rate: number | null;
         applied_grade: string | null;
         data_incomplete: boolean;
-      } | null;
+      }
+    >();
+    for (const r of (Array.isArray(vcalc) ? vcalc : []) as Array<{
+      service_id: string;
+      base_amount: number;
+      insurance_covered_amount: number;
+      copayment_amount: number;
+      exempt_amount: number;
+      applied_rate: number | null;
+      applied_grade: string | null;
+      data_incomplete: boolean;
+    }>) {
+      byId.set(r.service_id, r);
+    }
+    const rows: Array<Record<string, unknown>> = [];
+    for (const svc of covered) {
+      if (already.has(svc.id)) continue;
+      const r = byId.get(svc.id) ?? null;
       if (!r) continue;
       if (r.data_incomplete) continue; // 자격/수가 미비 = 금액 날조 금지, 재정산 경로 위임
       // ── T-20260723-foot-INSCONSULT-WRITEPATH-FKLINK-FOLD [B1 완전봉합] ──────────
@@ -2573,7 +2595,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
         exempt_amount: r.exempt_amount,
         customer_grade_at_charge: r.applied_grade,
         copayment_rate_at_charge: r.applied_rate,
-        calculation_engine_version: 'pmw_checkout_snapshot_v1',
+        calculation_engine_version: 'pmw_checkout_snapshot_v2', // 방문 grain(calc_visit_copayment)
       });
     }
     if (rows.length > 0) {
@@ -2658,6 +2680,11 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
       //   ⚠ Phase A 마이그(20260725180000, RPC 7-arg) prod 라이브 전제(2026-08-11 confirm) — 미적용 시 PGRST202/404.
       //   rate=0(평일 주간) → v1 byte-identical 회귀 0.
       const consultSurchargeRate = settleSurchargeKind ? SURCHARGE_RATE : 0;
+      // T-20260819-foot-COPAY-VISIT-GRAIN: 방문 grain 재산출 — 전 급여항목 집합을 각 RPC 호출에 전달.
+      //   record_insurance_consult_payment 가 calc_visit_copayment(server AUTHORITY)로 pool 후 이 항목의
+      //   방문 grain 배분 share 를 적재(항목당 min(1000,base) 합산 → 방문 총액 기준 min(1000,총액)/노인 구간총액).
+      //   calc_visit_copayment 는 PURE deterministic → 루프 각 항목 share 합 = 방문 copay 총액(sum-consistency).
+      const visitServiceIds = coveredServices.map((s) => s.id);
       let consultCopaySum = 0;
       for (const svc of coveredServices) {
         const { data: rpcData, error: rpcErr } = await supabase.rpc(
@@ -2670,6 +2697,7 @@ export function PaymentMiniWindow({ checkIn, onClose, onComplete, onSettled, onS
             p_method: splits[0].method,
             p_visit_date: visitDate,
             p_surcharge_rate: consultSurchargeRate,
+            p_visit_service_ids: visitServiceIds,
           },
         );
         if (rpcErr) {

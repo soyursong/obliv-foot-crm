@@ -182,6 +182,129 @@ export function copayFromBase(
 }
 
 // ──────────────────────────────────────────────────────────
+// 방문(visit) grain 재배분 — T-20260819-foot-COPAY-VISIT-GRAIN
+// ──────────────────────────────────────────────────────────
+
+/** 방문 grain 재배분 입력 1행. calcCopaymentBatch 결과 + 급여 여부. */
+export interface VisitCopayItem {
+  /** service_charges/서비스 식별자 — 잔차 tie-break 결정론 키(iteration-order 비의존). */
+  service_id: string;
+  /** 급여 여부(services.is_insurance_covered). 비급여/외국인 항목은 pool 미참여(per-item 전액 유지). */
+  is_insurance_covered: boolean | null;
+  /** 단건 calc_copayment 결과(pool base = base_amount, 비급여/미비 항목 판정에 사용). */
+  result: CopayCalcResult;
+}
+
+/**
+ * 방문(visit) grain 본인부담 재배분 — 항목당(item) 합산 결함 교정.
+ *
+ * T-20260819-foot-COPAY-VISIT-GRAIN (DA CONSULT-REPLY MSG-20260819-132529-kma1, design A):
+ *   본인부담금은 규정상 **방문 단위**다. calcCopaymentBatch(단건 calc_copayment × N)를 그대로 합산하면
+ *   의급/차상위(정액 min(1000,base))는 항목마다 1,000원 → N항목=N,000원 과다징수, 노인정액은 항목별
+ *   구간판정으로 총액구간 오판이 된다. 이 함수는 급여 항목들의 base 를 **방문 총액으로 pool** 한 뒤
+ *   copayFromBase 를 **1회** 적용하고 비례배분+잔차보정으로 항목에 되돌린다 —
+ *   footBilling.fillBillItemCopayment(:1015) 과 **동일 method 의 mirror**(canonical METHOD source).
+ *
+ * ★ sum-consistency = governing invariant: Σ copayment_amount = copayFromBase(grade, coveredSum) 보존.
+ *   per-item 배분 자체는 내부분배(no regulatory 제약, DA C2) — 잔차는 결정론 tie-break(소수부 desc,
+ *   동률 시 service_id asc)로 iteration-order 비의존(멱등, DA C4).
+ *
+ * 규칙:
+ *  · pool 대상 = is_insurance_covered && base_amount>0 && !data_incomplete && grade≠foreigner.
+ *  · 비급여/외국인/data_incomplete = pool 미참여 → 단건 결과 그대로(전액 본인부담/BLOCK 보존).
+ *  · 서버 calc_visit_copayment 와 byte-identical(client↔server 발산 0, DoD#4).
+ *
+ * @returns 입력 순서 보존, copayment_amount/insurance_covered_amount 만 재배분한 새 결과 배열.
+ */
+export function redistributeVisitCopayment(
+  items: VisitCopayItem[],
+  grade: InsuranceGrade | null,
+): VisitCopayItem[] {
+  // 외국인/등급 미상(null)/pool 대상 0건 → 무변경(단건 결과가 이미 정답).
+  if (grade === null || grade === 'foreigner') return items;
+
+  // pool 대상: 급여 + base>0 + 산출가능.
+  const pooled = items.filter(
+    (it) =>
+      it.is_insurance_covered === true &&
+      it.result.base_amount > 0 &&
+      !it.result.data_incomplete,
+  );
+  if (pooled.length === 0) return items;
+
+  const coveredSum = pooled.reduce((s, it) => s + it.result.base_amount, 0);
+  const rate = getBaseCopayRate(grade);
+  // 방문 총액 위에서 등급→copay 를 1회 산출(pool). footBilling 집계 grain 과 동일 hasOverride=false.
+  const copaymentTotal = copayFromBase(grade, coveredSum, rate, false);
+
+  // 배분 결과 매핑(service_id → copay).
+  const copayById = new Map<string, number>();
+
+  if (copaymentTotal <= 0) {
+    // 면제(차상위1)·0 등급: 전 항목 copay 0 → 공단부담=급여전액.
+    for (const it of pooled) copayById.set(it.service_id, 0);
+  } else {
+    // 비례 배분 + 잔차 보정(소수부 큰 순, 동률 시 service_id asc) — fillBillItemCopayment 규칙 mirror.
+    let allocated = 0;
+    const fracs: Array<{ id: string; frac: number; cap: number }> = [];
+    for (const it of pooled) {
+      const total = it.result.base_amount;
+      const raw = (copaymentTotal * total) / coveredSum;
+      const floor = Math.min(Math.floor(raw), total);
+      copayById.set(it.service_id, floor);
+      allocated += floor;
+      fracs.push({ id: it.service_id, frac: raw - Math.floor(raw), cap: total - floor });
+    }
+    let remainder = copaymentTotal - allocated;
+    fracs.sort((a, b) => (b.frac - a.frac) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (const f of fracs) {
+      if (remainder <= 0) break;
+      const add = Math.min(remainder, f.cap);
+      copayById.set(f.id, (copayById.get(f.id) ?? 0) + add);
+      remainder -= add;
+    }
+  }
+
+  // 결과 재구성(입력 순서 보존). pool 항목만 copay/covered 갱신, 나머지는 그대로.
+  return items.map((it) => {
+    if (!copayById.has(it.service_id)) return it;
+    const copay = copayById.get(it.service_id)!;
+    return {
+      ...it,
+      result: {
+        ...it.result,
+        copayment_amount: copay,
+        insurance_covered_amount: Math.max(0, it.result.base_amount - copay),
+      },
+    };
+  });
+}
+
+/**
+ * Map 편의 래퍼 — calcCopaymentBatch 결과(Map)를 방문 grain 으로 재배분.
+ * 패널(InsuranceCopaymentPanel/Chart2InsuranceCalcPanel) 소비용.
+ *
+ * @param results          calcCopaymentBatch 결과(service_id → CopayCalcResult)
+ * @param coveredServiceIds is_insurance_covered===true 인 service_id 집합
+ * @param grade            방문 고객 건보 등급
+ */
+export function redistributeVisitCopaymentMap(
+  results: Map<string, CopayCalcResult>,
+  coveredServiceIds: Set<string>,
+  grade: InsuranceGrade | null,
+): Map<string, CopayCalcResult> {
+  const items: VisitCopayItem[] = Array.from(results.entries()).map(([service_id, result]) => ({
+    service_id,
+    is_insurance_covered: coveredServiceIds.has(service_id),
+    result,
+  }));
+  const redistributed = redistributeVisitCopayment(items, grade);
+  const out = new Map<string, CopayCalcResult>();
+  for (const it of redistributed) out.set(it.service_id, it.result);
+  return out;
+}
+
+// ──────────────────────────────────────────────────────────
 // 핵심 산출 함수
 // ──────────────────────────────────────────────────────────
 
