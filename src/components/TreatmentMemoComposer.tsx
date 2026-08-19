@@ -12,8 +12,19 @@
 //   ⚠ 이는 브라우저 로컬 임시버퍼일 뿐 임상기록 DB 영속과 무관 —
 //     customer_treatment_memos INSERT는 '메모 추가' 명시 클릭 시점에만, payload/트리거 무변경.
 //   ⚠ sessionStorage(=탭 종료 시 소멸) 선택: 공용 태블릿에 PHI draft가 무기한 잔류하지 않도록.
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Textarea } from '@/components/ui/textarea';
+
+// T-20260819-foot-CUSTCHART-CTRLS-SAVE-SHORTCUT: 치료메모 입력창 한정 Ctrl/Cmd+S 저장 단축키.
+//   기존 Ctrl+Enter(메모 입력창 한정) 패턴과 동일하게 Textarea onKeyDown 으로 스코프 →
+//   ① 저장 버튼과 동일한 handleSave 재사용(신규 저장 로직 없음)
+//   ② e.preventDefault() 로 브라우저 기본 저장 다이얼로그 차단
+//   ③ dirty=false(빈 입력)면 handleSave 내부 early-return 으로 no-op(불필요 저장 미발생)
+//   ④ 입력창 포커스 시에만 발화 → 모달/팝업(Ctrl+K 검색 등) 열림 시 오작동·회귀 없음.
+//   handleSave: 저장 진행 중(saving)이면 버튼 disabled 상태를 미러하여 중복 저장을 막는다.
+function isCtrlS(e: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  return (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S');
+}
 
 export interface CustchartPhrase {
   id: number;
@@ -78,6 +89,14 @@ function TreatmentMemoComposerInner({
     }
   }, [text, onSave, draftKey]);
 
+  // Ctrl/Cmd+S = '메모 추가' 버튼과 동일 저장 (기존 handleSave 재사용).
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isCtrlS(e)) return;
+    e.preventDefault();      // 브라우저 기본 저장 다이얼로그 차단 (AC-2)
+    if (saving) return;      // 저장 버튼 disabled 상태 미러 → 중복 저장 방지
+    void handleSave();       // dirty=false(빈 입력)면 handleSave 내부 early-return → no-op (AC-3)
+  }, [handleSave, saving]);
+
   return (
     <>
       {phrases.length > 0 && (
@@ -102,6 +121,7 @@ function TreatmentMemoComposerInner({
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
           rows={8}
           placeholder="치료 메모"
           className="text-[11px] resize-none"
@@ -145,11 +165,20 @@ function TreatmentMemoEditorInner({
     await onSave(trimmed);
   }, [text, onSave]);
 
+  // Ctrl/Cmd+S = '수정 저장' 버튼과 동일 저장 (기존 handleSave 재사용).
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isCtrlS(e)) return;
+    e.preventDefault();      // 브라우저 기본 저장 다이얼로그 차단 (AC-2)
+    if (saving) return;      // 저장 버튼 disabled 상태 미러 → 중복 저장 방지
+    void handleSave();       // 빈 입력이면 handleSave 내부 early-return → no-op
+  }, [handleSave, saving]);
+
   return (
     <>
       <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
         rows={3}
         className="text-[11px] resize-none"
         autoFocus
