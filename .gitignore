@@ -115,3 +115,6 @@ scripts/*NFD-NFC-BACKFILL*.out.txt
 
 # git worktrees (isolation dirs — never track)
 _wt-*
+
+# T-20260819-foot-TXMEMO-3VISIT-MD-ZIP-EXTRACT: PHI 치료메모 추출물 — git 커밋 금지 (요청자 본인 relay 전용)
+_artifacts/T-20260819-foot-TXMEMO-3VISIT-MD-ZIP-EXTRACT/
