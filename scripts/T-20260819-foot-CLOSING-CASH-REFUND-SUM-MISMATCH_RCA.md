@@ -61,3 +61,38 @@
 - 로그인 → 마감 내역 → 2026-08-18 → [현금] 탭.
 - B-2 반영 후: 이금득 건에 **−100,000 현금 환불행이 별도 행으로 표시**되어, 화면 개별행 합(635,400)이 화면 하단 [현금] 합계(635,400)와 **일치**하게 됨(현재는 환불행이 카드탭에 숨어 735,400로 보임).
 - 회귀 확인: 환불행이 있는 다른 마감일에서도 개별행 합 == [현금] 합계 재확인.
+
+---
+
+## 7. 라이브 재검증 + 전 기간 교차수단 환불 census (2026-08-19, READ-ONLY 재실행)
+Phase A 판정을 커밋 doc 신뢰가 아닌 **prod 실데이터 재실행**으로 독립 재확인함(`_diag_readonly.mjs` + parent/census 보강 쿼리). prod WRITE/DDL 0.
+
+### 7-1. 08-18 현금 NET 재실측 (§6 재실행) — 판정 불변
+| 항목 | 값 |
+|---|---|
+| payments(단건) 현금 net | **735,400** (= 현장 수동합) |
+| package 현금 net (created_at 축) | **−100,000** |
+| package 현금 net (accounting_date 축) | **−100,000** |
+| 현금 총계 | **635,400** (= CRM 표시) |
+| `diff_list_minus_hap` | **0** → 날짜축 divergence 배제 확정 |
+
+- 부모 레그 `2d58854a` 직접 조회 = `payment_type=payment, method=**card**, 100,000` → **교차수단 환불(카드 원결제 → 현금 환불) 못박음.**
+- ∴ 100k 갭 = 환불행(5ffd4b57) 자체 method(cash)로 현금 총계만 −100k, 카드 총계는 미차감(+100k) → **결제수단별 desync, net 정상.** 이중차감·표시 SUM 버그 아님 재확인.
+
+### 7-2. ★전 기간 교차수단 환불 전수 census (소급 영향범위 = 4건)
+환불행 method ≠ 원결제행 method 인 전 기간 행 (payments + package_payments):
+
+| # | 소스 | refund_id(앞8) | 날짜(accounting) | 금액 | 원결제→환불 |
+|---|---|---|---|---|---|
+| 1 | package | 5ffd4b57 | 2026-08-18 | 100,000 | **card→cash** (이금득, 본건) |
+| 2 | package | ad2cb3a1 | 2026-07-30 | 1,400,000 | transfer→card |
+| 3 | package | 2a074445 | 2026-07-28 | 1,260,000 | transfer→card |
+| 4 | 단건 | b062b29f | 2026-07-28 | 8,800 | cash→card |
+
+- 각 건은 해당 마감일의 **결제수단별 합계를 그 금액만큼 desync**(한 수단 과소·다른 수단 과대, net 불변) 시킴 → **구조적 상시 재발 = 설계 결함 확정**(우발적 1회 버그 아님).
+- B-3(소급 정정) 대상 = 위 4행. **archive-first · DA CONSULT · 현장 per-row confirm(물리 실사 대조) · supervisor dry-run** 게이트. 정정은 "환불이 어느 수단으로 물리 집행됐나"(현금서랍/카드취소 실사) 확인 후에만 — CRM 값 임의 변경 금지.
+
+### 7-3. Phase B 진행 상태 (planner 확정 대기)
+- **B-2 (view-layer 표시 재정합)**: 커밋 `8a5d48b5` (FE-only, `db_change=false`, 회귀 0) — origin/work 브랜치 push 완료. main 반영은 supervisor 게이트. merge 루프에 `if (r.method !== orig.method) continue;` 가드 = 교차수단 환불을 자체 행으로 렌더 → 환불행 method 탭에서 −amount 노출 → [화면행 합 == 총계] 재정합. totals reduce 불변(L928-929/L2240) 코드 대조로 회귀 0 확인.
+- **B-1 (write-path RPC 승계, 주범 근본수정)**: 환불 RPC들이 환불행 method 를 원결제 `v_orig.method` 서버 강제 승계. **money-path = DA CONSULT 필수 · db_change=TRUE.** F4717(blocked)과 통합. 미착수(별 게이트).
+- **B-3 (소급 정정)**: 위 7-2 4행. 미착수(별 게이트).
