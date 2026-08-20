@@ -982,6 +982,48 @@ export default function Closing() {
         .filter(r => r.method === method && r.payment_type !== 'refund')
         .reduce((s, r) => s + r.amount, 0);
 
+    // ── T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS ─────────────────
+    //   교차수단 환불(환불행 저장 method ≠ 원결제행 method) 을 '합계(결제수단별)' 표시 카드에서만
+    //   원결제 method 버킷으로 재귀속(revenue-basis). 근거: 김주연 총괄 field-decision(ts 1787189112
+    //   "735,400이 맞음") = 화면에 보이는 현금 결제 행 합산(=원결제 수단 매출) 기준 확정.
+    //   예(이금득 08-18): 카드결제 100k → 현금환불(method=cash·원결제=card·linked_payment_id join).
+    //     · 저장 method(cash) 그대로 NET 차감 → 현금 소계 -100k(635,400) 오표기.
+    //     · 원결제 method(card)로 재귀속 → 현금 표시소계 735,400(현금 결제행 합산=revenue),
+    //       카드 표시소계에 환불 net(원결제 수단 매출 반전), grossTotal(총계) 불변(버킷 간 이동일 뿐 합계 무변).
+    //   ★적용 경계(중요): 이 재버킷은 '합계(결제수단별)' 표시 카드 전용값(…Rev)에만 쓴다.
+    //     정산 대사(cashDiff = actualCash − totalCash)·마감 DB 저장(single_cash_total)·프린트 '환불차감후'
+    //     행은 물리 금고(drawer) 기준이라 net(저장 method) 값을 그대로 유지 — 안 그러면 실제 금고에서 빠져나간
+    //     현금 100k 가 시스템에만 남아 허위 부족(-100k)이 뜬다. → net totalCard/Cash/Transfer 는 불변(회귀 0).
+    //   ★db_change=false: historical row·DB 미접촉. 순수 view-layer 재귀속(원결제 method = 당일 로드행 map 조회).
+    //   ★고아 환불(원결제행이 당일 로드 스코프 밖) 또는 동일 method → 재귀속 없음(저장 method 유지, 회귀 0).
+    //   조회 맵: 단건 refund→linked_payment_id→payments.id.method / 패키지 refund→parent_payment_id→pkg.id.method.
+    const payMethodById = new Map<string, string>();
+    for (const p of payments) payMethodById.set(p.id, p.method);
+    const pkgMethodById = new Map<string, string>();
+    for (const p of pkgPayments) pkgMethodById.set(p.id, p.method);
+    const bucketOfPayment = (r: PaymentRow): string => {
+      if (r.payment_type === 'refund' && r.linked_payment_id) {
+        const origM = payMethodById.get(r.linked_payment_id);
+        if (origM && origM !== r.method) return origM;
+      }
+      return r.method;
+    };
+    const bucketOfPkg = (r: PackagePaymentRow): string => {
+      if (r.payment_type === 'refund' && r.parent_payment_id) {
+        const origM = pkgMethodById.get(r.parent_payment_id);
+        if (origM && origM !== r.method) return origM;
+      }
+      return r.method;
+    };
+    // revenue-basis NET 소계(표시 전용): net totals 과 동일 산식이되 환불행만 원결제 method 버킷으로 재귀속.
+    //   sum(net) 과의 유일 차이 = filter 축(저장 method → bucketOf). 수기결제(환불 없음)는 저장 method 그대로.
+    const sumRev = (method: string) =>
+      payments.filter(r => bucketOfPayment(r) === method)
+        .reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0) +
+      pkgPayments.filter(r => bucketOfPkg(r) === method)
+        .reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0) +
+      manualEntries.filter(m => m.method === method).reduce((s, m) => s + m.amount, 0);
+
     // NET (reconciliation/DB)
     const pkgCard     = sum(pkgPayments, 'card');
     const pkgCash     = sum(pkgPayments, 'cash');
@@ -1038,10 +1080,17 @@ export default function Closing() {
     const totalTransferCount = pkgTransferCount + singleTransferCount + manualTransferCount;
     const totalRefundCount   = pkgRefundCount + singleRefundCount;
 
-    // NET totals (reconciliation/DB저장)
+    // NET totals (reconciliation/DB저장) — drawer 기준, 교차수단 환불도 저장 method 로 차감(물리 금고 정합). 불변.
     const totalCard     = pkgCard + singleCard + manualCard;
     const totalCash     = pkgCash + singleCash + manualCash;
     const totalTransfer = pkgTransfer + singleTransfer + manualTransfer;
+
+    // T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS: '합계(결제수단별)' 표시 카드 전용
+    //   revenue-basis 재귀속 소계. sum(=totalCard/Cash/Transfer) 불변식: totalCardRev+CashRev+TransferRev
+    //   ≡ totalCard+Cash+Transfer (버킷 간 이동일 뿐 총합 무변) → grossTotal(합계 카드 total prop) 정합.
+    const totalCardRev     = sumRev('card');
+    const totalCashRev     = sumRev('cash');
+    const totalTransferRev = sumRev('transfer');
 
     // GROSS totals (SummaryCard 표시용)
     const totalCardGross     = pkgCardGross + singleCardGross + manualCard;
@@ -1093,6 +1142,8 @@ export default function Closing() {
       singleCard, singleCash, singleTransfer, singleMembership,
       singleHealthMaintenance,
       totalCard, totalCash, totalTransfer,
+      // T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS: '합계(결제수단별)' 표시 카드 전용 revenue-basis 소계
+      totalCardRev, totalCashRev, totalTransferRev,
       // GROSS (SummaryCard 표시)
       pkgCardGross, pkgCashGross, pkgTransferGross,
       singleCardGross, singleCashGross, singleTransferGross,
@@ -2143,12 +2194,18 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 ★이중 제외 없음(AC-2): 총합은 NET 로 환불 1회만 차감. 환불 내역 박스는 표시(정보)용 — 총합을 추가
                   차감하지 않는다. grossTotal(마감 payload 권위총액)·산식 무변경(순수 표시축 재배치, DA CONSULT 불요).
                 ★수기결제 포함/공단 행 = 정보행(SummaryCard 는 명시 total prop 사용, 행 미합산) — total 무영향. */}
+            {/* ── T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS ──────────
+                카드/현금/이체 총합을 net(저장 method) → revenue-basis(…Rev, 교차수단 환불=원결제 method 재귀속)로
+                전환. 김주연 총괄 field-decision(ts 1787189112 "735,400이 맞음") = 현금 결제행 합산(원결제 수단
+                매출) 기준 확정 → 이금득 08-18 현금환불(원결제=card)은 카드 총합에 net, 현금 총합 735,400 표기.
+                ★total(grossTotal)·정산 대사(totalCash)·DB 저장은 net 그대로(drawer) — 표시 소계 축만 rev 재귀속.
+                  totalCardRev+CashRev+TransferRev ≡ net 3소계 합 → total prop=grossTotal 정합(합계행 회귀 0). */}
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                ['카드 총합', totals.totalCard, totals.totalCardCount],
-                ['현금 총합', totals.totalCash, totals.totalCashCount],
-                ['이체 총합', totals.totalTransfer, totals.totalTransferCount],
+                ['카드 총합', totals.totalCardRev, totals.totalCardCount],
+                ['현금 총합', totals.totalCashRev, totals.totalCashCount],
+                ['이체 총합', totals.totalTransferRev, totals.totalTransferCount],
                 // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
                 //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
                 ...(totals.singleHealthMaintenance !== 0
