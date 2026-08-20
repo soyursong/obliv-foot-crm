@@ -47,6 +47,34 @@
 
 ---
 
+## 2b. ★현장 신고 그대로 — 실장(이름) grain 화면①vs② 대조 (census4, DoD 핵심)
+
+현장 신고("같은 실장에 ①②가 다른 숫자")를 **두 화면을 실장 이름 grain으로 각각 재현**해 직접 대조:
+- **화면①** = 일마감>결제내역>담당자별 소계 (Closing.tsx `staffTotals`): 귀속=**live** `customers.assigned_staff_id` · sim/test **포함** · 단건 created_at·패키지 accounting_date · status≠deleted(**cancelled 포함**) · NET
+- **화면②** = 일마감>총매출>담당 실장별 (lib/staffRevenue.ts, consultant 뷰): 귀속=**attributed_staff_id 스냅샷→live fallback** · sim/test **제외** · accounting_date · status NOT IN(cancelled,deleted) · roster=role='consultant' · NET
+
+### 2026-08-18 (안정·과거일) — 실장별 ①vs②
+| 실장명 | 화면①(담당자별) | 화면②(실장별) | delta ①-② | 원인 |
+|---|---|---|---|---|
+| 송지현 | 17,926,600 | 17,926,600 | 0 | — |
+| **엄경은** | **20,103,900** | **20,100,000** | **+3,900** | **sim/test 필터 비대칭(①만 test고객 3,900 포함)** |
+| 송민근 | 10,356,800 | 10,356,800 | 0 | — |
+| 정연주 | 7,685,200 | 7,685,200 | 0 | — |
+| 최현희 | 3,277,600 | 3,277,600 | 0 | — |
+| 강경민 | 208,200 | 208,200 | 0 | — |
+| 진이서 / 김지윤 | 14,200 / 12,300 | 14,200 / 12,300 | 0 | — |
+| **합계** | **59,584,800** | **59,580,900** | **+3,900** | (엄경은 sim 1건) |
+
+→ **DoD 예시(실장명 기준 ①금액 vs ②금액) = 엄경은 · 화면① 20,103,900 vs 화면② 20,100,000 · delta 3,900**. 유일하게 갈라지는 실장이며 원인은 **원인②(sim/test 필터 비대칭)** 단독. 나머지 7명 실장은 ①=② 완전 일치.
+
+### 2026-08-20 (신고 당일·라이브 변동) — 실장별 ①vs②
+- census4 시점 8명 실장 전원 **①=② delta 0** (합계 ①=②). **per-실장 grain 에서 08-20 불일치 0**.
+- ⚠ **라이브 변동 주의**: 08-20은 당일이라 census 중에도 결제가 입력된다. census3(세션 초) grand total 35,863,600 → census4/5/6(수분 후) 38,863,600 으로 **3,000,000 이동**(패키지 transfer 1건 신규 입력) — 세 surface가 **동시에** 이동(정합 유지). 즉 08-20의 3-surface 정합은 실시간 유지되며, 관측 delta는 시점 스냅샷 차이지 basis 발산 아님.
+
+**결론(현장 신고 vs 실측)**: 두 화면을 **문자 그대로**(둘 다 실장별·둘 다 NET) 대조하면 표본일 per-실장 불일치는 **sim/test 3,900(엄경은 08-18)뿐**. 총괄이 본 **큰 금액(수백만)의 불일치는 실장별 ①vs②가 아니라 §2 의 합계카드 수단별(GROSS) vs 담당자별 수단별(NET)** = 원인①(오늘 476ed6e2 REFUND-EXCLUDE 회귀, 카드 6,020,000). 신고의 "실장별"은 화면 경로 상 인접한 합계카드 수단별 라인을 함께 본 것으로 해석되며, **실제 per-실장 basis 발산은 소액(sim)**이다.
+
+---
+
 ## 3. 원인 분해 (복합 — 독립 3건)
 
 - **원인① (PRIMARY·오늘 회귀)**: `476ed6e2 METHODTOTAL-REFUND-EXCLUDE`(14:20 배포, live). 합계카드 수단별=**GROSS(환불제외)**, 담당자별/실장별=**NET(환불차감)** → 환불 있는 날 수단별 라인이 **환불 전액만큼** 발산. 08-18 현금 4.8M / 08-20 카드 6.02M. (합계카드 캡션 "정상수납−환불=합계"로 자기설명은 있으나, **다른 surface와의 수단별 정합은 깨짐**.)
@@ -58,7 +86,7 @@
 - **원인③ (LATENT·표본일 0)**: 패키지 기간축 비대칭. 합계카드 total=**created_at**, 담당자별/실장별=**accounting_date**. 08-18/08-20은 두 축 일치(XOR 0행)라 미발화. 그러나 선수금/익일귀속 패키지가 있는 날(과거 census 7/134건 전례)엔 **합계카드 grand total ≠ 담당자별/실장별**로 발화 가능 → 재발 방지 위해 함께 정합 필요.
 
 **배제된 가설**
-- 가설(b) attributed_staff_id snapshot dangling/귀속누락: **배제**. 08-18/08-20 per-staff net이 live-assigned vs snapshot 축에서 **완전 동일**(attr_null 2·8건도 live fallback으로 정확 착지, 미지정 버킷 동일). 귀속 누락·오귀속 없음.
+- 가설(b) attributed_staff_id snapshot dangling/귀속누락: **배제**. 08-18/08-20 per-staff net이 live-assigned vs snapshot 축에서 **완전 동일**(census4 per-실장 delta=0, 엄경은 sim 3,900 제외). **8월 전체 scan(census5)**: 귀속축 divergence(스냅샷≠live, 재배정 유발) = **단건 1행(08-08, 3,900)·패키지 0행**. 스냅샷 NULL(→live fallback) = payments 43/970·pkg 13/225 (전부 live-join 착지로 ①② 동일). → 재배정으로 인한 per-실장 ①vs② 발산은 **8월 사실상 dormant**. write-path stamp 트리거 정상. 귀속 누락·오귀속·dangling 없음.
 - 가설(c) 별도 버그: 관측 delta 전량이 원인①②③로 설명됨(잔차 0). 미상 버그 없음.
 
 ---
@@ -78,4 +106,6 @@
 - `scripts/T-20260820-foot-CLOSING-TRISURFACE-SALES-BASIS-RECONCILE-DIAG_census_readonly.mjs` — surface별 소스/축/필터 census (DIV-1~5)
 - `..._census2_readonly.mjs` — sim(DIV-3)·rebucket per-method(DIV-6)·per-staff 귀속(DIV-4)
 - `..._census3_readonly.mjs` — **live 표시값 재현**(GROSS vs NET)·delta 실측 (§2 표 산출)
-- 실행: `SUPABASE_ACCESS_TOKEN=… node scripts/…_census3_readonly.mjs`
+- `..._census4_readonly.mjs` — **★실장(이름) grain 화면①vs② 대조**(§2b 표 산출, DoD 명명 예시 = 엄경은 08-18)
+- census5(귀속축 8월 divergence scan)·census6(08-20 method별 net) = 세션 임시(`/tmp`) 실행분, 결과는 §2b/§3 본문 인용
+- 실행: `SUPABASE_ACCESS_TOKEN=… node scripts/…_census4_readonly.mjs`
