@@ -78,11 +78,14 @@ const MD_DIR = path.join(OUT_ROOT, 'foot_경과분석_내원3회이상');
 // 정규화: 공백류 단일화 + 좌우 trim (상용구/라인 비교 canonical form)
 function norm(s) { return String(s ?? '').replace(/\s+/g, ' ').trim(); }
 // 미선택 플레이스홀더(값이 사실상 미기재) 판정
+// ★Q2 원장 답변 반영: '없음'/'특이사항 없음' = 의미 있는 정보(데이터로 처리·include). "없다는 것도 정보"·미기재 처리 금지.
+//   → PLACEHOLDER_SET(=exclude 대상)에서 '없음' 제거. 순수 빈칸·코드성 필드·미선택 표시만 exclude 유지(누락<과잉 정합).
+//   ⚠ 'n/a'/'na'/'tbd' = 영문 코드성 미기재 토큰 → 코드성 필드로 계속 exclude(원장 명시 대상은 한글 '없음').
 const PLACEHOLDER_SET = new Set([
   '', '-', 'ㅡ', '_', '.', ':', 'x', 'X',
   'y/n', 'n/y', '유/무', '무/유', '유 / 무', '유/무:', '(유/무)',
-  'n/sy/dy/py', '유/무:유', // 흔한 잔여
-  'n/a', 'na', 'tbd', '없음', // '없음'은 값이지만 미기재성 → 원장리뷰 대상(현재 제외)
+  'n/sy/dy/py', '유/무:유', // 흔한 잔여(미선택 표시)
+  'n/a', 'na', 'tbd', // 영문 코드성 미기재 토큰. ('없음'은 include — 상단 주석 참조)
 ]);
 function isPlaceholderValue(v) {
   const t = norm(v).toLowerCase().replace(/[()（）\[\]·・,，]/g, '').replace(/\s+/g, '');
@@ -297,7 +300,14 @@ function renderHqValue(kind, v) {
     const L = [];
     L.push(`# 경과분석 자료 — ${pad(p.name ?? '(이름없음)')}`);
     L.push('');
+    // ── 행정 헤더 (★Q1 원장 답변 반영: 성함·차트번호를 MD 내부 필드로 명시. 현행 파일명만→문서 상단 명기) ──
+    L.push('## 【행정】 환자 식별 정보');
+    L.push('');
+    L.push(`- 성함: ${pad(p.name ?? '(이름없음)')}`);
     L.push(`- 차트번호: ${p.chart_number ?? '(없음)'}`);
+    L.push('');
+    L.push('### 내원 요약');
+    L.push('');
     L.push(`- 고객 ID: ${p.id}`);
     L.push(`- 첫 방문일: ${fvd ?? '(없음)'}`);
     L.push(`- 내원 횟수(check_in, 취소제외): ${p.visit_count}`);
