@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>레이저 타이머 굵기 진단 · 시안</title>
+<!-- 실 대시보드와 동일: Pretendard CDN(=font-sans), tailwind 기본 mono 스택(=font-mono) -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@latest/dist/web/static/pretendard.min.css" />
+<style>
+  :root{
+    /* 실 대시보드 실제 해석값 */
+    --font-sans: 'Pretendard', sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+  body{ font-family:var(--font-sans); background:#f8fafc; color:#0f172a; margin:0; padding:28px 32px; }
+  h1{ font-size:18px; margin:0 0 4px; }
+  .sub{ color:#64748b; font-size:13px; margin:0 0 20px; }
+  .grid{ display:grid; grid-template-columns:repeat(2,minmax(320px,1fr)); gap:14px; }
+  .card{ background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 18px; }
+  .tag{ display:inline-block; font-size:11px; font-weight:700; color:#fff; padding:2px 8px; border-radius:999px; margin-bottom:10px; }
+  .cur{ background:#ef4444; } .a{ background:#2563eb; } .b{ background:#7c3aed; } .c{ background:#0d9488; }
+  .desc{ font-size:12px; color:#475569; margin:8px 0 12px; line-height:1.5; }
+  /* 고객박스 축소 시뮬레이션 */
+  .custbox{ display:inline-flex; align-items:center; gap:8px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:6px 10px; }
+  .name{ font-size:12px; font-weight:600; color:#1e3a8a; }
+  .tnum{ font-variant-numeric:tabular-nums; line-height:1; }
+  .mono{ font-family:var(--font-mono); }
+  .sans{ font-family:var(--font-sans); }
+  .w500{ font-weight:500; } .w700{ font-weight:700; }
+  .blue{ color:#1d4ed8; } .blue-dk{ color:#1e40af; }
+  .s10{ font-size:10px; } .s11{ font-size:11px; } .s13{ font-size:13px; }
+  .note{ font-size:11px; color:#94a3b8; margin-top:10px; }
+</style>
+</head>
+<body>
+  <h1>레이저 잔여시간 표기 — 진단 & 재튜닝 시안</h1>
+  <p class="sub">고객박스 축소 상태(compact) 기준 · 실 대시보드 동일 폰트로 렌더</p>
+  <div class="grid">
+
+    <div class="card">
+      <span class="tag cur">현재 (반영 안 됨)</span>
+      <div class="custbox"><span class="name">홍길동</span>
+        <span data-id="cur" class="tnum mono w500 blue s11">03:42</span></div>
+      <div class="desc">글자체=고정폭(mono) + 굵기 500 요청. 그러나 태블릿엔 고정폭 500 글자체가 없어 <b>보통 굵기(400)로 되돌아감</b> → 요청 500이 화면에 안 보임.</div>
+    </div>
+
+    <div class="card">
+      <span class="tag a">시안 ⓐ (권장)</span>
+      <div class="custbox"><span class="name">홍길동</span>
+        <span data-id="a" class="tnum sans w500 blue s11">03:42</span></div>
+      <div class="desc">고정폭 해제 + 본문과 같은 글자체(500 실존)로 500 적용. 숫자 자리맞춤(tabular-nums) 유지 → 초읽기 자릿수 안 흔들림. <b>신규 폰트 없음.</b></div>
+    </div>
+
+    <div class="card">
+      <span class="tag b">시안 ⓑ</span>
+      <div class="custbox"><span class="name">홍길동</span>
+        <span data-id="b" class="tnum w500 blue s11" style="font-family:'Roboto Mono',var(--font-mono)">03:42</span></div>
+      <div class="desc">고정폭 유지하되 500 굵기를 가진 고정폭 웹폰트를 새로 실어 옴. 고정폭 느낌은 지키나 <b>외부 폰트 추가 로딩</b> 필요.</div>
+    </div>
+
+    <div class="card">
+      <span class="tag c">시안 ⓒ</span>
+      <div class="custbox"><span class="name">홍길동</span>
+        <span data-id="c" class="tnum mono w500 blue-dk s13">03:42</span></div>
+      <div class="desc">굵기 대신 <b>글자 키움 + 색 대비 강화</b>로 가독성 확보. (굵기 문제를 우회)</div>
+    </div>
+
+  </div>
+  <p class="note">※ 700(굵게)은 現 과굵음으로 reject됨 → 재사용 안 함. 굵게 순서: ⓐ ≈ ⓑ &lt; ⓒ(크기로 강조).</p>
+</body>
+</html>
