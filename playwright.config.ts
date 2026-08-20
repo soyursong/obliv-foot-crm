@@ -786,6 +786,10 @@ export default defineConfig({
         '**/T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN.spec.ts',
         '**/T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT.spec.ts',
         '**/T-20260714-foot-PAYMINI-COPAY-TAXLINE-RENDER.spec.ts',
+        // T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL (FIX-1·재발3차): uploadCaptured 유실0 구조 불변식
+        //   (실패분 remaining 보존·성공분만 revoke·부분실패 카메라유지·전건성공 회귀0·08-19 finally 불변식)
+        //   + DoD-6 음성-안전(부수효과 write 재시도 금지). 순수 fs-grep 정적 단언 — auth/DB/server 불요·결정론.
+        '**/T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -932,6 +936,9 @@ export default defineConfig({
         '**/T-20260721-foot-BILLDOC-COPAY-PMW-REMAIN.spec.ts',
         '**/T-20260714-foot-PAYMINI-COPAY-BALANCE-SPLIT.spec.ts',
         '**/T-20260714-foot-PAYMINI-COPAY-TAXLINE-RENDER.spec.ts',
+        // T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL: unit 전용 순수 정적 가드 → 무-project 실행 시
+        //   desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행(결정론 GREEN, env-불요).
+        '**/T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL.spec.ts',
       ],
     },
     {

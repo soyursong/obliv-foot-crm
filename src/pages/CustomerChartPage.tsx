@@ -1465,6 +1465,9 @@ function TreatmentImagesSection({
   const [cameraType, setCameraType] = useState<TreatImgType>('before');
   const [capturedBlobs, setCapturedBlobs] = useState<{ blob: Blob; previewUrl: string }[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  // T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL (FIX-1): 직전 업로드에 실패분이 남았는지.
+  //   실패분이 capturedBlobs 에 보존될 때 완료 버튼 라벨을 '재시도'로 바꾸기 위한 플래그.
+  const [lastUploadFailed, setLastUploadFailed] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   // T-20260818-foot-MEDIMG-CAPTURE-WAITERROR-FALSEPOSITIVE: 셔터 인플라이트 상태.
   //   capturePhoto()는 초점 수렴 대기(450ms) + ImageCapture.takePicture() 하드웨어 초점 사이클(수 초)로
@@ -2117,35 +2120,49 @@ function TreatmentImagesSection({
     //   '저장 중' 오버레이 영구 표시 + 셔터/완료/취소 전부 비활성 → 카메라를 닫을 수조차 없다.
     //   → 루프를 try 로 감싸고 catch 로 흡수해 정상 종료 흐름(모달 닫힘)에 합류시킨다.
     //     finally 로 uploadProgress 를 어떤 경로로든 반드시 해제한다.
+    // T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL (FIX-1): 실패한 캡처를 폐기하지 않는다.
+    //   과거(1·2차)엔 실패해도 capturedBlobs 를 전량 삭제·모달을 닫아 캡처가 사라졌고, 현장은
+    //   이를 "저장 안 됨/튕김"으로 겪고 환자 발을 처음부터 재촬영했다(재발 3차).
+    //   → 성공분만 previewUrl revoke + 소비하고, 실패분은 remaining 으로 보존한다.
+    //     전건 성공이면 현행대로 정리·모달 닫힘, 부분/전건 실패면 카메라를 유지해 [재시도] 가능.
+    const remaining: typeof capturedBlobs = [];
     try {
-      for (const { blob, previewUrl } of capturedBlobs) {
+      for (const item of capturedBlobs) {
         const path = `${storagePath}/${cameraType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
-        const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
-        if (error) failed++;
-        URL.revokeObjectURL(previewUrl);
+        const { error } = await supabase.storage.from('photos').upload(path, item.blob, { contentType: 'image/jpeg', ...PHOTO_UPLOAD_OPTS });
+        if (error) { failed++; remaining.push(item); } // 실패분 보존(revoke 하지 않는다)
+        else { URL.revokeObjectURL(item.previewUrl); } // 성공분만 preview 해제
         done++;
         setUploadProgress({ done, total });
       }
     } catch (e) {
       console.error('[MEDIMG-UPLOAD] 업로드 중단', e);
-      failed = total - done; // 남은 건은 실패로 계산(부분 성공 보존 — done 까지는 실제 업로드됨)
+      // 순회하지 못한 나머지(done 이후 항목)도 전부 보존한다 — preview 는 revoke 하지 않는다.
+      remaining.push(...capturedBlobs.slice(done));
     } finally {
-      setUploadProgress(null); // 🔴 어떤 경로로든 반드시 해제(오버레이/셔터/취소 잠금 해제)
+      setUploadProgress(null); // 🔴 08-19 P0 불변식 — 어떤 경로로든 반드시 해제(오버레이/셔터/취소 잠금 해제)
     }
-    // 중단 경로에서 루프가 순회하지 못한 blob preview URL 정리(revokeObjectURL 은 idempotent).
-    capturedBlobs.forEach((b) => URL.revokeObjectURL(b.previewUrl));
-    stopStream();
-    setCapturedBlobs([]);
-    setCameraOpen(false);
-    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
-    await load();
-    // AC-2: 완료 후 정확한 피드백(성공/실패 건수 반영). 판정 결과는 실제 upload error 기준(불변).
-    //   ★ toast.success/info 는 이 프로젝트 wrapper 에서 묵음(noop) — 반드시 보여야 하는 완료
-    //     확인은 toast.confirm(묵음 제외 채널)으로 노출해야 현장이 '완료'를 실제로 본다.
+    failed = remaining.length; // 부분성공 보존 의미 통일: 남은 것 = 실패한 것
     const saved = total - failed;
+    // ⚠ 루프 뒤 일괄 revokeObjectURL 은 제거한다. 남긴 blob 의 previewUrl 을 해제하면
+    //   미리보기가 깨진 채 남는다(§4-②). 성공분 revoke 는 이미 루프 안에서 수행했다.
+    invalidateStorageList('photos', storagePath); // 신규 업로드 즉시 반영(캐시 무효화)
+    await load(); // 성공분은 즉시 목록 반영(양쪽 경로 공통)
+    if (remaining.length === 0) {
+      // 전건 성공 — 현행 그대로 정리·모달 닫힘.
+      setLastUploadFailed(false);
+      stopStream();
+      setCapturedBlobs([]);
+      setCameraOpen(false);
+    } else {
+      // 부분/전건 실패 — 실패분만 남기고 카메라 유지(stopStream·setCameraOpen(false) 호출하지 않는다).
+      setLastUploadFailed(true);
+      setCapturedBlobs(remaining);
+    }
+    // AC-2: 완료 후 정확한 피드백. toast.success/info 는 이 프로젝트 wrapper 에서 묵음(noop) —
+    //   반드시 보여야 하는 완료 확인은 toast.confirm(묵음 제외 채널)으로 노출.
     if (failed === 0) toast.confirm(`${saved}장 저장 완료`);
-    else if (saved > 0) toast.warning(`${saved}장 저장 완료 · ${failed}장 실패 — 실패한 사진은 다시 촬영해 주세요`);
-    else toast.error(`저장에 실패했습니다 (${failed}장) — 잠시 후 다시 시도해 주세요`);
+    else toast.error(`${failed}장 저장 실패 — 사진은 그대로 있습니다. [재시도] 를 눌러주세요`);
   };
 
   const closeCamera = () => {
@@ -2154,6 +2171,7 @@ function TreatmentImagesSection({
     setCapturedBlobs([]);
     setCameraOpen(false);
     setUploadProgress(null);
+    setLastUploadFailed(false); // FIX-1: 취소=명시적 폐기. 다음 세션은 '완료' 라벨로 복원.
     setCameraError(null);
     // AC-1: 줌 초기화
     setZoom(1);
@@ -2711,7 +2729,7 @@ function TreatmentImagesSection({
                   className="text-sm font-semibold transition min-w-[64px] text-right disabled:text-gray-600 text-sage-400 hover:text-sage-300 disabled:cursor-not-allowed"
                   data-testid="camera-complete"
                 >
-                  {uploadProgress ? '저장 중…' : `완료 (${capturedBlobs.length})`}
+                  {uploadProgress ? '저장 중…' : `${lastUploadFailed ? '재시도' : '완료'} (${capturedBlobs.length})`}
                 </button>
               </div>
             </>
