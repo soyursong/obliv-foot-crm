@@ -794,6 +794,13 @@ export default defineConfig({
         //   환불 제외). 순수 fs-grep 정적 가드 + sumGross/이중차감 자립 시뮬레이션 — auth/DB/server/page 불요·결정론.
         //   db_change=false·DISPLAY-ONLY. 실 갤탭 수치정합 = 김주연 총괄 field confirm.
         '**/T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE.spec.ts',
+        // T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION (증상② Option A): staffStats
+        //   초진 게이트 notify-only → notify ∪ hasPassedConsult('상담단계 지남') OR-확장. 순수 함수(hasPassedConsult/
+        //   CONSULT_PASSED_STATUSES 경계) + Assignments.tsx 게이트 정적 소스 가드. auth/DB/server/page 불요·결정론.
+        '**/T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION.spec.ts',
+        // T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID: 결정①/② 정적 소스 가드(fs-grep 순수) →
+        //   STAFFSTATS-REGRESSION OR-확장에 맞춰 회귀 단언 갱신. unit 등록으로 결정론 확보.
+        '**/T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -812,6 +819,11 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION + 08-07 CONSULTASSIGN-NOCONFIRM:
+        //   unit 전용(순수 함수 + fs-grep 정적 가드) → 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→
+        //   setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
+        '**/T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION.spec.ts',
+        '**/T-20260807-foot-CONSULTASSIGN-NOCONFIRM-AUTOACCRUE-VOID.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN: 불변식/가드 유닛 spec 은 unit 전용
         //   (순수 fs-grep+로직) → desktop-chrome(auth/webServer) 유입 차단. underscore-prefix 헬퍼도 제외.
         '**/critical-flow/_prod-write-ban-invariant.spec.ts',

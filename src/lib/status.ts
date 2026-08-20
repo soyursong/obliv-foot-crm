@@ -122,6 +122,38 @@ export function isInClinic(status: CheckInStatus): boolean {
   return IN_CLINIC_STATUSES.includes(status);
 }
 
+/**
+ * 상담단계를 '실제로 지난'(=상담이 시작된 이후) check_in 상태 집합.
+ * — T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION Option A
+ *   (김주연 총괄 confirm 2026-08-20 17:37 · DA da_decision_foot_staffstats_chojin_assign_gate_expand).
+ *
+ * staffStats '상담 배정 수(초진)' 누적 게이트 정밀화용. 기존 게이트는 consult_notify_status IS NOT NULL
+ * ([확정] 클릭)만 계수 → notify 발송이 blackout(EF 장애 등)이면 상담을 실제 진행한 자동배정 건이 NULL 로
+ * 남아 미계수(under-count)됐다. 이 집합에 속하면 notify 가 NULL 이어도 "상담단계를 지남"으로 보고 초진 집계에 포함.
+ *
+ * 범위 근거(DA): "상담이 실제 시작된 이후 단계 전부" = NEW_PATIENT_STAGES 에서 'consultation' 이후 전 단계.
+ *   pre-consult(registered/receiving/consult_waiting)는 상담 미개시 → 제외(false-positive 방지).
+ *   cancelled/checklist(deprecated)는 staffStats 상위 필터에서 이미 배제되므로 여기 미포함.
+ * CheckInStatus enum 으로 타입 고정 → 값 오타/enum 드리프트를 컴파일 타임에 차단.
+ */
+export const CONSULT_PASSED_STATUSES: CheckInStatus[] = [
+  'consultation',       // 상담(진행 중 = 상담 시작됨)
+  'exam_waiting',       // 진료대기
+  'examination',        // 원장실
+  'treatment_waiting',  // 치료대기
+  'preconditioning',    // 치료실
+  'laser_waiting',      // 레이저대기
+  'healer_waiting',     // 힐러대기
+  'laser',              // 레이저
+  'payment_waiting',    // 수납대기
+  'done',               // 완료
+];
+
+/** check_in 이 상담단계를 실제로 지났는지(=상담 시작 이후 단계) 여부 */
+export function hasPassedConsult(status: CheckInStatus | null | undefined): boolean {
+  return status != null && CONSULT_PASSED_STATUSES.includes(status);
+}
+
 /** 직원 직책 한글 라벨 (staff 테이블 role) */
 export const STAFF_ROLE_LABEL: Record<StaffRole, string> = {
   director: '원장',

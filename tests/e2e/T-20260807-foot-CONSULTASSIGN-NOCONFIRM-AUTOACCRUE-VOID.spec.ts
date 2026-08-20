@@ -34,24 +34,27 @@ const STRATEGY = 'src/lib/assignmentStrategy.ts';
 // ─────────────────────────────────────────────────────────────────────────────
 // 결정①(방법 C) — KPI '상담 배정 수' 표시 count = [확정] 클릭된 배정만 (staffStats)
 // ─────────────────────────────────────────────────────────────────────────────
-test('결정①: staffStats 상담 배정 count 는 consult_notify_status IS NOT NULL 게이트', () => {
+// ⓘ T-20260820-...-STAFFSTATS-REGRESSION Option A 로 게이트가 notify-only → notify ∪ '상담단계 지남'
+//   으로 OR-확장됨. 아래 결정① 회귀 단언은 "notify IS NOT NULL 계수분 보존"(=OR 의 한 branch)만 검증하도록
+//   갱신(narrowing 아님). '상담단계 지남' branch 자체의 단언은 신규 STAFFSTATS-REGRESSION spec 이 소유.
+test('결정①: staffStats 상담 배정 count 게이트에 consult_notify_status IS NOT NULL branch 보존', () => {
   const src = read(PAGE);
-  // 상담 분기(consultant_id)가 notify != null 게이트를 통과해야 bumpAssign.
-  expect(src).toMatch(
-    /s\.role === 'consultant' && ci\.consult_notify_status != null/,
-  );
+  // 상담 분기(consultant_id) 게이트가 notify != null 을 (OR 의 한 축으로) 계속 포함해야 한다(08-07 계수분 무회귀).
+  expect(src).toMatch(/s\.role === 'consultant'/);
+  expect(src).toMatch(/ci\.consult_notify_status != null/);
 });
 
 test('결정①: 게이트 술어는 IS NOT NULL — "=== \'sent\'" 단독 게이트 금지(DECOUPLE merge-safe)', () => {
   const src = read(PAGE);
   // staffStats 배정 count 게이트가 'sent' 문자열 등가 비교에 의존하지 않는다(!= null 사용).
   //   ('sent' 리터럴은 금일 배분 이력 [확정] 버튼 상태표시(doConfirmNotify/렌더)에는 존재 — 그건 count 게이트 아님)
-  const gateLine = src
-    .split('\n')
-    .find((l) => l.includes("s.role === 'consultant'") && l.includes('consult_notify_status'));
-  expect(gateLine).toBeTruthy();
-  expect(gateLine).toContain('!= null');
-  expect(gateLine).not.toContain("=== 'sent'");
+  // OR-확장으로 게이트가 여러 줄로 분리 → 게이트 고유 앵커(hasPassedConsult 결합 술어) 범위에서 검증.
+  //   (src.indexOf("s.role === 'consultant'") 는 ensure() 노출 루프에도 매칭 → 게이트 앵커로 부적합)
+  const anchor = src.indexOf('ci.consult_notify_status != null');
+  expect(anchor).toBeGreaterThan(-1);
+  const gateBlock = src.slice(anchor, anchor + 120);
+  expect(gateBlock).toContain('consult_notify_status != null');
+  expect(gateBlock).not.toContain("consult_notify_status === 'sent'");
 });
 
 test('결정①: 치료(therapy)축은 notify 게이트 미적용(치료엔 확정/notify 개념 부재)', () => {

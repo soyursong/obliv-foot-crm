@@ -47,7 +47,7 @@ import { fetchConsultantPerfByAssignedStaff, type ConsultantRow } from '@/lib/st
 import { fetchDailyTargetConfig, rankAssignmentRatios } from '@/lib/assignmentStrategy';
 import { GATED_CAPABILITY_ITEMS, GATED_CAPABILITY_CODES } from '@/lib/treatmentRequestCodes';
 import { elapsedMinutes } from '@/lib/elapsed';
-import { STATUS_KO } from '@/lib/status';
+import { STATUS_KO, hasPassedConsult } from '@/lib/status';
 import { toast } from '@/lib/toast';
 import type { CheckIn, CheckInStatus, Staff, AssignmentAction, AssignmentRole } from '@/lib/types';
 import type { ConsultCountBucket } from '@/lib/autoAssign';
@@ -978,7 +978,19 @@ export default function Assignments() {
         //     (channel_gone) / 'sending'(transient 재시도)로 착지(NULL 롤백 아님)이며 그 배정도 [확정] 클릭된 정당
         //     배정 → 미계수 시 under-count. IS NOT NULL 은 pre/post DECOUPLE 양쪽에서 정확(merge-order 무관 안전).
         //   ⚠ 상담축 한정 — 치료(therapist_id)축은 [확정]/notify 개념 부재 → 아래 therapy 분기는 게이트 미적용(불변).
-        if (s && s.role === 'consultant' && ci.consult_notify_status != null) {
+        // T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION 증상② Option A
+        //   (김주연 총괄 confirm 2026-08-20 17:37 · DA da_decision_foot_staffstats_chojin_assign_gate_expand):
+        //   게이트 정밀화 = notify-only → notify ∪ '상담단계 지남'. notify 발송 blackout(EF 장애 등) 기간에
+        //   상담을 실제 진행한 자동배정 건은 consult_notify_status 가 NULL 로 남아 미계수(under-count)됐다.
+        //   → hasPassedConsult(ci.status)(=상담 시작 이후 단계, status.ts CONSULT_PASSED_STATUSES) 를 OR 로 추가해
+        //   notify NULL 이어도 상담단계를 지난 배정은 초진 집계에 포함(오늘 blackout 미계수 22건 자동 복구 + 재발 방어).
+        //   ★OR-확장만 — 기존 08-07 confirm 게이트(notify IS NOT NULL) 계수분은 그대로 보존(narrowing 아님·회귀0).
+        //   db_change=false: 코드 로직만, 기존 데이터·write 무접촉.
+        if (
+          s &&
+          s.role === 'consultant' &&
+          (ci.consult_notify_status != null || hasPassedConsult(ci.status))
+        ) {
           // 상담축: COALESCE(수동 assignment_consult_type, recency deriveConsultAxis) → 3-state effective.
           bumpAssign(
             ensure(s),
