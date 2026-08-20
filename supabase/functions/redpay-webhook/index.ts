@@ -54,9 +54,18 @@ import {
   isRealWebhookDelivery,
   extractErrorSummary,
   buildNon2xxAlertText,
-  makeDedup,
   type Non2xxAlertContext,
 } from "./non2xx-alert.ts";
+// T-20260820-foot-ALARM-SEVERITY-3TIER-POLICY: 알람 발화 정책 SSOT(3등급 분류 + 반복규칙).
+//   ★전 알람 이 정책 기준(최필경 총괄 field-authority). 즉시등급도 최초1회+상태전이만 발화.
+import {
+  AlarmTier,
+  classifyAlarm,
+  classifyUnregisteredLine,
+  isLiveTransaction,
+  assertNoDowngrade,
+  makeAlarmRepeatGate,
+} from "../_shared/redpay-alarm-severity.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("CRM_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -72,8 +81,8 @@ const REDPAY_SLACK_BOT_TOKEN    = Deno.env.get("REDPAY_SLACK_BOT_TOKEN") ?? "";
 //   'realtime'     = 구 동작(push 당 Slack) 복귀 — 즉시 롤백 스위치.
 //   ★ 어느 모드든 accumulate 는 항상 수행(AC5 알림 유실 0 — digest 데이터원 보장).
 const REDPAY_UNREG_ALARM_MODE   = (Deno.env.get("REDPAY_UNREG_ALARM_MODE") ?? "digest").trim().toLowerCase();
-// T-20260729-...-NON2XX-ALERT-ROOTCAUSE Part B: 동일원인 dedup 창(기본 60s, 짧게 = 도달 우선).
-const REDPAY_ALERT_DEDUP_WINDOW_MS = Number(Deno.env.get("REDPAY_ALERT_DEDUP_WINDOW_MS") ?? "") || 60_000;
+// T-20260820-...-ALARM-SEVERITY-3TIER-POLICY: 구 60s 시간창 dedup(REDPAY_ALERT_DEDUP_WINDOW_MS)은
+//   상태기반 반복규칙(최초1회+원인전이)으로 대체됨 → env 는 deprecated(잔존해도 무영향, 참조 제거).
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -167,7 +176,15 @@ async function sendSlackMessage(channel: string, text: string, token: string): P
 // ── non-2xx 상시 알림 (T-20260729-...-NON2XX-ALERT-ROOTCAUSE Part B) ──────────────
 //   choke point: 핸들러가 반환한 응답이 non-2xx 면 즉시 장쳰봇 명의 슬랙 알림.
 //   ★관측 전용 — 알림 실패/예외가 결제 응답(Response)에 절대 영향 주지 않음(호출측이 예외 삼킴).
-const _non2xxDedup = makeDedup(REDPAY_ALERT_DEDUP_WINDOW_MS);
+//
+//   T-20260820-...-ALARM-SEVERITY-3TIER-POLICY: non2xx = 1등급 즉시(결제승인 불명 신호).
+//     기존 60s 시간창 rate-limit(REDPAY_ALERT_DEDUP_WINDOW_MS, 지속장애 시 창마다 재발화 = 구 반복)을
+//     상태기반 반복규칙(최초1회 + 원인(status:reason) 전이 시 1회)으로 전환 — '5분 반복 폐지' 정합.
+//     ★즉시등급도 dedup 적용('즉시=억제없음' 오구현 금지). 상태(state)는 EF 인스턴스 in-memory(db_change=false).
+const _non2xxGate = makeAlarmRepeatGate();
+// T-20260820-...-ALARM-SEVERITY-3TIER-POLICY: 미등록 회선 실거래 승격(1등급) 회선단위 반복규칙 게이트.
+//   최초1회 + 미해결→실거래발생 전이 1회만. in-memory(EF 인스턴스 단위, db_change=false).
+const _unregLiveGate = makeAlarmRepeatGate();
 async function alertNon2xx(
   status: number,
   bodyText: string,
@@ -175,17 +192,21 @@ async function alertNon2xx(
   nowIso: string,
 ): Promise<void> {
   const errorSummary = extractErrorSummary(bodyText);
-  const key = `${status}:${errorSummary}`;
-  const decision = _non2xxDedup(key, Date.now());
-  if (!decision.send) {
-    console.warn(`${LOG}[NON2XX-ALERT] dedup 억제(창 내 동일원인) status=${status} reason=${errorSummary}`);
+  // 1등급(즉시) 분류 + 강등 회귀가드(AC1) — non2xx 는 절대 요약/억제로 강등하지 않는다.
+  const tier = classifyAlarm("payment_approval_unknown");
+  assertNoDowngrade("payment_approval_unknown", tier);
+  // 원인(status:reason)이 곧 상태 서명 — 동일원인은 최초 1회, 새 원인은 전이로 1회 발화.
+  const cause = `${status}:${errorSummary}`;
+  const decision = _non2xxGate({ key: `non2xx:${cause}`, signature: cause });
+  if (!decision.fire) {
+    console.warn(`${LOG}[NON2XX-ALERT] 반복규칙 억제(동일원인 최초1회 이후) status=${status} reason=${errorSummary}`);
     return;
   }
-  const text = buildNon2xxAlertText(status, errorSummary, ctx, nowIso, decision.suppressedSince);
+  const text = buildNon2xxAlertText(status, errorSummary, ctx, nowIso, 0);
   const sent = await sendSlackMessage(REDPAY_ALERT_CHANNEL, text, REDPAY_SLACK_BOT_TOKEN);
   console.warn(
-    `${LOG}[NON2XX-ALERT] status=${status} reason=${errorSummary} trxid=${ctx.trxid ?? "∅"} ` +
-      `tid=${ctx.tid ?? "∅"} slack_sent=${sent} (channel_set=${REDPAY_ALERT_CHANNEL ? "y" : "n"}).`,
+    `${LOG}[NON2XX-ALERT][tier${tier}] status=${status} reason=${errorSummary} trxid=${ctx.trxid ?? "∅"} ` +
+      `tid=${ctx.tid ?? "∅"} fire=${decision.kind} slack_sent=${sent} (channel_set=${REDPAY_ALERT_CHANNEL ? "y" : "n"}).`,
   );
 }
 
@@ -352,7 +373,38 @@ async function handleWebhook(req: Request, alertCtx: Non2xxAlertContext): Promis
       );
     }
 
-    // 실시간 Slack: (a) realtime 모드(구동작 롤백) 또는 (b) accumulate 실패 fail-safe 일 때만.
+    // ── ★ T-20260820-...-ALARM-SEVERITY-3TIER-POLICY 핵심 등급 경계 (GO_WARN 크럭스) ──────────
+    //   같은 미등록 회선이라도 실거래 유무로 등급이 바뀐다:
+    //     실거래0(프로브·0원·미지원)   → 2등급(일일요약) : accumulate 만, redpay-unreg-digest 아침 1건.
+    //     실거래 발생(돈 새는 중)       → 1등급(즉시)     : 상태전이(미해결→실거래발생) 즉시 1회 발화.
+    //   ★1등급 강등 금지(AC1) — 실거래 발생 미등록회선은 절대 일일요약에 묻히지 않는다.
+    //   ★반복규칙(AC4): 즉시라도 회선당 최초1회 + 실거래발생 전이 1회만(즉시=억제없음 오구현 금지).
+    const liveTxn = isLiveTransaction(kind, amount);
+    const { kind: unregKind, tier: unregTier } = classifyUnregisteredLine(liveTxn);
+    assertNoDowngrade(unregKind, unregTier);
+
+    if (unregTier === AlarmTier.IMMEDIATE) {
+      // 미등록 회선 + 실거래 발생 = 돈 새는 중 → 즉시 1등급(상태전이 승격). 회선 단위 최초1회/전이만.
+      const lineKey = `unreg:${(data.merchant_id ?? "∅").trim()}::${(data.tid ?? "∅").trim()}`;
+      const decision = _unregLiveGate({ key: lineKey, signature: "live_txn" });
+      if (decision.fire) {
+        await sendSlackMessage(
+          REDPAY_ALERT_CHANNEL,
+          `🚨 [redpay-webhook][foot] 미등록 회선에 실거래 발생 — 돈 새는 중(1등급 즉시)\n`
+            + `merchant_id=${data.merchant_id ?? "∅"} / merchant_name=${data.merchant_name ?? "∅"}\n`
+            + `tid=${data.tid ?? "∅"} / trxid=${data.trxid ?? "∅"} / 금액=${amount} / event=${kind} / event_id=${eventId}\n`
+            + `→ 미등록 회선으로 실결제가 유입 중(미적재=매출 누락). 즉시 registry 등록 + 해당 건 수기보정.`,
+          REDPAY_SLACK_BOT_TOKEN,
+        );
+      }
+      console.warn(
+        `${LOG}[3TIER][tier1] 미등록회선 실거래 승격 merchant_id=${data.merchant_id ?? "∅"} `
+          + `amount=${amount} event=${kind} fire=${decision.kind} accumulated=${accumulated}.`,
+      );
+      return json(200, { ok: true, status: "unknown_merchant_live_txn_alerted" });
+    }
+
+    // 실거래0 = 2등급(일일요약). 실시간 Slack 은 롤백 모드 / accumulate 실패 fail-safe 일 때만.
     if (REDPAY_UNREG_ALARM_MODE === "realtime" || !accumulated) {
       await sendSlackMessage(
         REDPAY_ALERT_CHANNEL,
@@ -366,7 +418,7 @@ async function handleWebhook(req: Request, alertCtx: Non2xxAlertContext): Promis
     }
     console.warn(
       `${LOG} 미등록 merchant_id=${data.merchant_id ?? "∅"} → 미적재 `
-        + `(mode=${REDPAY_UNREG_ALARM_MODE}, accumulated=${accumulated}, `
+        + `(tier=2/일일요약, mode=${REDPAY_UNREG_ALARM_MODE}, accumulated=${accumulated}, `
         + `allowlist_source=${footResolution.source}, registry=${footResolution.registryCount}).`,
     );
     return json(200, {
