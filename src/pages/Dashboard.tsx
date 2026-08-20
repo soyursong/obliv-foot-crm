@@ -501,8 +501,12 @@ const TimerCountdown = memo(function TimerCountdown({ endsAt }: { endsAt: Date }
       // T-20260820-foot-DASH-CUSTBOX-FONTWEIGHT-OVERBOLD-MOCKUP-CONFIRM (leg2): bold(700) 과굵음 →
       //   현장(김주연 총괄) 비교 시안 선택 = font-weight 500 확정 → font-bold → font-medium(500).
       //   compact(11px)/non-compact(10px)·타이머 로직·'종료' 만료라벨 모두 이 단일 span에서 굵기 상속(무변경, 굵기값만).
+      // T-20260820-foot-DASH-TIMER-FONTMONO-WEIGHT500-NOTREFLECTED-DIAG (옵션ⓐ): font-medium(500)이 시각적으로 미반영된
+      //   근본원인 = font-mono 폰트 스택(ui-monospace…)에 500 weight face 부재 → 400으로 스냅. font-mono 제거하여
+      //   전역 Pretendard(--font-sans, 500 face 보유)로 상속 → 500 굵기 실제 렌더. 자릿수 정렬 tabular-nums 유지.
+      //   신규 의존성 0·텍스트/데이터/계산/레이아웃 무변경(폰트 패밀리만).
       className={cn(
-        'tabular-nums font-mono font-medium leading-none',
+        'tabular-nums font-medium leading-none',
         expired ? 'text-red-700' : warn ? 'text-amber-700' : 'text-blue-700',
       )}
       title="레이저 타이머 남은 시간"
