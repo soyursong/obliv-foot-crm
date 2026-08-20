@@ -1055,6 +1055,29 @@ export default function Closing() {
       pkgPayments.filter(r => r.payment_type === 'refund').reduce((s, r) => s + r.amount, 0);
     const refundAmount = refundSingleAmount + refundPkgAmount;
 
+    // ── T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL (part1): 결제수단별 환불 집계 ──
+    //   환불 별도 박스(환불 내역)의 '카드/현금/이체 환불 N건 -X원' 표기용. 환불행을 method 축으로 partition.
+    //   ★method 축 = Axis-A(원결제 승계·결제수단별 집계 canonical bucket) — REFUND-CROSSMETHOD-METHOD-INHERIT-FWDFIX
+    //     (da_decision_foot_refund_crossmethod_method_inherit_fwdfix_20260819) 확정. forward 환불행=원결제 method 승계(정합) /
+    //     4 historical 교차수단행=현행 method 유지(김주연 총괄 field GENUINE 결정, 소급 미접촉).
+    //   ★신규 산식 0(§13.1.C): 위 refundSingleAmount/refundPkgAmount 와 '동일 refund 행 집합'을 method 로 partition 만.
+    //     합계(refundCard+Cash+Transfer+Other) ≡ refundAmount(SSOT) — silent-drop 방지(refundOther 잔여 가드).
+    const refundMethodAmount = (method: string) =>
+      payments.filter(r => r.payment_type === 'refund' && r.method === method).reduce((s, r) => s + r.amount, 0) +
+      pkgPayments.filter(r => r.payment_type === 'refund' && r.method === method).reduce((s, r) => s + r.amount, 0);
+    const refundMethodCount = (method: string) =>
+      payments.filter(r => r.payment_type === 'refund' && r.method === method).length +
+      pkgPayments.filter(r => r.payment_type === 'refund' && r.method === method).length;
+    const refundCardAmount     = refundMethodAmount('card');
+    const refundCashAmount     = refundMethodAmount('cash');
+    const refundTransferAmount = refundMethodAmount('transfer');
+    const refundCardCount      = refundMethodCount('card');
+    const refundCashCount      = refundMethodCount('cash');
+    const refundTransferCount  = refundMethodCount('transfer');
+    // 카드/현금/이체 외 수단(membership 등) 환불 잔여 — 총합 정합(=refundAmount) 유지용. 0 이면 미표기.
+    const refundOtherAmount = refundAmount - (refundCardAmount + refundCashAmount + refundTransferAmount);
+    const refundOtherCount  = totalRefundCount - (refundCardCount + refundCashCount + refundTransferCount);
+
     // T-20260519-foot-PKG-REVENUE-SPLIT AC-2/AC-3:
     // grossTotal에서 singleMembership 제외.
     // 'membership' method = 전액 패키지 차감건(amount=0 마커) 또는 구형 패키지차감건
@@ -1079,6 +1102,9 @@ export default function Closing() {
       manualCardCount, manualCashCount, manualTransferCount,
       // 환불
       refundAmount, refundSingleAmount, refundPkgAmount,
+      // T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL (part1): 결제수단별 환불 breakdown
+      refundCardAmount, refundCashAmount, refundTransferAmount, refundOtherAmount,
+      refundCardCount, refundCashCount, refundTransferCount, refundOtherCount,
       // 합계
       grossTotal,
       // T-20260526-foot-CLOSING-PAYCOUNT: 건 수
@@ -2108,15 +2134,21 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               total={totals.manualTotal}
               totalCount={totals.manualCardCount + totals.manualCashCount + totals.manualTransferCount}
             />
-            {/* 합계 카드: GROSS행 + 환불 차감 = NET(grossTotal)
-                행 합계 = totalCardGross + totalCashGross + totalTransferGross - refundAmount
-                        = grossTotal ✓ */}
+            {/* ── T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL ──────────────────────
+                (part2) 결제수단별 실결제 = NET 표기: 카드/현금/이체 총합을 GROSS(환불 미차감) → NET(환불 차감,
+                  totals.totalCard/Cash/Transfer)로 전환. 당일 취소(=당일 환불행)가 method 축에서 이미 차감돼
+                  '실 결제내역만' 집계된다(reporter 요청2). NET = 실제정산(ReconRow)·마감 저장(daily_closings)·
+                  print '합계(멤버십제외,환불차감)' 행과 동일 SSOT → 화면·정산·문서 3자 정합.
+                (part1) 인라인 '환불' 행 제거 → 아래 '환불 내역' 별도 박스로 분리(reporter 요청1).
+                ★이중 제외 없음(AC-2): 총합은 NET 로 환불 1회만 차감. 환불 내역 박스는 표시(정보)용 — 총합을 추가
+                  차감하지 않는다. grossTotal(마감 payload 권위총액)·산식 무변경(순수 표시축 재배치, DA CONSULT 불요).
+                ★수기결제 포함/공단 행 = 정보행(SummaryCard 는 명시 total prop 사용, 행 미합산) — total 무영향. */}
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                ['카드 총합', totals.totalCardGross, totals.totalCardCount],
-                ['현금 총합', totals.totalCashGross, totals.totalCashCount],
-                ['이체 총합', totals.totalTransferGross, totals.totalTransferCount],
+                ['카드 총합', totals.totalCard, totals.totalCardCount],
+                ['현금 총합', totals.totalCash, totals.totalCashCount],
+                ['이체 총합', totals.totalTransfer, totals.totalTransferCount],
                 // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
                 //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
                 ...(totals.singleHealthMaintenance !== 0
@@ -2124,9 +2156,6 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                   : []),
                 ...(totals.manualTotal > 0
                   ? [['수기결제 포함', totals.manualTotal, totals.manualCardCount + totals.manualCashCount + totals.manualTransferCount] as [string, number, number]]
-                  : []),
-                ...(totals.refundAmount > 0
-                  ? [['환불', -totals.refundAmount, totals.totalRefundCount] as [string, number, number]]
                   : []),
               ]}
               total={totals.grossTotal}
@@ -2164,6 +2193,38 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* ── T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL (part1): 결제수단별 환불 breakdown ──
+                  reporter 요청: '카드 환불 N건 -X원 / 현금 환불 N건 -X원 / 이체 환불 N건 -X원 / 합계 -X원'.
+                  method 축 = Axis-A(원결제 승계 canonical bucket, REFUND-CROSSMETHOD-FWDFIX). 총합=refundAmount(SSOT).
+                  0건 엣지도 박스 유지(항상 렌더) — 카드/현금/이체 3행 상시 표기, 기타 수단 환불은 잔여>0 시만. */}
+              <div className="rounded-md border border-rose-200 dark:border-rose-900 bg-rose-50/40 dark:bg-rose-950/20 p-2.5 space-y-1" data-testid="closing-refund-by-method">
+                {([
+                  ['카드 환불', totals.refundCardAmount, totals.refundCardCount],
+                  ['현금 환불', totals.refundCashAmount, totals.refundCashCount],
+                  ['이체 환불', totals.refundTransferAmount, totals.refundTransferCount],
+                  ...(totals.refundOtherAmount !== 0 || totals.refundOtherCount !== 0
+                    ? [['기타수단 환불', totals.refundOtherAmount, totals.refundOtherCount] as [string, number, number]]
+                    : []),
+                ] as [string, number, number][]).map(([label, amt, cnt]) => (
+                  <div key={label} className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="flex items-center gap-1.5 tabular-nums">
+                      <span className="text-xs text-muted-foreground">{cnt}건</span>
+                      <span className={cn('font-medium', amt > 0 ? 'text-rose-700' : 'text-foreground')}>
+                        {amt > 0 ? `-${formatAmount(amt)}` : formatAmount(0)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between border-t border-rose-200 dark:border-rose-900 pt-1.5 text-sm font-semibold">
+                  <span>합계</span>
+                  <span className="flex items-center gap-1.5 tabular-nums text-rose-700">
+                    <span className="text-xs font-normal text-muted-foreground">{totals.totalRefundCount}건</span>
+                    <span data-testid="closing-refund-by-method-total">{totals.refundAmount > 0 ? `-${formatAmount(totals.refundAmount)}` : formatAmount(0)}</span>
+                  </span>
+                </div>
+              </div>
+
               {/* 유형별 소계 (단건/패키지) — totals SSOT 재사용 */}
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
                 <span>단건 환불 <span className="tabular-nums font-medium text-foreground">{formatAmount(totals.refundSingleAmount)}</span> ({totals.singleRefundCount}건)</span>

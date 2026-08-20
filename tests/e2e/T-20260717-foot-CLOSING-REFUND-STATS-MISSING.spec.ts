@@ -88,8 +88,10 @@ test.describe('T-20260717-foot-CLOSING-REFUND-STATS-MISSING — 금일 환불 �
     // 차감 산식(net = payment - refund)·grossTotal 정의 보존.
     expect(c).toContain("r.payment_type === 'refund' ? -r.amount : r.amount");
     expect(c).toContain('const grossTotal = totalCard + totalCash + totalTransfer');
-    // 합계 카드의 기존 환불 차감행(SummaryCard) 보존.
-    expect(c).toContain("['환불', -totals.refundAmount, totals.totalRefundCount]");
+    // ★T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL(part1) 로 superseded:
+    //   합계(결제수단별) 박스의 인라인 '환불' 차감행은 제거되고 '환불 내역' 별도 박스로 분리됨.
+    //   grossTotal(NET) 산식 자체는 불변(위 2개 assert) — 환불은 여전히 NET 총합에 1회 차감(이중 제외 없음).
+    expect(c).not.toContain("['환불', -totals.refundAmount, totals.totalRefundCount]");
   });
 
   test('AC-R3 회귀: 담당자별 매출(staffTotals) 집계 무접촉', () => {
