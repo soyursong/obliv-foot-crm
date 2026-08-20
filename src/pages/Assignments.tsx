@@ -28,6 +28,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { supabase } from '@/lib/supabase';
+// T-20260820-foot-CONSULT-READ-SILENT401-BANNER-RELOGIN-FIX: read 401(세션/토큰 만료) 감지 →
+//   명단 blank 금지 + 재인증 배너/재로그인 유도(silent empty 제거). 부모 RC 31fb4f5b 후속 fix leg.
+import { isAuthReadError } from '@/lib/resilience/authReadError';
+import {
+  reportAuthReadError,
+  clearAuthReadError,
+  AUTH_RECOVERED_EVENT,
+} from '@/lib/resilience/authRecoveryBus';
 // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경2: [확정]→상담대기방 발송 EF 이름 SSOT.
 import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { useClinic } from '@/hooks/useClinic';
@@ -567,12 +575,19 @@ export default function Assignments() {
       // ⚠ staff.display_name 컬럼은 DB 미존재(STAFF-NAME-UNIFY 타입만 추가, 미마이그레이션).
       //   select에 포함 시 PostgREST 400 → 쿼리 전체 실패 → staff=[] → 배정 풀·통계 전부 0건.
       //   (T-20260618-foot-ASSIGN-STAFF-EMPTY-HOTFIX) UI는 display_name ?? name fallback 유지.
-      const { data: staffRows } = await supabase
+      const { data: staffRows, error: staffErr } = await supabase
         .from('staff')
         .select('id, clinic_id, name, role, active, created_at, user_id')
         .eq('clinic_id', clinic.id)
         .eq('active', true)
         .is('deleted_at', null); // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제 직원 제외
+      // T-20260820-foot-CONSULT-READ-SILENT401: 인증오류(만료/anon 401)면 명단 blank 금지 → 즉시 bail
+      //   (기존 setStaff([]) 등 어떤 blanking setter 도 호출 안 함 = 표시중 명단 보존) + 재인증 유도.
+      //   real 0-row(error=null)면 아래로 진행 = 기존대로 정상 빈 명단 표시(회귀0).
+      if (isAuthReadError(staffErr)) {
+        reportAuthReadError();
+        return;
+      }
       const staffList = (staffRows ?? []) as Staff[];
       setStaff(staffList);
 
@@ -590,7 +605,7 @@ export default function Assignments() {
       setTempOff(off);
 
       // 3) 오늘 원내 체크인 (done/cancelled 제외)
-      const { data: ciRows } = await supabase
+      const { data: ciRows, error: ciErr } = await supabase
         .from('check_ins')
         .select('*')
         .eq('clinic_id', clinic.id)
@@ -598,6 +613,11 @@ export default function Assignments() {
         .gte('checked_in_at', `${todayIso}T00:00:00+09:00`)
         .not('status', 'in', '(done,cancelled)')
         .order('checked_in_at', { ascending: true });
+      // T-20260820-foot-CONSULT-READ-SILENT401: 오늘 체크인(배정 큐 소스) read 401 → blank 금지·bail.
+      if (isAuthReadError(ciErr)) {
+        reportAuthReadError();
+        return;
+      }
       const ci = (ciRows ?? []) as CheckIn[];
       setCheckIns(ci);
 
@@ -631,23 +651,34 @@ export default function Assignments() {
 
       // 5) 당월 assignment_actions (토스 N건·당김 N건·금일 배분 '방식' 표시 SSOT)
       //    배정/재진 누적 카운트의 정본은 check_ins(아래 5b) — audit 로그는 toss/당김·방식용.
-      const { data: actRows } = await supabase
+      const { data: actRows, error: actErr } = await supabase
         .from('assignment_actions')
         .select('*')
         .eq('clinic_id', clinic.id)
         .gte('created_at', monthStart);
+      // T-20260820-foot-CONSULT-READ-SILENT401: 금일 배분 이력 소스① read 401 → blank 금지·bail.
+      if (isAuthReadError(actErr)) {
+        reportAuthReadError();
+        return;
+      }
       setActions((actRows ?? []) as AssignmentAction[]);
 
       // 5b) 당월 check_ins 전체 (배정 누적 카운트 + 금일 배분 이력 정본 — done/cancelled 포함)
       //     T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1/AC-3: 자동·수동 배정 모두 여기 consultant_id/
       //     therapist_id 에 확정 기록되므로, 이 경로로 집계하면 audit 유실과 무관하게 정확.
-      const { data: monthCiRows } = await supabase
+      const { data: monthCiRows, error: monthCiErr } = await supabase
         .from('check_ins')
         .select('*')
         .eq('clinic_id', clinic.id)
         .is('deleted_at', null) // R2B soft-hide 제외 (금일 배분 이력 + 배정 누적카운트 정본)
         .gte('checked_in_at', monthStart)
         .order('checked_in_at', { ascending: true });
+      // T-20260820-foot-CONSULT-READ-SILENT401: 금일 배분 이력 소스②(정본) read 401 → blank 금지·bail.
+      //   ★ RC(31fb4f5b)가 지목한 "금일 배분 이력 empty" 진원 read — silent 0-row 방지 핵심.
+      if (isAuthReadError(monthCiErr)) {
+        reportAuthReadError();
+        return;
+      }
       const monthCi = (monthCiRows ?? []) as CheckIn[];
       setMonthCheckIns(monthCi);
 
@@ -733,7 +764,14 @@ export default function Assignments() {
         }
       }
       setSlotEnter(enterMap);
+      // T-20260820-foot-CONSULT-READ-SILENT401: 여기 도달 = 인증오류 없는 완전 load 성공 →
+      //   (혹시 떠있던) 재인증 배너 해소(재로그인 후 정상화 시 자동 소멸).
+      clearAuthReadError();
     } catch (e) {
+      // T-20260820-foot-CONSULT-READ-SILENT401: 드물게 throw 로 올라온 인증오류도 재인증 유도(명단 보존).
+      if (isAuthReadError(e as { code?: string; message?: string; status?: number })) {
+        reportAuthReadError();
+      }
       console.warn('[Assignments] load failed:', e);
     } finally {
       setLoading(false);
@@ -742,6 +780,15 @@ export default function Assignments() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // T-20260820-foot-CONSULT-READ-SILENT401: 재인증(refreshSession) 성공 → 명단 자동 복원(재조회).
+  useEffect(() => {
+    const onRecovered = () => {
+      void load();
+    };
+    window.addEventListener(AUTH_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(AUTH_RECOVERED_EVENT, onRecovered);
   }, [load]);
 
   // T-20260624-foot-ASSIGN-STAFF-TEMP-OFF AC4: 다중 운영자 동기화 — staff_temp_off Realtime 구독.

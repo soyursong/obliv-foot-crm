@@ -14,6 +14,9 @@ import UpdateBanner from '@/components/UpdateBanner';
 // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (spec §3.1 (a)): refresh-401 비차단 상단 배너.
 //   상류 게이트웨이 401 blip 중 무한로딩·사일런트 저장실패 대신 "일시 지연·자동 재시도" 정직 표시.
 import Refresh401Banner from '@/components/Refresh401Banner';
+// T-20260820-foot-CONSULT-READ-SILENT401-BANNER-RELOGIN-FIX: data-plane read 인증오류(만료/anon 401)
+//   감지 시 명단 blank 대신 재인증 배너 — 우선 silent refreshSession(자동복구), 실패 시 재로그인 유도.
+import AuthErrorBanner from '@/components/AuthErrorBanner';
 // T-20260818-foot-REFRESH401-RESILIENCE-PILOT (Step2 (c)): write-buffer flush 트리거 초기화.
 import { initWriteBufferFlush } from '@/lib/resilience/writeBufferFlush';
 // T-20260710-foot-DASHBOARD-PAGELOAD-ERROR: chunk 자가치유 가드 SSOT
@@ -235,6 +238,9 @@ function App() {
         {/* T-20260818-foot-REFRESH401-RESILIENCE-PILOT (a): refresh-401 재시도 중 비차단 상단 배너.
             UpdateBanner(하단)와 위치 분리. 재시도 성공/해소 시 자동 소멸(useRefresh401Ux). */}
         <Refresh401Banner />
+        {/* T-20260820-foot-CONSULT-READ-SILENT401-BANNER-RELOGIN-FIX: 세션/토큰 만료 read 401 →
+            silent empty(명단 사라짐) 대신 재인증 배너. 자동복구(refreshSession) 우선, 실패 시 재로그인. */}
+        <AuthErrorBanner />
         <BrowserRouter>
           <Suspense fallback={<PageLoader />}>
             {/* T-20260729-foot-PWRESET-FE-RECOVERY-DEEPLINK-HANDLER: recovery 딥링크 착지 시
