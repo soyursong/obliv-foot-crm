@@ -69,10 +69,13 @@ test('AC-3: 여러 canonical 코드가 각각 올바른 표시라벨로 매핑',
   expect(consultInflowLabel('워크인', { first_inflow_channel: 'partner.dopamine' }, null, resolver)).toBe('도파민');
 });
 
-test('AC-1: canonical 은 legacy visit_route/lead_source 보다 우선(§36 축① SSOT)', () => {
-  // 두 소스가 공존해도 canonical(first_inflow_channel) 이 이긴다.
+test('AC-1[의도변경 T-20260819-AXIS-REVERT]: 2번차트(visit_route) 가 canonical 보다 우선', () => {
+  // ★의도변경(T-20260819-foot-CONSULT-INFLOW-AXIS-REVERT): 72b5904a(08-18)는 canonical(first_inflow_channel)을
+  //   1순위로 뒀으나, 현장 2번차트에 입력한 방문경로가 슬랙에 미반영(63명中18명 불일치)되어 우선순위를 재정렬.
+  //   두 소스가 공존하면 이제 2번차트(visit_route→lead_source)가 이기고, canonical 은 폴백이다.
+  //   (구 기대값 '네이버' → 신 기대값 '지인소개' = visit_route 우선. 단언 삭제 아님·기대값만 반전.)
   const cust = { first_inflow_channel: 'inbound.naver_place', visit_route: '지인소개', lead_source: '공홈' };
-  expect(consultInflowLabel('워크인', cust, null, resolver)).toBe('네이버');
+  expect(consultInflowLabel('워크인', cust, null, resolver)).toBe('지인소개');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,9 +92,10 @@ test('AC-2: 모든 소스 빈값 → 미지정 fallback 유지(거짓 워크인/
 // ─────────────────────────────────────────────────────────────────────────────
 // AC-graceful — first_inflow_channel 있으나 resolver 미가용/미매핑 → legacy 사슬로 fall-through
 // ─────────────────────────────────────────────────────────────────────────────
-test('AC-graceful: resolver 미제공(RPC 미로드) → canonical 건너뛰고 legacy visit_route 사용', () => {
+test('AC-graceful: resolver 미제공(RPC 미로드) → visit_route(2번차트) 사용', () => {
+  // T-20260819-AXIS-REVERT 이후 visit_route 는 최우선이므로 resolver 유무와 무관하게 2번차트 값이 노출된다.
   const cust = { first_inflow_channel: 'inbound.naver_place', visit_route: '지인소개', lead_source: null };
-  // resolver 인자 자체를 넘기지 않음(배포순서 초기 RPC 미로드 재현).
+  // resolver 인자 자체를 넘기지 않음(배포순서 초기 RPC 미로드 재현) — 어차피 visit_route 가 먼저 이긴다.
   expect(consultInflowLabel('워크인', cust)).toBe('지인소개');
 });
 
