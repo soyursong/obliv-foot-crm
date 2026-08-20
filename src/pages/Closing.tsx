@@ -2400,6 +2400,27 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="py-1.5" colSpan={6}>환불 합계 ({totals.totalRefundCount}건)</td>
                         <td className="py-1.5 text-right tabular-nums text-rose-700">-{formatAmount(totals.refundAmount)}</td>
                       </tr>
+                      {/* ── T-20260820-foot-REFUNDLIST-METHODTOTALS-FOOTER (김주연 총괄 2026-08-20) ──
+                          '금일 환불 내역' 목록 하단에 결제수단별 총 환불금액(카드/현금/이체) 각각 표기.
+                          ★method 축 = sibling T-20260820-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL / FWDFIX(원결제 승계) 와
+                            동일 refund method partition 재사용(§13.1.C dual-authoring 금지) — totals.refund{Card,Cash,Transfer,Other}
+                            SSOT 그대로. 신규 산식 0. 합계(카드+현금+이체+기타)≡refundAmount(silent-drop 방지 기타 잔여 가드).
+                          ★표시 위치=목록 table footer(sibling 상단 breakdown 박스와 위치 상이·중복 아님). */}
+                      {([
+                        ['카드 환불 합계', totals.refundCardAmount, totals.refundCardCount],
+                        ['현금 환불 합계', totals.refundCashAmount, totals.refundCashCount],
+                        ['이체 환불 합계', totals.refundTransferAmount, totals.refundTransferCount],
+                        ...(totals.refundOtherAmount !== 0 || totals.refundOtherCount !== 0
+                          ? [['기타수단 환불 합계', totals.refundOtherAmount, totals.refundOtherCount] as [string, number, number]]
+                          : []),
+                      ] as [string, number, number][]).map(([label, amt, cnt], mi) => (
+                        <tr key={label} className={cn('text-xs', mi === 0 && 'border-t')} data-testid="closing-refund-list-method-total">
+                          <td className="py-1 text-muted-foreground" colSpan={6}>{label} ({cnt}건)</td>
+                          <td className={cn('py-1 text-right tabular-nums font-medium', amt > 0 ? 'text-rose-700' : 'text-muted-foreground')}>
+                            {amt > 0 ? `-${formatAmount(amt)}` : formatAmount(0)}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
