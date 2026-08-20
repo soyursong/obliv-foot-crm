@@ -50,13 +50,16 @@ test.describe('T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET', () => {
   //   부모 dual-axis(시재 실지급 보조행 병존)는 Q2 field-confirm (B)로 단일 라인으로 축약됨.
   //   drawer 보조 줄 제거 → revenue(…Rev) 단일 라인만. 상세 assert = SINGLELINE-DRAWERHIDE.spec.ts.
   //   본 테스트는 revenue 단일 라인 유지 + drawer 보조 줄 부재만 회귀 가드로 남긴다.
-  test('Q2(superseded→single-line): 합계 카드 = revenue(…Rev) 단일 라인 + 시재(실지급) 보조행 부재', () => {
+  // ★ SUPERSEDED by T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE:
+  //   per-method 표시축 revenue-basis NET(…Rev) → GROSS(정상수납·환불행 제외)로 재전환
+  //   (김주연 총괄 ts 1787189374: 환불 제외 실수납만). drawer 보조행 부재 회귀 가드만 유효.
+  test('Q2(superseded→GROSS): 합계 카드 = 정상수납 단일 라인 + 시재(실지급) 보조행 부재', () => {
     const c = closing();
-    // revenue 소계를 표시행으로 사용(유지).
-    expect(c).toContain('totals.totalCardRev, totals.totalCardCount');
-    expect(c).toContain('totals.totalCashRev, totals.totalCashCount');
-    expect(c).toContain('totals.totalTransferRev, totals.totalTransferCount');
-    // drawer(시재) 보조행 = field-confirm (B)로 제거됨.
+    // per-method 표시행 = GROSS(정상수납). 구 …Rev 는 METHODTOTAL-REFUND-EXCLUDE 로 대체.
+    expect(c).toContain('totals.totalCardGross, totals.totalCardCount');
+    expect(c).toContain('totals.totalCashGross, totals.totalCashCount');
+    expect(c).toContain('totals.totalTransferGross, totals.totalTransferCount');
+    // drawer(시재) 보조행 = field-confirm (B)로 제거됨(불변).
     expect(c).not.toContain('시재 (실지급)');
   });
 

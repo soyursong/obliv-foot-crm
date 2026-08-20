@@ -790,6 +790,10 @@ export default defineConfig({
         //   (실패분 remaining 보존·성공분만 revoke·부분실패 카메라유지·전건성공 회귀0·08-19 finally 불변식)
         //   + DoD-6 음성-안전(부수효과 write 재시도 금지). 순수 fs-grep 정적 단언 — auth/DB/server 불요·결정론.
         '**/T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL.spec.ts',
+        // T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE: 합계(결제수단별) per-method 표시축 NET(…Rev)→GROSS(정상수납·
+        //   환불 제외). 순수 fs-grep 정적 가드 + sumGross/이중차감 자립 시뮬레이션 — auth/DB/server/page 불요·결정론.
+        //   db_change=false·DISPLAY-ONLY. 실 갤탭 수치정합 = 김주연 총괄 field confirm.
+        '**/T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],
@@ -939,6 +943,9 @@ export default defineConfig({
         // T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL: unit 전용 순수 정적 가드 → 무-project 실행 시
         //   desktop-chrome 매칭→setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행(결정론 GREEN, env-불요).
         '**/T-20260820-foot-PHOTOUP-CAPTURE-DISCARD-ON-FAIL.spec.ts',
+        // T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE: unit 전용 순수 정적 가드 → desktop-chrome(auth/webServer)
+        //   유입 차단(결정론 GREEN, env-불요).
+        '**/T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE.spec.ts',
       ],
     },
     {

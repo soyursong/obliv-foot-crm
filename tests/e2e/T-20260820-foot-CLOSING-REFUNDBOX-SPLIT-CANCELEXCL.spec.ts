@@ -82,20 +82,25 @@ test.describe('T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL', () => {
     expect(c).toContain('REFUND-CROSSMETHOD');
   });
 
-  // ── AC-2: 결제수단별 실결제 = NET(당일 취소 제외) & 인라인 환불행 제거 ────────
-  //   ★ SUPERSEDE(T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET, DA CONDITIONAL-GO):
-  //     합계 박스 표시축이 plain-NET → revenue-basis NET(…Rev, 교차수단 환불 원결제 method 재귀속)로 승격.
-  //     AC-2 원의도(GROSS 아님 · 인라인 환불 이중차감 없음)는 유효 — …Rev 는 여전히 NET(환불 차감) 값이다.
-  test('AC-2: 합계(결제수단별) 박스 = revenue-basis NET(…Rev) — GROSS/이중차감 아님', () => {
+  // ── AC-2: 인라인 환불행 제거 + 환불 별도 박스 분리 (표시축은 하위 티켓서 재전환) ──
+  //   ★ SUPERSEDE 체인: plain-NET → revenue-basis NET(…Rev, REVENUE-BASIS-REBUCKET)
+  //     → GROSS(정상수납·환불 제외, T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE).
+  //     본 REFUNDBOX 티켓의 핵심 산출(=환불 별도 박스 분리, part1)은 불변 유지. per-method 값만 재전환됨.
+  //     AC-2 원의도(합계 카드에 인라인 '환불' 재차감행 없음 · 환불은 별도 박스로 분리)는 유효.
+  test('AC-2: 합계(결제수단별) per-method = GROSS(정상수납) + 환불 별도 박스 분리 유지', () => {
     const c = closing();
-    // 합계 카드 행이 revenue-basis NET(…Rev) 값을 표시 — GROSS 인라인 아님.
-    expect(c).toContain('totals.totalCardRev, totals.totalCardCount');
-    expect(c).toContain('totals.totalCashRev, totals.totalCashCount');
-    expect(c).toContain('totals.totalTransferRev, totals.totalTransferCount');
-    // 인라인 GROSS 행 미사용(합계 박스 rows 에서 totalCardGross 등 제거).
-    expect(c).not.toContain("['카드 총합', totals.totalCardGross");
-    expect(c).not.toContain("['현금 총합', totals.totalCashGross");
-    expect(c).not.toContain("['이체 총합', totals.totalTransferGross");
+    // per-method 행 = GROSS(정상수납·환불 제외). (…Rev NET 는 METHODTOTAL-REFUND-EXCLUDE 로 대체)
+    expect(c).toContain('totals.totalCardGross, totals.totalCardCount');
+    expect(c).toContain('totals.totalCashGross, totals.totalCashCount');
+    expect(c).toContain('totals.totalTransferGross, totals.totalTransferCount');
+    // 인라인 '환불' 재차감행이 합계 카드 안에 없음(별도 박스로 분리 — 이중차감 gate).
+    const titleIdx = c.indexOf('title="합계 (결제수단별)"');
+    const totalIdx = c.indexOf('total={totals.grossTotal}', titleIdx);
+    const cardBlock = c.slice(titleIdx, totalIdx);
+    expect(cardBlock).not.toContain("'환불', -totals.refund");
+    // 환불 별도 박스(part1 핵심 산출) 상존.
+    expect(c).toContain('closing-refund-by-method');
+    expect(c).toContain('totals.refundCardAmount');
   });
 
   test('AC-2: 합계(결제수단별) 박스에서 인라인 환불행 제거(이중 제외 없음)', () => {

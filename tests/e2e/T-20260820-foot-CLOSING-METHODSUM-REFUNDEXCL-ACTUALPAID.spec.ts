@@ -49,16 +49,20 @@ test.describe('T-20260820-foot-CLOSING-METHODSUM-REFUNDEXCL-ACTUALPAID', () => {
     expect(response?.status()).toBeLessThan(400);
   });
 
-  // ── AC-1: 합계(결제수단별) 총합 = NET 소계(…Rev) — 이미 환불 차감된 값 ──────────────
-  test('AC-1: 카드/현금/이체 총합 = totals.total{Card,Cash,Transfer}Rev (NET·이미 환불 차감)', () => {
+  // ── AC-1: [SUPERSEDED] 합계(결제수단별) per-method = GROSS(정상수납·환불 제외) ──────────
+  //   ★ SUPERSEDED by T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE (김주연 총괄 ts 1787189374):
+  //     본 ACTUALPAID 는 'per-method 이미 NET → 캡션만 추가'로 착지했으나, 총괄이 후속 clarify —
+  //     '환불 건 제외하고 실수납(정상수납)만' → per-method 표시축을 NET(…Rev) → GROSS(…Gross)로 재전환.
+  //     (본 ACTUALPAID 자신이 남긴 'basis 재확인 planner FOLLOWUP'의 결론.)
+  test('AC-1(superseded→GROSS): 카드/현금/이체 총합 = totals.total{...}Gross (정상수납·환불 제외)', () => {
     const block = summaryRowsBlock();
-    expect(block).toContain('totals.totalCardRev, totals.totalCardCount');
-    expect(block).toContain('totals.totalCashRev, totals.totalCashCount');
-    expect(block).toContain('totals.totalTransferRev, totals.totalTransferCount');
-    // GROSS 소계를 총합 라인에 쓰지 않음(환불 미차감 회귀 가드).
-    expect(block).not.toContain('totals.totalCardGross, totals.totalCardCount');
-    expect(block).not.toContain('totals.totalCashGross, totals.totalCashCount');
-    expect(block).not.toContain('totals.totalTransferGross, totals.totalTransferCount');
+    expect(block).toContain('totals.totalCardGross, totals.totalCardCount');
+    expect(block).toContain('totals.totalCashGross, totals.totalCashCount');
+    expect(block).toContain('totals.totalTransferGross, totals.totalTransferCount');
+    // 구 NET 소계(…Rev)를 표시행에 쓰지 않음(정상수납 재전환 회귀 가드).
+    expect(block).not.toContain('totals.totalCardRev, totals.totalCardCount');
+    expect(block).not.toContain('totals.totalCashRev, totals.totalCashCount');
+    expect(block).not.toContain('totals.totalTransferRev, totals.totalTransferCount');
   });
 
   // ── AC-2: sumRev = 환불 '1회' 차감(NET) — 이중차감 신규 로직 없음 ────────────────
@@ -83,21 +87,28 @@ test.describe('T-20260820-foot-CLOSING-METHODSUM-REFUNDEXCL-ACTUALPAID', () => {
     const c = closing();
     // closing-payments 쿼리: payment_type 로 refund 필터링(제거)하지 않음.
     const payIdx = c.indexOf("queryKey: ['closing-payments'");
-    const payBlock = c.slice(payIdx, payIdx + 900);
+    // window 확대(1800): .select(...) 컬럼 문자열이 길어져 .neq('status','deleted') 가 900 밖으로 밀림
+    //   (pre-existing 창-과소 false-red 치유, T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE 편의 수정).
+    const payBlock = c.slice(payIdx, payIdx + 1800);
     expect(payBlock).toContain(".from('payments')");
     expect(payBlock).toContain(".neq('status', 'deleted')");
     expect(payBlock).not.toMatch(/\.neq\('payment_type', 'refund'\)/);
     expect(payBlock).not.toMatch(/\.eq\('payment_type', 'payment'\)/);
   });
 
-  // ── AC-4: DISPLAY-ONLY 명확성 캡션 추가(환불 이미 차감 고지) ──────────────────────
-  test('AC-4: 합계 카드에 "환불 이미 차감" 명확성 캡션(closing-methodsum-refundexcl-note) 존재', () => {
+  // ── AC-4: [SUPERSEDED] DISPLAY-ONLY 명확성 캡션 (환불 제외/정상수납 고지) ────────────
+  //   ★ SUPERSEDED by T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE:
+  //     구 캡션('환불 금액이 이미 차감된'·testid closing-methodsum-refundexcl-note)이
+  //     신 캡션('환불을 제외한 정상수납'·testid closing-methodtotal-refundexcl-note)으로 대체됨.
+  test('AC-4(superseded): 합계 카드에 "환불 제외 정상수납" 캡션(closing-methodtotal-refundexcl-note) 존재', () => {
     const c = closing();
-    expect(c).toContain('closing-methodsum-refundexcl-note');
-    expect(c).toContain('환불 금액이 이미 차감된');
+    expect(c).toContain('closing-methodtotal-refundexcl-note');
+    expect(c).toContain('환불을 제외한 정상수납');
+    // 구 캡션/testid 부재(회귀 가드).
+    expect(c).not.toContain('closing-methodsum-refundexcl-note');
     // 캡션은 합계(결제수단별) SummaryCard 직후에 위치.
     const cardIdx = c.indexOf('title="합계 (결제수단별)"');
-    const noteIdx = c.indexOf('closing-methodsum-refundexcl-note');
+    const noteIdx = c.indexOf('closing-methodtotal-refundexcl-note');
     expect(noteIdx).toBeGreaterThan(cardIdx);
   });
 

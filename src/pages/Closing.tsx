@@ -2270,10 +2270,21 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                // 수단별 revenue(매출) 단일 라인만 — drawer 보조 줄('ㄴ …시재(실지급)') 제거(field-confirm (B) 단일 표시).
-                [`카드 총합${totals.totalCardRev !== totals.totalCard ? ' (매출)' : ''}`, totals.totalCardRev, totals.totalCardCount] as [string, number, number],
-                [`현금 총합${totals.totalCashRev !== totals.totalCash ? ' (매출)' : ''}`, totals.totalCashRev, totals.totalCashCount] as [string, number, number],
-                [`이체 총합${totals.totalTransferRev !== totals.totalTransfer ? ' (매출)' : ''}`, totals.totalTransferRev, totals.totalTransferCount] as [string, number, number],
+                // ── T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE (per-method = 정상수납/GROSS · DISPLAY-ONLY) ──
+                //   김주연 총괄(ts 1787189374.436629): 카드/현금/이체 총합에서 '환불 건 제외'하고 실수납(정상수납)만 집계.
+                //     환불은 하단 '금일 환불' 박스(기배포 SPLIT-CANCELEXCL)에서만 표시.
+                //   ★선행 실측(§13.1.C): 직전까지 이 라인은 total{Card,Cash,Transfer}Rev = NET(sumRev L1072, 환불 1회 차감)
+                //     을 표시 → 사용자 관측 '환불금액이 포함(=차감 반영)됨'. 본건 = NET→GROSS(정상수납) 전환.
+                //   ★재사용(신규 병렬 refund 집계 신설 금지): total…Gross = sumGross(L1023, payment_type!=='refund' 필터)로
+                //     환불행을 이미 '제외'한 기존 집계 재사용. refund partition 집합(refund{Card,Cash,Transfer}Amount)은
+                //     아래 '금일 환불' 박스에서만 소비 — 여기선 refund 행을 '제외'만 함.
+                //   ★이중차감 가드(step3): per-method = 환불 '제외'(미차감·GROSS) / 합계(grossTotal) = 환불 1회 '차감'(NET).
+                //     동일 refund 가 두 경로에서 두 번 빠지지 않음(제외 ⊥ 차감, 단일 refund 집합 기준). db_change=false.
+                //   ★method 축 = Axis-A(원결제 승계): GROSS 는 환불행을 아예 제외 → 교차수단 환불 재귀속(Rev) 불요.
+                //     정상수납은 저장 method = 원결제 method(수납 시점 확정) 그대로.
+                ['카드 총합', totals.totalCardGross, totals.totalCardCount] as [string, number, number],
+                ['현금 총합', totals.totalCashGross, totals.totalCashCount] as [string, number, number],
+                ['이체 총합', totals.totalTransferGross, totals.totalTransferCount] as [string, number, number],
                 // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
                 //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
                 ...(totals.singleHealthMaintenance !== 0
@@ -2287,22 +2298,19 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               totalCount={totals.totalCardCount + totals.totalCashCount + totals.totalTransferCount}
               highlight
             />
-            {/* ── T-20260820-foot-CLOSING-METHODSUM-REFUNDEXCL-ACTUALPAID (조사-우선 reconcile · DISPLAY-ONLY) ──────
-                김주연 총괄(2026-08-20 13:37) 현장 관측='카드 총합에 환불된 내역 포함, 실수납만 표기'.
-                ★조사 결론(코드 실측): 이 카드의 카드/현금/이체 총합은 이미 NET = totals.total{Card,Cash,Transfer}Rev
-                  = sumRev(L1072)로 환불을 '1회 차감'(payment_type==='refund' ? -amount : amount)한 값.
-                  선행 REFUNDBOX-SPLIT-CANCELEXCL(1ab50f98·GROSS→NET) 이 method-별 총합에 이미 적용 완료.
-                  ∴ 여기서 추가 차감(신규 제외 로직)=이중차감(gate#1 HARD REJECT). basis(drawer↔revenue) 전환=
-                  김주연 총괄 08-18 본인 결정(revenue-basis 735,400)·gate#2 와 충돌 → 미접촉.
-                ★현장 '환불 포함' 관측 = 총합이 이미 환불 차감된 실수납임을 UI가 미고지한 '표시 명확성 gap'.
-                  → 산식·basis 무접촉, DISPLAY-ONLY 캡션으로 '환불이 이미 차감된 금액'임을 명시(오해 해소).
-                  db_change=false·conservation(…Rev 3소계 합≡grossTotal) 불변. (매출 vs 실수납(drawer) basis 재확인은
-                  planner FOLLOWUP 로 김주연 총괄 responder DECISION-REQUEST — 본 캡션은 basis 중립 사실만 진술.) */}
+            {/* ── T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE (DISPLAY-ONLY 캡션 갱신) ──────
+                선행 ACTUALPAID 캡션('환불이 이미 차감된 금액')을 대체. 본건에서 per-method 라인을 NET→GROSS(정상수납)로
+                전환 → 카드/현금/이체 총합은 이제 환불을 '제외'한 실수납만. 환불은 아래 '금일 환불' 박스에서만 표시.
+                ★합계(grossTotal) = 환불 1회 차감된 NET(실현 매출) 유지(planner step3 '전체 NET 차감') → 상단 3개 정상수납
+                  라인의 산술합 ≠ 합계(차이 = 환불액). 이 차이는 바로 아래 '금일 환불' 박스로 설명됨(정상수납 − 환불 = 합계).
+                  캡션으로 이 관계를 명시해 'rows≠total' 오해 방지. db_change=false·grossTotal SSOT(payload/daily_closings/
+                  정산 ReconRow) 무접촉. */}
             <p
               className="mt-1 text-[11px] leading-tight text-emerald-700 dark:text-emerald-400"
-              data-testid="closing-methodsum-refundexcl-note"
+              data-testid="closing-methodtotal-refundexcl-note"
             >
-              ※ 카드·현금·이체 총합은 <b>환불 금액이 이미 차감된</b> 금액입니다. (환불 상세는 아래 ‘금일 환불’ 박스에서 별도 확인)
+              ※ 카드·현금·이체 총합은 <b>환불을 제외한 정상수납(실수납)</b> 금액입니다. 환불은 아래 ‘금일 환불’ 박스에서만 표시되며,
+              합계는 <b>환불 차감 후 실현 매출</b>입니다. (정상수납 − 환불 = 합계)
             </p>
             {/* Q4 anti-fabrication 노출: 원결제 linkage 미verify 환불(합성 금지·저장수단 기준 표시). 0건이면 미표기. */}
             {totals.revUnverifiedCount > 0 && (
