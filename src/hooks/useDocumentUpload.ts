@@ -14,6 +14,7 @@
  */
 import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logPhotoUploadFailure } from '@/lib/photoUploadTelemetry';
 
 export interface UploadedDocument {
   /** 'documents' 버킷 내부 경로 */
@@ -72,11 +73,17 @@ export function useDocumentUpload() {
         body = input.body;
       }
 
+      const t0 = Date.now();
       const { error: upErr } = await supabase.storage
         .from('documents')
         .upload(path, body, { contentType, upsert: false });
 
       if (upErr) {
+        // 실패 계측(PHI-free·non-fatal) — RC FIX-C. path_prefix=버킷/폴더 수준(customer_id 절삭).
+        void logPhotoUploadFailure({
+          bucket: 'documents', path, fileSizeBytes: body.size, error: upErr,
+          durationMs: Date.now() - t0,
+        });
         setError(upErr.message);
         return null;
       }

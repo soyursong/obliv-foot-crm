@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, Trash2, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { logPhotoUploadFailure } from '@/lib/photoUploadTelemetry';
 import { toast } from '@/lib/toast';
 
 const BUCKET = 'treatment-photos';
@@ -140,10 +141,18 @@ export function FirstVisitFootPhotoSlots({ checkInId, customerId, clinicId }: Pr
     const prev = slots[side];
 
     try {
+      const t0 = Date.now();
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
         .upload(path, file, { contentType, upsert: false });
-      if (upErr) throw upErr;
+      if (upErr) {
+        // 실패 계측(PHI-free·non-fatal) — RC FIX-C
+        void logPhotoUploadFailure({
+          bucket: BUCKET, path, fileSizeBytes: file.size, error: upErr,
+          durationMs: Date.now() - t0, clinicId,
+        });
+        throw upErr;
+      }
 
       const { data: userData } = await supabase.auth.getUser();
       const uploadedBy = userData?.user?.id ?? null;

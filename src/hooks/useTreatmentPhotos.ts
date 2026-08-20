@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logPhotoUploadFailure } from '@/lib/photoUploadTelemetry';
 import type { TreatmentPhoto, TreatmentPhotoType } from '@/lib/types';
 
 const BUCKET = 'treatment-photos';
@@ -122,10 +123,18 @@ export function useTreatmentPhotos(customerId: string | null, clinicId: string |
       // 경로 = {clinic_id}/{customer_id}/{uuid}.{ext} (clinic-path RLS 미러)
       const path = `${clinicId}/${customerId}/${uuid()}.${ext}`;
 
+      const t0 = Date.now();
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
         .upload(path, blob, { contentType, upsert: false });
-      if (upErr) throw upErr;
+      if (upErr) {
+        // 실패 계측(PHI-free·non-fatal) — RC FIX-C
+        void logPhotoUploadFailure({
+          bucket: BUCKET, path, fileSizeBytes: blob.size, error: upErr,
+          durationMs: Date.now() - t0, clinicId,
+        });
+        throw upErr;
+      }
 
       const { data: userData } = await supabase.auth.getUser();
       const uploadedBy = userData?.user?.id ?? null;

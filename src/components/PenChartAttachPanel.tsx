@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Loader2, Trash2, UploadCloud } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { logPhotoUploadFailure } from '@/lib/photoUploadTelemetry';
 import { signedThumbUrls, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -153,6 +154,7 @@ export function PenChartAttachPanel({
         const ext = extOf(file);
         // 경로 pin: customer/{id}/pen-chart-attach/{stem}/{uuid}.{ext} · 확장자 보존.
         const path = `${prefix}/${uuid()}.${ext}`;
+        const t0 = Date.now();
         const { error } = await supabase.storage
           .from(BUCKET)
           .upload(path, file, {
@@ -161,6 +163,11 @@ export function PenChartAttachPanel({
             ...PHOTO_UPLOAD_OPTS,
           });
         if (error) {
+          // 실패 계측(PHI-free·non-fatal) — RC FIX-C. path_prefix=버킷/폴더 수준(customer_id 절삭).
+          void logPhotoUploadFailure({
+            bucket: BUCKET, path, fileSizeBytes: file.size, error,
+            durationMs: Date.now() - t0,
+          });
           toast.error(`"${file.name}" 첨부 실패: ${error.message}`);
         } else {
           success += 1;
