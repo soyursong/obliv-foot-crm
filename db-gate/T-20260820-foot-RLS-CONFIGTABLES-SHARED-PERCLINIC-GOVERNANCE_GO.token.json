@@ -1,0 +1,27 @@
+{
+  "ticket_id": "T-20260820-foot-RLS-CONFIGTABLES-SHARED-PERCLINIC-GOVERNANCE",
+  "gate": "DB-GATE-GO",
+  "issued_by": "supervisor",
+  "ttl_sec": 3600,
+  "prod_ref": "rxlomoozakkjesdqjtvd",
+  "migration_sha256": "996e4a218acb9cea29f27485c6cf590c95a60193eb5b8f45a47645c9de9ece35",
+  "rollback_sha256": "2f14c7a95e2595576fa7df55e14aee0e5a69944fbfffbb75e269bb2ab8f9d362",
+  "migration_version": "20260820130000",
+  "migration_name": "foot_rls_configtables_perclinic_seal",
+  "migration_files": [
+    "supabase/migrations/20260820130000_foot_rls_configtables_perclinic_seal.sql",
+    "supabase/migrations/20260820130000_foot_rls_configtables_perclinic_seal.rollback.sql"
+  ],
+  "evidence_commit": "5c737d28",
+  "key_id": "supv-dbgate-2026a",
+  "nonce": "bc3616f17efba7c5",
+  "lane": "migration-sql-file",
+  "change_class": "exposure-REDUCING ADDITIVE RESTRICTIVE per-clinic clinic-gate seal DDL (CREATE POLICY x3: form_templates SELECT + treatment_sets ALL + code_availability SELECT · permissive DROP 0 · mutation 0 · 신규 컬럼/타입/enum/테이블 0 · 완전가역 DROP 1줄/정책)",
+  "da_consult_reply": "da_decision_foot_rls_permissive_newtables_clinicgate_seal_20260819.md §C-4 / Q2 3-way — config 3테이블 애매분 현장 governance(김주연 총괄 \"지점마다 다르지\" reply ts 1787181267.196129) → 전부 (A) per-clinic 격리 → §A-3 direct anchor RESTRICTIVE seal. ADDITIVE(신규 컬럼/테이블/enum 0) DA schema-gate 미재발동. AC-1 apply-gate=supervisor.",
+  "ceo_gate": "N/A — exposure-REDUCING ADDITIVE(CREATE RESTRICTIVE POLICY x3 only·permissive DROP 0·mutation 0·신규 컬럼/타입/enum/테이블 0·완전가역) + 현장 governance 확보 → 대표 파괴게이트 §3.1 면제. 부모 SEAL/residual leg 동형 선례.",
+  "precheck": "supervisor MIG-GATE/DDL-diff GO 2026-08-20. [DDL-diff] PREFLIGHT DO(3테이블 실재+RLS ON+helper 2종+H3 NULL0 각 테이블+멱등 abort+offending permissive 실재) + CREATE POLICY x3(ft SELECT·ts ALL USING+CHECK·ca SELECT) + COMMENT x3 + VERIFY DO(ALL=1·SELECT=2 canonical·permissive 3존치). DROP0/ALTER0/데이터0. [predicate] (clinic_id=current_user_clinic_id()) OR is_admin_or_manager() §A-3 byte-identical. [dryrun] No-Persistence PASS(txn-strip+plpgsql exception-rollback+post-probe). [ledger] 20260820130000 fresh(applied:false)·monotonic(>20260820120001)·prod ABSENT 실측. [C0]fresh [C11]PREFLIGHT 실재+DDL 원자 [C13/C24]5c737d28==HEAD [C18/§2.8]DA HOLD/RETRACT CLEAR(signals+MQ+frontmatter) [C20]apply_before_go 부재(3정책 prod ABSENT) [C21]frontmatter fresh-read CLEAR(deploy-ready·block_reason 공란·deploy_hold 부재). [C19/C10/C23/C26/C29/C30/C35]N/A. POSTCHECK 예정: 3정책 canonical 착지·jongno 전행 유지·타clinic seal 실효·admin 보존·permissive 3존치·회귀0.",
+  "issued_at_epoch": 1787184808.575,
+  "issued_at": "2026-08-20T00:13:28.575Z",
+  "expires_at_epoch": 1787188408.575,
+  "expires_at": "2026-08-20T01:13:28.575Z"
+}
