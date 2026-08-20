@@ -46,19 +46,18 @@ test.describe('T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET', () => {
     expect(c).toMatch(/totalCardRev\+CashRev\+TransferRev\s*≡/);
   });
 
-  // ── Q2: dual-axis 표시 — revenue(매출) + 시재(실지급) distinct 라벨 ───────────
-  test('Q2: 합계 카드가 revenue(…Rev) 표시 + revenue≠drawer 시 시재(실지급) 행 병존', () => {
+  // ── Q2: [SUPERSEDED by T-20260820-foot-CLOSING-CASHSUM-SINGLELINE-DRAWERHIDE] ──
+  //   부모 dual-axis(시재 실지급 보조행 병존)는 Q2 field-confirm (B)로 단일 라인으로 축약됨.
+  //   drawer 보조 줄 제거 → revenue(…Rev) 단일 라인만. 상세 assert = SINGLELINE-DRAWERHIDE.spec.ts.
+  //   본 테스트는 revenue 단일 라인 유지 + drawer 보조 줄 부재만 회귀 가드로 남긴다.
+  test('Q2(superseded→single-line): 합계 카드 = revenue(…Rev) 단일 라인 + 시재(실지급) 보조행 부재', () => {
     const c = closing();
-    // revenue 소계를 표시행으로 사용.
+    // revenue 소계를 표시행으로 사용(유지).
     expect(c).toContain('totals.totalCardRev, totals.totalCardCount');
     expect(c).toContain('totals.totalCashRev, totals.totalCashCount');
     expect(c).toContain('totals.totalTransferRev, totals.totalTransferCount');
-    // drawer(시재) distinct 라벨 행 — revenue 와 갈릴 때만 병존.
-    expect(c).toContain('현금 시재 (실지급)');
-    expect(c).toContain('카드 시재 (실지급)');
-    expect(c).toContain('이체 시재 (실지급)');
-    // 조건: revenue ≠ drawer 일 때만 시재 행(정상일 강제 X).
-    expect(c).toMatch(/totals\.totalCashRev !== totals\.totalCash/);
+    // drawer(시재) 보조행 = field-confirm (B)로 제거됨.
+    expect(c).not.toContain('시재 (실지급)');
   });
 
   // ── Q3: DISPLAY-ONLY — net(정산/DB/payload/print) 축 불변 ─────────────────────
@@ -207,9 +206,9 @@ test.describe('T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET', () => {
 /**
  * ── 갤탭 실기기 현장 confirm 체크리스트 (done 판정 근거) ─────────────────────────
  * [ ] 일마감 화면 → 08-18(이금득 교차수단 환불일) → 합계(결제수단별) '현금 총합 (매출)' = 735,400 확인
- * [ ] 같은 카드에 'ㄴ 현금 시재 (실지급)' = 635,400 병존(distinct 라벨) 확인
+ * [ ] (SUPERSEDED) 'ㄴ 현금 시재 (실지급)' 병존 → SINGLELINE-DRAWERHIDE 로 제거됨(단일 라인 확인)
  * [ ] 카드 총합(매출)에 원결제 -100k 반영 / 합계(총계) 값 불변 확인
- * [ ] 강력 새로고침(캐시 초기화) 후에도 735,400/635,400 유지 확인
- * [ ] 교차수단 환불 없는 일반 마감일 → 현금 총합 단일 표기(시재 행 없음)·기존 값 그대로(회귀 0) 확인
+ * [ ] 강력 새로고침(캐시 초기화) 후에도 735,400 유지 확인
+ * [ ] 교차수단 환불 없는 일반 마감일 → 현금 총합 단일 표기·기존 값 그대로(회귀 0) 확인
  * [ ] 실수령 대사(정산) 현금 '시스템' 값 = 물리 금고(drawer) 635,400 유지 확인
  */

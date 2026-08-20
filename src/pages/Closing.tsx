@@ -2255,28 +2255,25 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 ★이중 제외 없음(AC-2): 총합은 NET 로 환불 1회만 차감. 환불 내역 박스는 표시(정보)용 — 총합을 추가
                   차감하지 않는다. grossTotal(마감 payload 권위총액)·산식 무변경(순수 표시축 재배치, DA CONSULT 불요).
                 ★수기결제 포함/공단 행 = 정보행(SummaryCard 는 명시 total prop 사용, 행 미합산) — total 무영향. */}
-            {/* ── T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET (DA CONDITIONAL-GO) ──────────
-                DA da_decision_foot_closing_cashsum_revenue_basis_rebucket_20260820.
-                결제수단별 총합을 revenue-basis(…Rev, 교차수단 환불=원결제 method 재귀속)로 표시. 김주연 총괄
-                field-authority(ts 1787189112, 08-18 정답=735,400) = 마감 현금합계=원결제수단 기준.
-                ★ Q2 dual-axis: revenue(매출) primary + 교차수단 환불로 revenue≠drawer 된 수단은 '시재(실지급)'
-                  행을 distinct 라벨로 병존 표기(§85 drawer grain 표면 보존·H4 단일 ambiguous 라벨 금지).
-                  revenue==drawer(정상일)이면 단일 '총합' 행(불필요 drawer line 강제 X — DA UI 발명 금지).
-                ★ Q3 DISPLAY-ONLY: total(grossTotal)·정산 대사(totalCash)·daily_closings 저장·payload·A6 는 drawer
-                  net 그대로 불변. 표시 카드 소계 축만 revenue projection. conservation: …Rev 3소계 합 ≡ net 3소계 합. */}
+            {/* ── T-20260820-foot-CLOSING-CASHSUM-SINGLELINE-DRAWERHIDE (부모 REVENUE-BASIS-REBUCKET Q2 field-confirm (B)) ──────────
+                부모 DA da_decision_foot_closing_cashsum_revenue_basis_rebucket_20260820 (Q2 envelope 내 field-switch).
+                부모는 dual-axis(revenue 매출 행 + 'ㄴ …시재(실지급)' drawer 보조 행 병존)로 착지했으나, Q2 field-confirm
+                이 (B)로 해소: 김주연 총괄 "매출 확인용으로만 봅니다 → 현금 매출 735,400 단일 표시"(drawer 실사 용도
+                불사용 확정). → drawer 보조 줄('ㄴ …시재(실지급)')을 화면에서 제거하고 수단별 revenue 단일 라인만 표시.
+                ★ DISPLAY-ONLY(부모 Q3 HARD BOUNDARY 절대 준수): total(grossTotal)·정산 대사(totalCash=drawer net)·
+                  daily_closings persist(single_cash_total 등)·outbox payload totals{}·일일감사 A6·프린트 = drawer
+                  grain(net 저장 method, cash 635,400) 그대로 무접촉·불변. revenue projection 절대 무유입. db_change=false.
+                  부모 impl(8a70dde8) revert 아님 — …Rev 소계·conservation(…Rev 3소계 합≡net 3소계 합)·linkage 조회
+                  전부 유지, 화면 라인만 drawer 보조 줄 축약. conservation: totalCardRev+CashRev+TransferRev ≡ net 3소계 합.
+                ★ '(매출)' 마커: 교차수단 환불로 revenue≠drawer 인 수단에만 표기(정산 대사의 drawer 635,400 과 구분 —
+                  이 카드는 매출 확인 전용임을 명시). 정상일(revenue==drawer)엔 plain '총합'(불필요 마커 강제 X). */}
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                // Q2 dual-axis: 각 수단 = revenue(매출) 행 + (교차수단 환불로 drawer 와 갈릴 때) 시재(실지급) distinct 행.
+                // 수단별 revenue(매출) 단일 라인만 — drawer 보조 줄('ㄴ …시재(실지급)') 제거(field-confirm (B) 단일 표시).
                 [`카드 총합${totals.totalCardRev !== totals.totalCard ? ' (매출)' : ''}`, totals.totalCardRev, totals.totalCardCount] as [string, number, number],
-                ...(totals.totalCardRev !== totals.totalCard
-                  ? [['ㄴ 카드 시재 (실지급)', totals.totalCard, undefined] as [string, number, number?]] : []),
                 [`현금 총합${totals.totalCashRev !== totals.totalCash ? ' (매출)' : ''}`, totals.totalCashRev, totals.totalCashCount] as [string, number, number],
-                ...(totals.totalCashRev !== totals.totalCash
-                  ? [['ㄴ 현금 시재 (실지급)', totals.totalCash, undefined] as [string, number, number?]] : []),
                 [`이체 총합${totals.totalTransferRev !== totals.totalTransfer ? ' (매출)' : ''}`, totals.totalTransferRev, totals.totalTransferCount] as [string, number, number],
-                ...(totals.totalTransferRev !== totals.totalTransfer
-                  ? [['ㄴ 이체 시재 (실지급)', totals.totalTransfer, undefined] as [string, number, number?]] : []),
                 // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
                 //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
                 ...(totals.singleHealthMaintenance !== 0
