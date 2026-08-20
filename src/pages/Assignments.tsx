@@ -412,6 +412,10 @@ export default function Assignments() {
   //   **check_in 레코드 단위(시점정합)** 로 교정. check_in id → VisitType(recency+owner-forced pin).
   const [visitTypeByCi, setVisitTypeByCi] = useState<Map<string, string>>(new Map()); // 오늘 배정뷰
   const [monthVisitTypeByCi, setMonthVisitTypeByCi] = useState<Map<string, string>>(new Map()); // 당월 누적
+  // T-20260820-foot-CONSULT-ASSIGN-BATCHLIST-CONFIRM-REGRESSION (RC fix): recency 조회 **실패**로 'returning'
+  //   보수적 폴백이 적용된 오늘 check_in id 집합. 재진 큐 제외(REJIN-B)를 fail-open 하기 위한 신호 —
+  //   폴백(=실측 아님)인 행은 '재진'으로 단정해 큐에서 지우지 않는다(조회 실패 시 배정 큐 blackout 방지).
+  const [recencyErroredCi, setRecencyErroredCi] = useState<Set<string>>(new Set());
   const [actions, setActions] = useState<AssignmentAction[]>([]);
   // T-20260620-foot-ASSIGN-COUNT-TOSS-3FIX AC-1: 당월 누적 '배정/재진' 카운트의 정본 = check_ins(내구 상태).
   //   audit 로그(assignment_actions)는 toss/당김 집계·방식표시용. 자동+수동 모두 check_ins.{role}_id 에
@@ -613,11 +617,16 @@ export default function Assignments() {
       //   (기존 T-20260713 고객단위 override 는 self-contamination 과다집계 RC → per-checkin 으로 교체.)
       //   deriveConsultAxis 는 visit_type='returning' 여부만 보므로 axisOf 가 이 맵을 우선 사용한다.
       {
+        // T-20260820-foot-CONSULT-ASSIGN-BATCHLIST-CONFIRM-REGRESSION: recency 조회 실패로 'returning' 폴백된
+        //   check_in id 를 함께 수집 → 상담 배정 큐(todayRows/pullCandidates) 재진 제외를 fail-open.
+        const erroredCi = new Set<string>();
         const vtMap = await resolveVisitTypesByCheckIn(
           ci.map((c) => ({ id: c.id, customer_id: c.customer_id, checked_in_at: c.checked_in_at })),
           clinic.id,
+          erroredCi,
         );
         setVisitTypeByCi(vtMap as Map<string, string>);
+        setRecencyErroredCi(erroredCi);
       }
 
       // 5) 당월 assignment_actions (토스 N건·당김 N건·금일 배분 '방식' 표시 SSOT)
@@ -815,9 +824,15 @@ export default function Assignments() {
   const isConsultReturningRow = useCallback(
     (x: { role: AssignmentRole; ci: CheckIn }): boolean => {
       const { role } = x;
+      // T-20260820-foot-CONSULT-ASSIGN-BATCHLIST-CONFIRM-REGRESSION (RC fix): fail-OPEN.
+      //   RC = recency(status=done) 조회 실패 시 resolveVisitTypesByCheckIn 이 전 행을 'returning' 보수적
+      //   폴백 → REJIN-B(재진 큐 제외)가 상담 배정 큐(오늘 배정 현황·당김 후보) 전체를 하드 제외 → 배정 불가
+      //   (구 T-20260701 은 마커만, 행은 잔존 = 무해했음). 조회실패 폴백('returning' 이나 실측 아님)인 행은
+      //   재진으로 단정하지 않고 큐에 노출한다 — 실측 재진 제외(AC3)는 보존, 조회실패 blackout 만 차단.
+      if (recencyErroredCi.has(x.ci.id)) return false;
       return role === 'consult' && isReturningAxis(axisOf(x.ci, 'consult'));
     },
-    [axisOf],
+    [axisOf, recencyErroredCi],
   );
 
   // ── 수동배정 select default 값 (AC-6, read-only 프리셋) ────────────────────────

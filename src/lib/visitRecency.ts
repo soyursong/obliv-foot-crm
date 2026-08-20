@@ -199,10 +199,17 @@ export interface CheckInVisitRow {
  *
  * 반환: check_in id → VisitType. 무이력/이전 done 없음 = new / 조회실패 = returning(기존 폴백 정합).
  * best-effort — throw 하지 않는다. (판정산식 = classifyVisitByRecency 단일 재사용, re-divergence 방지.)
+ *
+ * T-20260820-foot-CONSULT-ASSIGN-BATCHLIST-CONFIRM-REGRESSION (RC fix):
+ *   ▸ 선택적 out-param `erroredCheckInIds` — recency 조회 **실패**로 'returning' **보수적 폴백**이 적용된
+ *     check_in id 를 수집한다. 반환 맵의 'returning' 값은 (a) 실측 재진 과 (b) 조회실패 폴백 을 구분하지 못하는데,
+ *     소비자에 따라 폴백을 fail-open(제외 안 함) 으로 다뤄야 하는 곳이 있다(상담 배정 큐 제외 필터).
+ *   ▸ 반환 맵 값은 불변('returning' 폴백 유지 — 라벨/카운트 소비자의 보수적 정합 보존). 이 set 은 **부가 신호**일 뿐.
  */
 export async function resolveVisitTypesByCheckIn(
   rows: CheckInVisitRow[],
   clinicId: string | null | undefined,
+  erroredCheckInIds?: Set<string>,
 ): Promise<Map<string, VisitType>> {
   const result = new Map<string, VisitType>();
   const valid = rows.filter((r) => r.id && r.customer_id && r.checked_in_at);
@@ -250,6 +257,9 @@ export async function resolveVisitTypesByCheckIn(
     const selfAt = row.checked_in_at as string;
     if (erroredCust.has(cust)) {
       result.set(row.id, applyOwnerForcedVisitType(row.id, 'returning')); // 조회 실패 → 보수적 폴백(+override pin)
+      // T-20260820-foot-CONSULT-ASSIGN-BATCHLIST-CONFIRM-REGRESSION: 이 'returning' 은 실측이 아니라
+      //   조회실패 폴백 → 상담 배정 큐 제외 필터가 fail-open 할 수 있게 errored id 로 표식(반환값은 불변).
+      erroredCheckInIds?.add(row.id);
       continue;
     }
     // 자기 check_in 시각 이전(strict <)의 완료방문 중 최신 1건.

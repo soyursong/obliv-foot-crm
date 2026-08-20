@@ -162,15 +162,17 @@ test.describe('T-20260818-foot-CONSULT-REJIN-FIRSTVISIT-EXCL — 상담 배정 �
   });
 
   // ── 정적 B (AC2/AC4): 상담 배정 큐 재진 제외 = isReturningAxis 동일 소스 ───────────
-  test('AC2/AC4(B): 오늘 배정 현황(todayRows) + 당김 후보(pullCandidates) 가 consult 축 재진을 isReturningAxis 로 제외한다', () => {
+  test('AC2/AC4(B): 오늘 배정 현황(todayRows) + 당김 후보(pullCandidates) 가 consult 축 재진을 isConsultReturningRow(→isReturningAxis) 로 제외한다', () => {
     const src = read('src/pages/Assignments.tsx');
+    // T-20260820-foot-CONSULT-ASSIGN-BATCHLIST-CONFIRM-REGRESSION: 인라인 술어가 isConsultReturningRow
+    //   콜백으로 리팩터됨(fail-open 가드 삽입 지점). 두 소비자는 동일 콜백을 경유한다.
     // todayRows: consult 재진 제외.
+    expect(src).toMatch(/todayRows = allTodayRows\.filter\([\s\S]*?!isConsultReturningRow\(x\)/);
+    // pullCandidates: consult 재진 제외(동일 콜백).
+    expect(src).toMatch(/pullCandidates[\s\S]*?!isConsultReturningRow\(x\)/);
+    // 콜백 SSOT: role === 'consult' && isReturningAxis(axisOf(...)) 술어 보존.
     expect(src).toMatch(
-      /todayRows = allTodayRows\.filter\([\s\S]*?!\(x\.role === 'consult' && isReturningAxis\(axisOf\(x\.ci, 'consult'\)\)\)/,
-    );
-    // pullCandidates: consult 재진 제외(동일 술어).
-    expect(src).toMatch(
-      /pullCandidates[\s\S]*?!\(x\.role === 'consult' && isReturningAxis\(axisOf\(x\.ci, 'consult'\)\)\)/,
+      /isConsultReturningRow[\s\S]*?role === 'consult' && isReturningAxis\(axisOf\(x\.ci, 'consult'\)\)/,
     );
     // 판별 SSOT = autoAssign isReturningAxis(deriveConsultAxis, 365일 done recency) import.
     expect(src).toMatch(/import \{[\s\S]*?isReturningAxis[\s\S]*?\} from '@\/lib\/autoAssign'/);
