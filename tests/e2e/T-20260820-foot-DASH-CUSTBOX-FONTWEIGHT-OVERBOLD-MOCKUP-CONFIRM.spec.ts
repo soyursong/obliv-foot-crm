@@ -1,25 +1,23 @@
 /**
- * E2E spec — T-20260819-foot-DASH-CUSTBOX-TIMER-FONTWEIGHT-VISIBILITY
- *   (canonical; supersedes 중복티켓 T-20260819-foot-DASHBOARD-LASER-FONT-BOLD — 동일 요청·동일 스샷 F0BRANALJKE·동일 thread 1787127169.194009)
- * 대시보드 고객박스 "레이저 잔여시간"("남은 N분 N초") + 종료("완료") 표기 가독성 개선.
- * 현장(김주연 총괄, C0ATE5P6JTH) 스샷 F0BRANALJKE — 폰트/굵기 때문에 너무 안보임.
+ * E2E spec — T-20260820-foot-DASH-CUSTBOX-FONTWEIGHT-OVERBOLD-MOCKUP-CONFIRM (leg2, canonical)
+ *   부모: T-20260819-foot-DASH-CUSTBOX-TIMER-FONTWEIGHT-VISIBILITY (leg1, bold700 배포분)
+ *   현장(김주연 총괄, C0ATE5P6JTH) 비교 시안 선택 = font-weight 500 확정
+ *   (slack thread 1787127169.194009 · reply ts 1787184783.771779).
+ * 대시보드 고객박스 "레이저 잔여시간"("남은 N분 N초") + 종료 표기 굵기 재조정(bold 과굵음 해소).
  *
- * ★ 조사 게이트 결론(대상 요소 특정 = 스샷 좌표 근거):
- *   스샷 빨간박스 2종(이진호 카드 "남은 2분 36초" / 김다연 카드 종료표기)은 모두 카드 배지행
- *   우측 끝(ml-auto)의 동일 컴포넌트 TimerCountdown(data-testid=card-timer-countdown) 출력이다.
+ * ★ 대상 요소(스샷 좌표 근거·leg1 승계):
+ *   카드 배지행 우측 끝(ml-auto)의 동일 컴포넌트 TimerCountdown(data-testid=card-timer-countdown) 출력.
  *     - 활성(ends_at 미래)  → remainingLabel="남은 N분 N초" (text-blue-700)
  *     - 종료(ends_at 과거, stopped_at=null) → remainingLabel="종료" (text-red-700)
- *   카드에 "완료" 리터럴 렌더는 없음(grep 확인). 미수 배지(OutstandingDueBadge)="미수"로 별개.
- *   → 현장 "완료"는 종료(finished) 표기를 지칭. 단일 컴포넌트 굵기/대비만 상향해 2종 동시 개선.
+ *   단일 컴포넌트 굵기값(Dashboard.tsx L502)만 변경 → compact/non-compact 및 '종료' 만료라벨 동시 반영.
  *
- * 조치(표시 스타일만, behavior/텍스트/데이터/계산/레이아웃 무변경):
- *   TimerCountdown: font-semibold(600) → font-bold(700), 색 대비 600→700 shade.
- *   래퍼 폰트크기 text-[10px]→[11px] (compact) / text-[9px]→[10px] (non-compact).
+ * 조치(표시 스타일만, behavior/텍스트/데이터/계산/레이아웃·fontSize 무변경):
+ *   TimerCountdown: font-bold(700) → font-medium(500). fontSize(11px/10px)·색 대비 무변경.
  *
  * 시나리오:
- *   S-0: 활성 타이머 카드 → "남은…" 표기가 font-weight 700(bold)로 렌더 (가독성)
- *   S-1: 종료 타이머 카드(ends_at 과거·stopped_at null) → "종료" 표기도 font-weight 700(bold)
- *   S-2: 카운트다운 래퍼 폰트크기 ≥ 10px (기존 9~10px 대비 상향, 가독성)
+ *   S-0: 활성 타이머 카드 → "남은…" 표기가 font-weight 500로 렌더 (과굵음 해소)
+ *   S-1: 종료 타이머 카드(ends_at 과거·stopped_at null) → "종료" 표기도 font-weight 500
+ *   S-2: 카운트다운 래퍼 폰트크기 ≥ 10px (fontSize 무변경 회귀 가드)
  *
  * Supabase service env 미설정 시에만 skip (정당한 환경 예외).
  */
@@ -87,7 +85,7 @@ async function seedTimer(client: SupabaseClient, checkInId: string, endsAt: Date
   return timer.id as string;
 }
 
-test.describe('T-20260819-foot-DASHBOARD-LASER-FONT-BOLD — 고객박스 레이저 잔여시간/종료 표기 굵기 상향', () => {
+test.describe('T-20260820-foot-DASH-CUSTBOX-FONTWEIGHT-OVERBOLD-MOCKUP-CONFIRM — 고객박스 레이저 잔여시간/종료 굵기 500 재조정(leg2)', () => {
   test.beforeAll(async () => {
     if (!seedReady) return;
     sb = createClient(SUPA_URL, SERVICE_KEY);
@@ -138,8 +136,8 @@ test.describe('T-20260819-foot-DASHBOARD-LASER-FONT-BOLD — 고객박스 레이
     return page.locator(`[data-testid="checkin-card"][data-checkin-id="${checkInId}"]`).first();
   }
 
-  // S-0: 활성 카드 "남은…" 표기가 font-weight 700(bold)
-  test('S-0: 레이저 잔여시간("남은…") 표기가 굵게(font-weight 700) 렌더', async ({ page }) => {
+  // S-0: 활성 카드 "남은…" 표기가 font-weight 500 (현장 확정 = bold 과굵음 해소)
+  test('S-0: 레이저 잔여시간("남은…") 표기가 font-weight 500 렌더', async ({ page }) => {
     await gotoDashboard(page);
     const card = cardLocator(page, ciActive!);
     await card.waitFor({ state: 'visible', timeout: 15_000 });
@@ -147,11 +145,11 @@ test.describe('T-20260819-foot-DASHBOARD-LASER-FONT-BOLD — 고객박스 레이
     await expect(countdown).toBeVisible({ timeout: 10_000 });
     await expect(countdown).toContainText('남은');
     const weight = await countdown.evaluate((el) => getComputedStyle(el).fontWeight);
-    expect(weight, `잔여시간 표기 font-weight 미상향 (got=${weight})`).toBe('700');
+    expect(weight, `잔여시간 표기 font-weight 500 아님 (got=${weight})`).toBe('500');
   });
 
-  // S-1: 종료 카드 "종료"(현장 "완료") 표기도 font-weight 700(bold)
-  test('S-1: 종료("완료") 표기도 굵게(font-weight 700) 렌더', async ({ page }) => {
+  // S-1: 종료 카드 "종료" 표기도 font-weight 500
+  test('S-1: 종료 표기도 font-weight 500 렌더', async ({ page }) => {
     await gotoDashboard(page);
     const card = cardLocator(page, ciExpired!);
     await card.waitFor({ state: 'visible', timeout: 15_000 });
@@ -159,7 +157,7 @@ test.describe('T-20260819-foot-DASHBOARD-LASER-FONT-BOLD — 고객박스 레이
     await expect(countdown).toBeVisible({ timeout: 10_000 });
     await expect(countdown).toContainText('종료');
     const weight = await countdown.evaluate((el) => getComputedStyle(el).fontWeight);
-    expect(weight, `종료 표기 font-weight 미상향 (got=${weight})`).toBe('700');
+    expect(weight, `종료 표기 font-weight 500 아님 (got=${weight})`).toBe('500');
   });
 
   // S-2: 카운트다운 래퍼 폰트크기 ≥ 10px (기존 9~10px 대비 상향)
