@@ -60,18 +60,16 @@ test.describe('T-20260820-foot-CLOSING-CASHSUM-SINGLELINE-DRAWERHIDE', () => {
     expect(block).not.toMatch(/\[\s*['"]ㄴ[^\]]*totals\.totalCash\b/);
   });
 
-  // ── AC-2: 수단별 단일 라인 유지 (표시축은 하위 티켓서 재전환) ───────────────────
-  //   ★ SUPERSEDED by T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE:
-  //     per-method 값 …Rev(NET) → …Gross(정상수납·환불 제외)로 재전환. '단일 라인(수단당 1행)' 회귀 가드는 유효 유지.
-  test('AC-2: 카드/현금/이체 = 정상수납 소계(…Gross) 단일 라인 표시', () => {
+  // ── AC-2: 수단별 revenue(…Rev) 단일 라인 유지 ─────────────────────────────────
+  test('AC-2: 카드/현금/이체 = revenue 소계(…Rev) 단일 라인 표시', () => {
     const block = summaryRowsBlock();
-    expect(block).toContain('totals.totalCardGross, totals.totalCardCount');
-    expect(block).toContain('totals.totalCashGross, totals.totalCashCount');
-    expect(block).toContain('totals.totalTransferGross, totals.totalTransferCount');
-    // 각 수단당 표시행 정확히 1개(중복/보조행 없음).
-    expect((block.match(/totals\.totalCashGross, totals\.totalCashCount/g) || []).length).toBe(1);
-    expect((block.match(/totals\.totalCardGross, totals\.totalCardCount/g) || []).length).toBe(1);
-    expect((block.match(/totals\.totalTransferGross, totals\.totalTransferCount/g) || []).length).toBe(1);
+    expect(block).toContain('totals.totalCardRev, totals.totalCardCount');
+    expect(block).toContain('totals.totalCashRev, totals.totalCashCount');
+    expect(block).toContain('totals.totalTransferRev, totals.totalTransferCount');
+    // 각 수단당 revenue 표시행 정확히 1개(중복/보조행 없음).
+    expect((block.match(/totals\.totalCashRev, totals\.totalCashCount/g) || []).length).toBe(1);
+    expect((block.match(/totals\.totalCardRev, totals\.totalCardCount/g) || []).length).toBe(1);
+    expect((block.match(/totals\.totalTransferRev, totals\.totalTransferCount/g) || []).length).toBe(1);
   });
 
   // ── AC-3: DISPLAY-ONLY — drawer grain(persist/payload/A6/정산) 무접촉 ──────────

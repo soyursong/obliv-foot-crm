@@ -2270,21 +2270,25 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                // ── T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE (per-method = 정상수납/GROSS · DISPLAY-ONLY) ──
-                //   김주연 총괄(ts 1787189374.436629): 카드/현금/이체 총합에서 '환불 건 제외'하고 실수납(정상수납)만 집계.
-                //     환불은 하단 '금일 환불' 박스(기배포 SPLIT-CANCELEXCL)에서만 표시.
-                //   ★선행 실측(§13.1.C): 직전까지 이 라인은 total{Card,Cash,Transfer}Rev = NET(sumRev L1072, 환불 1회 차감)
-                //     을 표시 → 사용자 관측 '환불금액이 포함(=차감 반영)됨'. 본건 = NET→GROSS(정상수납) 전환.
-                //   ★재사용(신규 병렬 refund 집계 신설 금지): total…Gross = sumGross(L1023, payment_type!=='refund' 필터)로
-                //     환불행을 이미 '제외'한 기존 집계 재사용. refund partition 집합(refund{Card,Cash,Transfer}Amount)은
-                //     아래 '금일 환불' 박스에서만 소비 — 여기선 refund 행을 '제외'만 함.
-                //   ★이중차감 가드(step3): per-method = 환불 '제외'(미차감·GROSS) / 합계(grossTotal) = 환불 1회 '차감'(NET).
-                //     동일 refund 가 두 경로에서 두 번 빠지지 않음(제외 ⊥ 차감, 단일 refund 집합 기준). db_change=false.
-                //   ★method 축 = Axis-A(원결제 승계): GROSS 는 환불행을 아예 제외 → 교차수단 환불 재귀속(Rev) 불요.
-                //     정상수납은 저장 method = 원결제 method(수납 시점 확정) 그대로.
-                ['카드 총합', totals.totalCardGross, totals.totalCardCount] as [string, number, number],
-                ['현금 총합', totals.totalCashGross, totals.totalCashCount] as [string, number, number],
-                ['이체 총합', totals.totalTransferGross, totals.totalTransferCount] as [string, number, number],
+                // ── T-20260820-foot-CLOSING-METHODTOTAL-REVBASIS-RESTORE (per-method = revenue-basis/…Rev · DISPLAY-ONLY) ──
+                //   DECISION=(A) revenue-basis 복원 (planner adjudication MSG-20260820-160234-cfbi). 선행
+                //   METHODTOTAL-REFUND-EXCLUDE(476ed6e2, per-method NET→GROSS 전환)를 SUPERSEDE — GROSS 표시축은 무효.
+                //   ★왜 (A)인가: 김주연 총괄 confirmed value = 현금 735,400(08-18 본인 결정 + 08-20 '735,400 미반영' 재확인).
+                //     GROSS(total…Gross=sumGross L1023, payment_type!=='refund' 필터)는 08-18 팬텀 자기상쇄쌍(dfe01821,
+                //     4.7M pay+refund) 의 결제 leg 를 '제외'하지 못하고 잔존시켜 5,435,400 으로 부풀림 → METHODTOTAL
+                //     '찐 수납만' intent 자체 위반(환불된 돈은 '찐 수납' 아님). revenue-basis(NET, sumRev L1072)만 정확.
+                //   ★재사용(§13.1.C·신규 병렬 집계 신설 0): total{Card,Cash,Transfer}Rev = sumRev(L1072, 환불 1회 차감·NET)
+                //     기존 집계 그대로 재사용. 신규 refund 집계 신설 없음.
+                //   ★교차수단 재귀속(Axis-A·DA-20260819-REFUND-CROSSMETHOD-METHOD-INHERIT): 환불은 원결제 method 로
+                //     재귀속되어 차감(예: card→cash 100k). '(매출)' 마커 = revenue≠drawer 인 수단에만 표기(정산 대사의
+                //     drawer 635,400 과 구분 — 이 카드는 매출 확인 전용임을 명시). 정상일(revenue==drawer)엔 plain '총합'.
+                //   ★revenue-basis 표시 projection = 부모 DA(da_decision_foot_closing_cashsum_revenue_basis_rebucket,
+                //     'display-projection ⊥ disbursement-grain')가 이미 sanction 한 canonical → envelope 복귀·신규 CONSULT 불요.
+                //   ★DA Q3 HARD BOUNDARY: 합계(grossTotal)·daily_closings persist·payload totals{}·A6·정산 cashDiff
+                //     drawer-grain(635,400) 무접촉. db_change=false·순수 표시축 복원.
+                [`카드 총합${totals.totalCardRev !== totals.totalCard ? ' (매출)' : ''}`, totals.totalCardRev, totals.totalCardCount] as [string, number, number],
+                [`현금 총합${totals.totalCashRev !== totals.totalCash ? ' (매출)' : ''}`, totals.totalCashRev, totals.totalCashCount] as [string, number, number],
+                [`이체 총합${totals.totalTransferRev !== totals.totalTransfer ? ' (매출)' : ''}`, totals.totalTransferRev, totals.totalTransferCount] as [string, number, number],
                 // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
                 //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
                 ...(totals.singleHealthMaintenance !== 0
@@ -2298,19 +2302,17 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               totalCount={totals.totalCardCount + totals.totalCashCount + totals.totalTransferCount}
               highlight
             />
-            {/* ── T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE (DISPLAY-ONLY 캡션 갱신) ──────
-                선행 ACTUALPAID 캡션('환불이 이미 차감된 금액')을 대체. 본건에서 per-method 라인을 NET→GROSS(정상수납)로
-                전환 → 카드/현금/이체 총합은 이제 환불을 '제외'한 실수납만. 환불은 아래 '금일 환불' 박스에서만 표시.
-                ★합계(grossTotal) = 환불 1회 차감된 NET(실현 매출) 유지(planner step3 '전체 NET 차감') → 상단 3개 정상수납
-                  라인의 산술합 ≠ 합계(차이 = 환불액). 이 차이는 바로 아래 '금일 환불' 박스로 설명됨(정상수납 − 환불 = 합계).
-                  캡션으로 이 관계를 명시해 'rows≠total' 오해 방지. db_change=false·grossTotal SSOT(payload/daily_closings/
-                  정산 ReconRow) 무접촉. */}
+            {/* ── T-20260820-foot-CLOSING-METHODTOTAL-REVBASIS-RESTORE (DISPLAY-ONLY 캡션 복원) ──────
+                DECISION=(A). 선행 REFUND-EXCLUDE 캡션(정상수납/GROSS 고지)을 대체 — per-method 라인을 GROSS→…Rev
+                (revenue-basis·환불 차감 NET)로 복원. 카드·현금·이체 총합은 이제 환불이 원결제 method 로 재귀속되어
+                이미 차감된 실현 매출(예: 현금 735,400). '(매출)' 마커 = 교차수단 환불로 revenue≠drawer 인 수단 표기.
+                ★conservation(INV5): totalCardRev+CashRev+TransferRev ≡ grossTotal(환불 1회 차감) → rows 산술합 = 합계.
+                  db_change=false·grossTotal SSOT(payload/daily_closings/정산 ReconRow drawer-grain 635,400) 무접촉. */}
             <p
               className="mt-1 text-[11px] leading-tight text-emerald-700 dark:text-emerald-400"
-              data-testid="closing-methodtotal-refundexcl-note"
+              data-testid="closing-methodsum-refundexcl-note"
             >
-              ※ 카드·현금·이체 총합은 <b>환불을 제외한 정상수납(실수납)</b> 금액입니다. 환불은 아래 ‘금일 환불’ 박스에서만 표시되며,
-              합계는 <b>환불 차감 후 실현 매출</b>입니다. (정상수납 − 환불 = 합계)
+              ※ 카드·현금·이체 총합은 <b>환불 금액이 이미 차감된</b> 금액입니다. (환불 상세는 아래 ‘금일 환불’ 박스에서 별도 확인)
             </p>
             {/* Q4 anti-fabrication 노출: 원결제 linkage 미verify 환불(합성 금지·저장수단 기준 표시). 0건이면 미표기. */}
             {totals.revUnverifiedCount > 0 && (
