@@ -24,7 +24,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { isStaffUnlockRole, canEditConfirmedClosing, hasOpsAuthority, canViewTherapistSales as canViewTherapistSalesRole } from '@/lib/permissions';
+import { isStaffUnlockRole, canEditConfirmedClosing, canViewTherapistSales as canViewTherapistSalesRole, canViewClosingTotalRevenue } from '@/lib/permissions';
 import { getClinic } from '@/lib/clinic';
 import { formatAmount, formatPhone, chartNoBadge } from '@/lib/format';
 import { METHOD_KO, STATUS_KO, VISIT_TYPE_KO, staffRoleSortIndex } from '@/lib/status';
@@ -345,7 +345,12 @@ export default function Closing() {
   //   + flag 부여된 실장급) 게이트로 정렬(planner GO_WARN 기본해석). 선행 DAYCLOSE-REVENUE-COMPARE-TAB '전직원 열람'을
   //   authorized supersede(동일 reporter=ops 권위)해 좁힘.
   //   ★lock-out-safe: DB 역배정 전(전원 admin)엔 admin escape 로 inert(전원 통과) — 역배정 시점에 비로소 실효.
-  const canViewTotalRevenue = hasOpsAuthority(profile);
+  // ── T-20260820-foot-DAYCLOSE-TOTALREV-CONSULTANT-PERM-GRANT (상담실장 scoped view-grant, ADDITIVE) ──
+  //   현장(김주연 총괄): 상담실장(consultant)이 총 매출 탭을 못 봄 → hasOpsAuthority 위에 consultant 만 ADDITIVE
+  //   재개방. admin/manager/director(+flag) 무회귀. canViewClosingTotalRevenue = SSOT predicate(permissions.ts).
+  //   ★db_change=false — 탭 소스 테이블(payments/closing_manual_payments/package_sessions/check_ins)은 consultant 가
+  //     이미 summary/payments 탭에서 읽는 RLS 통과 집합. blanket RLS 해제 아님(RLS-SEAL 하드닝 비충돌).
+  const canViewTotalRevenue = canViewClosingTotalRevenue(profile);
 
   // ── T-20260811-foot-SALESAGG-THERAPIST-TAB (권한, C2/V2 최소노출) ──
   //   김주연 총괄 확정(reply ts=1786502240.795299): 신규 '총매출(치료)' 탭 = 관리자(admin)+치료사(therapist)만 노출.

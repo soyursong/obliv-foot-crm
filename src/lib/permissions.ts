@@ -591,6 +591,30 @@ export function canViewTherapistSales(role: UserRole | null | undefined): boolea
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// T-20260820-foot-DAYCLOSE-TOTALREV-CONSULTANT-PERM-GRANT — 일마감 '총 매출' 탭(compare) 열람 role-gate SSOT.
+//   현장(김주연 총괄, U0ATDB587PV, footcare C0ATE5P6JTH, 2026-08-20): 상담실장(consultant)이 일마감>총 매출
+//     탭을 못 봄. "풀어달라고 했는데 안 보인다" → consultant scoped view-grant(재발/누락 해소).
+//   ★body 선례(T-20260716-body-DAILYCLOSE-RECEIPT-PERM-GRANT, commit 71a64432) 동형 패턴 = 매출 열람 role 을
+//     좁게 확대(ADDITIVE). admin/manager/director(+has_ops_authority=대표원장) 무회귀(회귀 0).
+//   ★기존 게이트 = hasOpsAuthority(admin/manager role-implied + flag director) — T-20260809-foot-DAYCLOSE-
+//     TOTALREVENUE-REDESIGN item5 가 선행 '전직원 열람'을 has_ops_authority 로 좁혔던 것. 본 티켓은 그 위에
+//     consultant 만 ADDITIVE 재개방 = scoped grant(전직원 재개방/ blanket 아님).
+//   ★db_change=FALSE(FE-only): 총 매출 탭 소스(mtmSales fetchMonthlyComparison/fetchStaffDailyBreakdown)는
+//     payments/closing_manual_payments/package_sessions/check_ins 를 읽는데, consultant 는 이미 일마감
+//     summary/payments 탭에서 동일 테이블을 읽음(PERM_MATRIX.closing=ALL_STAFF_ROLES, RLS 통과) → 신규 RLS
+//     변경 불요. blanket RLS 해제 아님 → 진행 중 RLS-PERMISSIVE-*-SEAL 하드닝(PHI 격리·clinic-gate)과 비충돌.
+//   ★NAV-BOUNCE 패리티: Closing.tsx compare 트리거 노출 + 딥링크 가드(useEffect)가 동일 predicate 로 정렬.
+export function canViewClosingTotalRevenue(
+  subject: OpsAuthSubject | UserRole | null | undefined,
+): boolean {
+  const s: OpsAuthSubject | null | undefined =
+    typeof subject === 'string' ? { role: subject } : subject;
+  if (!s) return false;
+  if (hasOpsAuthority(s)) return true;    // admin/manager + has_ops_authority(대표원장) 무회귀
+  return s.role === 'consultant';         // 상담실장 scoped view-grant (ADDITIVE)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // T-20260814-foot-PKGDEDUCT-DELETE-PERM-COORDTHERAPIST — 고객상세 2번째 탭(펜차트/자동기록)
 //   '패키지 시술 차감내역(회차)' soft-delete·복원 권한 role-set SSOT (1지점).
 //   현장(김주연 총괄, U0ATDB587PV, 슬랙 C0ATE5P6JTH ts 1786700281.528599): 코디(coordinator)·
