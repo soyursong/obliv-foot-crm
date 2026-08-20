@@ -2287,6 +2287,23 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               totalCount={totals.totalCardCount + totals.totalCashCount + totals.totalTransferCount}
               highlight
             />
+            {/* ── T-20260820-foot-CLOSING-METHODSUM-REFUNDEXCL-ACTUALPAID (조사-우선 reconcile · DISPLAY-ONLY) ──────
+                김주연 총괄(2026-08-20 13:37) 현장 관측='카드 총합에 환불된 내역 포함, 실수납만 표기'.
+                ★조사 결론(코드 실측): 이 카드의 카드/현금/이체 총합은 이미 NET = totals.total{Card,Cash,Transfer}Rev
+                  = sumRev(L1072)로 환불을 '1회 차감'(payment_type==='refund' ? -amount : amount)한 값.
+                  선행 REFUNDBOX-SPLIT-CANCELEXCL(1ab50f98·GROSS→NET) 이 method-별 총합에 이미 적용 완료.
+                  ∴ 여기서 추가 차감(신규 제외 로직)=이중차감(gate#1 HARD REJECT). basis(drawer↔revenue) 전환=
+                  김주연 총괄 08-18 본인 결정(revenue-basis 735,400)·gate#2 와 충돌 → 미접촉.
+                ★현장 '환불 포함' 관측 = 총합이 이미 환불 차감된 실수납임을 UI가 미고지한 '표시 명확성 gap'.
+                  → 산식·basis 무접촉, DISPLAY-ONLY 캡션으로 '환불이 이미 차감된 금액'임을 명시(오해 해소).
+                  db_change=false·conservation(…Rev 3소계 합≡grossTotal) 불변. (매출 vs 실수납(drawer) basis 재확인은
+                  planner FOLLOWUP 로 김주연 총괄 responder DECISION-REQUEST — 본 캡션은 basis 중립 사실만 진술.) */}
+            <p
+              className="mt-1 text-[11px] leading-tight text-emerald-700 dark:text-emerald-400"
+              data-testid="closing-methodsum-refundexcl-note"
+            >
+              ※ 카드·현금·이체 총합은 <b>환불 금액이 이미 차감된</b> 금액입니다. (환불 상세는 아래 ‘금일 환불’ 박스에서 별도 확인)
+            </p>
             {/* Q4 anti-fabrication 노출: 원결제 linkage 미verify 환불(합성 금지·저장수단 기준 표시). 0건이면 미표기. */}
             {totals.revUnverifiedCount > 0 && (
               <p className="mt-1 text-[11px] leading-tight text-muted-foreground" data-testid="closing-rev-unverified-note">
