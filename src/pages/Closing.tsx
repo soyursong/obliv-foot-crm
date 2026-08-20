@@ -579,6 +579,49 @@ export default function Closing() {
     },
   });
 
+  // ── T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET: 원결제 method linkage 조회 (revenue-basis) ──
+  //   DA da_decision_foot_closing_cashsum_revenue_basis_rebucket_20260820 (Q4·code-gate 오라클 #3):
+  //     revenue-basis 재버킷의 원결제 method read-source = payment-linkage(단건 linked_payment_id /
+  //     패키지 parent_payment_id → 원결제 charge.method) UNIFORM. pre-B-1 저장 refund.method 는 Axis-B
+  //     (실지급 오염값)이라 절대 신뢰 금지 → 반드시 linkage 조인으로 원결제 method 복구(cutover-safe).
+  //   ★ 당일 로드(payments/pkgPayments)는 created_at 축이라 '교차일 환불'(원결제가 과거일)은 당일 맵에 없다.
+  //     census(READ-ONLY, 2026-08-20): 교차수단 환불 4건 중 1건(패키지 07-28 환불→07-20 이체 원결제)이 교차일
+  //     → 당일 맵 미해결. 이 쿼리로 당일 환불행의 원결제 method 를 날짜 무관 조회(linkage-uniform 완결).
+  //   ★ read-only SELECT 만 — schema/서버/데이터 무접점. daily_closings persist·payload·A6 무접촉(표시 projection).
+  const refundSingleLinkIds = useMemo(
+    () => Array.from(new Set(payments.filter(p => p.payment_type === 'refund' && p.linked_payment_id).map(p => p.linked_payment_id as string))),
+    [payments],
+  );
+  const refundPkgLinkIds = useMemo(
+    () => Array.from(new Set(pkgPayments.filter(p => p.payment_type === 'refund' && p.parent_payment_id).map(p => p.parent_payment_id as string))),
+    [pkgPayments],
+  );
+  const { data: origMethodMap = { single: {}, pkg: {} } } = useQuery<{ single: Record<string, string>; pkg: Record<string, string> }>({
+    queryKey: ['closing-refund-orig-method', clinic?.id, refundSingleLinkIds, refundPkgLinkIds],
+    enabled: !!clinic && (refundSingleLinkIds.length > 0 || refundPkgLinkIds.length > 0),
+    queryFn: async () => {
+      const single: Record<string, string> = {};
+      const pkg: Record<string, string> = {};
+      if (refundSingleLinkIds.length > 0) {
+        const { data } = await supabase
+          .from('payments')
+          .select('id, method')
+          .eq('clinic_id', clinic!.id)
+          .in('id', refundSingleLinkIds);
+        for (const r of (data ?? []) as { id: string; method: string }[]) single[r.id] = r.method;
+      }
+      if (refundPkgLinkIds.length > 0) {
+        const { data } = await supabase
+          .from('package_payments')
+          .select('id, method')
+          .eq('clinic_id', clinic!.id)
+          .in('id', refundPkgLinkIds);
+        for (const r of (data ?? []) as { id: string; method: string }[]) pkg[r.id] = r.method;
+      }
+      return { single, pkg };
+    },
+  });
+
   // ── 미수 ────────────────────────────────────────────────────
   const { data: unpaid = [] } = useQuery<UnpaidCheckIn[]>({
     queryKey: ['closing-unpaid', clinic?.id, date],
@@ -982,39 +1025,48 @@ export default function Closing() {
         .filter(r => r.method === method && r.payment_type !== 'refund')
         .reduce((s, r) => s + r.amount, 0);
 
-    // ── T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS ─────────────────
-    //   교차수단 환불(환불행 저장 method ≠ 원결제행 method) 을 '합계(결제수단별)' 표시 카드에서만
-    //   원결제 method 버킷으로 재귀속(revenue-basis). 근거: 김주연 총괄 field-decision(ts 1787189112
-    //   "735,400이 맞음") = 화면에 보이는 현금 결제 행 합산(=원결제 수단 매출) 기준 확정.
-    //   예(이금득 08-18): 카드결제 100k → 현금환불(method=cash·원결제=card·linked_payment_id join).
-    //     · 저장 method(cash) 그대로 NET 차감 → 현금 소계 -100k(635,400) 오표기.
-    //     · 원결제 method(card)로 재귀속 → 현금 표시소계 735,400(현금 결제행 합산=revenue),
-    //       카드 표시소계에 환불 net(원결제 수단 매출 반전), grossTotal(총계) 불변(버킷 간 이동일 뿐 합계 무변).
-    //   ★적용 경계(중요): 이 재버킷은 '합계(결제수단별)' 표시 카드 전용값(…Rev)에만 쓴다.
-    //     정산 대사(cashDiff = actualCash − totalCash)·마감 DB 저장(single_cash_total)·프린트 '환불차감후'
-    //     행은 물리 금고(drawer) 기준이라 net(저장 method) 값을 그대로 유지 — 안 그러면 실제 금고에서 빠져나간
-    //     현금 100k 가 시스템에만 남아 허위 부족(-100k)이 뜬다. → net totalCard/Cash/Transfer 는 불변(회귀 0).
-    //   ★db_change=false: historical row·DB 미접촉. 순수 view-layer 재귀속(원결제 method = 당일 로드행 map 조회).
-    //   ★고아 환불(원결제행이 당일 로드 스코프 밖) 또는 동일 method → 재귀속 없음(저장 method 유지, 회귀 0).
-    //   조회 맵: 단건 refund→linked_payment_id→payments.id.method / 패키지 refund→parent_payment_id→pkg.id.method.
+    // ── T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET (DA CONDITIONAL-GO) ──────────
+    //   DA da_decision_foot_closing_cashsum_revenue_basis_rebucket_20260820 (coherence-extension).
+    //   교차수단 환불(원결제 method ≠ 환불 실지급 method)을 '합계(결제수단별)' 표시 카드에서만 원결제 method
+    //   버킷으로 재귀속(revenue-basis). 근거: 김주연 총괄 field-authority(ts 1787189112, 08-18 정답=735,400)
+    //     = 마감 현금합계 = 원결제수단 기준(revenue basis). 환불은 실지급(drawer) 아닌 원결제 버킷을 되돌린다.
+    //   예(이금득 08-18): 카드 원결제 100k → 현금 실지급 환불(패키지, parent_payment_id join).
+    //     · drawer basis(저장 method=cash 차감) → 현금 -100k(635,400) = 물리 금고 실제.
+    //     · revenue basis(원결제 method=card 재귀속) → 현금 표시소계 735,400·카드 -100k(원결제수단 매출 반전).
+    //   ★ Q1 전-수단 rebucket MANDATORY(conservation·INV5): cash +100k 흡수 해제 AND card -100k 이동을 '동시'.
+    //     cash-only(cash만 올리고 card 미변경)=HARD REJECT(Σ 버킷 = net+100k). 재버킷=attribution 이전, Σ 불변.
+    //     불변식: totalCardRev+CashRev+TransferRev ≡ totalCard+Cash+Transfer (버킷 간 이동일 뿐 총합 무변).
+    //   ★ Q3 DISPLAY-ONLY(HARD BOUNDARY): 이 …Rev 소계는 '합계(결제수단별)' 표시 카드 전용. daily_closings persist
+    //     (single_cash_total=totals.singleCash net)·outbox payload totals{}·일일감사 A6·정산 대사(cashDiff)·프린트
+    //     '환불차감후'·DB 저장은 drawer grain(net 저장 method) 그대로 불변 — revenue projection 절대 무유입.
+    //     (안 그러면 물리 금고 100k 유출이 시스템에만 남아 무고 cash-short → money-path harm.)
+    //   ★ Q4 read-source = payment-linkage(원결제 charge.method) UNIFORM: pre-B-1 저장 refund.method 는 Axis-B
+    //     오염값이라 절대 신뢰 금지. origMethodMap(날짜 무관 linkage 조회, 교차일 원결제 포함) 우선, 당일 맵 폴백.
+    //   ★ Q4 anti-fabrication: linkage NULL(원결제 추적 불가)·linkage 미해결 환불행은 원결제 method 합성 금지 →
+    //     honest fallback(저장 method 버킷 유지 = revenue-rebucket EXCLUDE·이동 안 함, 미verify 건수 노출).
+    //     census(READ-ONLY 2026-08-20): NULL-linkage 환불 8건(단건 6+패키지 2)·교차수단 환불 4건(교차일 1건).
     const payMethodById = new Map<string, string>();
     for (const p of payments) payMethodById.set(p.id, p.method);
     const pkgMethodById = new Map<string, string>();
     for (const p of pkgPayments) pkgMethodById.set(p.id, p.method);
-    const bucketOfPayment = (r: PaymentRow): string => {
-      if (r.payment_type === 'refund' && r.linked_payment_id) {
-        const origM = payMethodById.get(r.linked_payment_id);
-        if (origM && origM !== r.method) return origM;
-      }
-      return r.method;
+    // 원결제 method 해결(linkage-uniform·cutover-safe): 날짜무관 조회(origMethodMap) → 당일 로드 맵 폴백.
+    const origMethodOfSingle = (id: string): string | undefined => origMethodMap.single[id] ?? payMethodById.get(id);
+    const origMethodOfPkg    = (id: string): string | undefined => origMethodMap.pkg[id] ?? pkgMethodById.get(id);
+    // 환불행의 revenue 버킷 + 해결여부. resolved=false → linkage 미verify(honest fallback: 저장 method 유지).
+    const revBucketOfPayment = (r: PaymentRow): { bucket: string; unresolved: boolean } => {
+      if (r.payment_type !== 'refund') return { bucket: r.method, unresolved: false };
+      const origM = r.linked_payment_id ? origMethodOfSingle(r.linked_payment_id) : undefined;
+      if (!origM) return { bucket: r.method, unresolved: true }; // NULL/미해결 linkage → 합성 금지, 저장 method 유지
+      return { bucket: origM, unresolved: false };               // linkage-uniform: 원결제 method(Axis-A)
     };
-    const bucketOfPkg = (r: PackagePaymentRow): string => {
-      if (r.payment_type === 'refund' && r.parent_payment_id) {
-        const origM = pkgMethodById.get(r.parent_payment_id);
-        if (origM && origM !== r.method) return origM;
-      }
-      return r.method;
+    const revBucketOfPkg = (r: PackagePaymentRow): { bucket: string; unresolved: boolean } => {
+      if (r.payment_type !== 'refund') return { bucket: r.method, unresolved: false };
+      const origM = r.parent_payment_id ? origMethodOfPkg(r.parent_payment_id) : undefined;
+      if (!origM) return { bucket: r.method, unresolved: true };
+      return { bucket: origM, unresolved: false };
     };
+    const bucketOfPayment = (r: PaymentRow): string => revBucketOfPayment(r).bucket;
+    const bucketOfPkg     = (r: PackagePaymentRow): string => revBucketOfPkg(r).bucket;
     // revenue-basis NET 소계(표시 전용): net totals 과 동일 산식이되 환불행만 원결제 method 버킷으로 재귀속.
     //   sum(net) 과의 유일 차이 = filter 축(저장 method → bucketOf). 수기결제(환불 없음)는 저장 method 그대로.
     const sumRev = (method: string) =>
@@ -1023,6 +1075,13 @@ export default function Closing() {
       pkgPayments.filter(r => bucketOfPkg(r) === method)
         .reduce((s, r) => s + (r.payment_type === 'refund' ? -r.amount : r.amount), 0) +
       manualEntries.filter(m => m.method === method).reduce((s, m) => s + m.amount, 0);
+    // Q4 anti-fabrication 노출: linkage 미verify 환불(원결제 method 확인 불가·저장 method 기준 표시) 건수/금액.
+    const revUnverified = (() => {
+      let count = 0, amount = 0;
+      for (const r of payments) if (r.payment_type === 'refund' && revBucketOfPayment(r).unresolved) { count++; amount += r.amount; }
+      for (const r of pkgPayments) if (r.payment_type === 'refund' && revBucketOfPkg(r).unresolved) { count++; amount += r.amount; }
+      return { count, amount };
+    })();
 
     // NET (reconciliation/DB)
     const pkgCard     = sum(pkgPayments, 'card');
@@ -1080,14 +1139,15 @@ export default function Closing() {
     const totalTransferCount = pkgTransferCount + singleTransferCount + manualTransferCount;
     const totalRefundCount   = pkgRefundCount + singleRefundCount;
 
-    // NET totals (reconciliation/DB저장) — drawer 기준, 교차수단 환불도 저장 method 로 차감(물리 금고 정합). 불변.
+    // NET totals (reconciliation/DB저장) = DRAWER grain(Axis-B/disbursement). 교차수단 환불도 저장 method(실지급)
+    //   으로 차감 → 물리 금고 실제 증감. §85 payload 4버킷·A6·정산 실사 source. revenue projection 절대 무접촉·불변.
     const totalCard     = pkgCard + singleCard + manualCard;
     const totalCash     = pkgCash + singleCash + manualCash;
     const totalTransfer = pkgTransfer + singleTransfer + manualTransfer;
 
-    // T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS: '합계(결제수단별)' 표시 카드 전용
-    //   revenue-basis 재귀속 소계. sum(=totalCard/Cash/Transfer) 불변식: totalCardRev+CashRev+TransferRev
-    //   ≡ totalCard+Cash+Transfer (버킷 간 이동일 뿐 총합 무변) → grossTotal(합계 카드 total prop) 정합.
+    // T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET: '합계(결제수단별)' 표시 카드 전용 revenue-basis(Axis-A)
+    //   재귀속 소계 = DISPLAY-ONLY projection. conservation 불변식(Q1·INV5): totalCardRev+CashRev+TransferRev
+    //   ≡ totalCard+Cash+Transfer (버킷 간 attribution 이전일 뿐 Σ 무변) → grossTotal(합계 카드 total prop) 정합.
     const totalCardRev     = sumRev('card');
     const totalCashRev     = sumRev('cash');
     const totalTransferRev = sumRev('transfer');
@@ -1142,8 +1202,9 @@ export default function Closing() {
       singleCard, singleCash, singleTransfer, singleMembership,
       singleHealthMaintenance,
       totalCard, totalCash, totalTransfer,
-      // T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS: '합계(결제수단별)' 표시 카드 전용 revenue-basis 소계
+      // T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET: '합계(결제수단별)' 표시 카드 전용 revenue-basis 소계 + 미verify 노출
       totalCardRev, totalCashRev, totalTransferRev,
+      revUnverifiedCount: revUnverified.count, revUnverifiedAmount: revUnverified.amount,
       // GROSS (SummaryCard 표시)
       pkgCardGross, pkgCashGross, pkgTransferGross,
       singleCardGross, singleCashGross, singleTransferGross,
@@ -1163,7 +1224,7 @@ export default function Closing() {
       singleCardCount, singleCashCount, singleTransferCount, singleRefundCount,
       totalCardCount, totalCashCount, totalTransferCount, totalRefundCount,
     };
-  }, [payments, pkgPayments, manualEntries]);
+  }, [payments, pkgPayments, manualEntries, origMethodMap]);
 
   const cardDiff = actualCard - totals.totalCard;
   const cashDiff = actualCash - totals.totalCash;
@@ -2194,18 +2255,28 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 ★이중 제외 없음(AC-2): 총합은 NET 로 환불 1회만 차감. 환불 내역 박스는 표시(정보)용 — 총합을 추가
                   차감하지 않는다. grossTotal(마감 payload 권위총액)·산식 무변경(순수 표시축 재배치, DA CONSULT 불요).
                 ★수기결제 포함/공단 행 = 정보행(SummaryCard 는 명시 total prop 사용, 행 미합산) — total 무영향. */}
-            {/* ── T-20260820-foot-CLOSING-CASHTOTAL-CROSSMETHOD-REBUCKET-REVBASIS ──────────
-                카드/현금/이체 총합을 net(저장 method) → revenue-basis(…Rev, 교차수단 환불=원결제 method 재귀속)로
-                전환. 김주연 총괄 field-decision(ts 1787189112 "735,400이 맞음") = 현금 결제행 합산(원결제 수단
-                매출) 기준 확정 → 이금득 08-18 현금환불(원결제=card)은 카드 총합에 net, 현금 총합 735,400 표기.
-                ★total(grossTotal)·정산 대사(totalCash)·DB 저장은 net 그대로(drawer) — 표시 소계 축만 rev 재귀속.
-                  totalCardRev+CashRev+TransferRev ≡ net 3소계 합 → total prop=grossTotal 정합(합계행 회귀 0). */}
+            {/* ── T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET (DA CONDITIONAL-GO) ──────────
+                DA da_decision_foot_closing_cashsum_revenue_basis_rebucket_20260820.
+                결제수단별 총합을 revenue-basis(…Rev, 교차수단 환불=원결제 method 재귀속)로 표시. 김주연 총괄
+                field-authority(ts 1787189112, 08-18 정답=735,400) = 마감 현금합계=원결제수단 기준.
+                ★ Q2 dual-axis: revenue(매출) primary + 교차수단 환불로 revenue≠drawer 된 수단은 '시재(실지급)'
+                  행을 distinct 라벨로 병존 표기(§85 drawer grain 표면 보존·H4 단일 ambiguous 라벨 금지).
+                  revenue==drawer(정상일)이면 단일 '총합' 행(불필요 drawer line 강제 X — DA UI 발명 금지).
+                ★ Q3 DISPLAY-ONLY: total(grossTotal)·정산 대사(totalCash)·daily_closings 저장·payload·A6 는 drawer
+                  net 그대로 불변. 표시 카드 소계 축만 revenue projection. conservation: …Rev 3소계 합 ≡ net 3소계 합. */}
             <SummaryCard
               title="합계 (결제수단별)"
               rows={[
-                ['카드 총합', totals.totalCardRev, totals.totalCardCount],
-                ['현금 총합', totals.totalCashRev, totals.totalCashCount],
-                ['이체 총합', totals.totalTransferRev, totals.totalTransferCount],
+                // Q2 dual-axis: 각 수단 = revenue(매출) 행 + (교차수단 환불로 drawer 와 갈릴 때) 시재(실지급) distinct 행.
+                [`카드 총합${totals.totalCardRev !== totals.totalCard ? ' (매출)' : ''}`, totals.totalCardRev, totals.totalCardCount] as [string, number, number],
+                ...(totals.totalCardRev !== totals.totalCard
+                  ? [['ㄴ 카드 시재 (실지급)', totals.totalCard, undefined] as [string, number, number?]] : []),
+                [`현금 총합${totals.totalCashRev !== totals.totalCash ? ' (매출)' : ''}`, totals.totalCashRev, totals.totalCashCount] as [string, number, number],
+                ...(totals.totalCashRev !== totals.totalCash
+                  ? [['ㄴ 현금 시재 (실지급)', totals.totalCash, undefined] as [string, number, number?]] : []),
+                [`이체 총합${totals.totalTransferRev !== totals.totalTransfer ? ' (매출)' : ''}`, totals.totalTransferRev, totals.totalTransferCount] as [string, number, number],
+                ...(totals.totalTransferRev !== totals.totalTransfer
+                  ? [['ㄴ 이체 시재 (실지급)', totals.totalTransfer, undefined] as [string, number, number?]] : []),
                 // T-20260803-foot-MEDAID1-HEALTHFEE-DEDUCT (AC4-GATE b): 공단 대납(건강생활유지비)도 grossTotal 에
                 //   포함되므로 결제수단별 합계에 명시 행으로 노출(silent-drop 금지·행 합계=grossTotal 정합).
                 ...(totals.singleHealthMaintenance !== 0
@@ -2219,6 +2290,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
               totalCount={totals.totalCardCount + totals.totalCashCount + totals.totalTransferCount}
               highlight
             />
+            {/* Q4 anti-fabrication 노출: 원결제 linkage 미verify 환불(합성 금지·저장수단 기준 표시). 0건이면 미표기. */}
+            {totals.revUnverifiedCount > 0 && (
+              <p className="mt-1 text-[11px] leading-tight text-muted-foreground" data-testid="closing-rev-unverified-note">
+                ※ 원결제 연결이 없는 환불 {totals.revUnverifiedCount}건(-{formatAmount(totals.revUnverifiedAmount)})은
+                수단 재귀속을 확인할 수 없어 저장 수단 기준으로 표시됩니다.
+              </p>
+            )}
             {/* T-20260617-foot-PMW-OUTSTANDING-BESIDE-TOTAL: 합계 박스 옆 동일 박스 형태 일일 미수금 박스.
                 §4-A: 패키지 미수 / 진료비 미수 별도 줄, 합산 단일 '총 미수금' 미표기. 소스=footBilling SSOT. */}
             <DailyOutstandingCard

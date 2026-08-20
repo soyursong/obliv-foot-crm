@@ -83,12 +83,15 @@ test.describe('T-20260820-foot-CLOSING-REFUNDBOX-SPLIT-CANCELEXCL', () => {
   });
 
   // ── AC-2: 결제수단별 실결제 = NET(당일 취소 제외) & 인라인 환불행 제거 ────────
-  test('AC-2: 합계(결제수단별) 박스 = NET 표기(totalCard/Cash/Transfer) — 당일 취소 제외', () => {
+  //   ★ SUPERSEDE(T-20260820-foot-CLOSING-CASHSUM-REVENUE-BASIS-REBUCKET, DA CONDITIONAL-GO):
+  //     합계 박스 표시축이 plain-NET → revenue-basis NET(…Rev, 교차수단 환불 원결제 method 재귀속)로 승격.
+  //     AC-2 원의도(GROSS 아님 · 인라인 환불 이중차감 없음)는 유효 — …Rev 는 여전히 NET(환불 차감) 값이다.
+  test('AC-2: 합계(결제수단별) 박스 = revenue-basis NET(…Rev) — GROSS/이중차감 아님', () => {
     const c = closing();
-    // 합계 카드 행이 NET(총합) 값을 표시 — GROSS 인라인 대체.
-    expect(c).toContain("['카드 총합', totals.totalCard, totals.totalCardCount]");
-    expect(c).toContain("['현금 총합', totals.totalCash, totals.totalCashCount]");
-    expect(c).toContain("['이체 총합', totals.totalTransfer, totals.totalTransferCount]");
+    // 합계 카드 행이 revenue-basis NET(…Rev) 값을 표시 — GROSS 인라인 아님.
+    expect(c).toContain('totals.totalCardRev, totals.totalCardCount');
+    expect(c).toContain('totals.totalCashRev, totals.totalCashCount');
+    expect(c).toContain('totals.totalTransferRev, totals.totalTransferCount');
     // 인라인 GROSS 행 미사용(합계 박스 rows 에서 totalCardGross 등 제거).
     expect(c).not.toContain("['카드 총합', totals.totalCardGross");
     expect(c).not.toContain("['현금 총합', totals.totalCashGross");
