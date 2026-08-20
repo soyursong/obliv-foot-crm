@@ -1218,22 +1218,46 @@ export function PenChartTab({
   );
 
   // T-20260519-foot-PENCHART-FORM-ADD (FIX): Undo 10단계
-  const undoStackRef = useRef<ImageData[]>([]);
-  const UNDO_LIMIT = 10;
-  // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-10: Undo 스택을 개수가 아니라 바이트로 상한(140MB).
-  //   개수 10 은 양식 크기를 무시 → 환불동의서 3p(40.8MB×10=408MB)·3탭 공유 시 1.7GB.
-  //   140MB = A4(13.6MB) 10회 유지 · 건강문진 2p 5회 · 환불동의서 3p ~3회가 성립하도록 고른 값.
-  //   ImageData 1장 최대 40.8MB < 140MB 라 단일 항목이 상한을 넘지 않는다(최소 1장 유지 보장).
-  const UNDO_MAX_BYTES = 140 * 1024 * 1024;
-  const imageDataBytes = (im: ImageData): number => im.data?.byteLength ?? im.width * im.height * 4;
-  const capUndoStackBytes = () => {
+  // ── T-20260820-foot-PENCHART-UNDO-MEMORY-CEILING-RECALC (RC 판정서 §4 FIX-B·재설계 17:09): 저장형식 압축 ──
+  //   [RC 지배원인] same-origin 3탭 = 한 렌더러 프로세스. undo raw 140MB/탭 × 3탭 ≈ 420~502MB → GC 장기정지
+  //     → ②입력ACK 타임아웃('응답하지 않습니다') + ①저장/입력 경로 정지(동일 GC정지의 두 증상, 별개결함 아님).
+  //   [접근법 전환] 구안(상한 140→40MB·되돌리기 3회)은 폐기. 되돌리기 10회 유지(기능손실 0) + 저장형식 압축.
+  //     - 최신 RAW_KEEP(2)장 = raw ImageData 유지 → 되돌리기 1·2회차 지연 증가 0 (즉시 putImageData).
+  //     - 이전 (최대 8)장 = canvas.toBlob('image/png') 압축 Blob 로 보관 → 되돌리기 3회차+ 는 디코드 후 복원.
+  //     - 실측 압축비 ≈ 34배(원본 13.61MiB/장 vs 저장본 중앙 411KB) → 탭1 raw140MB→≈32MB · 탭3 ≈96MB.
+  //   🔴 DRAW_DPR(2·:217)=해상도 축 절대 불변(?penchart_lite 1x→필기불능 P0 회귀 field-soak FAIL, :1121).
+  //     메모리 절감은 '해상도'가 아니라 'undo 스냅샷 저장형식(압축)' 축으로만 수행.
+  //   ★비동기 필수: 압축(toBlob)·복원(decode) 모두 async → undo push hot-path 메인스레드 동기 blocking 금지(①② 재유발 위험).
+  //   [완충 레버] 3회차+ 디코드 지연 체감 초과 시 RAW_KEEP 상향(DoD3 실측 근거).
+  interface UndoEntry { kind: 'raw' | 'blob'; data: ImageData | null; blob: Blob | null; w: number; h: number }
+  const undoStackRef = useRef<UndoEntry[]>([]);
+  const UNDO_LIMIT = 10;   // 되돌리기 보장 회차(불변·팀장 직접확정) — 회차 축소 금지
+  const RAW_KEEP = 2;      // 최신 raw 유지 장수(완충 레버) — 1·2회차 지연 증가 0
+  // 개수 상한(10) — 초과분 오래된 것부터 폐기. 메모리는 압축이 담당(바이트 상한 불요).
+  const capUndoStackCount = () => {
     const stack = undoStackRef.current;
-    if (stack.length > UNDO_LIMIT) stack.shift(); // 개수 상한(A4 10회 유지) — 큰 양식은 아래 바이트 상한이 결정
-    let total = 0;
-    for (const im of stack) total += imageDataBytes(im);
-    while (stack.length > 1 && total > UNDO_MAX_BYTES) {
-      const removed = stack.shift();
-      if (removed) total -= imageDataBytes(removed);
+    while (stack.length > UNDO_LIMIT) stack.shift();
+  };
+  // 최신 RAW_KEEP 초과 raw 엔트리 → 비동기 PNG 압축(교체 in-place). 실패 시 raw 유지(무회귀).
+  const compressAgedUndoEntries = () => {
+    const stack = undoStackRef.current;
+    for (let i = 0; i < stack.length - RAW_KEEP; i++) {
+      const entry = stack[i];
+      if (entry.kind !== 'raw' || !entry.data) continue;
+      const src = entry.data;
+      const c = document.createElement('canvas');
+      c.width = entry.w; c.height = entry.h;
+      const cctx = c.getContext('2d');
+      if (!cctx) continue;                 // alloc 실패 → raw 유지
+      cctx.putImageData(src, 0, 0);
+      c.toBlob((blob) => {                 // ★async — 메인스레드 non-blocking
+        if (!blob) return;                 // 압축 실패 → raw 유지(무회귀)
+        if (entry.kind === 'raw' && entry.data === src) { // 그 사이 pop/shift/교체 안 됐으면 교체
+          entry.kind = 'blob';
+          entry.blob = blob;
+          entry.data = null;               // raw 메모리 해제(GC 대상)
+        }
+      }, 'image/png');
     }
   };
   // T-20260524-foot-PENCHART-PEN-SLOW Fix-5: async pre-capture — getImageData를 획 시작(hot path) 밖으로 이동
@@ -2335,8 +2359,10 @@ export function PenChartTab({
       }
     }
     if (pendingUndoDataRef.current !== null) {
-      undoStackRef.current.push(pendingUndoDataRef.current);
-      capUndoStackBytes(); // FIX-10: 개수 대신 바이트 상한(140MB)으로 오래된 것부터 폐기
+      const im = pendingUndoDataRef.current;
+      undoStackRef.current.push({ kind: 'raw', data: im, blob: null, w: im.width, h: im.height });
+      capUndoStackCount();          // 개수 10 상한(오래된 것부터 폐기)
+      compressAgedUndoEntries();    // UNDO-CEILING-RECALC: 최신 2장 초과 raw → 비동기 압축(메모리 절감)
       pendingUndoDataRef.current = null;
     }
   }, []);
@@ -2574,6 +2600,38 @@ export function PenChartTab({
   // ── Undo 저장/복원 ────────────────────────────────────────────────────
   // captureUndoAsync / flushPendingUndo 선언은 initCanvas 위 (Fix-5, 참조 순서)
 
+  // ── UNDO-CEILING-RECALC: 압축 Blob 엔트리 복원(3회차+) — putImageData 등가 ──
+  //   draw ctx 는 scale(DRAW_DPR) 상태 → transform 리셋(identity)+clear+drawImage 로 물리 1:1 복원(putImageData 등가).
+  //   ★비동기 디코드(createImageBitmap, Image 폴백) — 메인스레드 non-blocking. 실패 시 no-op(무회귀).
+  const restoreDrawFromBlob = useCallback((
+    canvas: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
+    blob: Blob,
+    done: () => void,
+  ) => {
+    const paint = (src: CanvasImageSource) => {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);                  // scale(DRAW_DPR) 무시 → 물리 픽셀 1:1
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(src, 0, 0);
+      ctx.restore();
+    };
+    const fallbackDecode = () => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => { paint(img); URL.revokeObjectURL(url); done(); };
+      img.onerror = () => { URL.revokeObjectURL(url); done(); }; // 디코드 실패 → no-op(무회귀)
+      img.src = url;
+    };
+    if (typeof createImageBitmap === 'function') {
+      createImageBitmap(blob)
+        .then((bmp) => { paint(bmp); bmp.close?.(); done(); })
+        .catch(() => fallbackDecode());
+    } else {
+      fallbackDecode();
+    }
+  }, []);
+
   const handleUndo = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2584,15 +2642,24 @@ export function PenChartTab({
       // V3 C-2: 에러 시에만 토스트 — undo 없음은 silent
       return;
     }
-    const imageData = undoStackRef.current.pop()!;
-    ctx.putImageData(imageData, 0, 0);
-    // undo 후 현재(복원) 상태를 다음 획용으로 async 사전 캡처
-    captureUndoAsync();
-    if (undoStackRef.current.length === 0) {
-      hasDrawingRef.current = false; // T-20260523-foot-PENCHART-PEN-SLOW
-      setHasDrawing(false);
+    const entry = undoStackRef.current.pop()!;
+    // undo 후 현재(복원) 상태를 다음 획용으로 async 사전 캡처 + 빈 스택 처리
+    const finishUndo = () => {
+      captureUndoAsync();
+      if (undoStackRef.current.length === 0) {
+        hasDrawingRef.current = false; // T-20260523-foot-PENCHART-PEN-SLOW
+        setHasDrawing(false);
+      }
+    };
+    if (entry.kind === 'raw' && entry.data) {
+      ctx.putImageData(entry.data, 0, 0);   // 1·2회차(raw) — 즉시 복원(지연 증가 0)
+      finishUndo();
+    } else if (entry.blob) {
+      restoreDrawFromBlob(canvas, ctx, entry.blob, finishUndo); // 3회차+(압축) — 비동기 디코드 후 복원
+    } else {
+      finishUndo(); // 방어: raw/blob 둘 다 없음(무회귀)
     }
-  }, [captureUndoAsync]);
+  }, [captureUndoAsync, restoreDrawFromBlob]);
 
   // ── 포인터 좌표 계산 ─────────────────────────────────────────────────
   // getPos: React 합성 이벤트 → 논리 좌표 + CSS 좌표 (text overlay 위치용)
