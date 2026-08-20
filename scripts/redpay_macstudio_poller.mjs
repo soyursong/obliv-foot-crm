@@ -341,6 +341,9 @@ const FOOT_TID_WHITELIST_DEFAULT = [
   "1047535845", "1047535843", "1047535842", "1047535837", "1047535835", "1047535797", // VAN 신 live(T-20260724-...-0723GAP Opt-B′)
   // 0805 GAP 신 live TID(538xxx) — 289002 재활성(8/03 TRUE-ZERO DEACTIVATE→8/04 TRUE-POSITIVE 재개) 멀티 재프로비저닝 구479476→538233(구 479476 superseded 병존):
   "1047538233", // 멀티 재활성 5세대(T-20260805-...-0805GAP-REACTIVATE, DA-20260805-foot-REDPAY...obfz GO — belt-and-suspenders parity, admission=merchant-keyed이라 gating 아님)
+  // 0820 회선교체 신 live TID — 08/20 13:00 RedPay 회선 교체로 유선/VAN 2단말 재프로비저닝(merchant 기등록·admit 무변, TID 명단 누락→5분 drift 오탐):
+  //   288005(풋 유선)→538247·285004(풋4 VAN)→535839. 구 TID historical 병존. env union(~/.env.redpay-foot REDPAY_TID_WHITELIST) 동시 등록.
+  "1047538247", "1047535839", // 회선교체 신 live(T-20260820-foot-REDPAY-NEWTID-MANUAL-REGISTER-ALARMSTORM — belt-and-suspenders parity, admission=merchant-keyed이라 gating 아님)
 ];
 
 // ── 도수(재활, body) merchant 14-band DEFAULT (T-20260714-foot-REDPAY-DOHSU-CLOSING-POLLER) ──
