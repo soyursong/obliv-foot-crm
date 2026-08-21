@@ -19,7 +19,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { hasOpsAuthority, canIssueProgressDocs } from '@/lib/permissions';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
-import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download, FileText } from 'lucide-react';
+import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download, FileText, FileDown, FolderArchive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { parseFootSites, formatFootSites } from '@/components/FootSiteSelector';
@@ -53,6 +53,18 @@ import ProgressAnalyticsWidgets, { parseProgressSession } from '@/components/tre
 //   CSV-export(위)로 내보낸 뒤 외부에서 분석한 결과이미지를 되받아 차트번호 단독조인으로 자동첨부.
 //   admin/manager(운영권한, canExportCsv 동일 게이트)에서만 노출. DA-20260718-...-AUTOMATCH 계약.
 import ProgressResultBulkUploadDialog from '@/components/treatment/ProgressResultBulkUploadDialog';
+// T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 경과분석 인풋 .md 추출(행별) + 전체선택 ZIP.
+//   추출·조립 로직 = TXMEMO-3VISIT-MD-ZIP 계보(6MULTIPLE-PROGRESS-MD-ZIP 스크립트) 그대로 이식(재가공 금지).
+//   ZIP = 무의존 STORE 조립(새 npm 미추가). read-only 조회만(db_change=false).
+import {
+  fetchProgressAnalysisData,
+  buildProgressAnalysisMd,
+  progressAnalysisMdBasename,
+  logProgressMdExport,
+  downloadMd,
+  type ProgressAnalysisPatient,
+} from '@/lib/progressAnalysisMd';
+import { createStoreZip, downloadZip, type ZipEntry } from '@/lib/progressAnalysisZip';
 // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준(6배수 도래) 순수 로직 — 필터/라벨/정렬 결정.
 import {
   isSixMultipleTarget,
@@ -264,6 +276,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   const [txtBusyId, setTxtBusyId] = useState<string | null>(null);
   // T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드 다이얼로그 open 상태.
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 경과분석 .md 추출 진행상태(행별 rowKey / ZIP).
+  const [mdBusyId, setMdBusyId] = useState<string | null>(null);
+  const [zipBusy, setZipBusy] = useState(false);
 
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
@@ -679,6 +694,103 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
     }
   };
 
+  // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 행별 경과분석 인풋 .md 다운로드.
+  //   내용 = 6MULTIPLE-PROGRESS-MD-ZIP 스크립트 5섹션 로직 그대로(재가공 금지) + 헤더 6배수 예정 회차·예약일.
+  //   read-only 조회만. PHI 반출 게이트 = canExportCsv(admin/manager) + 감사로그.
+  const handleMdDownloadRow = async (row: ProgressTargetRow) => {
+    if (!canExportCsv) return; // 방어(버튼 미노출이지만 이중 가드).
+    if (!row.customerId) {
+      toast.warning('고객 정보가 없어 경과분석 자료를 내려받을 수 없습니다.');
+      return;
+    }
+    if (!clinic?.id) return;
+    setMdBusyId(row.rowKey);
+    try {
+      const today = seoulISODate(new Date());
+      const env = await fetchProgressAnalysisData(supabase, clinic.id, [row.customerId], today);
+      const patient: ProgressAnalysisPatient = {
+        id: row.customerId,
+        name: row.customerName,
+        chart_number: row.chartNumber,
+      };
+      const content = buildProgressAnalysisMd(patient, env);
+      logProgressMdExport({
+        actor: profile?.email ?? profile?.id ?? null,
+        actorRole: profile?.role ?? null,
+        clinicId: clinic.id,
+        patientCount: 1,
+        chartNumbers: [row.chartNumber ?? null],
+        mode: 'row',
+      });
+      downloadMd(content, progressAnalysisMdBasename(patient));
+      toast.confirm(`'${row.customerName}' 경과분석 자료(.md)를 내려받았습니다.`);
+    } catch (e) {
+      toast.error(`경과분석 자료 다운로드 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setMdBusyId(null);
+    }
+  };
+
+  // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 선택 전원의 경과분석 .md 를 zip 1개로 다운로드.
+  //   전체선택/부분선택 = 기존 selectedIds 재사용. 아무도 선택 안 하면 안내(다운로드 미발생).
+  const handleZipDownload = async () => {
+    if (!canExportCsv) return; // 방어.
+    if (!clinic?.id) return;
+    // 현재 rows 에 존재하는 유효 선택만(고객 단위 dedupe — 같은 고객 다중 패키지 행 방지).
+    const selectedRows = rows.filter((r) => selectedIds.has(r.rowKey) && r.customerId);
+    const seenCust = new Set<string>();
+    const patients: ProgressAnalysisPatient[] = [];
+    for (const r of selectedRows) {
+      const cid = r.customerId as string;
+      if (seenCust.has(cid)) continue;
+      seenCust.add(cid);
+      patients.push({ id: cid, name: r.customerName, chart_number: r.chartNumber });
+    }
+    if (patients.length === 0) {
+      toast.warning('선택된 환자가 없습니다. 먼저 환자를 선택해 주세요.');
+      return;
+    }
+    setZipBusy(true);
+    try {
+      const today = seoulISODate(new Date());
+      const env = await fetchProgressAnalysisData(
+        supabase,
+        clinic.id,
+        patients.map((p) => p.id),
+        today,
+      );
+      // 파일명 dedupe(스크립트 usedNames 규칙 준용) — 동일 {차트}_{이름} 충돌 시 _n 접미.
+      const usedNames = new Map<string, number>();
+      const entries: ZipEntry[] = patients.map((p) => {
+        let base = progressAnalysisMdBasename(p);
+        if (usedNames.has(base)) {
+          const n = (usedNames.get(base) ?? 1) + 1;
+          usedNames.set(base, n);
+          base = `${base}_${n}`;
+        } else {
+          usedNames.set(base, 1);
+        }
+        return { name: `${base}.md`, content: buildProgressAnalysisMd(p, env) };
+      });
+      logProgressMdExport({
+        actor: profile?.email ?? profile?.id ?? null,
+        actorRole: profile?.role ?? null,
+        clinicId: clinic.id,
+        patientCount: patients.length,
+        chartNumbers: patients.map((p) => p.chart_number ?? null),
+        mode: 'zip',
+      });
+      const blob = createStoreZip(entries);
+      const zipName = `foot_경과분석_${seoulISODate(new Date()).replace(/-/g, '')}_${patients.length}명`;
+      downloadZip(blob, zipName);
+      toast.confirm(`선택 ${patients.length}명 경과분석 자료를 zip 1개로 내려받았습니다.`);
+    } catch (e) {
+      toast.error(`ZIP 다운로드 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setZipBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4" data-testid="progress-targets-section">
       {/* T-20260701-foot-PROGRESSLIST-TOP-REORDER: 경과분석 대상자 '리스트'를 화면 최상단으로 이동(위젯보다 위).
@@ -753,6 +865,38 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     )}
                     CSV 다운로드
                   </Button>
+                )}
+                {/* T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 우측 상단 전체선택 + ZIP 다운로드(경과분석 인풋 .md).
+                    PHI 반출 게이트 = admin/manager(운영권한, canExportCsv)만 노출. */}
+                {canExportCsv && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={toggleSelectAll}
+                      data-testid="progress-selectall-btn"
+                    >
+                      <ListChecks className="h-3.5 w-3.5" />
+                      {allSelected ? '선택해제' : '전체선택'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleZipDownload}
+                      disabled={selectedCount === 0 || zipBusy}
+                      title="선택한 환자의 경과분석 인풋(.md)을 zip 1개로 내려받기"
+                      data-testid="progress-md-zip-btn"
+                    >
+                      {zipBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FolderArchive className="h-3.5 w-3.5" />
+                      )}
+                      ZIP 다운로드
+                    </Button>
+                  </>
                 )}
                 <span
                   className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
@@ -912,6 +1056,26 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                                 <FileText className="h-3 w-3" />
                               )}
                               치료이력
+                            </Button>
+                          )}
+                          {/* T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 행별 경과분석 인풋 .md 다운로드.
+                              admin/manager(운영권한)만 노출(PHI 가드). 내용=확정 추출로직 그대로 + 6배수 예정일 헤더. */}
+                          {canExportCsv && (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              onClick={() => handleMdDownloadRow(r)}
+                              disabled={mdBusyId === r.rowKey || !r.customerId}
+                              title="이 환자의 경과분석 인풋(.md)을 내려받기"
+                              data-testid="progress-md-download-btn"
+                            >
+                              {mdBusyId === r.rowKey ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <FileDown className="h-3 w-3" />
+                              )}
+                              경과분석
                             </Button>
                           )}
                           {/* 발행(write) = 원장+admin/manager 만. 코디/상담/치료사에는 미노출(A안 read/write split). */}

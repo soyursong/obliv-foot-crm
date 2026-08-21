@@ -194,6 +194,11 @@ export default defineConfig({
         //   순수 상수/함수(OPINION_SECTIONS·parseOpinionSections·composeOpinionDoc·needsDate·substituteDatePlaceholder)
         //   단언 — 원장 verbatim phrase·[내원일] 자동치환·회귀. auth/DB/server 불요·결정론(db_change=false).
         '**/T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD.spec.ts',
+        // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 경과분석 인풋 .md 행별 다운로드 + 전체선택 ZIP.
+        //   순수 함수(buildProgressAnalysisMd/progressAnalysisMdBasename/createStoreZip) 단언 —
+        //   5섹션 구조·6배수 예정일 헤더·확정 추출로직 동일 산출·zip 시그니처/엔트리수·"기록없음" 정직표기.
+        //   auth/DB/server 불요·결정론(read-only, db_change=false). 실기기 다운로드/토스트 = supervisor 갤탭 field-soak.
+        '**/T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
@@ -826,6 +831,9 @@ export default defineConfig({
         // T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD: 순수 상수/함수 단언 spec 은 unit 전용 →
         //   desktop-chrome(auth/webServer/setup) 유입 차단(무-project QA 시 setup 미기동).
         '**/T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD.spec.ts',
+        // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 순수 함수 단언 spec 은 unit 전용 →
+        //   desktop-chrome(auth/webServer/setup) 유입 차단(무-project QA 시 setup 미기동).
+        '**/T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1.spec.ts',
         // T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION + 08-07 CONSULTASSIGN-NOCONFIRM:
         //   unit 전용(순수 함수 + fs-grep 정적 가드) → 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→
         //   setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
