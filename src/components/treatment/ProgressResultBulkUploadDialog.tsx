@@ -48,6 +48,9 @@ import {
   type ResultMatchStatus,
   type CustomerLite,
 } from '@/lib/progressResultMatch';
+// T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE (Phase-2 §4): 첨부 후 경과분석 슬립 1:1 결속.
+//   (customer_id, visit_date) 후보 슬립 정확히 1건일 때만 slip_id 결속 + 슬립 상태 [업로드대기] 전이. fail-closed.
+import { linkImageToSlipByVisit } from '@/lib/progressSlips';
 
 /** 행 상태 = 매칭 해석 결과(§3) + 사람이 수동 지정한 'manual'. DB match_status(auto|manual|flagged)와 별개. */
 type RowStatus = ResultMatchStatus | 'manual';
@@ -273,6 +276,7 @@ export default function ProgressResultBulkUploadDialog({ open, onOpenChange, onA
     let done = 0;
     let noop = 0;
     let fail = 0;
+    let linked = 0; // §4: 슬립 결속 성공 건수([업로드대기] 전이).
     const nextRows = [...rows];
     try {
       for (const r of applicable) {
@@ -322,6 +326,20 @@ export default function ProgressResultBulkUploadDialog({ open, onOpenChange, onA
           if (wasNoop) noop++;
           else done++;
 
+          // §4: 첨부 이미지 → 경과분석 슬립 1:1 결속(fail-closed). 후보 슬립 정확히 1건일 때만 결속 + [업로드대기] 전이.
+          //   0건/다건 = 결속 보류(이미지는 이미 첨부됨). 노쇼/취소 자동폐기(§6) 트리거는 범위 밖.
+          try {
+            const linkRes = await linkImageToSlipByVisit(supabase, {
+              clinicId: clinic.id,
+              customerId: cust.id,
+              visitDate,
+              contentHash: hash,
+            });
+            if (linkRes.bound) linked++;
+          } catch {
+            // 결속 실패 = 이미지 첨부에는 영향 없음(best-effort).
+          }
+
           // 감사로그(G6).
           logProgressResultAttach({
             actor: profile?.email ?? profile?.id ?? null,
@@ -352,6 +370,7 @@ export default function ProgressResultBulkUploadDialog({ open, onOpenChange, onA
       }
       setRows(nextRows);
       const parts = [`첨부 ${done}건`];
+      if (linked > 0) parts.push(`경과지 연결 ${linked}건`);
       if (noop > 0) parts.push(`중복 무시 ${noop}건`);
       if (fail > 0) parts.push(`실패 ${fail}건`);
       if (fail > 0) toast.error(parts.join(' · '));

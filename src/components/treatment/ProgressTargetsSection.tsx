@@ -11,7 +11,7 @@
 //   방어성: progress_check_required/label 미적용 prod(42703/PGRST204) → 빈 목록 폴백(섹션 무파손). ExamTargetsSection 선례 동일.
 
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
@@ -65,6 +65,16 @@ import {
   type ProgressAnalysisPatient,
 } from '@/lib/progressAnalysisMd';
 import { createStoreZip, downloadZip, type ZipEntry } from '@/lib/progressAnalysisZip';
+// T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE (Phase-2 §4/§5): 경과분석 슬립 상태머신.
+//   추출 시점에 [추출대상] 슬립 멱등 생성(reservation_id 1:1 결속키) + 리스트에 상태 컬럼 표시.
+//   결과 이미지 연결(§4)은 업로드 다이얼로그에서 슬립 → [업로드대기] 전이. §6 노쇼 자동폐기 트리거는 범위 밖.
+import {
+  ensureSlip,
+  fetchSlipStatesByReservation,
+  slipStateLabel,
+  slipStateBadgeClass,
+  type SlipState,
+} from '@/lib/progressSlips';
 // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준(6배수 도래) 순수 로직 — 필터/라벨/정렬 결정.
 import {
   isSixMultipleTarget,
@@ -103,6 +113,7 @@ interface ProgressTargetRow {
   anticipatedSession: number;        // used_sessions + 1 (6의 배수)
   nextReservationDate: string | null; // 다음 예약일 yyyy-MM-dd (오늘 이후 미취소 최이른). 미예약=null.
   nextReservationTime: string | null; // HH:mm
+  nextReservationId: string | null;   // 다음 예약 id — 경과분석 슬립(§4/§5) reservation_id 1:1 결속키.
   registrarName: string | null;       // 다음 예약 등록자 스냅샷
 }
 
@@ -181,14 +192,15 @@ function useProgressTargets(clinicId: string | null | undefined) {
 
       // 5) 다음 예약(오늘 이후 미취소 최이른) per customer — 정렬/표시용(미예약=null). read-only.
       const today = seoulISODate(new Date());
-      const nextResvMap = new Map<string, { date: string; time: string | null; registrar: string | null }>();
+      const nextResvMap = new Map<string, { id: string | null; date: string; time: string | null; registrar: string | null }>();
       try {
         // T-20260814: customerIds 다건 → .in() CHUNK 분할(URL 한계 회피). 청크별 정렬은 유지되며,
         //   맵은 (customer당) 첫 매칭만 기록하되 더 이른 날짜/시간이 오면 갱신 → 청크 경계 무관 최이른 보장.
+        // T-20260821-...-BATCH-EXTRACT-LINK §4/§5: reservation id 도 함께 확보(경과분석 슬립 1:1 결속키).
         for (const slice of chunkIds(customerIds, IN_CHUNK_SIZE)) {
           const { data: resvs } = await supabase
             .from('reservations')
-            .select('customer_id, reservation_date, reservation_time, registrar_name, status')
+            .select('id, customer_id, reservation_date, reservation_time, registrar_name, status')
             .eq('clinic_id', clinicId)
             .in('customer_id', slice)
             .gte('reservation_date', today)
@@ -208,6 +220,7 @@ function useProgressTargets(clinicId: string | null | undefined) {
               if (curKey >= prevKey) continue;
             }
             nextResvMap.set(cid, {
+              id: rv['id'] ? String(rv['id']) : null,
               date: d,
               time: t,
               registrar: rv['registrar_name'] ? String(rv['registrar_name']) : null,
@@ -233,6 +246,7 @@ function useProgressTargets(clinicId: string | null | undefined) {
           anticipatedSession: t.anticipatedSession,
           nextReservationDate: nr?.date ?? null,
           nextReservationTime: nr?.time ?? null,
+          nextReservationId: nr?.id ?? null,
           registrarName: nr?.registrar ?? null,
         };
       });
@@ -302,6 +316,37 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   const [zipBusy, setZipBusy] = useState(false);
   // T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH: 선택 전원의 .md 를 ZIP 없이 개별 파일로 일괄 다운로드하는 진행상태.
   const [individualBusy, setIndividualBusy] = useState(false);
+
+  // T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE (Phase-2 §5): 경과분석 슬립 상태(추출대상/업로드대기/확정).
+  //   현재 rows 의 다음 예약 id 로 슬립 상태 배치 조회(reservation_id → state). 슬립 미존재 = '준비 전'.
+  const queryClient = useQueryClient();
+  const resvIdsForSlips = useMemo(
+    () => rows.map((r) => r.nextReservationId).filter(Boolean) as string[],
+    [rows],
+  );
+  const { data: slipStates } = useQuery<Map<string, SlipState>>({
+    queryKey: ['progress_slip_states', clinic?.id, [...resvIdsForSlips].sort().join(',')],
+    enabled: !!clinic?.id && resvIdsForSlips.length > 0 && (canIssue || canExportCsv),
+    queryFn: () => fetchSlipStatesByReservation(supabase, clinic!.id, resvIdsForSlips),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+  const refreshSlipStates = () => {
+    queryClient.invalidateQueries({ queryKey: ['progress_slip_states'] });
+  };
+  // 추출대상 슬립 멱등 생성(§5) — 인풋 추출 시점('경과분석지 준비')에 호출. best-effort(추출 자체는 무관).
+  const ensureSlipForRow = async (r: ProgressTargetRow) => {
+    if (!clinic?.id || !r.customerId || !r.nextReservationId || !r.nextReservationDate) return;
+    await ensureSlip(supabase, {
+      clinicId: clinic.id,
+      customerId: r.customerId,
+      reservationId: r.nextReservationId,
+      chartNo: r.chartNumber,
+      sessionOrdinal: r.anticipatedSession,
+      visitDate: r.nextReservationDate,
+      actorId: profile?.id ?? null,
+    });
+  };
 
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
@@ -747,6 +792,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         mode: 'row',
       });
       downloadMd(content, progressAnalysisMdBasename(patient));
+      // §5: 인풋 추출 = [추출대상] 슬립 멱등 생성(예약 있는 행만). best-effort.
+      await ensureSlipForRow(row);
+      refreshSlipStates();
       toast.confirm(`'${row.customerName}' 경과분석 자료(.md)를 내려받았습니다.`);
     } catch (e) {
       toast.error(`경과분석 자료 다운로드 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
@@ -807,6 +855,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
       const blob = createStoreZip(entries);
       const zipName = `foot_경과분석_${seoulISODate(new Date()).replace(/-/g, '')}_${patients.length}명`;
       downloadZip(blob, zipName);
+      // §5: 추출한 선택 행 전원 [추출대상] 슬립 멱등 생성(예약 있는 행만). best-effort.
+      await Promise.all(selectedRows.map((r) => ensureSlipForRow(r)));
+      refreshSlipStates();
       toast.confirm(`선택 ${patients.length}명 경과분석 자료를 zip 1개로 내려받았습니다.`);
     } catch (e) {
       toast.error(`ZIP 다운로드 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
@@ -872,6 +923,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
       }
+      // §5: 추출한 선택 행 전원 [추출대상] 슬립 멱등 생성(예약 있는 행만). best-effort.
+      await Promise.all(selectedRows.map((r) => ensureSlipForRow(r)));
+      refreshSlipStates();
       toast.confirm(`선택 ${patients.length}명 경과분석 자료(.md)를 개별 파일로 내려받았습니다.`);
     } catch (e) {
       toast.error(`개별 저장 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
@@ -1085,6 +1139,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                   <th className="px-2 py-1 whitespace-nowrap">회차</th>
                   <th className="px-2 py-1 whitespace-nowrap">다음 예약</th>
                   <th className="px-2 py-1 whitespace-nowrap">담당자</th>
+                  {/* T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §5: 경과분석 슬립 상태(추출대상/업로드대기/확정). */}
+                  {canSelect && <th className="px-2 py-1 whitespace-nowrap">상태</th>}
                   {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행 열 (발행/반출 권한자만) */}
                   {canSelect && <th className="px-2 py-1 whitespace-nowrap text-right">발행</th>}
                 </tr>
@@ -1159,6 +1215,22 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                     <td className="px-2 py-1 whitespace-nowrap text-muted-foreground" data-testid="progress-registrar-cell">
                       {r.registrarName ? `@${r.registrarName}` : '—'}
                     </td>
+                    {/* T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §5: 슬립 상태 배지(예약 있는 행만 결속). */}
+                    {canSelect && (
+                      <td className="px-2 py-1 whitespace-nowrap" data-testid="progress-slip-state-cell">
+                        {(() => {
+                          const st = r.nextReservationId ? slipStates?.get(r.nextReservationId) : undefined;
+                          return (
+                            <span
+                              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium leading-none ${slipStateBadgeClass(st)}`}
+                              data-slip-state={st ?? 'none'}
+                            >
+                              {slipStateLabel(st)}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                    )}
                     {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 개별 발행하기 버튼(placeholder).
                         T-20260812-...-DOCWRITE-LISTUP (A안): 발행 열은 발행/반출 권한자만(read-only 역할 미노출). */}
                     {canSelect && (
@@ -1240,7 +1312,11 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
 
       {/* T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드→자동매칭 다이얼로그. admin/manager만. */}
       {canExportCsv && (
-        <ProgressResultBulkUploadDialog open={bulkUploadOpen} onOpenChange={setBulkUploadOpen} />
+        <ProgressResultBulkUploadDialog
+          open={bulkUploadOpen}
+          onOpenChange={setBulkUploadOpen}
+          onApplied={refreshSlipStates}
+        />
       )}
     </div>
   );
