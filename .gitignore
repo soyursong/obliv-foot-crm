@@ -122,3 +122,8 @@ _artifacts/T-20260819-foot-TXMEMO-3VISIT-MD-ZIP-EXTRACT/
 _artifacts/T-20260819-foot-TXMEMO-3VISIT-MD-ZIP-EXTEND-RX-HX-FIRSTCHART/
 # T-20260820-foot-TXMEMO-3VISIT-MD-ZIP-EXTEND-5SEC-CLINITEXT: PHI(치료메모+처방+과거력+상담/진료 임상텍스트) 추출물 — git 커밋 금지 (요청자 본인 relay 전용)
 _artifacts/T-20260820-foot-TXMEMO-3VISIT-MD-ZIP-EXTEND-5SEC-CLINITEXT/
+# T-20260821-foot-TXMEMO-6MULTIPLE-PROGRESS-MD-ZIP: PHI(6배수 회차 도래자 경과분석) 추출물 — git 커밋 금지 (요청자 본인 relay 전용)
+_artifacts/T-20260821-foot-TXMEMO-6MULTIPLE-PROGRESS-MD-ZIP/
+# T-20260822-foot-TXMEMO-EXPORT-INDIVIDUAL-MD-NOZIP + 계보 durable guard: TXMEMO/경과분석 PHI 추출·배송물(개별 md·zip·manifest) 전건 커밋 금지 (요청자 본인 relay 전용)
+_artifacts/*TXMEMO*/
+_artifacts/*PROGANALYSIS*/
