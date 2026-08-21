@@ -135,4 +135,33 @@ else
   echo "⚠️  [pre-push] check-apply-runner-gate.sh 부재 — apply-runner gate 린트 skip (fail-open)" >&2
 fi
 
+# ── ⑧ GO-GATE MAIN-LANDING (refs/heads/main push 한정, registry-gated, fail-closed) ──
+#   T-20260821-meta-GITINTEG-CRM-MAINLAND-SUPERVISOR-GATE-FLEETWIDE (PRE-MAIN 축D, deploy_flow §3-J.4)
+#   git-integrated CF Pages CRM = main push=즉시 prod → dev 의 정상 FF push 가 supervisor GO 를
+#   시간상 우회(foot 711386ee 실증: 20:29 push→20:38 prod, GO 事後). 게이트④(non-FF stomp)·
+#   축C(safe_deploy_push wrapper 한정)가 못 막는 clean FF 直-push 봉합. registry
+#   (~/claude-sync/scripts/premain_gotoken_repos.txt) 등재 repo 의 refs/heads/main push =
+#   유효 main-landing GO-token(db-gate/{TID}_MAINLAND.token.json+.sig · scope:"main_landing" ·
+#   bound_commit==landing sha · ed25519 supervisor 서명 · 미만료) 필수. 미충족=BLOCK.
+#   dev = fix/preview 브랜치까지만 push(무접촉). main-landing = supervisor GO 판정 後 수행(§5).
+#   미등재 repo(scalp2=wrangler 직배포)=무접촉 PASS.
+#   로직 SSOT = ~/claude-sync/scripts/premain_gotoken_gate.sh (부재=fail-open+경고, 워처 사후).
+#   kill-switch: PREMAIN_GOTOKEN_GATE=0. 탈출구: PREMAIN_GOTOKEN_OVERRIDE="사유" git push
+#   (의도적 롤백/P0 hotfix 한정 — bus premain_gotoken_override 기록+경보, 티켓 evidence 의무).
+#   ★ 이 블록은 게이트 ④(main_nonff_guard) 직후, `exit "$rc"` 직전에 삽입 — non-FF≠무권한 landing 별 축.
+PREMAIN_GOTOKEN_GUARD="$HOME/claude-sync/scripts/premain_gotoken_gate.sh"
+if [ -x "$PREMAIN_GOTOKEN_GUARD" ]; then
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    [ "$local_sha" = "$Z40" ] && continue
+    if [ "$remote_ref" = "refs/heads/main" ]; then
+      if ! bash "$PREMAIN_GOTOKEN_GUARD" --mode prepush --repo "$REPO_ROOT" --local "$local_sha" --remote "$remote_sha"; then
+        rc=1
+      fi
+    fi
+  done <<< "$PUSH_REFS"
+else
+  echo "⚠️  [pre-push] premain_gotoken_gate.sh 부재 — GO-gate main-landing skip (fail-open, 워처 사후 감시)" >&2
+fi
+
 exit "$rc"
