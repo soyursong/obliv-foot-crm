@@ -286,6 +286,54 @@ function netByDay(rows: RevenueRow[]): Map<number, number> {
   return m;
 }
 
+interface ManualDayRow {
+  amount: number | null;
+  close_date: string | null;
+}
+
+/**
+ * T-20260821-foot-CLOSING-BYDATE-MANUALPAY-OVERLAY-FIX — 수기결제 per-day 오버레이 맵.
+ *
+ * RC(부모 DIAG): `closing_manual_payments`(수기결제)는 §01 카드(fetchMtmCardMetrics 비급여 UNION)
+ *   + 결제내역 탭 grossTotal(Closing.tsx manualEntries)에는 포함되나, §02 일자별표가 소비하는
+ *   foot_stats_revenue RPC(payments/package_payments 만 read)에는 **무접촉** → 일자별표만 수기결제만큼
+ *   과소집계(08-20 실측 Δ=+10,000). 같은 '총 매출' 탭 §01↔§02 내부 불일치.
+ *
+ * 해결: FE 오버레이. §01 카드·결제내역 탭과 **동일 소스·필터**로 close_date grain 합을 만들어
+ *   netByDay 결과에 additive 가산 → 3-surface(§01/§02/결제내역) parity.
+ *   · grain          = close_date (일자별표 일 축과 정합)
+ *   · voided 제외     = voided_at IS NULL (§01·결제내역 탭 동일, 이중차감/오합산 방지)
+ *   · sim 필터 없음   = §01 카드(L192–205)·결제내역 탭(manualEntries) 모두 수기결제엔 미적용 → parity 위해 동일
+ *   · additive-safe   = foot_stats_revenue RPC 는 수기결제 무접촉 → RPC 반환값에 없는 금액만 가산(중복합산 0).
+ *
+ * db_change=false — 신규 RPC/컬럼/테이블/enum 무접촉. 기존 테이블 read-only 집계만 추가.
+ */
+async function manualNetByDay(
+  clinicId: string,
+  from: string,
+  to: string,
+): Promise<Map<number, number>> {
+  const rows = await fetchAllRows<ManualDayRow>((off, lim) =>
+    supabase
+      .from('closing_manual_payments')
+      .select('amount, close_date')
+      .eq('clinic_id', clinicId)
+      .gte('close_date', from)
+      .lte('close_date', to)
+      .is('voided_at', null) // soft-void 무효행 제외(§01·결제내역 탭 동일)
+      .range(off, off + lim - 1),
+  );
+  const m = new Map<number, number>();
+  for (const r of rows) {
+    if (!r.close_date) continue;
+    const day = Number(r.close_date.slice(8, 10));
+    if (!day) continue;
+    // 수기결제는 항상 payment_type='payment'(환불 없음) → amount 그대로 가산(Closing.tsx manualCard/Cash/Transfer 동일).
+    m.set(day, (m.get(day) ?? 0) + (r.amount ?? 0));
+  }
+  return m;
+}
+
 export async function fetchMonthlyComparison(
   clinicId: string,
   refISO: string,
@@ -293,14 +341,21 @@ export async function fetchMonthlyComparison(
   const cur = monthBounds(refISO);
   const prev = prevMonthBounds(refISO);
 
-  const [curRows, prevRows] = await Promise.all([
+  const [curRows, prevRows, curManual, prevManual] = await Promise.all([
     fetchRevenue(clinicId, cur.from, cur.to),
     fetchRevenue(clinicId, prev.from, prev.to),
+    // T-20260821 수기결제 오버레이: §01 카드·결제내역 탭 포함기준과 parity(close_date grain, voided 제외).
+    manualNetByDay(clinicId, cur.from, cur.to),
+    manualNetByDay(clinicId, prev.from, prev.to),
   ]);
 
   const curMap = netByDay(curRows);
   const prevMap = netByDay(prevRows);
-  const prevHasData = prevRows.length > 0;
+  // 수기결제 per-day 오버레이 additive 가산 — RPC 무접촉 금액만 더함(중복합산 없음).
+  for (const [day, amt] of curManual) curMap.set(day, (curMap.get(day) ?? 0) + amt);
+  for (const [day, amt] of prevManual) prevMap.set(day, (prevMap.get(day) ?? 0) + amt);
+  // 전월 데이터 존재 = RPC 매출행 OR 수기결제 존재(수기만 있는 달도 '데이터 있음'으로 정확히 판정).
+  const prevHasData = prevRows.length > 0 || prevManual.size > 0;
 
   // 현재 KST 월이면 오늘 이후 날짜는 아직 매출 없음(미래) → current=null 처리.
   const [ty, tm, td] = todaySeoulISODate().split('-').map(Number);
