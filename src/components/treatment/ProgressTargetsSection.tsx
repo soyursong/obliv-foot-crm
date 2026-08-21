@@ -269,6 +269,14 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   //   발행(개별 발행하기·일괄처리) = 원장(director)+admin/manager 만. 코디/상담/치료사(read-only)에는 미노출.
   //   ★두 surface(치료테이블 경과분석 · 진료대시보드 서류작성 탭)가 동일 컴포넌트를 재사용 → 여기서 게이트 = surface drift 0.
   const canIssue = canIssueProgressDocs(profile);
+  // T-20260822-foot-PROGANALYSIS-EXTRACT-DIRECTOR-GATE-FIX: 경과분석 인풋 .md/ZIP 추출 노출 게이트.
+  //   추출(.md/ZIP)은 대표원장 본인 문서작업의 read-only 반출(발행 canIssue 와 동일 계층)이며,
+  //   대상 데이터는 경과분석 명단에서 이미 열람 중인 것 → 신규 PHI 노출 아님.
+  //   ★버그: canExportCsv=hasOpsAuthority(admin/manager only, director 배제)로만 게이트되어
+  //     대표원장(문지은, role='director', has_ops_authority 컬럼 미적재)이 '자기요청' 기능을
+  //     본인 화면에서 볼 수 없었음(발행 버튼은 canIssue로 노출, 추출만 미노출 = 비대칭).
+  //   → 발행 tier(원장+admin/manager)로 확장. 전역 hasOpsAuthority(매출/통계/계정)는 무변경.
+  const canExtractProgress = canExportCsv || canIssue;
   // 선택(체크박스)·발행 열은 발행 또는 CSV 반출 권한이 있을 때만 노출. 순수 read 역할(코디/상담/치료사)은 read-only 명단.
   const canSelect = canIssue || canExportCsv;
   const [csvBusy, setCsvBusy] = useState(false);
@@ -696,9 +704,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
 
   // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 행별 경과분석 인풋 .md 다운로드.
   //   내용 = 6MULTIPLE-PROGRESS-MD-ZIP 스크립트 5섹션 로직 그대로(재가공 금지) + 헤더 6배수 예정 회차·예약일.
-  //   read-only 조회만. PHI 반출 게이트 = canExportCsv(admin/manager) + 감사로그.
+  //   read-only 조회만. PHI 반출 게이트 = canExtractProgress(원장+admin/manager) + 감사로그.
   const handleMdDownloadRow = async (row: ProgressTargetRow) => {
-    if (!canExportCsv) return; // 방어(버튼 미노출이지만 이중 가드).
+    if (!canExtractProgress) return; // 방어(버튼 미노출이지만 이중 가드).
     if (!row.customerId) {
       toast.warning('고객 정보가 없어 경과분석 자료를 내려받을 수 없습니다.');
       return;
@@ -734,7 +742,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 선택 전원의 경과분석 .md 를 zip 1개로 다운로드.
   //   전체선택/부분선택 = 기존 selectedIds 재사용. 아무도 선택 안 하면 안내(다운로드 미발생).
   const handleZipDownload = async () => {
-    if (!canExportCsv) return; // 방어.
+    if (!canExtractProgress) return; // 방어.
     if (!clinic?.id) return;
     // 현재 rows 에 존재하는 유효 선택만(고객 단위 dedupe — 같은 고객 다중 패키지 행 방지).
     const selectedRows = rows.filter((r) => selectedIds.has(r.rowKey) && r.customerId);
@@ -867,8 +875,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                   </Button>
                 )}
                 {/* T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 우측 상단 전체선택 + ZIP 다운로드(경과분석 인풋 .md).
-                    PHI 반출 게이트 = admin/manager(운영권한, canExportCsv)만 노출. */}
-                {canExportCsv && (
+                    T-20260822-foot-PROGANALYSIS-EXTRACT-DIRECTOR-GATE-FIX: 게이트 = canExtractProgress(원장+admin/manager).
+                    대표원장(director) 자기요청 기능 미노출 버그 수정 — 발행 tier 와 동일 계층으로 확장. */}
+                {canExtractProgress && (
                   <>
                     <Button
                       type="button"
@@ -1059,8 +1068,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                             </Button>
                           )}
                           {/* T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 행별 경과분석 인풋 .md 다운로드.
-                              admin/manager(운영권한)만 노출(PHI 가드). 내용=확정 추출로직 그대로 + 6배수 예정일 헤더. */}
-                          {canExportCsv && (
+                              T-20260822-foot-PROGANALYSIS-EXTRACT-DIRECTOR-GATE-FIX: 게이트 = canExtractProgress
+                              (원장+admin/manager). 대표원장(director) 미노출 버그 수정. 내용=확정 추출로직 그대로 + 6배수 예정일 헤더. */}
+                          {canExtractProgress && (
                             <Button
                               type="button"
                               size="xs"

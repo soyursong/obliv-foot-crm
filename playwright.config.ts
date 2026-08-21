@@ -199,6 +199,10 @@ export default defineConfig({
         //   5섹션 구조·6배수 예정일 헤더·확정 추출로직 동일 산출·zip 시그니처/엔트리수·"기록없음" 정직표기.
         //   auth/DB/server 불요·결정론(read-only, db_change=false). 실기기 다운로드/토스트 = supervisor 갤탭 field-soak.
         '**/T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-EXTRACT-DIRECTOR-GATE-FIX: 경과분석 추출(.md/ZIP) 노출 게이트에
+        //   대표원장(director) 포함 확인. hasOpsAuthority(admin/manager)만으로는 원장 배제되던 버그의
+        //   권한 로직 회귀 가드(canExtractProgress = canExportCsv || canIssueProgressDocs). 순수 함수 단언.
+        '**/T-20260822-foot-PROGANALYSIS-EXTRACT-DIRECTOR-GATE-FIX.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
