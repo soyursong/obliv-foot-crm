@@ -217,6 +217,11 @@ export default defineConfig({
         //   레이저=치료시행 판정·체류시간 이상치 표기·하위호환 단언. auth/DB/server 불요·결정론(read-only).
         //   실기기 .md 렌더 = supervisor 갤탭 field-soak.
         '**/T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS: 경과분석 .md 에 【8】활성 패키지 +
+        //   【9】예약내역 ADDITIVE. 순수 함수(buildProgressAnalysisMd) — 시술구분별 총/사용/잔여·전체잔여·
+        //   예약 최신순·취소표기·가열/힐러↔비가열 판정(예약메모 1순위>가열잔여 2순위)·하위호환 단언.
+        //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak.
+        '**/T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).

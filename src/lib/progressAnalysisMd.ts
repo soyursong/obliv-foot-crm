@@ -20,6 +20,13 @@
  *   7. 동선 로그        ← check_in_room_logs (방문별 슬롯 체류·레이저 슬롯 유무=치료 시행 판정·이상치는 표기만)
  *   6·7 조인 키 = 방문(check_in). read-only(db_change=false)·기존 추출 경로(행별/ZIP/개별)에 SSOT 자동반영.
  *
+ * ★ADDITIVE(T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS): 위 1~7섹션 무접촉·재가공 금지.
+ *   8. 활성 패키지    ← packages(status='active') 시술구분별 발급 총회차 + package_sessions(used) 소진 카운트
+ *                      (표시로직 = PackageTicketReadonlyList.tsx 그대로 이식). 전체잔여 = Σ잔여.
+ *   9. 예약내역        ← reservations 전건(취소포함·최신순) + 예약메모(booking_memo canonical)+간략메모+메모.
+ *   목적 = 6회차 가열(힐러)/비가열 판정(참고표기, 별도 필드 아님). 판정우선순위: 1순위 예약메모 > 2순위 활성패키지 가열잔여.
+ *   read-only(db_change=false)·schema 0·기존 배송로직(ZIP/개별) 불변. 동일 clinic-scoped RLS 경계 내.
+ *
  * GATE: read-only 조회만. DB/스키마/트리거/write 0(db_change=false). 외부 AI 미경유(결정론 규칙).
  * PHI: 산출 .md = 진료성 PHI. 호출부(경과분석 탭)에서 admin/manager(운영권한) 게이팅 + export 감사로그.
  */
@@ -161,6 +168,42 @@ function seoulDateTime(ts: unknown): { date: string; time: string } {
   return { date: s.slice(0, 10), time: s.slice(11, 16) };
 }
 
+/* ─── 【8】【9】 (T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS) 전용 순수 유틸 ─── */
+
+// 활성 패키지 시술구분 행 매핑 = PackageTicketReadonlyList.tsx 표시로직 그대로 이식(재가공 금지).
+//   token = package_sessions.session_type(소진축) · qtyKey = packages.{...}_sessions(발급 총회차축).
+//   ⚠ 컬럼명 오타 유지: podologe_sessions(발급) ↔ session_type 'podologue'(소진).
+const PKG_SESSION_TYPES: Array<{ sessionType: string; label: string; qtyKey: string }> = [
+  { sessionType: 'unheated_laser', label: '비가열', qtyKey: 'unheated_sessions' },
+  { sessionType: 'heated_laser', label: '가열', qtyKey: 'heated_sessions' },
+  { sessionType: 'podologue', label: '포돌로게', qtyKey: 'podologe_sessions' },
+  { sessionType: 'iv', label: '수액', qtyKey: 'iv_sessions' },
+  { sessionType: 'trial', label: '체험권', qtyKey: 'trial_sessions' },
+  { sessionType: 'reborn', label: 'Re:Born', qtyKey: 'reborn_sessions' },
+];
+
+// 예약 status → 현장 라벨. 취소예약은 【9】에 포함하되 (취소)로 명시 표기(현장친화·이력 온전).
+const RESV_STATUS_LABEL: Record<string, string> = {
+  confirmed: '예약확정',
+  checked_in: '내원(체크인)',
+  cancelled: '취소',
+  no_show: '노쇼',
+};
+function resvStatusLabel(status: unknown): string {
+  const s = String(status ?? '').trim();
+  return RESV_STATUS_LABEL[s] ?? (s || '(상태미상)');
+}
+
+// 예약메모 텍스트에서 가열/힐러↔비가열 단서 감지(판정 1순위).
+//   ⚠ '비가열'은 '가열'을 부분문자열로 포함 → 비가열을 먼저 판정(오분류 방지).
+function detectHeatingSignal(text: unknown): 'heated' | 'unheated' | null {
+  const t = norm(text);
+  if (!t) return null;
+  if (/비가열/.test(t)) return 'unheated';
+  if (/가열|힐러/.test(t)) return 'heated';
+  return null;
+}
+
 // 과거력(발건강 질문지 form_data) 라벨 맵 (스크립트 그대로)
 type HqKind = 'arr' | 'str' | 'bool' | 'raw' | 'nail';
 const HQ_MED_FIELDS: Array<[string, string, HqKind]> = [
@@ -285,6 +328,29 @@ interface VisitRoomLog {
   room_type: string | null;
   logged_at: string | null;
 }
+// 【8】 활성 패키지 — 패키지 1건 (T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS)
+interface ActivePackageRow {
+  label: string; // 시술구분(비가열/가열/포돌로게/수액/체험권/Re:Born)
+  total: number; // 발급 총회차
+  used: number; // 소진 회차(package_sessions.status='used')
+  remaining: number; // total − used
+}
+interface ActivePackage {
+  package_name: string | null;
+  package_type: string | null;
+  rows: ActivePackageRow[];
+  totalRemaining: number; // 전체잔여(Σ remaining)
+}
+// 【9】 예약내역 — reservations 한 건(최신순)
+interface ReservationEntry {
+  reservation_date: string;
+  reservation_time: string | null;
+  status: string | null;
+  booking_memo: string | null; // 예약메모(canonical)
+  memo: string | null; // 일반 메모
+  brief_note: string | null; // 간략메모(초진 주증상)
+  registrar_name: string | null;
+}
 
 export interface ProgressAnalysisEnvelope {
   boilerSet: Set<string>;
@@ -301,6 +367,9 @@ export interface ProgressAnalysisEnvelope {
   // optional = fetch 는 항상 세팅하나, 기존 envelope 리터럴(PHASE1/BATCH 스펙 등) 하위호환 위해 옵셔널.
   visitsByCust?: Map<string, VisitRecord[]>; // 방문(check_in, 취소제외) — 방문일 오름차순
   roomLogsByCheckIn?: Map<string, VisitRoomLog[]>; // check_in_id → 동선 로그(logged_at 오름차순)
+  // 【8】【9】 (T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS) — additive·read-only·옵셔널(하위호환).
+  activePkgsByCust?: Map<string, ActivePackage[]>; // 활성 패키지(status='active') + 시술구분별 총/사용/잔여
+  reservationsByCust?: Map<string, ReservationEntry[]>; // 예약 전건(최신순) + 예약메모
 }
 
 /* ────────────────────────── 데이터 fetch (browser supabase, read-only) ────────────────────────── */
@@ -331,6 +400,8 @@ export async function fetchProgressAnalysisData(
     chartByCust: new Map(),
     visitsByCust: new Map(),
     roomLogsByCheckIn: new Map(),
+    activePkgsByCust: new Map(),
+    reservationsByCust: new Map(),
   };
   const ids = [...new Set(customerIds.filter(Boolean))];
   if (ids.length === 0) return env;
@@ -698,6 +769,123 @@ export async function fetchProgressAnalysisData(
     /* 동선 로그 테이블 미존재/권한 — 해당 섹션 "동선 로그 없음" 정직 표기 */
   }
 
+  // 13) 【8】 활성 패키지 — packages(status='active') 시술구분별 발급 총회차 + package_sessions 소진(used) 카운트.
+  //   표시로직 = PackageTicketReadonlyList.tsx 그대로(재가공 금지). 스텝1(마일스톤)과 별개 조회(무접촉).
+  try {
+    interface PkgRaw {
+      id: string;
+      customer_id: string;
+      package_name: string | null;
+      package_type: string | null;
+      unheated_sessions: number | null;
+      heated_sessions: number | null;
+      podologe_sessions: number | null;
+      iv_sessions: number | null;
+      trial_sessions: number | null;
+      reborn_sessions: number | null;
+    }
+    const pkgs: PkgRaw[] = [];
+    for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
+      const { data } = await supabase
+        .from('packages')
+        .select(
+          'id, customer_id, package_name, package_type, unheated_sessions, heated_sessions, podologe_sessions, iv_sessions, trial_sessions, reborn_sessions',
+        )
+        .eq('clinic_id', clinicId)
+        .eq('status', 'active')
+        .in('customer_id', slice)
+        .order('created_at', { ascending: true });
+      for (const p of arr<Record<string, unknown>>(data)) {
+        const cid = String(p['customer_id'] ?? '');
+        const pid = String(p['id'] ?? '');
+        if (!cid || !pid) continue;
+        pkgs.push({
+          id: pid,
+          customer_id: cid,
+          package_name: (p['package_name'] as string) ?? null,
+          package_type: (p['package_type'] as string) ?? null,
+          unheated_sessions: (p['unheated_sessions'] as number) ?? 0,
+          heated_sessions: (p['heated_sessions'] as number) ?? 0,
+          podologe_sessions: (p['podologe_sessions'] as number) ?? 0,
+          iv_sessions: (p['iv_sessions'] as number) ?? 0,
+          trial_sessions: (p['trial_sessions'] as number) ?? 0,
+          reborn_sessions: (p['reborn_sessions'] as number) ?? 0,
+        });
+      }
+    }
+    // 소진(used) 카운트: package_id × session_type. (PackageTicketReadonlyList usedByType 규칙 동일)
+    const usedByPkgType = new Map<string, Record<string, number>>();
+    const pkgIds = pkgs.map((p) => p.id);
+    for (const slice of chunkIds(pkgIds, IN_CHUNK_SIZE)) {
+      const { data } = await supabase
+        .from('package_sessions')
+        .select('package_id, session_type')
+        .in('package_id', slice)
+        .eq('status', 'used');
+      for (const s of arr<{ package_id: string; session_type: string | null }>(data)) {
+        const pid = String(s.package_id ?? '');
+        if (!pid) continue;
+        const st = String(s.session_type ?? '');
+        const rec = usedByPkgType.get(pid) ?? {};
+        rec[st] = (rec[st] ?? 0) + 1;
+        usedByPkgType.set(pid, rec);
+      }
+    }
+    for (const p of pkgs) {
+      const usedRec = usedByPkgType.get(p.id) ?? {};
+      const rows: ActivePackageRow[] = [];
+      for (const def of PKG_SESSION_TYPES) {
+        const total = (p[def.qtyKey as keyof PkgRaw] as number) ?? 0;
+        const used = usedRec[def.sessionType] ?? 0;
+        if (total <= 0 && used <= 0) continue; // 발급·소진 모두 0인 구분은 표기 생략
+        rows.push({ label: def.label, total, used, remaining: total - used });
+      }
+      const totalRemaining = rows.reduce((acc, r) => acc + r.remaining, 0);
+      const list = env.activePkgsByCust!.get(p.customer_id) ?? [];
+      list.push({
+        package_name: p.package_name,
+        package_type: p.package_type,
+        rows,
+        totalRemaining,
+      });
+      env.activePkgsByCust!.set(p.customer_id, list);
+    }
+  } catch {
+    /* 활성 패키지 없음/권한 — "활성 패키지 없음" 정직 표기 */
+  }
+
+  // 14) 【9】 예약내역 — reservations 전건(취소 포함), 최신순. 예약메모(booking_memo canonical)+memo+brief_note.
+  try {
+    for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
+      const { data } = await supabase
+        .from('reservations')
+        .select(
+          'customer_id, reservation_date, reservation_time, status, booking_memo, memo, brief_note, registrar_name',
+        )
+        .eq('clinic_id', clinicId)
+        .in('customer_id', slice)
+        .order('reservation_date', { ascending: false })
+        .order('reservation_time', { ascending: false });
+      for (const rv of arr<Record<string, unknown>>(data)) {
+        const cid = String(rv['customer_id'] ?? '');
+        if (!cid) continue;
+        const list = env.reservationsByCust!.get(cid) ?? [];
+        list.push({
+          reservation_date: String(rv['reservation_date'] ?? ''),
+          reservation_time: rv['reservation_time'] ? String(rv['reservation_time']).slice(0, 5) : null,
+          status: (rv['status'] as string) ?? null,
+          booking_memo: (rv['booking_memo'] as string) ?? null,
+          memo: (rv['memo'] as string) ?? null,
+          brief_note: (rv['brief_note'] as string) ?? null,
+          registrar_name: (rv['registrar_name'] as string) ?? null,
+        });
+        env.reservationsByCust!.set(cid, list);
+      }
+    }
+  } catch {
+    /* 예약내역 없음/권한 — "예약내역 없음" 정직 표기 */
+  }
+
   return env;
 }
 
@@ -720,6 +908,8 @@ export function buildProgressAnalysisMd(
   const milestones = env.milestonesByCust.get(p.id) ?? [];
   const boilerSet = env.boilerSet;
   const visitList = env.visitsByCust?.get(p.id) ?? [];
+  const activePkgs = env.activePkgsByCust?.get(p.id) ?? [];
+  const reservationList = env.reservationsByCust?.get(p.id) ?? [];
 
   const L: string[] = [];
   L.push(`# 경과분석 자료 — ${pad(p.name ?? '(이름없음)')}`);
@@ -1036,6 +1226,104 @@ export function buildProgressAnalysisMd(
       });
       L.push('');
     }
+  }
+
+  // ===== 섹션 8: 활성 패키지 (T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS) =====
+  // 패키지명 + 시술구분(비가열/가열/…)×(총/사용/잔여) 행 + 전체잔여. 없으면 "활성 패키지 없음"(빈 섹션 금지).
+  L.push('---');
+  L.push('');
+  L.push('# 【8】 활성 패키지 (status=active · 시술구분별 총/사용/잔여)');
+  L.push('');
+  if (activePkgs.length === 0) {
+    L.push('_활성 패키지 없음_');
+    L.push('');
+  } else {
+    activePkgs.forEach((pkg, i) => {
+      const nameLabel = pad(pkg.package_name ?? '(패키지명 없음)');
+      const typeTag = pkg.package_type ? ` (${pad(pkg.package_type)})` : '';
+      L.push(`## 패키지 ${i + 1}: ${nameLabel}${typeTag}`);
+      L.push('');
+      if (pkg.rows.length === 0) {
+        L.push('_시술구분 회차 없음_');
+        L.push('');
+      } else {
+        L.push('| 시술구분 | 총 | 사용 | 잔여 |');
+        L.push('|---|---|---|---|');
+        for (const r of pkg.rows) {
+          L.push(`| ${r.label} | ${r.total}회 | ${r.used}회 | ${r.remaining}회 |`);
+        }
+        L.push(`| **전체잔여** |  |  | **${pkg.totalRemaining}회** |`);
+        L.push('');
+      }
+    });
+  }
+
+  // ===== 섹션 9: 예약내역 (전건 최신순 · 예약메모) =====
+  // 예약일시 + 예약메모(booking_memo canonical). 취소예약은 (취소) 명시 표기(현장친화·이력 온전). 없으면 "예약내역 없음".
+  L.push('---');
+  L.push('');
+  L.push('# 【9】 예약내역 (전건 · 최신순 · 예약메모)');
+  L.push('');
+  if (reservationList.length === 0) {
+    L.push('_예약내역 없음_');
+    L.push('');
+  } else {
+    for (const rv of reservationList) {
+      const when = `${rv.reservation_date || '(일자미상)'}${rv.reservation_time ? ' ' + rv.reservation_time : ''}`;
+      const st = resvStatusLabel(rv.status);
+      const reg = rv.registrar_name ? ` · 등록 ${pad(rv.registrar_name)}` : '';
+      L.push(`## ${when} [${st}]${reg}`);
+      const memoParts: string[] = [];
+      if (norm(rv.booking_memo)) memoParts.push(`- 예약메모: ${pad(rv.booking_memo)}`);
+      if (norm(rv.brief_note)) memoParts.push(`- 간략메모(주증상): ${pad(rv.brief_note)}`);
+      if (norm(rv.memo)) memoParts.push(`- 메모: ${pad(rv.memo)}`);
+      if (memoParts.length === 0) {
+        L.push('- _예약메모 없음_');
+      } else {
+        for (const line of memoParts) L.push(line);
+      }
+      L.push('');
+    }
+  }
+
+  // ===== 참고: 6회차 가열(힐러)/비가열 판정 표기 (별도 필드 아님 — 섹션 내 참고표기) =====
+  // 판정 우선순위: 1순위 예약메모(가열/힐러↔비가열) > 2순위 예약메모 단서 없고 활성패키지 가열잔여>0 이면 일반규칙.
+  //   예약 우선(가열은 뒤로 밀릴 수 있음). 최신 미취소 예약메모부터 단서 스캔.
+  {
+    const activeResv = reservationList.filter((rv) => rv.status !== 'cancelled');
+    let memoSignal: 'heated' | 'unheated' | null = null;
+    let memoSignalWhen = '';
+    for (const rv of activeResv) {
+      const sig =
+        detectHeatingSignal(rv.booking_memo) ??
+        detectHeatingSignal(rv.brief_note) ??
+        detectHeatingSignal(rv.memo);
+      if (sig) {
+        memoSignal = sig;
+        memoSignalWhen = `${rv.reservation_date}${rv.reservation_time ? ' ' + rv.reservation_time : ''}`;
+        break;
+      }
+    }
+    const heatedRemaining = activePkgs.reduce(
+      (acc, pkg) => acc + pkg.rows.filter((r) => r.label === '가열').reduce((a, r) => a + r.remaining, 0),
+      0,
+    );
+    L.push('---');
+    L.push('');
+    L.push('### 참고: 6회차 가열(힐러)/비가열 판정');
+    L.push('');
+    if (memoSignal) {
+      const label = memoSignal === 'heated' ? '가열(힐러)' : '비가열';
+      L.push(`- **판정(1순위·예약메모): ${label}** — 예약메모 단서(${memoSignalWhen}) 기준.`);
+    } else if (heatedRemaining > 0) {
+      L.push(
+        `- **판정(2순위·활성패키지): 가열 가능** — 예약메모 단서 없음 + 활성패키지 가열잔여 ${heatedRemaining}회. 일반규칙(12회 내 가열 1회면 6회차 가열) 적용 대상.`,
+      );
+      L.push('  <sub>_예약 우선 원칙상 실제 가열은 뒤 회차로 밀릴 수 있음 — 확정 아님, 참고._</sub>');
+    } else {
+      L.push('- **판정: 비가열(추정)** — 예약메모 단서 없음 + 활성패키지 가열잔여 없음.');
+    }
+    L.push('');
   }
 
   return L.join('\n');
