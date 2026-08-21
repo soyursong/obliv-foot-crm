@@ -3,8 +3,11 @@ import { toast } from '@/lib/toast';
 import { Check, ChevronDown, ChevronUp, Copy, KeyRound, Shield, UserPlus, UserX, X } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
-import { EDGE_FUNCTIONS } from '@/lib/externalServices';
 import { recordAuthAction, stampAuthActionOutcome } from '@/lib/authAudit';
+// T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: 직원 등록 write-path 를 단일 SSOT(registerStaffAtomic)로
+//   수렴 — Accounts(계정관리)·Staff(직원관리) 두 진입점이 동일 helper 로 원자 EF(admin-register-staff)를 호출.
+//   generateTempPassword/isAlreadyRegistered 도 공용 lib 로 이전(중복 정의 제거 = divergence 방지).
+import { registerStaffAtomic, generateTempPassword, isAlreadyRegistered } from '@/lib/staffRegister';
 import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -38,43 +41,9 @@ const ROLE_DISPLAY_ORDER: UserRole[] = [
   'admin', 'manager', 'director', 'consultant', 'coordinator', 'therapist', 'part_lead', 'staff', 'technician', 'tm',
 ];
 
-// T-20260810-foot-STAFF-DUPEMAIL-ERRMSG-UX: 중복 이메일(=이미 등록된 계정) 실패 식별.
-//   1순위 = EF 가 명시 반환하는 code 'ALREADY_REGISTERED'(resolveUserByEmail+프로필매핑 판별 재사용,
-//   cross_crm_auth_identity_standard 준수 — FE 는 ?email= 필터를 독자 신뢰하지 않고 EF 판정을 그대로 사용).
-//   2순위(폴백) = EF 사전판별이 놓친 뒤 GoTrue createUser / RPC 유니크위반이 사후 거부한 경우, 그
-//   authoritative 에러 메시지 시그니처로 "이미 등록된 계정"임을 식별해 generic '생성 오류' 대신 명시 표기.
-//   메시지 표기 분류일 뿐 — 파괴/식별 판단이나 신규 생성 로직에는 관여하지 않음(AC-3).
-function isAlreadyRegistered(code: string | undefined, msg: string | undefined): boolean {
-  if (code === 'ALREADY_REGISTERED') return true;
-  const m = (msg ?? '').toLowerCase();
-  if (!m) return false;
-  return (
-    m.includes('already registered') ||
-    m.includes('already been registered') ||
-    m.includes('already exists') ||
-    m.includes('email address has already') ||
-    m.includes('user already') ||
-    m.includes('duplicate key') ||          // Postgres 23505 (user_profiles/email unique)
-    m.includes('이미 등록')
-  );
-}
-
-// 임시 비번 자동 생성 (영문대소+숫자+특수, 10자)
-function generateTempPassword(): string {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  const lower = 'abcdefghijkmnopqrstuvwxyz';
-  const digit = '23456789';
-  const sym = '!@#$%';
-  const all = upper + lower + digit + sym;
-  let pw = '';
-  pw += upper[Math.floor(Math.random() * upper.length)];
-  pw += lower[Math.floor(Math.random() * lower.length)];
-  pw += digit[Math.floor(Math.random() * digit.length)];
-  pw += sym[Math.floor(Math.random() * sym.length)];
-  for (let i = 0; i < 6; i++) pw += all[Math.floor(Math.random() * all.length)];
-  // shuffle
-  return pw.split('').sort(() => Math.random() - 0.5).join('');
-}
+// T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: isAlreadyRegistered / generateTempPassword 는
+//   공용 lib(@/lib/staffRegister)로 이전(Staff.tsx 수동 등록과 공용) — 여기의 로컬 중복 정의 제거(divergence 방지).
+//   동작 동일(구 로컬 구현을 그대로 이식).
 
 export default function Accounts() {
   const clinic = useClinic();
@@ -306,43 +275,21 @@ export default function Accounts() {
     //   all-or-nothing 으로 소유하고, 중간 실패 시 "이번에 새로 만든 auth.users 만" 보상삭제(고아 방지) +
     //   기존(고아 포함) 계정은 self-heal(id 재사용)한다. FE 는 반환봉투 {ok,error} 하나만 검사한다
     //   (구 identities[] 빈배열 중복감지 / 고아 잔존 우회 로직 전량 제거 — 재발원 뿌리뽑기).
-    const { data: session } = await supabase.auth.getSession();
-    const accessToken = session?.session?.access_token;
-    if (!accessToken) {
-      setInviteBusy(false);
-      toast.error('세션 인증이 만료됐어요. 다시 로그인 후 시도하세요.');
-      return;
-    }
-
-    type RegisterEnvelope = {
-      ok?: boolean;
-      error?: { code?: string; message?: string } | null;
-      data?: Record<string, unknown>;
-    };
-    let envelope: RegisterEnvelope | null = null;
-    let transportError: string | null = null;
-    try {
-      const { data, error } = await supabase.functions.invoke(EDGE_FUNCTIONS.ADMIN_REGISTER_STAFF, {
-        body: {
-          email,
-          password: pw,
-          name,
-          role: inviteRole,
-          staff_id: inviteStaffId || null,
-        },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (error) transportError = error.message ?? 'invoke 실패';
-      envelope = (data ?? null) as RegisterEnvelope | null;
-    } catch (e) {
-      transportError = e instanceof Error ? e.message : String(e);
-    }
+    // T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: EF 호출을 공용 helper(registerStaffAtomic)로
+    //   수렴 — Staff.tsx 수동 등록과 단일 write-path 공유(동작 동일, 세션/봉투 검사 로직 이식).
+    const result = await registerStaffAtomic({
+      email,
+      password: pw,
+      name,
+      role: inviteRole,
+      staffId: inviteStaffId || null,
+    });
     setInviteBusy(false);
 
     // AC2 silent-success 차단: transport error OR ok!==true 둘 다 실패로 취급.
-    if (transportError || !envelope || envelope.ok !== true) {
-      const code = envelope?.error?.code;
-      const msg = envelope?.error?.message ?? transportError ?? '알 수 없는 오류';
+    if (!result.ok) {
+      const code = result.code;
+      const msg = result.message ?? '알 수 없는 오류';
       if (isAlreadyRegistered(code, msg)) {
         // AC-1: 이미 등록된 계정 → 명시 문구(현장이 원인을 바로 알 수 있게).
         toast.error('이미 등록된 계정입니다. 기존 계정 목록에서 확인하거나 다른 이메일을 사용하세요.');
@@ -354,7 +301,7 @@ export default function Accounts() {
     }
 
     // 성공. EF 가 email 확인까지 보증하되, 고아 재사용 등에서 confirm 이 불확실하면 경고 동반.
-    const d = envelope.data ?? {};
+    const d = result.data ?? {};
     const emailConfirmed = d['email_confirmed'] !== false;
     const warning = (d['email_confirm_warning'] as string | null) ?? null;
     if (!emailConfirmed && warning) {

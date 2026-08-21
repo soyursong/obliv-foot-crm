@@ -41,6 +41,9 @@ import { canManageStaff, canManageRooms, assignableStaffRolesFor, type UserRole 
 import { withSiljangSuffix } from '@/lib/siljangSlack';
 // T-20260810-foot-COORD-STAFF-DUP-INSERT-GUARD: 활성 coordinator 중복 등록 forward-guard(canonical 다축 술어).
 import { evaluateCoordinatorDup, type CoordIdentity } from '@/lib/coordinatorDupGuard';
+// T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: 수동 '신규 직원 등록'을 원자 EF(admin-register-staff)로
+//   수렴 — 기존 bare `from('staff').insert(...)`(user_id 태생 NULL RC)를 제거하고 계정+staff user_id 링크를 원자화.
+import { registerStaffAtomic, generateTempPassword, isAlreadyRegistered } from '@/lib/staffRegister';
 // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT: 삭제(hard-delete) 전 실무 귀속 참조 census(fail-closed).
 // T-20260814-foot-STAFF-DEACTIVATE-DELETE-SPLIT (DA CONSULT-REPLY MSG-20260814-221208-dpnm):
 //   '삭제' = soft-delete(deleted_at 스탬프), 물리 hard-delete 아님 → 참조 census/ FK 백스톱 불요(부모행 물리보존).
@@ -503,6 +506,11 @@ function CreateStaffDialog({
 }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('therapist');
+  // T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: 원자 EF 는 계정(email/password) 없이 user_id 를
+  //   세팅할 수 없다 → 수동 등록 폼에 email/임시비번을 캡처(계정관리 inviteStaff 와 동일 입력). 이로써 신규 직원은
+  //   항상 로그인 계정 + staff user_id 링크까지 원자적으로 완결된다(태생 NULL 소멸).
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // T-20260810-foot-COORD-STAFF-DUP-INSERT-GUARD: 활성 coordinator 동명(약한 축) 경고 상태 + 오버라이드(동명이인 계속 등록).
   const [dupWarn, setDupWarn] = useState<CoordIdentity | null>(null);
@@ -515,6 +523,8 @@ function CreateStaffDialog({
     if (!open) {
       setName('');
       setRole('therapist');
+      setEmail('');
+      setPassword('');
       setDupWarn(null);
       setDupOverride(false);
     }
@@ -529,6 +539,18 @@ function CreateStaffDialog({
   const save = async (overrideDup = false) => {
     if (!name.trim()) {
       toast.error('이름을 입력하세요');
+      return;
+    }
+    // T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: 원자 EF 경유 필수 입력(계정) 검증.
+    //   email/password 는 admin-register-staff 가 계정 생성 + staff user_id 링크를 위해 요구한다.
+    const finalEmail = email.trim().toLowerCase();
+    const pw = password.trim();
+    if (!finalEmail) {
+      toast.error('이메일을 입력하세요 (로그인 계정 생성에 필요)');
+      return;
+    }
+    if (pw.length < 8) {
+      toast.error('임시 비밀번호는 8자 이상이어야 합니다');
       return;
     }
     const finalName = role === 'consultant' ? withSiljangSuffix(name) : name.trim();
@@ -566,24 +588,47 @@ function CreateStaffDialog({
     }
 
     setSubmitting(true);
-    // T-20260729-foot-CONFIRM-BTN-SLACK-NOTIFY 변경1 (QA-FIX A안): 신규 '실장'(consultant) 등록 시 이름 뒤 '실장' suffix.
-    //   ⚠ staff.display_name 컬럼은 foot prod 부재(STAFF-NAME-UNIFY 미마이그) → codebase 전역 'display_name select/insert 금지' 불변식.
-    //   → suffix 를 display_name 이 아닌 name 에 저장(name = "홍길동 실장"). 소급 X(신규 등록분만).
-    //   EF(send-consult-notify) 의 nameKey 가 ' 실장' strip 후 6명 매핑 조회 → 정합(엄경은 등 키 그대로 hit).
-    //   비-실장 역할은 suffix 미부여(기존대로).
-    const insertRow: { clinic_id: string; name: string; role: Role; active: boolean } = {
-      clinic_id: clinicId,
+    // ── T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE (forward-prevention) ──
+    //   ★재발원 봉인: 기존 `supabase.from('staff').insert({clinic_id,name,role,active})` = user_id 태생 NULL.
+    //     이제 원자 EF(admin-register-staff)로 수렴 → 계정 생성 + user_profiles 매핑 + staff user_id 링크 +
+    //     email 자동확인을 all-or-nothing 으로 처리(태생 NULL 0건). db_change=false(기존 EF/RPC 재사용).
+    //   ★finalName(실장 suffix, T-20260729)은 그대로 EF 의 name 으로 전달 — staff.name 저장 정합 보존
+    //     (staff.display_name 컬럼 부재 불변식 유지: name 에만 '실장' suffix).
+    //   ★staff_id 미지정 → admin_register_user RPC 가 임상직(consultant/coordinator/therapist/technician)이면
+    //     동명·동역할 user_id NULL staff 자동매칭(없으면 신규생성, user_id 세팅). 비임상직(director 등)은
+    //     user_profiles 계정만 생성(계정관리에서 관리) — 어느 경우도 user_id 없는 staff 행을 만들지 않는다.
+    const result = await registerStaffAtomic({
+      email: finalEmail,
+      password: pw,
       name: finalName,
       role,
-      active: true,
-    };
-    const { error } = await supabase.from('staff').insert(insertRow);
+      staffId: null,
+    });
     setSubmitting(false);
-    if (error) {
-      toast.error(`등록 실패: ${error.message}`);
+    if (!result.ok) {
+      if (isAlreadyRegistered(result.code, result.message)) {
+        toast.error('이미 등록된 계정입니다. 계정 관리에서 확인하거나 다른 이메일을 사용하세요.');
+      } else {
+        toast.error(`직원 등록 실패: ${result.message ?? '알 수 없는 오류'}`);
+      }
       return;
     }
-    toast.success('직원 등록');
+    // 성공. EF 가 email 확인까지 보증하되, 고아 재사용 등에서 confirm 이 불확실하면 경고 동반(fail-loud).
+    const d = result.data ?? {};
+    const emailConfirmed = d['email_confirmed'] !== false;
+    const warning = (d['email_confirm_warning'] as string | null) ?? null;
+    if (!emailConfirmed && warning) {
+      toast.error(warning);
+      onOpenChange(false);
+      onCreated();
+      return;
+    }
+    const reused = !!d['reused_orphan'];
+    toast.success(
+      reused
+        ? `${finalName} 등록 완료 (기존 미완료 계정 복구 · 즉시 로그인 가능)`
+        : `${finalName} 등록 완료 (계정 생성 · 즉시 로그인 가능)`,
+    );
     onOpenChange(false);
     onCreated();
   };
@@ -598,6 +643,37 @@ function CreateStaffDialog({
           <div className="space-y-1">
             <Label>이름</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" />
+          </div>
+          {/* T-20260820-foot-STAFF-MANUAL-REGISTER-ATOMIC-EF-CONVERGE: 원자 EF 경유 필수 입력(로그인 계정).
+              이메일+임시비번으로 계정을 생성하고 staff user_id 링크까지 원자 완결 → 태생 NULL 방지. */}
+          <div className="space-y-1">
+            <Label>이메일 (로그인 계정)</Label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="staff@example.com"
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label>임시 비밀번호 (8자 이상)</Label>
+              <button
+                type="button"
+                className="text-xs text-teal-700 hover:underline"
+                onClick={() => setPassword(generateTempPassword())}
+              >
+                자동 생성
+              </button>
+            </div>
+            <Input
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="직원이 로그인 후 변경"
+              autoComplete="off"
+            />
           </div>
           <div className="space-y-1">
             <Label>역할</Label>
