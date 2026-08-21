@@ -113,6 +113,13 @@ export const OPINION_SECTIONS: OpinionSection[] = [
       { key: 'oral_x', label: '경구약 X', phrase: '경구약 복용이 어려운 상태로 확인됩니다.' },
       { key: 'after_1m', label: '약복용 1달 후', phrase: '약 복용 1개월 후 경과 관찰이 필요합니다.' },
       { key: 'medical_staff', label: '의료진', phrase: '의료진 판단 하에 진료를 진행하였습니다.' },
+      // T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD (김주연 총괄, C0ATE5P6JTH):
+      //   2번차트 소견서·진단서 발행 요청 항목 목록(OpinionRequestBox, 실장영역)에 [내성발톱] 1건 ADDITIVE 추가.
+      //   ★소스 판정: OpinionRequestBox 는 이 하드코드 OPINION_SECTIONS 를 직접 렌더(case c, FE 배열) → db_change=false·무DDL.
+      //   ★§11 게이트 비저촉: 원장 작성창(OpinionDocTab 그리드)은 런타임 DB field_map.sections(prod seed 존재)를
+      //     authoritative 로 사용 → 이 상수 추가는 원장 화면 렌더에 영향 없음(실장 요청 박스만 시각 변화).
+      //     doctor compose 는 미등록 key 를 filter(!!templates[k]) 로 안전 배제 → 회귀 0.
+      { key: 'ingrown_toenail', label: '내성발톱', phrase: '내성발톱 관련 소견을 확인하였습니다.' },
     ],
   },
   {
