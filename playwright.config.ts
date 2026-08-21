@@ -212,6 +212,11 @@ export default defineConfig({
         //   buildProgressAnalysisMd) + 파일명 dedupe(_n 접미) 불변식 단언. 게이트/추출로직/파일명 규칙 재사용.
         //   auth/DB/server 불요·결정론(read-only, db_change=false). 실기기 순차 다운로드 = supervisor 갤탭 field-soak.
         '**/T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS: 경과분석 .md 에 【6】진료내역 +
+        //   【7】동선 로그 ADDITIVE. 순수 함수(buildProgressAnalysisMd) — 방문 오름차순·취소제외·KST 시각변환·
+        //   레이저=치료시행 판정·체류시간 이상치 표기·하위호환 단언. auth/DB/server 불요·결정론(read-only).
+        //   실기기 .md 렌더 = supervisor 갤탭 field-soak.
+        '**/T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).

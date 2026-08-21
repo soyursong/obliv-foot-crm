@@ -15,6 +15,11 @@
  *   5. 임상 유의미 텍스트 ← customer_consult_memos(전량) + medical_charts(전 임상필드) − 루틴상용구(phrase_templates/super_phrases)
  * 헤더 = 성함·차트번호 + **6배수 예정 회차·예약일**(★티켓 요구) + 내원 요약.
  *
+ * ★ADDITIVE(T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS): 위 5섹션 무접촉·재가공 금지.
+ *   6. 진료내역        ← check_ins (방문별 방문일/접수시각/귀가시각/사유·취소제외·방문일 오름차순)
+ *   7. 동선 로그        ← check_in_room_logs (방문별 슬롯 체류·레이저 슬롯 유무=치료 시행 판정·이상치는 표기만)
+ *   6·7 조인 키 = 방문(check_in). read-only(db_change=false)·기존 추출 경로(행별/ZIP/개별)에 SSOT 자동반영.
+ *
  * GATE: read-only 조회만. DB/스키마/트리거/write 0(db_change=false). 외부 AI 미경유(결정론 규칙).
  * PHI: 산출 .md = 진료성 PHI. 호출부(경과분석 탭)에서 admin/manager(운영권한) 게이팅 + export 감사로그.
  */
@@ -102,6 +107,58 @@ function extractMeaningful(
     kept.push(line.trim());
   }
   return { kept, dropped, wholeBoiler: false };
+}
+
+/* ─── 【6】【7】 (T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS) 전용 순수 유틸 ─── */
+
+// check_ins.visit_type → 사유 라벨
+function visitReasonLabel(visitType: unknown, treatmentCategory: unknown): string {
+  const vt = String(visitType ?? '').trim();
+  const base = vt === 'new' ? '신규' : vt === 'returning' ? '재진' : vt === 'experience' ? '체험' : vt || '(미상)';
+  const cat = pad(treatmentCategory);
+  return cat ? `${base} · ${cat}` : base;
+}
+// check_in_room_logs.room_type → 슬롯명 (레이저는 치료실로 병합하지 않고 독립 표기 = 치료 시행 판정축)
+const ROOM_TYPE_SLOT_LABEL: Record<string, string> = {
+  consultation: '상담실',
+  treatment: '치료실',
+  laser: '레이저',
+  heated_laser: '가열레이저',
+  unheated_laser: '비가열레이저',
+  payment: '수납',
+  examination: '진료실',
+  preconditioning: '사전처치',
+};
+function roomSlotLabel(roomType: unknown, assignedRoom: unknown): string {
+  const rt = String(roomType ?? '').trim().toLowerCase();
+  const label = ROOM_TYPE_SLOT_LABEL[rt] ?? (rt || '(슬롯미상)');
+  const room = pad(assignedRoom);
+  return room ? `${label}(${room})` : label;
+}
+// 레이저 슬롯 판정 (치료 시행 여부) — room_type/assigned_room 어느 쪽이든 'laser'/'레이저' 포함
+function isLaserRoom(roomType: unknown, assignedRoom: unknown): boolean {
+  const hay = `${String(roomType ?? '')} ${String(assignedRoom ?? '')}`.toLowerCase();
+  return hay.includes('laser') || hay.includes('레이저');
+}
+// 체류시간(ms) 사람이 읽는 라벨. 24h 이상은 로그아웃 누락 추정 이상치 → 원값 유지 + 표기 병행(절삭/대체 금지).
+const DWELL_ANOMALY_MS = 24 * 60 * 60 * 1000;
+function formatDwell(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms)) return '(종료 미기록)';
+  if (ms < 0) return '(시각역전)';
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const label = h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+  return ms >= DWELL_ANOMALY_MS ? `${label} ⚠이상치(로그아웃 누락 추정)` : label;
+}
+// timestamptz → Asia/Seoul 기준 { 방문일, 시각(HH:MM) }. 【6】【7】 방문일 조인축 내부 일관성 보장.
+function seoulDateTime(ts: unknown): { date: string; time: string } {
+  if (!ts) return { date: '(없음)', time: '(미기록)' };
+  const d = new Date(String(ts));
+  if (Number.isNaN(d.getTime())) return { date: dOnly(ts), time: '(미기록)' };
+  // sv-SE 로케일 → "YYYY-MM-DD HH:MM:SS"
+  const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' });
+  return { date: s.slice(0, 10), time: s.slice(11, 16) };
 }
 
 // 과거력(발건강 질문지 form_data) 라벨 맵 (스크립트 그대로)
@@ -212,6 +269,22 @@ interface NextResv {
   reservation_time: string | null;
   registrar_name: string | null;
 }
+// 【6】 진료내역 — 방문(check_in) 단위 레코드
+interface VisitRecord {
+  id: string; // check_in_id (【7】 조인 키)
+  checked_in_at: string | null;
+  completed_at: string | null;
+  visit_type: string | null;
+  treatment_category: string | null;
+  status: string | null;
+}
+// 【7】 동선 로그 — check_in_room_logs 한 줄
+interface VisitRoomLog {
+  check_in_id: string;
+  assigned_room: string | null;
+  room_type: string | null;
+  logged_at: string | null;
+}
 
 export interface ProgressAnalysisEnvelope {
   boilerSet: Set<string>;
@@ -224,6 +297,10 @@ export interface ProgressAnalysisEnvelope {
   firstVisitByCust: Map<string, string>;
   consultByCust: Map<string, Consult[]>;
   chartByCust: Map<string, Chart[]>;
+  // 【6】【7】 (T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS)
+  // optional = fetch 는 항상 세팅하나, 기존 envelope 리터럴(PHASE1/BATCH 스펙 등) 하위호환 위해 옵셔널.
+  visitsByCust?: Map<string, VisitRecord[]>; // 방문(check_in, 취소제외) — 방문일 오름차순
+  roomLogsByCheckIn?: Map<string, VisitRoomLog[]>; // check_in_id → 동선 로그(logged_at 오름차순)
 }
 
 /* ────────────────────────── 데이터 fetch (browser supabase, read-only) ────────────────────────── */
@@ -252,6 +329,8 @@ export async function fetchProgressAnalysisData(
     firstVisitByCust: new Map(),
     consultByCust: new Map(),
     chartByCust: new Map(),
+    visitsByCust: new Map(),
+    roomLogsByCheckIn: new Map(),
   };
   const ids = [...new Set(customerIds.filter(Boolean))];
   if (ids.length === 0) return env;
@@ -558,6 +637,67 @@ export async function fetchProgressAnalysisData(
     /* 무시 */
   }
 
+  // 11) 【6】 진료내역 — check_ins 방문 전건(취소 제외), 방문일 오름차순. (id 는 【7】 동선 조인 키)
+  try {
+    const byCust = new Map<string, VisitRecord[]>();
+    for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
+      const { data } = await supabase
+        .from('check_ins')
+        .select('id, customer_id, checked_in_at, completed_at, visit_type, treatment_category, status')
+        .in('customer_id', slice)
+        .order('checked_in_at', { ascending: true });
+      for (const c of arr<Record<string, unknown>>(data)) {
+        const cid = String(c['customer_id'] ?? '');
+        if (!cid) continue;
+        if (c['status'] === 'cancelled') continue; // 취소 제외 (스크립트 내원카운트 규칙과 동일)
+        const list = byCust.get(cid) ?? [];
+        list.push({
+          id: String(c['id'] ?? ''),
+          checked_in_at: (c['checked_in_at'] as string) ?? null,
+          completed_at: (c['completed_at'] as string) ?? null,
+          visit_type: (c['visit_type'] as string) ?? null,
+          treatment_category: (c['treatment_category'] as string) ?? null,
+          status: (c['status'] as string) ?? null,
+        });
+        byCust.set(cid, list);
+      }
+    }
+    env.visitsByCust = byCust;
+  } catch {
+    /* 진료내역 없음 처리 */
+  }
+
+  // 12) 【7】 동선 로그 — check_in_room_logs (방문별 슬롯 체류). check_in_id 기준, logged_at 오름차순.
+  try {
+    const visitsMap = env.visitsByCust ?? new Map<string, VisitRecord[]>();
+    const roomLogMap = env.roomLogsByCheckIn ?? new Map<string, VisitRoomLog[]>(); // init 에서 세팅됨(동일 참조)
+    const checkInIds: string[] = [];
+    for (const list of visitsMap.values()) for (const v of list) if (v.id) checkInIds.push(v.id);
+    const uniqCheckInIds = [...new Set(checkInIds)];
+    for (const slice of chunkIds(uniqCheckInIds, IN_CHUNK_SIZE)) {
+      const { data } = await supabase
+        .from('check_in_room_logs')
+        .select('check_in_id, assigned_room, room_type, logged_at')
+        .in('check_in_id', slice)
+        .order('logged_at', { ascending: true });
+      for (const r of arr<Record<string, unknown>>(data)) {
+        const kid = String(r['check_in_id'] ?? '');
+        if (!kid) continue;
+        const list = roomLogMap.get(kid) ?? [];
+        list.push({
+          check_in_id: kid,
+          assigned_room: (r['assigned_room'] as string) ?? null,
+          room_type: (r['room_type'] as string) ?? null,
+          logged_at: (r['logged_at'] as string) ?? null,
+        });
+        roomLogMap.set(kid, list);
+      }
+    }
+    env.roomLogsByCheckIn = roomLogMap;
+  } catch {
+    /* 동선 로그 테이블 미존재/권한 — 해당 섹션 "동선 로그 없음" 정직 표기 */
+  }
+
   return env;
 }
 
@@ -579,6 +719,7 @@ export function buildProgressAnalysisMd(
   const visitCount = env.visitCountByCust.get(p.id) ?? 0;
   const milestones = env.milestonesByCust.get(p.id) ?? [];
   const boilerSet = env.boilerSet;
+  const visitList = env.visitsByCust?.get(p.id) ?? [];
 
   const L: string[] = [];
   L.push(`# 경과분석 자료 — ${pad(p.name ?? '(이름없음)')}`);
@@ -831,6 +972,68 @@ export function buildProgressAnalysisMd(
     });
     if (!chartAny) {
       L.push('_진료차트 임상필드 전부 미기재(빈 차트)_');
+      L.push('');
+    }
+  }
+
+  // ===== 섹션 6: 진료내역 (T-20260822-foot-PROGANALYSIS-EXTRACT-VISIT-MOVEMENT-SECTIONS) =====
+  // 방문(check_in, 취소제외) 전건을 방문별 한 줄. 방문일 / 접수시각 / 귀가시각 / 사유. 방문일 오름차순.
+  L.push('---');
+  L.push('');
+  L.push('# 【6】 진료내역 (방문별 · check_in 기준 전건, 취소 제외)');
+  L.push('');
+  if (visitList.length === 0) {
+    L.push('_진료내역 없음_');
+    L.push('');
+  } else {
+    L.push('| 방문일 | 접수시각 | 귀가시각 | 사유 |');
+    L.push('|---|---|---|---|');
+    for (const v of visitList) {
+      const inn = seoulDateTime(v.checked_in_at);
+      const out = seoulDateTime(v.completed_at);
+      const reason = visitReasonLabel(v.visit_type, v.treatment_category);
+      L.push(`| ${inn.date} | ${inn.time} | ${v.completed_at ? out.time : '(미기록)'} | ${reason} |`);
+    }
+    L.push('');
+  }
+
+  // ===== 섹션 7: 동선 로그 (방문별 슬롯 체류) =====
+  // 방문별 슬롯명/체류시간. 레이저 슬롯 유무 → 치료 시행 판정. 이상치(수백h)는 원값 유지 + 표기 병행.
+  L.push('---');
+  L.push('');
+  L.push('# 【7】 동선 로그 (방문별 슬롯 체류 · 레이저 슬롯 유무 = 치료 시행 판정)');
+  L.push('');
+  if (visitList.length === 0) {
+    L.push('_진료내역 없음 — 동선 로그 대조 대상 없음_');
+    L.push('');
+  } else {
+    for (const v of visitList) {
+      const inn = seoulDateTime(v.checked_in_at);
+      const logs = (env.roomLogsByCheckIn?.get(v.id) ?? []).filter((l) => l.logged_at);
+      const laserDone = logs.some((l) => isLaserRoom(l.room_type, l.assigned_room));
+      L.push(`## 방문일 ${inn.date} (접수 ${inn.time})`);
+      L.push('');
+      L.push(`- 치료 시행 판정: ${laserDone ? '**치료 시행(레이저 슬롯 있음)**' : '치료 시행 근거 없음(레이저 슬롯 없음)'}`);
+      L.push('');
+      if (logs.length === 0) {
+        L.push('_동선 로그 없음_');
+        L.push('');
+        continue;
+      }
+      L.push('| 슬롯명 | 진입시각 | 체류시간 |');
+      L.push('|---|---|---|');
+      logs.forEach((l, i) => {
+        const enter = seoulDateTime(l.logged_at);
+        // 체류 종료: 다음 로그 진입시각, 마지막 로그는 귀가시각(completed_at)
+        const nextTs = i + 1 < logs.length ? logs[i + 1].logged_at : v.completed_at;
+        let dwellMs: number | null = null;
+        if (l.logged_at && nextTs) {
+          const start = new Date(String(l.logged_at)).getTime();
+          const end = new Date(String(nextTs)).getTime();
+          if (Number.isFinite(start) && Number.isFinite(end)) dwellMs = end - start;
+        }
+        L.push(`| ${roomSlotLabel(l.room_type, l.assigned_room)} | ${enter.time} | ${formatDwell(dwellMs)} |`);
+      });
       L.push('');
     }
   }
