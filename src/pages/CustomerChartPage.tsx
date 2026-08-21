@@ -122,6 +122,8 @@ import OpinionRequestBox from '@/components/consult/OpinionRequestBox';
 import OpinionDocHistorySection from '@/components/chart/OpinionDocHistorySection';
 import { RESERVATION_CREATED_VIA } from '@/lib/createdVia';
 import { confirmStaffResvWindow } from '@/lib/resvGate';
+// T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE (Phase-2 §4): 배치 업로드·슬립 결속된 경과분석 결과 이미지 표시.
+import CustomerProgressResultImages from '@/components/treatment/CustomerProgressResultImages';
 
 type PackageWithRemaining = Package & { remaining: PackageRemaining | null };
 
@@ -8708,6 +8710,14 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                   경과분석지
                 </div>
                 <CustomerStorageImageSection customerId={customer.id} prefix="progress" label="경과분석지 업로드" accent="orange" />
+              </div>
+              {/* T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §4: 배치 업로드로 연결된 경과분석 결과 이미지(1:1 슬립 결속). */}
+              <div className="rounded-lg border bg-white p-3 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-2">
+                  <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  경과분석 결과
+                </div>
+                <CustomerProgressResultImages customerId={customer.id} />
               </div>
             </div>
           )}
