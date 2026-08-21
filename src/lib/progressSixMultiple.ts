@@ -47,6 +47,17 @@ export interface ProgressSortRow {
   customerName: string;
 }
 
+// T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §1 (B안 additive): '내일(D-1)' 필터.
+//   기본뷰(canon)는 예약무관 6배수 도래자 전체 — 이 필터는 화면 상단 토글 ON 시에만 적용되는 순수 파생.
+//   "다음 예약이 내일(=경과지 전날 준비 대상)"인 행만 남긴다. 미예약(null)은 제외. DB 무관(이미 조회된 rows 파생).
+/** 다음 예약이 tomorrowISODate(yyyy-MM-dd, 서울 기준 내일)인 행만 필터. */
+export function filterD1Targets<T extends { nextReservationDate: string | null }>(
+  rows: T[],
+  tomorrowISODate: string,
+): T[] {
+  return rows.filter((r) => r.nextReservationDate === tomorrowISODate);
+}
+
 /**
  * 정렬 비교자: 다음 예약일 오름차순(NULLS LAST) → 이름순(가나다).
  *   - 예약 있는 환자가 위(임박 순), 미예약 환자가 아래.

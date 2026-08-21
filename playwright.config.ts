@@ -203,6 +203,10 @@ export default defineConfig({
         //   대표원장(director) 포함 확인. hasOpsAuthority(admin/manager)만으로는 원장 배제되던 버그의
         //   권한 로직 회귀 가드(canExtractProgress = canExportCsv || canIssueProgressDocs). 순수 함수 단언.
         '**/T-20260822-foot-PROGANALYSIS-EXTRACT-DIRECTOR-GATE-FIX.spec.ts',
+        // T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE (Phase-2 §1): '내일(D-1)' 필터 토글.
+        //   순수 함수(filterD1Targets) 단언 — 토글 ON=내일 예약자만, 미예약·타날짜 제외, 기본뷰 canon 불변(additive).
+        //   auth/DB/server 불요·결정론(DB 무관). §4/§5/§6(신규 스키마)은 DA CONSULT+GO-token 후 별도 leg.
+        '**/T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
@@ -838,6 +842,9 @@ export default defineConfig({
         // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 순수 함수 단언 spec 은 unit 전용 →
         //   desktop-chrome(auth/webServer/setup) 유입 차단(무-project QA 시 setup 미기동).
         '**/T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1.spec.ts',
+        // T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE: Phase-2 §1 D-1 필터 순수 함수 spec →
+        //   unit 전용, desktop-chrome(auth/webServer/setup) 유입 차단.
+        '**/T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE.spec.ts',
         // T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION + 08-07 CONSULTASSIGN-NOCONFIRM:
         //   unit 전용(순수 함수 + fs-grep 정적 가드) → 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→
         //   setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.

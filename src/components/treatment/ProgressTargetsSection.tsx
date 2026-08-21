@@ -19,7 +19,7 @@ import { useClinic } from '@/hooks/useClinic';
 import { useAuth } from '@/lib/auth';
 import { hasOpsAuthority, canIssueProgressDocs } from '@/lib/permissions';
 import { chartNoBadge, seoulISODate } from '@/lib/format';
-import { Loader2, TrendingUp, CalendarDays, FileUp, ListChecks, Download, FileText, FileDown, FolderArchive } from 'lucide-react';
+import { Loader2, TrendingUp, CalendarDays, CalendarCheck, FileUp, ListChecks, Download, FileText, FileDown, FolderArchive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/lib/toast';
 import { parseFootSites, formatFootSites } from '@/components/FootSiteSelector';
@@ -71,6 +71,7 @@ import {
   anticipatedSession,
   sessionCheckpointLabel,
   compareProgressTargets,
+  filterD1Targets,
   chunkIds,
   IN_CHUNK_SIZE,
 } from '@/lib/progressSixMultiple';
@@ -262,6 +263,18 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   //   date prop 은 하단 위젯(ProgressAnalyticsWidgets)에만 전달 — 리스트 모집단에는 미사용.
   const { data: rows = [], isLoading, isError, error } = useProgressTargets(clinic?.id);
 
+  // T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §1 (B안 additive): '내일(D-1)' 필터 토글.
+  //   기본뷰 = 배포 canon(예약무관 6배수 도래자 전체) 그대로 유지(축소 아님). 토글 ON 시에만
+  //   '다음 예약이 내일'인 대상자로 좁혀 표시 — "전날(D-1) 미리 준비" 동선용. 순수 클라이언트 필터(DB 무관).
+  const [d1Only, setD1Only] = useState(false);
+  const tomorrowSeoul = useMemo(() => seoulISODate(Date.now() + 86_400_000), []);
+  const displayRows = useMemo(
+    () => (d1Only ? filterD1Targets(rows, tomorrowSeoul) : rows),
+    [d1Only, rows, tomorrowSeoul],
+  );
+  // 내일 예약 도래 대상 수(토글 배지 표시용) — canon 모집단(rows)에서 파생.
+  const d1Count = useMemo(() => filterD1Targets(rows, tomorrowSeoul).length, [rows, tomorrowSeoul]);
+
   // T-20260702-foot-PROGRESS-CSV-EXPORT: PHI 반출 게이트 — admin/manager(운영권한, 대표원장 포함)만 노출/동작.
   //   경과분석 탭 열람권과 동일 계층. 치료사/일반직원에게는 CSV 버튼 미노출.
   const canExportCsv = hasOpsAuthority(profile);
@@ -291,7 +304,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const rowIds = useMemo(() => rows.map((r) => r.rowKey), [rows]);
+  // 선택/전체선택은 현재 화면에 보이는 행(displayRows) 기준 — D-1 필터 ON 시 보이는 대상만 선택.
+  const rowIds = useMemo(() => displayRows.map((r) => r.rowKey), [displayRows]);
   // 현재 rows 에 존재하는 선택만 유효 개수로 카운트(코호트 변경 후 stale 선택 제외).
   const selectedCount = useMemo(
     () => rowIds.filter((id) => selectedIds.has(id)).length,
@@ -813,10 +827,25 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
           <p className="mt-0.5 text-xs text-muted-foreground">
             활성 패키지 보유 환자 중 <span className="font-medium text-foreground">다음 회차가 6의 배수(6·12·18·24…)</span>에
             도래하는 환자 전부를 보여줍니다. 오늘 예약 여부와 무관하며, 미예약 환자도 포함됩니다.
+            {d1Only && <span className="ml-1 font-medium text-teal-700">지금은 내일(D-1) 예약 도래자만 표시 중입니다.</span>}
           </p>
         </div>
         {(canExportCsv || rows.length > 0) && (
           <div className="flex shrink-0 items-center gap-2">
+            {/* T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §1: '내일(D-1)' 필터 토글(additive).
+                기본뷰(예약무관 6배수 전체 canon)는 불변 — 토글 ON 시에만 다음 예약이 내일인 대상만 표시. */}
+            <Button
+              type="button"
+              size="sm"
+              variant={d1Only ? 'default' : 'outline'}
+              onClick={() => setD1Only((v) => !v)}
+              title={d1Only ? '전체(예약무관 6배수 도래자) 보기로 전환' : '내일(D-1) 예약 도래자만 보기'}
+              aria-pressed={d1Only}
+              data-testid="progress-d1-toggle-btn"
+            >
+              <CalendarCheck className="h-3.5 w-3.5" />
+              내일(D-1){d1Count > 0 && <span className="ml-0.5 tabular-nums">{d1Count}</span>}
+            </Button>
             {/* T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드→자동매칭. 오늘 대상자 유무와 무관하게
                 항상 노출(결과지는 방문일과 다른 날 되받을 수 있음). admin/manager(운영권한)만. */}
             {canExportCsv && (
@@ -911,7 +940,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                   className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700"
                   data-testid="progress-targets-count"
                 >
-                  대상 {rows.length}명
+                  {d1Only ? `내일 ${displayRows.length}명 / 전체 ${rows.length}명` : `대상 ${rows.length}명`}
                 </span>
               </>
             )}
@@ -927,23 +956,25 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         <div className="rounded-lg border border-dashed border-red-200 bg-red-50/40 p-4 text-center text-sm text-red-600">
           조회 중 오류가 발생했습니다. {(error as Error)?.message ?? ''}
         </div>
-      ) : rows.length === 0 ? (
+      ) : displayRows.length === 0 ? (
         <div
           className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
           data-testid="progress-targets-empty"
         >
           <TrendingUp className="h-5 w-5 text-muted-foreground/40" />
-          6의 배수 회차 도래 경과분석 대상자가 없습니다.
+          {d1Only
+            ? '내일(D-1) 6의 배수 예약 도래자가 없습니다.'
+            : '6의 배수 회차 도래 경과분석 대상자가 없습니다.'}
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-background">
           <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-2.5 py-1.5">
             <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
               <CalendarDays className="h-3.5 w-3.5 text-teal-600" />
-              6배수 회차 도래 대상자
+              {d1Only ? '내일(D-1) 6배수 예약 도래자' : '6배수 회차 도래 대상자'}
             </span>
             <span className="text-[11px] font-medium text-muted-foreground" data-testid="progress-targets-group-count">
-              {rows.length}명
+              {displayRows.length}명
             </span>
           </div>
           <div className="overflow-x-auto" data-testid="progress-targets-table">
@@ -974,7 +1005,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, idx) => (
+                {displayRows.map((r, idx) => (
                   <tr
                     key={r.rowKey}
                     className="border-b last:border-0 transition-colors hover:bg-muted/30"
