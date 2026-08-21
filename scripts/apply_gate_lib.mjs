@@ -244,11 +244,53 @@ export function assertDbGateGo(o) {
     throw bindFail('prod_mismatch', `prod_ref 불일치(오적용 방지)`, prodRef, payload.prod_ref);
   }
   const actualSha = migrationSha256(migrationSql);
-  if (payload.migration_sha256 !== actualSha) {
+  // ── content-binding: 단일(scalar) OR 배치(array-membership) ───────────────────
+  //   T-20260821-meta-DBGATE-GUARD-XCRM-ARRAY-PARITY-FANOUT: crm/derm apply_gate_lib.mjs 의
+  //   array-membership 로직을 foot 으로 parity 이식(계약 T-20260801-meta-DBGATE-GUARD-XCRM).
+  //   payload.migration_sha256 은 문자열(단일 mig — 기존 동작 그대로) 또는 64-hex
+  //   문자열 배열(배치: up/dryrun/ledgermark 등 다중 mig 를 한 토큰이 커버)일 수 있다.
+  //   배치 = 적용 SQL 의 sha 가 배열의 **정확한 원소**여야 통과(값 멤버십).
+  //   ★불변식 보존(ADDITIVE SUPERSET·게이트 완화 아님): 멤버십은 개별 sha 의 정확
+  //     일치만 인정(substring/prefix 아님). 적용 SQL sha 가 서명된 배열의 member 가
+  //     아니면 sha_mismatch 거부 유지 — scalar 대조와 동일 강도. sha-binding 유지.
+  //     TTL·nonce·서명 계약 무변.
+  const boundSha = payload.migration_sha256;
+  let shaMember = false;
+  if (Array.isArray(boundSha)) {
+    if (boundSha.length === 0) {
+      throw bindFail(
+        'sha_mismatch',
+        'migration_sha256 배치 배열이 비어 있음 — 어떤 SQL 도 커버 안 함(fail-closed).',
+        boundSha,
+        actualSha,
+      );
+    }
+    if (!boundSha.every((s) => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s))) {
+      throw bindFail(
+        'sha_mismatch',
+        'migration_sha256 배치 배열 원소가 64-hex sha256 형식 아님(오형식/변조 fail-closed).',
+        boundSha,
+        actualSha,
+      );
+    }
+    shaMember = boundSha.includes(actualSha); // 정확 값 멤버십(substring 아님)
+  } else if (typeof boundSha === 'string') {
+    shaMember = boundSha === actualSha; // 단일 = 기존 정확 일치(backward-compat)
+  } else {
     throw bindFail(
       'sha_mismatch',
-      'migration_sha256 불일치 — 토큰이 서명한 SQL 과 적용 SQL 이 다름(SQL 재사용/변조 차단).',
-      payload.migration_sha256,
+      'migration_sha256 타입 오류 — 문자열(단일) 또는 64-hex 문자열 배열(배치)이어야 함(fail-closed).',
+      boundSha,
+      actualSha,
+    );
+  }
+  if (!shaMember) {
+    throw bindFail(
+      'sha_mismatch',
+      Array.isArray(boundSha)
+        ? 'migration_sha256(배치) 멤버십 불일치 — 적용 SQL 의 sha 가 토큰 배열 어느 원소와도 불일치(교차오적용/SQL 재사용·변조 차단).'
+        : 'migration_sha256 불일치 — 토큰이 서명한 SQL 과 적용 SQL 이 다름(SQL 재사용/변조 차단).',
+      boundSha,
       actualSha,
     );
   }

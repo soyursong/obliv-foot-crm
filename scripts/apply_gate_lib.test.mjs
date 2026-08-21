@@ -154,6 +154,98 @@ test('적용 SQL 변조/재사용(sha 불일치) → sha_mismatch', () => {
   );
 });
 
+// ── 6b. array-membership parity (T-20260821-meta-DBGATE-GUARD-XCRM-ARRAY-PARITY-FANOUT) ──
+//   payload.migration_sha256 = 배치 GO-token(ARRAY[3]: up/dryrun/ledgermark).
+//   ADDITIVE SUPERSET: scalar 경로 보존 + array-membership 만 추가. 게이트 완화 아님.
+//   crm/derm leg 선례 parity 이식(계약 T-20260801-meta-DBGATE-GUARD-XCRM).
+const UP_SQL = SQL;                                     // up.sql(적용 대상)
+const DRYRUN_SQL = "-- dryrun\n" + SQL;                 // dryrun 산출물
+const LEDGER_SQL = "-- ledgermark\n" + SQL;             // ledger 마킹
+const DOWN_SQL = "DROP COLUMN test_col;\n";             // down.sql — 배열 멤버 아님
+const BATCH_SHAS = [
+  migrationSha256(UP_SQL),
+  migrationSha256(DRYRUN_SQL),
+  migrationSha256(LEDGER_SQL),
+];
+const NOW_OK = Date.parse('2026-08-08T15:00:00+09:00');
+
+test('array batch token: up.sql sha = member → GO 통과 (parity 버그 수정)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: BATCH_SHAS } });
+  const gate = assertDbGateGo({
+    ticketId: TICKET, migrationSql: UP_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+  });
+  assert.equal(gate.ok, true);
+  assert.equal(gate.sigVerify, 'pass');
+});
+
+test('array batch token: dryrun/ledger sha 각각 member → GO 통과', () => {
+  for (const sql of [DRYRUN_SQL, LEDGER_SQL]) {
+    const f = makeFixture({ payloadOverride: { migration_sha256: BATCH_SHAS } });
+    const gate = assertDbGateGo({
+      ticketId: TICKET, migrationSql: sql, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+    });
+    assert.equal(gate.ok, true);
+  }
+});
+
+test('array batch token: non-member sha → sha_mismatch (게이트 완화 아님)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: BATCH_SHAS } });
+  expectReject(
+    () => assertDbGateGo({
+      ticketId: TICKET, migrationSql: DML_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+    }),
+    'sha_mismatch',
+  );
+});
+
+test('array batch token: down.sql sha = non-member → sha_mismatch (forward apply 中 down 오적용 차단)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: BATCH_SHAS } });
+  expectReject(
+    () => assertDbGateGo({
+      ticketId: TICKET, migrationSql: DOWN_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+    }),
+    'sha_mismatch',
+  );
+});
+
+test('array batch token: 빈 배열 → sha_mismatch (fail-closed)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: [] } });
+  expectReject(
+    () => assertDbGateGo({
+      ticketId: TICKET, migrationSql: UP_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+    }),
+    'sha_mismatch',
+  );
+});
+
+test('array batch token: 비-64hex 원소 → sha_mismatch (오형식 fail-closed)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: [migrationSha256(UP_SQL), 'not-a-sha'] } });
+  expectReject(
+    () => assertDbGateGo({
+      ticketId: TICKET, migrationSql: UP_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+    }),
+    'sha_mismatch',
+  );
+});
+
+test('scalar token 회귀: 단일 문자열 sha = 일치 → GO 통과 (backward-compat)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: migrationSha256(UP_SQL) } });
+  const gate = assertDbGateGo({
+    ticketId: TICKET, migrationSql: UP_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+  });
+  assert.equal(gate.ok, true);
+});
+
+test('migration_sha256 타입 오류(number) → sha_mismatch (fail-closed)', () => {
+  const f = makeFixture({ payloadOverride: { migration_sha256: 12345 } });
+  expectReject(
+    () => assertDbGateGo({
+      ticketId: TICKET, migrationSql: UP_SQL, gateDir: f.dir, pubKeyPath: f.pubKeyPath, now: NOW_OK,
+    }),
+    'sha_mismatch',
+  );
+});
+
 // ── 7. prod_ref 불일치(오적용) → 거부 ───────────────────────────────────────
 test('prod_ref 불일치 → prod_mismatch', () => {
   const f = makeFixture({ payloadOverride: { prod_ref: 'otherprodxxxxxxxxxx' } });
