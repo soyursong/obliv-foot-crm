@@ -7,6 +7,13 @@
 --          (FK 카탈로그 기계열거 · id VALUES freeze · 순소실0 · ADDITIVE→verify→DESTRUCTIVE)
 -- 게이트 : 본 파일 = DRAFT/apply-prep. 실행은 (1) DA CONSULT-REPLY GO + (2) supervisor DB-GATE 후.
 --
+-- ── FIX-REQUEST MSG-20260821-211357-60it (supervisor DB-GATE re-verify NO-GO, 2026-08-21) ──
+--   블로커1(버전 슬롯 충돌): 슬롯 20260715150000 = prod APPLIED `calc_copayment_general_floor_rounding`
+--     (5주 stall 중 sibling 착지). 동일 version 2파일 → 하네스 SKIP(false-green). ∴ 파일 3종을
+--     ledger max(20260820130000) 초과 free slot 20260821150000 으로 renumber(본 파일).
+--   블로커2(G2 지문 드리프트): 2026-07-18 phone E.164 backfill 로 bare 동등비교 n_fp=0 → G2 정규화 갱신
+--     (아래 tgt_phones_last8 · 포맷-무관 끝8자리 비교). 대상 4행은 여전히 LIVE(present=4)·id freeze 불변.
+--
 -- ── READ-ONLY probe 판정근거 스냅샷 (2026-07-15, scripts/..._probe{,2,3}.mjs) ──
 --   대상 4행 (id VALUES freeze — 술어 재평가 금지):
 --     a939ec01-859e-462a-8a47-eb8db90b16bf  RCPT_8142  01027518142  F-4760  2026-07-14 12:11:18.719+00
@@ -47,7 +54,14 @@ DECLARE
     '2db50bad-e200-4d13-ac2e-2356f8bb136a',
     'a22437a5-6602-4d43-a2f6-5e26b8aac727',
     '7fe8dbdd-702d-4f48-abc2-3dfc0cf97fda']::uuid[];
+  -- tgt_phones: 원본 bare-11(2026-07-14 유입 시점 포맷, 감사용 기록).
+  --   ⚠ 2026-07-18 phone E.164(+82…) 재정규화 backfill 이후 live c.phone 이 '+8210…' 로 바뀌어
+  --     bare 동등비교(= ANY(tgt_phones))는 n_fp=0 을 반환 → G2 fail-closed ABORT(FIX-REQUEST
+  --     MSG-20260821-211357-60it, supervisor DB-GATE 블로커2). ∴ G2 지문을 포맷-무관
+  --     정규화 비교(비숫자 strip 후 끝 8자리 = tgt_phones_last8)로 갱신 — 향후 재정규화에도 견고.
+  --     id VALUES freeze(c.id = ANY(tgt)) 가 1차 안전키, G2 는 defense-in-depth.
   tgt_phones text[] := ARRAY['01027518142','01017969095','01067746086','01094091116'];
+  tgt_phones_last8 text[] := ARRAY['27518142','17969095','67746086','94091116'];
   -- freeze 유지 10건 (DELETE 절대금지 — freeze GUC)
   keep uuid[] := ARRAY[
     '40a4f761-0bb2-4650-9118-39aa16d38e02', -- 강영주 010-8181-3147
@@ -86,9 +100,10 @@ BEGIN
   END IF;
 
   -- ── G2 지문 재검증: 정확히 4행 + name/phone/시각창 일치 ────────────────
+  --   phone 은 포맷-무관 비교(비숫자 strip 후 끝 8자리) — E.164 재정규화 드리프트 견고(위 선언 주석).
   SELECT count(*) INTO n_fp FROM customers c
     WHERE c.id = ANY(tgt)
-      AND c.phone = ANY(tgt_phones)
+      AND right(regexp_replace(c.phone, '\D', '', 'g'), 8) = ANY(tgt_phones_last8)
       AND c.name LIKE 'RCPT\_%'
       AND c.created_at >= '2026-07-14 12:11:00+00'
       AND c.created_at <  '2026-07-14 12:12:00+00';

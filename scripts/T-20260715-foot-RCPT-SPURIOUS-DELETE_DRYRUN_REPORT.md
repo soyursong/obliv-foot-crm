@@ -4,7 +4,29 @@
 **Protocol**: `agents/docs/migration_dryrun_no_persistence_standard.md` v1.0
 **Runner**: `scripts/T-20260715-foot-RCPT-SPURIOUS-DELETE_dryrun_run.mjs` (uses canonical `scripts/dryrun_lib.mjs`)
 **Transport**: Supabase Management API (foot canonical; `rxlomoozakkjesdqjtvd`)
-**Date**: 2026-07-15
+**Date**: 2026-07-15 (초판) · **2026-08-21 재검증** (renumber + G2 재지문)
+
+---
+
+## ⚠ 0-b. 2026-08-21 재검증 — DB-GATE re-verify NO-GO 2블로커 해소 (MSG-20260821-211357-60it)
+
+07-15 dry-run PASS 는 07-18 phone E.164 정규화 前 = 5주 stale. supervisor live re-verify 에서
+prod 상태 드리프트 **2건** 확인 → 아래와 같이 정정.
+
+**블로커1 — 버전 슬롯 충돌 (C38 stale_ledger_reallocation)**
+슬롯 `20260715150000` 은 5주 stall 중 sibling `calc_copayment_general_floor_rounding` 가 **APPLIED**
+착지(live 실측). 동일 version 2파일 → 하네스가 이미 applied 로 인식 → RCPT 마이그 **SKIP(false-green)**.
+**FIX**: 마이그 3종(`.sql`/`.dryrun.sql`/`.rollback.sql`)을 ledger max(`20260820130000`) 초과 free slot
+**`20260821150000`** 로 renumber. 재검증 결과 새 슬롯 레저 매칭 **0건(free)**, 구 슬롯 sibling 점유 1건 실측.
+
+**블로커2 — G2 지문 prestate 드리프트**
+2026-07-18 phone E.164(+82…) backfill 로 up.sql G2 술어 `c.phone = ANY(tgt_phones)`(bare `010…`) →
+**n_fp=0** → `ABORT G2(fingerprint)` fail-closed → archive/remove 도달 불가.
+**FIX**: G2 를 포맷-무관 정규화 비교 `right(regexp_replace(c.phone,'\D','','g'),8) = ANY(tgt_phones_last8)`
+로 갱신(향후 재정규화에도 견고). id VALUES freeze 가 1차 안전키, G2 는 defense-in-depth.
+재검증 결과 현 prod **g2_fingerprint=4** 확인(대상 4행 여전히 LIVE·present=4).
+
+DA/data-model 함의: 신규 컬럼·테이블·enum 추가 0 (§S2.4 consult gate 비발동) — 파일 renumber + 술어 1개 갱신뿐.
 
 ---
 
@@ -31,23 +53,25 @@ DA/data-model 함의: 신규 컬럼·테이블·enum 추가 0 (§S2.4 consult ga
 
 ---
 
-## 1. Dry-Run No-Persistence 실행 로그 (정정 후, PASS)
+## 1. Dry-Run No-Persistence 실행 로그 (2026-08-21 재검증, renumber+G2재지문 후, PASS)
 
 ```
-== LEDGER 3-WAY 대조 (파일명 ↔ 레저 ↔ prod) ==
-    파일선언 : 20260715150000_foot_rcpt_spurious_delete_archive_first (git, diag 브랜치)
-    prod 레저: 매칭행 0건 [] (기대=0, 미존재)
-    레저 컨텍스트: total_rows=142, max_version=20260715140000 (본 마이그 20260715150000 부재·미적용)
-    ⇒ 3자 일치: 파일=선언만 / 레저=미기재 / prod=미물화(archive 2테이블 부재 = post-probe). 아직 apply 전.
+== LEDGER 3-WAY 대조 (파일명 ↔ 레저 ↔ prod) — renumber 후 새 슬롯 free 확인 ==
+    파일선언   : 20260821150000_foot_rcpt_spurious_delete_archive_first (renumber 완료, git)
+    새 슬롯 free : 20260821150000 레저 매칭 0건 [] (기대=0 = free)
+    구 슬롯 점유 : 20260715150000 레저 매칭 1건 [{"version":"20260715150000","name":"calc_copayment_general_floor_rounding"}] (블로커1 근거, 기대=1 = sibling 점유)
+    rcpt 레저 부재: 0건 [] (기대=0, 미적용)
+    레저 컨텍스트: total_rows=428, max_version=20260820130000 (새 슬롯 20260821150000 > max → free 착지)
+    ⇒ 3자 일치: 파일=새슬롯 선언만 / 레저=새슬롯 미기재(free)·구슬롯 sibling 점유 / prod=미물화(archive 2테이블 부재). apply 전.
 
 == GUARD-MIRROR (live prod read-only 재평가) ==
     {"g1_freeze_overlap":0,"live_customers":4,"g2_fingerprint":4,"g3_ledger_contact":0,"aicc_live":4}
-    G5 chart_number: above_count=17 max=F-4781 => INTERIOR-GAP (재발번 상위 → 재사용 원천 없음, 무해)
+    G5 chart_number: above_count=2384 max=F-7228 => INTERIOR-GAP (재발번 상위 → 재사용 원천 없음, 무해)
     판정: g1_freeze_overlap=0·live_customers=4·g2_fingerprint=4·g3_ledger_contact=0·aicc_live=4
           ⇒ up.sql G1~G4 통과 예정, DONE 예상 = archived customers=4 aicc=4, removed customers=4 aicc=4
 
 == CANONICAL DRY-RUN (dryrun_lib: strip + exception-handler + post-probe) ==
-== dry-run 20260715150000_foot_rcpt_spurious_delete_archive_first.sql ==
+== dry-run 20260821150000_foot_rcpt_spurious_delete_archive_first.sql ==
    stripped top-level txn-control (INV-5): ["BEGIN;","COMMIT;"]
    harness response: []
    post-probe [relation public._archive_rcpt_spurious_customers_20260715] absent? -> [{"absent":true}]
@@ -57,6 +81,9 @@ DA/data-model 함의: 신규 컬럼·테이블·enum 추가 0 (§S2.4 consult ga
 
 == DRY-RUN PASS == (txn-control stripped · plpgsql exception-rollback · post-probe absent)
 ```
+
+> **블로커2 재검증 핵심**: `g2_fingerprint=4` (E.164 드리프트 후에도 포맷-무관 술어로 4/4 매칭 복원).
+> 정정 前(bare `=ANY`) 이었다면 이 값이 0 → `ABORT G2` FAIL 이었을 것.
 
 ### 1-1. "기대 로그(G1~G4 + G5 + DONE + sentinel)" 어떻게 담보되나 — NOTICE 관측 한계와 동치 증거
 
@@ -80,11 +107,13 @@ foot canonical transport(Management API `/database/query`)는 서버 `RAISE NOTI
 
 | 축 | 값 | 판정 |
 |----|----|------|
-| **파일선언** | `20260715150000_foot_rcpt_spurious_delete_archive_first.sql` (git, diag 브랜치) | 선언 존재 |
-| **prod 레저** | `supabase_migrations.schema_migrations` 내 `version LIKE '20260715150000%' OR name ILIKE '%rcpt_spurious%'` → **0건** | **미기재** ✓ |
+| **파일선언** | `20260821150000_foot_rcpt_spurious_delete_archive_first.sql` (renumber 완료, git) | 선언 존재 |
+| **새 슬롯 free** | `version = '20260821150000'` → **0건** | **free** ✓ (블로커1 FIX) |
+| **구 슬롯 점유** | `version = '20260715150000'` → **1건** `calc_copayment_general_floor_rounding` | sibling 점유(블로커1 근거) |
+| **prod 레저(rcpt)** | `name ILIKE '%rcpt_spurious%'` → **0건** | **미기재/미적용** ✓ |
 | **prod 실재** | archive 2테이블(`_archive_rcpt_spurious_customers_20260715`, `_archive_rcpt_spurious_aicc_20260715`) `to_regclass` → NULL/NULL | **미물화** ✓ |
 
-레저 컨텍스트: `total_rows=142`, `max_version=20260715140000`. 본 마이그(`20260715150000`) 는 레저 최상단보다 위 = **아직 apply 전, 정상 3자 정합**(파일=선언만 / 레저=미기재 / prod=미물화). apply-time divergence 없음.
+레저 컨텍스트: `total_rows=428`, `max_version=20260820130000`. 새 슬롯(`20260821150000`) 은 레저 max 초과 = **free 착지, apply 전 정상 3자 정합**(파일=새슬롯 선언만 / 레저=새슬롯 미기재 / prod=미물화). 구 슬롯 충돌은 renumber 로 회피.
 
 ---
 

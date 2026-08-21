@@ -22,7 +22,10 @@ DECLARE
     '2db50bad-e200-4d13-ac2e-2356f8bb136a',
     'a22437a5-6602-4d43-a2f6-5e26b8aac727',
     '7fe8dbdd-702d-4f48-abc2-3dfc0cf97fda']::uuid[];
+  -- tgt_phones: 원본 bare-11(감사용). 2026-07-18 E.164 재정규화 후 bare 동등비교 n_fp=0 →
+  --   G2 를 포맷-무관 끝8자리(tgt_phones_last8) 비교로 갱신(FIX-REQUEST MSG-20260821-211357-60it).
   tgt_phones text[] := ARRAY['01027518142','01017969095','01067746086','01094091116'];
+  tgt_phones_last8 text[] := ARRAY['27518142','17969095','67746086','94091116'];
   -- freeze 유지 10건 (DELETE 절대금지 — freeze GUC)
   keep uuid[] := ARRAY[
     '40a4f761-0bb2-4650-9118-39aa16d38e02', -- 강영주 010-8181-3147
@@ -61,9 +64,10 @@ BEGIN
   END IF;
 
   -- ── G2 지문 재검증: 정확히 4행 + name/phone/시각창 일치 ────────────────
+  --   phone 은 포맷-무관 비교(비숫자 strip 후 끝 8자리) — E.164 재정규화 드리프트 견고.
   SELECT count(*) INTO n_fp FROM customers c
     WHERE c.id = ANY(tgt)
-      AND c.phone = ANY(tgt_phones)
+      AND right(regexp_replace(c.phone, '\D', '', 'g'), 8) = ANY(tgt_phones_last8)
       AND c.name LIKE 'RCPT\_%'
       AND c.created_at >= '2026-07-14 12:11:00+00'
       AND c.created_at <  '2026-07-14 12:12:00+00';

@@ -30,7 +30,7 @@ import { runDryrun, regclassAbsent, q } from './dryrun_lib.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const UP = join(__dir, '..', 'supabase', 'migrations',
-  '20260715150000_foot_rcpt_spurious_delete_archive_first.sql');
+  '20260821150000_foot_rcpt_spurious_delete_archive_first.sql');
 
 const TGT = `ARRAY['a939ec01-859e-462a-8a47-eb8db90b16bf','2db50bad-e200-4d13-ac2e-2356f8bb136a','a22437a5-6602-4d43-a2f6-5e26b8aac727','7fe8dbdd-702d-4f48-abc2-3dfc0cf97fda']::uuid[]`;
 
@@ -42,7 +42,7 @@ SELECT
      WHERE t.id = ANY(ARRAY['40a4f761-0bb2-4650-9118-39aa16d38e02','83ab4fe1-0bbc-4dfc-ab3b-f01378144707','536259c2-e311-499a-af37-aadd0cc63f4b','d2b849b3-cb3d-4d4e-88f0-1e5b5d393d7a','e4e475f1-3a64-49a0-8169-7f191246ae62','560feb98-926b-4136-bb76-e8d2653ce5af','94f41fec-d4a4-4054-bff2-4ac3ac6463ff','29743d6a-5e21-462f-92ac-ad0e84bd5c85','c8e9049d-a4bf-4f6c-9285-0d48da982871','ec4f77d2-159c-4833-a374-df2d9949c128']::uuid[])) AS g1_freeze_overlap,
   (SELECT count(*) FROM customers WHERE id = ANY(${TGT})) AS live_customers,
   (SELECT count(*) FROM customers c WHERE c.id = ANY(${TGT})
-     AND c.phone = ANY(ARRAY['01027518142','01017969095','01067746086','01094091116'])
+     AND right(regexp_replace(c.phone, '\\D', '', 'g'), 8) = ANY(ARRAY['27518142','17969095','67746086','94091116'])
      AND c.name LIKE 'RCPT\\_%'
      AND c.created_at >= '2026-07-14 12:11:00+00' AND c.created_at < '2026-07-14 12:12:00+00') AS g2_fingerprint,
   (SELECT count(*) FROM payments WHERE customer_id=ANY(${TGT}))
@@ -70,14 +70,25 @@ WHERE c.clinic_id=cl.clinic_id AND c.chart_number ~ '^F' AND NOT (c.id=ANY(${TGT
 }
 
 async function ledger3way() {
-  console.log('\n== LEDGER 3-WAY 대조 (파일명 ↔ 레저 ↔ prod) ==');
-  const hit = await q(`SELECT version, name FROM supabase_migrations.schema_migrations
-    WHERE version LIKE '20260715150000%' OR name ILIKE '%rcpt_spurious%' ORDER BY version;`);
+  console.log('\n== LEDGER 3-WAY 대조 (파일명 ↔ 레저 ↔ prod) — renumber 후 새 슬롯 free 확인 ==');
+  const NEW = '20260821150000';
+  const OLD = '20260715150000';
+  // (a) 새 슬롯이 레저에 없어야 함(free) — 블로커1 FIX 검증
+  const newHit = await q(`SELECT version, name FROM supabase_migrations.schema_migrations
+    WHERE version = '${NEW}' ORDER BY version;`);
+  // (b) 구 슬롯 점유 실체(블로커1 근거): 5주 stall 중 착지한 sibling
+  const oldHit = await q(`SELECT version, name FROM supabase_migrations.schema_migrations
+    WHERE version = '${OLD}' ORDER BY version;`);
+  // (c) rcpt 이름은 레저에 아직 없어야 함(미적용)
+  const nameHit = await q(`SELECT version, name FROM supabase_migrations.schema_migrations
+    WHERE name ILIKE '%rcpt_spurious%' ORDER BY version;`);
   const ctx = await q(`SELECT count(*) AS total_rows, max(version) AS max_version FROM supabase_migrations.schema_migrations;`);
-  console.log('    파일선언 : 20260715150000_foot_rcpt_spurious_delete_archive_first (git, diag 브랜치)');
-  console.log(`    prod 레저: 매칭행 ${hit.length}건 ${JSON.stringify(hit)} (기대=0, 미존재)`);
-  console.log(`    레저 컨텍스트: total_rows=${ctx[0].total_rows}, max_version=${ctx[0].max_version} (본 마이그 20260715150000 부재·미적용)`);
-  console.log('    ⇒ 3자 일치: 파일=선언만 / 레저=미기재 / prod=미물화(archive 2테이블 부재 = post-probe). 아직 apply 전.');
+  console.log(`    파일선언   : ${NEW}_foot_rcpt_spurious_delete_archive_first (renumber 완료, git)`);
+  console.log(`    새 슬롯 free : ${NEW} 레저 매칭 ${newHit.length}건 ${JSON.stringify(newHit)} (기대=0 = free)`);
+  console.log(`    구 슬롯 점유 : ${OLD} 레저 매칭 ${oldHit.length}건 ${JSON.stringify(oldHit)} (블로커1 근거, 기대=1 = sibling 점유)`);
+  console.log(`    rcpt 레저 부재: ${nameHit.length}건 ${JSON.stringify(nameHit)} (기대=0, 미적용)`);
+  console.log(`    레저 컨텍스트: total_rows=${ctx[0].total_rows}, max_version=${ctx[0].max_version} (새 슬롯 ${NEW} > max → free 착지)`);
+  console.log('    ⇒ 3자 일치: 파일=새슬롯 선언만 / 레저=새슬롯 미기재(free)·구슬롯 sibling 점유 / prod=미물화(archive 2테이블 부재). apply 전.');
 }
 
 (async () => {
