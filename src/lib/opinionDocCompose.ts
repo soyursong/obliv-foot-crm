@@ -30,6 +30,14 @@ import { normalizePhraseText } from '@/lib/htmlFormTemplates';
 // ── 플레이스홀더 마커 (MD §1/§2) ──────────────────────────────────────────────
 /** MD §1 날짜 플레이스홀더 리터럴. */
 export const DATE_PLACEHOLDER = '[날짜]';
+/**
+ * T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD — 내원일 플레이스홀더 리터럴.
+ *   문지은 대표원장 verbatim 진단서 문구(내성발톱)에 박힌 `[내원일]` 토큰.
+ *   ★ '지금 날짜 넣는 로직 그대로'(원장) — `[날짜]` 와 동일하게 서류날짜(docDate, 최근 방문일 default)로
+ *     치환한다(발행일=오늘 아님·visitDate 축, T-20260811 불변식②). needsDate/substituteDatePlaceholder
+ *     양쪽에서 `[날짜]` 와 동형 처리(별도 조회 0·신규 로직 0 = 기존 date autoBind 재사용).
+ */
+export const VISIT_DATE_PLACEHOLDER = '[내원일]';
 /** MD §2-2 간염 타입 치환 마커. */
 export const HEPATITIS_MARKER = 'B(C)';
 /**
@@ -147,12 +155,15 @@ export function needsOralXReason(
   return selectedBodies(selectedKeys, templates).some((b) => ORAL_X_REASON_RE.test(b));
 }
 
-/** MD §1 — 선택된 원문 중 `[날짜]` 플레이스홀더가 있으면 날짜 입력 필요. */
+/** MD §1 — 선택된 원문 중 `[날짜]`/`[내원일]` 플레이스홀더가 있으면 날짜 입력 필요. */
 export function needsDate(
   selectedKeys: string[],
   templates: Record<string, ContraindTemplate>,
 ): boolean {
-  return selectedBodies(selectedKeys, templates).some((b) => b.includes(DATE_PLACEHOLDER));
+  // T-20260821 INGROWN-TOENAIL: `[내원일]` 도 날짜 입력 트리거(내성발톱 진단서 verbatim 토큰).
+  return selectedBodies(selectedKeys, templates).some(
+    (b) => b.includes(DATE_PLACEHOLDER) || b.includes(VISIT_DATE_PLACEHOLDER),
+  );
 }
 
 /**
@@ -164,11 +175,12 @@ export function formatKoreanDate(iso: string | null | undefined): string | null 
   return `${m[1]}년 ${m[2]}월 ${m[3]}일`;
 }
 
-/** MD §1 — 본문 내 모든 `[날짜]` 를 한국어 날짜로 치환. 날짜 미지정/불량이면 원문 그대로. */
+/** MD §1 — 본문 내 모든 `[날짜]`/`[내원일]` 를 한국어 날짜로 치환. 날짜 미지정/불량이면 원문 그대로. */
 export function substituteDatePlaceholder(text: string, iso: string | null | undefined): string {
   const formatted = formatKoreanDate(iso);
   if (!formatted) return text;
-  return text.split(DATE_PLACEHOLDER).join(formatted);
+  // T-20260821 INGROWN-TOENAIL: `[내원일]` 도 동일 서류날짜(docDate)로 치환('지금 날짜 넣는 로직 그대로').
+  return text.split(DATE_PLACEHOLDER).join(formatted).split(VISIT_DATE_PLACEHOLDER).join(formatted);
 }
 
 /**

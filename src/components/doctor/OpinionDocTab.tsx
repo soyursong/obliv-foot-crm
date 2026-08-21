@@ -113,6 +113,12 @@ export const OPINION_SECTIONS: OpinionSection[] = [
       { key: 'oral_x', label: '경구약 X', phrase: '경구약 복용이 어려운 상태로 확인됩니다.' },
       { key: 'after_1m', label: '약복용 1달 후', phrase: '약 복용 1개월 후 경과 관찰이 필요합니다.' },
       { key: 'medical_staff', label: '의료진', phrase: '의료진 판단 하에 진료를 진행하였습니다.' },
+      // T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD — 김주연 총괄 요청, 문지은 대표원장 컨펌(MSG-20260821-221354-5jia).
+      //   ★phrase = 원장 제공 verbatim(의료법§22 immutable·dev 임의창작/수정/요약/경어체보정 금지). `[내원일]` 토큰은
+      //     substituteDatePlaceholder 가 서류날짜(docDate)로 자동치환('지금 날짜 넣는 로직 그대로'·발행일 아님, T-20260811 불변식②).
+      //   ★DB SSOT = form_templates(opinion_doc).field_map.sections seed(mig 20260821170000) — 이 하드코드는 empty-safe 폴백.
+      //     두 곳 phrase 문자열은 반드시 byte-identical(원장 verbatim 정합).
+      { key: 'ingrown_toenail', label: '내성발톱', phrase: '상기환자는 상기증상 및 병명으로 [내원일]에 내원하였고 양측 내향성 발톱 및 염증소견으로 내원하신 분으로, 소염제·항생제 등의 약물 치료와 병행하여 발톱의 만곡을 바로잡기 위한 의료진의 내성발톱 치료 의료기기를 부착·조정하는 처치가 필요하여 치료 들어감. 발톱이 새로 자라는 속도에 맞추어 반복적인 부착·조정이 요구되어, 향후 12-15개월간 외래 추시 및 반복적 보존적 치료를 요함.' },
     ],
   },
   {

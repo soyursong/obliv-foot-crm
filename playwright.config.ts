@@ -190,6 +190,10 @@ export default defineConfig({
       // T-20260521-foot-DOC-PRINT-UNIFY: 서류 출력 경로 통일 락 스펙 추가
       name: 'unit',
       testMatch: [
+        // T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD: 진단서 섹션 [내성발톱] 옵션 ADDITIVE 추가.
+        //   순수 상수/함수(OPINION_SECTIONS·parseOpinionSections·composeOpinionDoc·needsDate·substituteDatePlaceholder)
+        //   단언 — 원장 verbatim phrase·[내원일] 자동치환·회귀. auth/DB/server 불요·결정론(db_change=false).
+        '**/T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
@@ -819,6 +823,9 @@ export default defineConfig({
       // 끌어들이지 않도록. (그래야 `npx playwright test <file>` 무-project 실행 시 setup 미기동 →
       // TEST_PASSWORD 없는 QA 워크트리에서도 통과. FIX-REQUEST MSG-20260701-204705-zyhy)
       testIgnore: [
+        // T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD: 순수 상수/함수 단언 spec 은 unit 전용 →
+        //   desktop-chrome(auth/webServer/setup) 유입 차단(무-project QA 시 setup 미기동).
+        '**/T-20260821-foot-DOCREQITEM-INGROWN-TOENAIL-ADD.spec.ts',
         // T-20260820-foot-CONSULT-ASSIGN-FIXPERSIST-STOMP-STAFFSTATS-REGRESSION + 08-07 CONSULTASSIGN-NOCONFIRM:
         //   unit 전용(순수 함수 + fs-grep 정적 가드) → 무-project 실행(supervisor QA) 시 desktop-chrome 매칭→
         //   setup(TEST_PASSWORD) 유입 차단. unit 에서만 실행.
