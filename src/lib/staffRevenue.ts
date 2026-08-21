@@ -59,6 +59,34 @@ export interface AttributedPayment {
   method: string | null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// T-20260821-foot-CLOSING-STAFFREV-PAGINATION-CAP-FIX — PostgREST 기본 1000행 cap 우회.
+//   payments/package_payments 를 cursor(.range) 페이지네이션으로 전(全) 행 수집한다. 장기간
+//   (월/분기) 조회 시 이 SSOT(fetchAttributedPayments)를 소비하는 전 화면(담당실장별·결제수단별·
+//   랭킹·MTM 일별)이 1000행에서 무단 절단되어 최근일 tail 이 탈락(과소집계)하던 회귀를 차단한다.
+//   (실측: 화면②>담당실장별 강경민 08-21 이 화면①<화면② 발산 — 절단 tail 누락이 진원.)
+//   mtmSales.fetchAllRows(T-20260818-STATS-PERIOD-QUERY-ERROR)와 동일 패턴 — 공유 SSOT 미도달분
+//   선제 보강. ⚠ 산식·귀속축(attributed_staff_id)·상태필터·기간축·sim 제외 전부 불변. 절단된 tail
+//   을 재조회할 뿐(db_change=false, read-path only).
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchAllRows<T>(
+  page: (offset: number, limit: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = 200; // 20만행 상한(런어웨이 방어) — 초과 시 수집분 반환.
+  const out: T[] = [];
+  let offset = 0;
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const { data, error } = await page(offset, PAGE_SIZE);
+    if (error) throw error;
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return out;
+}
+
 /** staff.id → 이름/직군/재직 메타. 로스터 정책 판정용. */
 export interface StaffMeta {
   id: string;
@@ -103,8 +131,11 @@ export async function fetchAttributedPayments(
   from: string,
   to: string,
 ): Promise<AttributedPayments> {
-  const [{ data: payData, error: payErr }, { data: pkgData, error: pkgErr }] =
-    await Promise.all([
+  // T-20260821-foot-CLOSING-STAFFREV-PAGINATION-CAP-FIX: 2-소스 모두 fetchAllRows(cursor .range)로
+  //   전(全) 행 수집 — PostgREST 기본 1000행 cap 절단 차단. 두 소스는 여전히 병렬(Promise.all).
+  //   package_payments 도 동형 latent cap(현재 <1000 미발화)을 선제 전환. 산식/필터/소스 전부 불변.
+  const [payData, pkgData] = await Promise.all([
+    fetchAllRows<RawPayRow>((off, lim) =>
       supabase
         .from('payments')
         // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: method 추가(ADDITIVE, 결제수단별 분해축용).
@@ -114,7 +145,9 @@ export async function fetchAttributedPayments(
         // FIX-2A: 취소·삭제 결제 제외(foot_stats_revenue 와 동일 규칙). 구 .not(status,eq,deleted) 교체.
         .not('status', 'in', '(cancelled,deleted)')
         .gte('accounting_date', from)
-        .lte('accounting_date', to),
+        .lte('accounting_date', to)
+        .range(off, off + lim - 1)),
+    fetchAllRows<RawPayRow>((off, lim) =>
       supabase
         .from('package_payments')
         // T-20260811-foot-SALESAGG-PAYMETHOD-BREAKDOWN: method 추가(ADDITIVE, 결제수단별 분해축용).
@@ -122,15 +155,14 @@ export async function fetchAttributedPayments(
         .select('amount, payment_type, customer_id, accounting_date, method, attributed_staff_id')
         .eq('clinic_id', clinicId)
         .gte('accounting_date', from)
-        .lte('accounting_date', to),
-    ]);
-  if (payErr) throw payErr;
-  if (pkgErr) throw pkgErr;
+        .lte('accounting_date', to)
+        .range(off, off + lim - 1)),
+  ]);
 
   // sim 고객 결제 제외(매출 표시 방어필터). 워크인(customer_id NULL) 보존.
   const simIds = await getSimulationCustomerIds(clinicId);
-  const single = excludeSimulationPaymentRows((payData ?? []) as RawPayRow[], simIds);
-  const pkg = excludeSimulationPaymentRows((pkgData ?? []) as RawPayRow[], simIds);
+  const single = excludeSimulationPaymentRows(payData, simIds);
+  const pkg = excludeSimulationPaymentRows(pkgData, simIds);
 
   // customer_id → assigned_staff_id ('2번차트 담당자'). 500건씩 청크 조회(URL 길이 안전).
   const custIds = [
