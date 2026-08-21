@@ -1575,6 +1575,18 @@ export default function Assignments() {
     return rows.sort((a, b) => b.at.localeCompare(a.at));
   }, [monthCheckIns, actions, activeTab, monthCustomers, monthResvSourceSystem, axisOf, resolveInflowLabel]);
 
+  // T-20260820-foot-TODAYASSIGN-CONFIRMBTN-ACTIONCOL-LEFT: [오늘 배정 현황] 행에서 [확정] 버튼이 재사용할
+  //   TodayDistRow 룩업. key = `${check_in.id}:${role}` (= todayDistribution row.id 와 동일 규칙).
+  //   → [오늘 배정 현황] 행({ci, role})에서 동일 key 로 배분 이력 row 를 찾아 기존 doConfirmNotify(r) 를 그대로 호출.
+  //   ⚠레드라인 무접촉: doConfirmNotify 핸들러/배정→배분이력 연동(todayDistribution) 로직은 read-only 재사용만.
+  //     자매티켓 T-20260820-foot-RESVASSIGN-CONFIRM-CLICK-ERROR-KIMJIHYE-ACCT(canonical CONSULT-ASSIGN-BATCHLIST-
+  //     CONFIRM-REGRESSION) 가 소유한 연동/핸들러 코드는 수정하지 않는다(호출만).
+  const distRowByKey = useMemo<Map<string, TodayDistRow>>(() => {
+    const m = new Map<string, TodayDistRow>();
+    for (const r of todayDistribution) m.set(r.id, r);
+    return m;
+  }, [todayDistribution]);
+
   // T-20260724-foot-ASSIGNHIST-ROW-EDIT-DELETE 요청1(A): 금일 배분 이력 row 담당 수정 옵션.
   //   현재 탭(activeTab) 역할의 active staff 전체(출근 무관 — 과거배정 담당이 비출근일 수 있어 전체 노출). 이름 정렬.
   const distEditStaffOptions = useMemo<Staff[]>(() => {
@@ -2187,16 +2199,83 @@ export default function Assignments() {
                         </select>
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2"
-                          disabled={busy || !assignedId}
-                          onClick={() => openToss(ci, role)}
-                        >
-                          <ArrowRightLeft className="mr-1 h-3.5 w-3.5" />
-                          토스
-                        </Button>
+                        {/* T-20260820-foot-TODAYASSIGN-CONFIRMBTN-ACTIONCOL-LEFT (해석 A):
+                            액션 항목 좌측에 [확정] 버튼 배치 → 토스 우측. flex justify-end + gap 로 우측정렬 유지·겹침 방지.
+                            확정은 상담(consult) 축 한정(doConfirmNotify 가 consult 전용 · [금일 배분 이력] 확정셀도 consult 한정).
+                            [금일 배분 이력]의 기존 확정/발송 셀은 무접촉 유지(AC#3 · 레드라인 무접촉). */}
+                        <div className="flex items-center justify-end gap-1">
+                          {role === 'consult' &&
+                            (() => {
+                              // todayRow({ci, role}) → 동일 key 로 배분 이력 row 를 찾아 기존 핸들러 재사용.
+                              const distRow = distRowByKey.get(`${ci.id}:${role}`);
+                              // 미배정(consultant 미선택) → 배분 이력 row 미존재 → 확정 불가(비활성 버튼).
+                              if (!distRow) {
+                                return (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    data-testid={`today-confirm-btn-${ci.id}`}
+                                    disabled
+                                    title="담당 상담사 배정 후 확정할 수 있습니다."
+                                    className="h-7 px-2 text-xs text-teal-700"
+                                  >
+                                    확정
+                                  </Button>
+                                );
+                              }
+                              // [금일 배분 이력] 확정셀과 동일한 3-state(멱등) 미러링.
+                              if (distRow.notifyStatus === 'sent') {
+                                return (
+                                  <Badge variant="teal" className="font-normal" data-testid={`today-notify-sent-${ci.id}`}>
+                                    발송됨
+                                  </Badge>
+                                );
+                              }
+                              if (distRow.notifyStatus === 'failed') {
+                                return (
+                                  <Badge
+                                    variant="destructive"
+                                    className="font-normal"
+                                    title="확정은 완료됐으나 상담대기방 알림 발송에 실패했습니다(채널 확인 필요). 관리자에게 문의해주세요."
+                                    data-testid={`today-notify-failed-${ci.id}`}
+                                  >
+                                    발송실패
+                                  </Badge>
+                                );
+                              }
+                              if (distRow.notifyStatus === 'sending') {
+                                return (
+                                  <Badge variant="secondary" className="font-normal" data-testid={`today-notify-sending-${ci.id}`}>
+                                    발송중
+                                  </Badge>
+                                );
+                              }
+                              return (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  data-testid={`today-confirm-btn-${ci.id}`}
+                                  disabled={busy || notifyingId !== null}
+                                  className="h-7 px-2 text-xs text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                                  onClick={() => void doConfirmNotify(distRow)}
+                                >
+                                  {notifyingId === distRow.id ? '발송 중…' : '확정'}
+                                </Button>
+                              );
+                            })()}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2"
+                            disabled={busy || !assignedId}
+                            onClick={() => openToss(ci, role)}
+                          >
+                            <ArrowRightLeft className="mr-1 h-3.5 w-3.5" />
+                            토스
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
