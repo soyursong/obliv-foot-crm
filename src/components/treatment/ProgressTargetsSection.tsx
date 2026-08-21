@@ -300,6 +300,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 경과분석 .md 추출 진행상태(행별 rowKey / ZIP).
   const [mdBusyId, setMdBusyId] = useState<string | null>(null);
   const [zipBusy, setZipBusy] = useState(false);
+  // T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH: 선택 전원의 .md 를 ZIP 없이 개별 파일로 일괄 다운로드하는 진행상태.
+  const [individualBusy, setIndividualBusy] = useState(false);
 
   // T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 일괄처리 다건 선택 상태.
   //   selectedIds = 현재 리스트에서 체크된 예약 id 집합. 표시된 rows 기준으로만 유효(날짜/코호트 변경 시 교차 정리).
@@ -813,6 +815,71 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
     }
   };
 
+  // T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH: 선택 전원의 경과분석 .md 를 ZIP 묶음 없이 각 파일 개별로 일괄 다운로드.
+  //   원장 요청("zip 말고 개별 마크다운저장 — zip 풀린형태로 모든 마크다운 일괄다운") = ZIP 대안 채널.
+  //   추출/조립 로직·파일명 규칙({차트번호}_{이름}.md) = handleZipDownload 와 완전 동일 재사용(재가공 금지).
+  //   차이점: createStoreZip 대신 각 환자 .md 를 순차 downloadMd() 트리거. 브라우저 다중 다운로드 차단 회피를 위해 짧은 간격.
+  const handleIndividualDownload = async () => {
+    if (!canExtractProgress) return; // 방어(버튼 미노출이지만 이중 가드).
+    if (!clinic?.id) return;
+    // 현재 rows 에 존재하는 유효 선택만(고객 단위 dedupe — 같은 고객 다중 패키지 행 방지). handleZipDownload 와 동일.
+    const selectedRows = rows.filter((r) => selectedIds.has(r.rowKey) && r.customerId);
+    const seenCust = new Set<string>();
+    const patients: ProgressAnalysisPatient[] = [];
+    for (const r of selectedRows) {
+      const cid = r.customerId as string;
+      if (seenCust.has(cid)) continue;
+      seenCust.add(cid);
+      patients.push({ id: cid, name: r.customerName, chart_number: r.chartNumber });
+    }
+    if (patients.length === 0) {
+      toast.warning('선택된 환자가 없습니다. 먼저 환자를 선택해 주세요.');
+      return;
+    }
+    setIndividualBusy(true);
+    try {
+      const today = seoulISODate(new Date());
+      const env = await fetchProgressAnalysisData(
+        supabase,
+        clinic.id,
+        patients.map((p) => p.id),
+        today,
+      );
+      // 파일명 dedupe(handleZipDownload 와 동일 규칙) — 동일 {차트}_{이름} 충돌 시 _n 접미. downloadMd 는 .md 를 자동 부착.
+      const usedNames = new Map<string, number>();
+      logProgressMdExport({
+        actor: profile?.email ?? profile?.id ?? null,
+        actorRole: profile?.role ?? null,
+        clinicId: clinic.id,
+        patientCount: patients.length,
+        chartNumbers: patients.map((p) => p.chart_number ?? null),
+        mode: 'individual',
+      });
+      for (let i = 0; i < patients.length; i++) {
+        const p = patients[i];
+        let base = progressAnalysisMdBasename(p);
+        if (usedNames.has(base)) {
+          const n = (usedNames.get(base) ?? 1) + 1;
+          usedNames.set(base, n);
+          base = `${base}_${n}`;
+        } else {
+          usedNames.set(base, 1);
+        }
+        const content = buildProgressAnalysisMd(p, env);
+        downloadMd(content, base);
+        // 브라우저 다중 순차 다운로드 차단 회피 — 마지막 파일 제외 짧은 간격.
+        if (i < patients.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      toast.confirm(`선택 ${patients.length}명 경과분석 자료(.md)를 개별 파일로 내려받았습니다.`);
+    } catch (e) {
+      toast.error(`개별 저장 실패: ${(e as Error)?.message ?? '알 수 없는 오류'}`);
+    } finally {
+      setIndividualBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4" data-testid="progress-targets-section">
       {/* T-20260701-foot-PROGRESSLIST-TOP-REORDER: 경과분석 대상자 '리스트'를 화면 최상단으로 이동(위젯보다 위).
@@ -933,6 +1000,24 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                         <FolderArchive className="h-3.5 w-3.5" />
                       )}
                       ZIP 다운로드
+                    </Button>
+                    {/* T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH: ZIP 대안 — 선택 전원의 .md 를
+                        ZIP 없이 각 파일 개별 다운로드. 게이트/추출 로직/파일명 규칙 = ZIP 버튼과 동일 재사용. */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleIndividualDownload}
+                      disabled={selectedCount === 0 || individualBusy}
+                      title="선택한 환자의 경과분석 인풋(.md)을 ZIP 없이 각 파일로 개별 내려받기"
+                      data-testid="progress-md-individual-btn"
+                    >
+                      {individualBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileDown className="h-3.5 w-3.5" />
+                      )}
+                      개별 저장
                     </Button>
                   </>
                 )}

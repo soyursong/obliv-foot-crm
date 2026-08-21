@@ -207,6 +207,11 @@ export default defineConfig({
         //   순수 함수(filterD1Targets) 단언 — 토글 ON=내일 예약자만, 미예약·타날짜 제외, 기본뷰 canon 불변(additive).
         //   auth/DB/server 불요·결정론(DB 무관). §4/§5/§6(신규 스키마)은 DA CONSULT+GO-token 후 별도 leg.
         '**/T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH: [ZIP 다운로드] 옆 [개별 저장] additive —
+        //   선택 전원의 .md 를 ZIP 없이 개별 파일 순차 다운로드. 순수 함수(progressAnalysisMdBasename/
+        //   buildProgressAnalysisMd) + 파일명 dedupe(_n 접미) 불변식 단언. 게이트/추출로직/파일명 규칙 재사용.
+        //   auth/DB/server 불요·결정론(read-only, db_change=false). 실기기 순차 다운로드 = supervisor 갤탭 field-soak.
+        '**/T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).

@@ -851,7 +851,8 @@ export interface ProgressMdAuditMeta {
   clinicId?: string | null;
   patientCount: number;
   chartNumbers: Array<string | null>;
-  mode: 'row' | 'zip';
+  // T-20260822-foot-PROGANALYSIS-EXTRACT-INDIVIDUAL-MD-BATCH: 'individual' = ZIP 없이 개별 .md 일괄 다운로드.
+  mode: 'row' | 'zip' | 'individual';
 }
 export function logProgressMdExport(meta: ProgressMdAuditMeta): void {
   const record = {
