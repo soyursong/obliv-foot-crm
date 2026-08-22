@@ -58,8 +58,8 @@ import ProgressResultBulkUploadDialog from '@/components/treatment/ProgressResul
 //   ZIP = 무의존 STORE 조립(새 npm 미추가). read-only 조회만(db_change=false).
 import {
   fetchProgressAnalysisData,
-  buildProgressAnalysisMd,
-  progressAnalysisMdBasename,
+  // T-20260822-foot-PROGANALYSIS-MD-GENERATOR-UNIFY: 행별/ZIP/개별 3경로 = 단일 파일셋 생성기로 수렴(이원화 근절).
+  buildProgressAnalysisFiles,
   logProgressMdExport,
   downloadMd,
   type ProgressAnalysisPatient,
@@ -782,7 +782,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         name: row.customerName,
         chart_number: row.chartNumber,
       };
-      const content = buildProgressAnalysisMd(patient, env);
+      // 단일 파일셋 생성기(ZIP/개별과 동일 로직) — 단건이라 dedupe 무영향, 콘텐츠·파일명 규칙 공통.
+      const [file] = buildProgressAnalysisFiles([patient], env);
       logProgressMdExport({
         actor: profile?.email ?? profile?.id ?? null,
         actorRole: profile?.role ?? null,
@@ -791,7 +792,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         chartNumbers: [row.chartNumber ?? null],
         mode: 'row',
       });
-      downloadMd(content, progressAnalysisMdBasename(patient));
+      downloadMd(file.content, file.basename);
       // §5: 인풋 추출 = [추출대상] 슬립 멱등 생성(예약 있는 행만). best-effort.
       await ensureSlipForRow(row);
       refreshSlipStates();
@@ -831,19 +832,11 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         patients.map((p) => p.id),
         today,
       );
-      // 파일명 dedupe(스크립트 usedNames 규칙 준용) — 동일 {차트}_{이름} 충돌 시 _n 접미.
-      const usedNames = new Map<string, number>();
-      const entries: ZipEntry[] = patients.map((p) => {
-        let base = progressAnalysisMdBasename(p);
-        if (usedNames.has(base)) {
-          const n = (usedNames.get(base) ?? 1) + 1;
-          usedNames.set(base, n);
-          base = `${base}_${n}`;
-        } else {
-          usedNames.set(base, 1);
-        }
-        return { name: `${base}.md`, content: buildProgressAnalysisMd(p, env) };
-      });
+      // 단일 파일셋 생성기(행별/개별과 동일 로직) — 콘텐츠·파일명 dedupe 규칙 1곳. ZIP 엔트리로 매핑만.
+      const entries: ZipEntry[] = buildProgressAnalysisFiles(patients, env).map((f) => ({
+        name: f.filename,
+        content: f.content,
+      }));
       logProgressMdExport({
         actor: profile?.email ?? profile?.id ?? null,
         actorRole: profile?.role ?? null,
@@ -896,8 +889,9 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         patients.map((p) => p.id),
         today,
       );
-      // 파일명 dedupe(handleZipDownload 와 동일 규칙) — 동일 {차트}_{이름} 충돌 시 _n 접미. downloadMd 는 .md 를 자동 부착.
-      const usedNames = new Map<string, number>();
+      // 단일 파일셋 생성기(행별/ZIP과 동일 로직) — dedupe·콘텐츠 규칙 1곳. downloadMd 는 basename 에 .md 자동 부착.
+      //   ⇒ ZIP 산출 .md ↔ 개별저장 .md byte-identical(공통 BOM·내용·파일명 규칙).
+      const files = buildProgressAnalysisFiles(patients, env);
       logProgressMdExport({
         actor: profile?.email ?? profile?.id ?? null,
         actorRole: profile?.role ?? null,
@@ -906,20 +900,10 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         chartNumbers: patients.map((p) => p.chart_number ?? null),
         mode: 'individual',
       });
-      for (let i = 0; i < patients.length; i++) {
-        const p = patients[i];
-        let base = progressAnalysisMdBasename(p);
-        if (usedNames.has(base)) {
-          const n = (usedNames.get(base) ?? 1) + 1;
-          usedNames.set(base, n);
-          base = `${base}_${n}`;
-        } else {
-          usedNames.set(base, 1);
-        }
-        const content = buildProgressAnalysisMd(p, env);
-        downloadMd(content, base);
+      for (let i = 0; i < files.length; i++) {
+        downloadMd(files[i].content, files[i].basename);
         // 브라우저 다중 순차 다운로드 차단 회피 — 마지막 파일 제외 짧은 간격.
-        if (i < patients.length - 1) {
+        if (i < files.length - 1) {
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
       }

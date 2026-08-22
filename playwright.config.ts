@@ -222,6 +222,11 @@ export default defineConfig({
         //   예약 최신순·취소표기·가열/힐러↔비가열 판정(예약메모 1순위>가열잔여 2순위)·하위호환 단언.
         //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak.
         '**/T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-MD-GENERATOR-UNIFY: 행별/ZIP/개별 3경로 .md 생성을 단일 공유 함수
+        //   buildProgressAnalysisFiles() 로 통합(원장 지시 "다 같은 로직·이원화하지마"). 순수 함수 단언 —
+        //   ZIP·개별 산출물 byte 동일성(공통 BOM·content·파일명 규칙)·섹션 1~9 완전성·콘텐츠 등가(재가공0)·dedupe 단일.
+        //   auth/DB/server 불요·결정론(read-only, db_change=false). 실기기 다운로드 = supervisor 갤탭 field-soak(CF 해제 동기).
+        '**/T-20260822-foot-PROGANALYSIS-MD-GENERATOR-UNIFY.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).

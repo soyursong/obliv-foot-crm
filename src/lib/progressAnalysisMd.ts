@@ -1335,6 +1335,39 @@ export function progressAnalysisMdBasename(p: ProgressAnalysisPatient): string {
   return `${chartTag}_${safeName(p.name)}`;
 }
 
+/**
+ * T-20260822-foot-PROGANALYSIS-MD-GENERATOR-UNIFY
+ * 경과분석 .md 배치 파일셋 **단일 생성기** — [행별]/[ZIP]/[개별저장] 3경로가 이 함수 하나로 수렴.
+ * 원장 지시("알집추출 개별추출 다 같은 로직이어야한다 이원화하지마") = 콘텐츠·파일명 규칙을 1곳으로.
+ *   · content  = buildProgressAnalysisMd(p, env)  (섹션 1~9 SSOT — 유일 콘텐츠 빌더).
+ *   · basename = progressAnalysisMdBasename(p) + 동일 {차트}_{이름} 충돌 시 `_n` 접미(dedupe) — ZIP/개별 동일 규칙 1곳.
+ *   · filename = `${basename}.md`.
+ * ⇒ ZIP 산출물 .md ↔ 개별저장 .md byte-identical(BOM·내용·파일명 규칙 공통). dedupe 순서=patients 입력 순서(결정론).
+ * read-only(db_change=false)·순수 함수(부수효과 0).
+ */
+export interface ProgressAnalysisFile {
+  basename: string; // 확장자 제외 파일명(dedupe 적용)
+  filename: string; // basename + '.md'
+  content: string; // buildProgressAnalysisMd 결과(섹션 1~9)
+}
+export function buildProgressAnalysisFiles(
+  patients: ProgressAnalysisPatient[],
+  env: ProgressAnalysisEnvelope,
+): ProgressAnalysisFile[] {
+  const usedNames = new Map<string, number>();
+  return patients.map((p) => {
+    let base = progressAnalysisMdBasename(p);
+    if (usedNames.has(base)) {
+      const n = (usedNames.get(base) ?? 1) + 1;
+      usedNames.set(base, n);
+      base = `${base}_${n}`;
+    } else {
+      usedNames.set(base, 1);
+    }
+    return { basename: base, filename: `${base}.md`, content: buildProgressAnalysisMd(p, env) };
+  });
+}
+
 /** PHI 반출 감사로그(csv/txt export 와 동일 패턴). */
 export interface ProgressMdAuditMeta {
   actor: string | null;
