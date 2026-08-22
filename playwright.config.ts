@@ -228,6 +228,10 @@ export default defineConfig({
         //   정상 '데이터 없음'(성공·0행)은 기존 '…없음' 유지(회귀0). fetchProgressAnalysisData(가짜 supabase)+순수함수 단언.
         //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak(CF phishing 해제 後).
         '**/T-20260822-foot-PROGANALYSIS-EXTRACT-FETCH-SILENT-SWALLOW-HARDEN.spec.ts',
+        // T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN: 경과분석 .md 【행정】 블록에 성별·주민번호(앞6자리)
+        //   2줄 additive. PHI 최소수집(뒷6자리 미수신, fn_customer_birthdates 서버파생 재사용). 순수함수 단언.
+        //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak.
+        '**/T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
