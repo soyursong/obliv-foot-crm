@@ -69,6 +69,8 @@ import { buildMonthlyCompareSheet, buildStaffDailySheet, downloadRevenueWorkbook
 // T-20260811-foot-SALESAGG-THERAPIST-TAB: 매출집계>담당치료사별(SalesStaffTab)을 일마감 신규 탭으로 미러(내용 그대로 연동).
 //   기존 컴포넌트/산식/필터 그대로 재사용 — 신규 산식/쿼리 창작 0. 필터바도 매출집계와 동일 UX(기간·검색).
 import { SalesStaffTab } from '@/components/sales/SalesStaffTab';
+// T-20260822-foot-CLOSING-TXMEMO-MISSING-ALERT (기능 B): '총 매출(치료)' 최상단 특이사항 미작성 배너(display-only).
+import TxMemoMissingBanner from '@/components/closing/TxMemoMissingBanner';
 import { SalesFilterBar, defaultSalesFilter, type SalesFilterState } from '@/components/sales/SalesFilterBar';
 import { cn } from '@/lib/utils';
 
@@ -3212,6 +3214,10 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
             권한: admin+therapist(canViewTherapistSales) 한정 — 트리거 숨김 + NAV-BOUNCE(위 useEffect). */}
         {canViewTherapistSales && (
           <TabsContent value="therapist_sales" className="space-y-4">
+            {/* T-20260822-foot-CLOSING-TXMEMO-MISSING-ALERT (기능 B): 섹션 최상단 특이사항 미작성 배너.
+                당일(마감 영업일=date) 회차차감 O · 치료메모 X 건을 빨간 배너+카운터로 노출, [확인하기]→미작성 목록.
+                display-only(read-only 별도 쿼리) — 아래 매출 표(SalesStaffTab)의 합계/payload 무개입(AC4). */}
+            <TxMemoMissingBanner clinicId={clinic?.id} date={date} />
             <SalesFilterBar value={therapistSalesFilter} onChange={setTherapistSalesFilter} />
             {/* T-20260819-foot-DAYCLOSE-TOTALREV-EXCEL-DOWNLOAD: '총매출(치료)' 표 화면표시값 그대로 .xlsx (표 내부 버튼). */}
             <SalesStaffTab
