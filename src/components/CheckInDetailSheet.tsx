@@ -35,6 +35,9 @@ import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { consumeOneSession } from '@/lib/consumeSession';
+import { hasTodayTreatmentMemo } from '@/lib/txMemoGate';
+import { TxMemoSoftPopup } from '@/components/TxMemoSoftPopup';
+import { useChartNoPopup } from '@/hooks/useChartNoPopup';
 import { signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 import { STORAGE_KEYS } from '@/lib/storageKeys';
 import { useAuth } from '@/lib/auth';
@@ -2669,12 +2672,16 @@ function SessionUseInSheetDialog({
   const [surcharge, setSurcharge] = useState(0);
   const [surchargeMemo, setSurchargeMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 당일 특이사항 미입력 소프트 팝업(비강제)
+  const [memoPopupOpen, setMemoPopupOpen] = useState(false);
+  const openChartNo = useChartNoPopup();
 
   // defaultSessionType 변경 시 반영
   useEffect(() => {
     setSessionType(defaultSessionType);
     setSurcharge(0);
     setSurchargeMemo('');
+    setMemoPopupOpen(false);
   }, [defaultSessionType, open]);
 
   const available: Record<SessionType, number> = {
@@ -2684,12 +2691,22 @@ function SessionUseInSheetDialog({
     preconditioning: remaining?.preconditioning ?? 0,
   };
 
+  // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 차감 버튼 클릭 → 당일 특이사항 존재여부 판정.
+  //   미입력이면 소프트 팝업 노출(비강제), 이미 입력됨이면 바로 차감(performConsume).
   const save = async () => {
     if (!pkg) return;
     if ((available[sessionType] ?? 0) <= 0) {
       toast.error('남은 회차가 없습니다');
       return;
     }
+    const hasMemo = await hasTodayTreatmentMemo(pkg.customer_id, pkg.clinic_id);
+    if (!hasMemo) { setMemoPopupOpen(true); return; }
+    await performConsume();
+  };
+
+  // 실제 회차 소진(consume) — 팝업 [나중에] 또는 메모 존재 시 직접 호출(무회귀).
+  const performConsume = async () => {
+    if (!pkg) return;
     setSubmitting(true);
     // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
     try {
@@ -2719,6 +2736,7 @@ function SessionUseInSheetDialog({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -2801,5 +2819,15 @@ function SessionUseInSheetDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {/* T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 당일 특이사항 미입력 소프트 팝업(비강제).
+        [입력하러 가기]=차감 없이 2번차트 이동 / [나중에]=차감 그대로 완료. */}
+    <TxMemoSoftPopup
+      open={memoPopupOpen}
+      onOpenChange={setMemoPopupOpen}
+      primaryLabel="입력하러 가기"
+      onPrimary={() => { setMemoPopupOpen(false); onOpenChange(false); openChartNo(pkg?.customer_id); }}
+      onLater={() => { setMemoPopupOpen(false); void performConsume(); }}
+    />
+    </>
   );
 }

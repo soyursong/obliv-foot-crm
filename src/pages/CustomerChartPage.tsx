@@ -30,6 +30,8 @@ import { openHealthQDocumentWindow } from '@/lib/healthQDocument';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { consumeOneSession } from '@/lib/consumeSession';
+import { hasTodayTreatmentMemo } from '@/lib/txMemoGate';
+import { TxMemoSoftPopup } from '@/components/TxMemoSoftPopup';
 import { signedThumbUrls, signedThumbUrl, signedOriginalUrl, PHOTO_UPLOAD_OPTS, invalidatePhotoPath, cachedStorageList, invalidateStorageList } from '@/lib/photoUrl';
 // T-20260819-foot-CHARTSAVE-STORM-MORNING-RELIEF FIX-12: receipt 업로드 전 다운스케일(장축 1600·JPEG q0.80).
 import { downscaleReceiptImage } from '@/lib/formImageDownscale';
@@ -3235,6 +3237,19 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
   const [savingResvMini, setSavingResvMini] = useState(false);
   // C2-RESV-DETAIL-PANEL: 예약상세 탭
   const [resvDetailTab, setResvDetailTab] = useState<'예약' | '상담' | '치료메모'>('예약');
+  // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 회차 차감 시 당일 특이사항 미입력 소프트 팝업(비강제).
+  //   proceed = [나중에] 클릭 시 그대로 재개할 consume 흐름(무회귀). null 이면 팝업 미노출.
+  const [txMemoGate, setTxMemoGate] = useState<{ proceed: () => void } | null>(null);
+  const txMemoComposerRef = useRef<HTMLDivElement>(null);
+  // [지금 쓸게요] → 치료메모 탭 열고 입력창(TreatmentMemoComposer) 포커스/스크롤(in-place, 차감 미실행).
+  const focusTxMemoComposer = () => {
+    setResvDetailTab('치료메모');
+    setTimeout(() => {
+      const el = txMemoComposerRef.current;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.querySelector('textarea')?.focus();
+    }, 120);
+  };
   // T-20260523-foot-LASER-TIMER 위치이동 (FIX-20260525): 2번차트 3구역 [상세] 탭 상단 타이머
   const [activeTimer, setActiveTimer] = useState<TimerRecord | null>(null);
   // T-20260715-foot-TREATMEMO-TYPINGLAG-RCA (RC-1): 카운트다운 상태(timerRemainingSecs)+500ms 인터벌은
@@ -4638,6 +4653,18 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       toast.error('치료사를 선택해주세요.');
       return;
     }
+    // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 당일 특이사항 미입력이면 소프트 팝업(비강제).
+    const hasMemo = await hasTodayTreatmentMemo(customer?.id, customer?.clinic_id);
+    if (!hasMemo) {
+      setTxMemoGate({ proceed: () => { void runUseSession(); } });
+      return;
+    }
+    await runUseSession();
+  };
+
+  // 실제 회차 소진(consume) — 팝업 [나중에] 또는 메모 존재 시 직접 호출(기존 로직 무변경).
+  const runUseSession = async () => {
+    if (!useSessionDlg) return;
     setSavingSession(true);
     // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
     try {
@@ -5586,6 +5613,18 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
       return;
     }
     const usedCount = packageSessions.filter(s => s.package_id === targetPkg.id && s.status === 'used').length;
+    // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 당일 특이사항 미입력이면 소프트 팝업(비강제).
+    //   [나중에]=runC22Deduct 그대로 재개(무회귀) / [지금 쓸게요]=치료메모 입력창 포커스(차감 미실행).
+    const hasMemo = await hasTodayTreatmentMemo(customer.id, customer.clinic_id);
+    if (!hasMemo) {
+      setTxMemoGate({ proceed: () => { void runC22Deduct(targetPkg, usedCount); } });
+      return;
+    }
+    await runC22Deduct(targetPkg, usedCount);
+  };
+
+  // 실제 회차 차감(consume) — 팝업 [나중에] 또는 메모 존재 시 직접 호출(기존 로직 무변경).
+  const runC22Deduct = async (targetPkg: PackageWithRemaining, usedCount: number) => {
     setSavingC22Deduct(true);
     // T-20260819-foot-MEDIMG-UPLOAD-PROGRESS-LOCK (§3-B): finally 로 게이팅 플래그 해제 보장
     try {
@@ -9962,12 +10001,15 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
                     T-20260716 INPUT-LAG-DATALOSS-RCA: 입력 상태를 <TreatmentMemoComposer>(memoized)가 로컬 소유
                     → 키 입력 시 부모(CustomerChartPage) 무재렌더로 랙 해소 + sessionStorage draft로 재렌더/이탈 무손실. */}
                 {!treatmentMemoUnavailable && customer && (
-                  <TreatmentMemoComposer
-                    phrases={custchartPhrasesByTab['치료메모']}
-                    saving={savingNewMemo}
-                    draftKey={`foot_txmemo_draft:${customer.id}`}
-                    onSave={saveNewTreatmentMemo}
-                  />
+                  /* T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: [지금 쓸게요] 포커스/스크롤 앵커 */
+                  <div ref={txMemoComposerRef}>
+                    <TreatmentMemoComposer
+                      phrases={custchartPhrasesByTab['치료메모']}
+                      saving={savingNewMemo}
+                      draftKey={`foot_txmemo_draft:${customer.id}`}
+                      onSave={saveNewTreatmentMemo}
+                    />
+                  </div>
                 )}
 
                 {/* 이력 목록 (최신순 DESC) */}
@@ -10374,6 +10416,16 @@ export default function CustomerChartPage({ customerId: propCustomerId, initialT
           </div>
         </div>
       )}
+
+      {/* T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 회차 차감(saveC22Deduct·saveUseSession 공통) 소프트 팝업(비강제).
+          [지금 쓸게요]=치료메모 입력창 포커스(차감 미실행) / [나중에]=차감 그대로 완료(무회귀). */}
+      <TxMemoSoftPopup
+        open={txMemoGate !== null}
+        onOpenChange={(o) => { if (!o) setTxMemoGate(null); }}
+        primaryLabel="지금 쓸게요"
+        onPrimary={() => { setTxMemoGate(null); focusTxMemoComposer(); }}
+        onLater={() => { const p = txMemoGate?.proceed; setTxMemoGate(null); p?.(); }}
+      />
 
       {/* C2-PKG-TICKET-TABLE: 회차 차감 + 치료사 드롭다운 다이얼로그 (UseSessionDialog) */}
       {useSessionDlg?.open && (

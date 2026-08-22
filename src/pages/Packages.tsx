@@ -19,6 +19,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
 import { consumeOneSession } from '@/lib/consumeSession';
+import { hasTodayTreatmentMemo } from '@/lib/txMemoGate';
+import { TxMemoSoftPopup } from '@/components/TxMemoSoftPopup';
 import { useAuth } from '@/lib/auth';
 import { isStaffUnlockRole } from '@/lib/permissions';
 import { useClinic } from '@/hooks/useClinic';
@@ -2035,6 +2037,9 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
   // T-20260618-foot-PKGDEDUCT-CHECKIN-AUTOLINK (1번 B안): 당일 해당 고객의 가장 최근 체크인 자동연결.
   const [linkCheckIn, setLinkCheckIn] = useState<{ id: string; checked_in_at: string } | null>(null);
   const [linkLoading, setLinkLoading] = useState(false);
+  // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 당일 특이사항 미입력 소프트 팝업(비강제)
+  const [memoPopupOpen, setMemoPopupOpen] = useState(false);
+  const openChartNo = useChartNoPopup();
 
   const available: Record<typeof sessionType, number> = {
     heated_laser: remaining?.heated ?? 0,
@@ -2066,8 +2071,17 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
     return () => { cancelled = true; };
   }, [open, pkg.customer_id, pkg.clinic_id]);
 
+  // T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 차감 버튼 클릭 → 당일 특이사항 존재여부 판정.
+  //   미입력이면 소프트 팝업(비강제), 이미 입력됨이면 바로 차감(performConsume).
   const save = async () => {
     if ((available[sessionType] ?? 0) <= 0) { toast.error('남은 회차가 없습니다'); return; }
+    const hasMemo = await hasTodayTreatmentMemo(pkg.customer_id, pkg.clinic_id);
+    if (!hasMemo) { setMemoPopupOpen(true); return; }
+    await performConsume();
+  };
+
+  // 실제 회차 소진(consume) — 팝업 [나중에] 또는 메모 존재 시 직접 호출(무회귀).
+  const performConsume = async () => {
     setSubmitting(true);
     // T-20260819-foot-PKGSESSION-REVISIT-NOPAY-FORWARDSOURCE: 直insert → canonical consume_one_session 라우팅
     //   (단일 writer). 회차 INSERT + 대응 CIS(flag∧FK) co-set 원자 수행. session_number 서버 원자 MAX+1.
@@ -2086,6 +2100,7 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>회차 소진</DialogTitle></DialogHeader>
@@ -2131,6 +2146,16 @@ function UseSessionDialog({ open, pkg, remaining, onOpenChange, onDone }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {/* T-20260822-foot-CLOSING-TXMEMO-SOFTPOPUP: 당일 특이사항 미입력 소프트 팝업(비강제).
+        [입력하러 가기]=차감 없이 2번차트 이동 / [나중에]=차감 그대로 완료. */}
+    <TxMemoSoftPopup
+      open={memoPopupOpen}
+      onOpenChange={setMemoPopupOpen}
+      primaryLabel="입력하러 가기"
+      onPrimary={() => { setMemoPopupOpen(false); onOpenChange(false); openChartNo(pkg.customer_id); }}
+      onLater={() => { setMemoPopupOpen(false); void performConsume(); }}
+    />
+    </>
   );
 }
 
