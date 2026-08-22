@@ -8,7 +8,14 @@
  * 모든 fixture는 service_role 사용 + `[QA-FIXTURE]` 마커.
  * cleanup은 본인이 만든 row만 삭제 — 다른 데이터 영향 없음.
  */
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+// T-20260822-meta-CLOSING-SPEC-UNCONDITIONAL-PRODGUARD-EXTEND (AC-2):
+//   svc() 서비스롤 클라이언트를 @supabase/supabase-js 의 raw createClient 대신 가드된
+//   createClient(_prodWriteGuard)로 생성한다. 이 팩토리는 EXPECT_DEV_DB_REF opt-in 과 무관하게
+//   (UNCONDITIONAL) target 이 알려진 PROD ref 이면 첫 write 이전에 fail-closed abort → 마감 등
+//   fixtures 시더 경유 spec 이 실환자 prod 로 흘러 phantom(마감 outbox 슬롯 선점) 을 만드는
+//   진원을 봉인한다. dev/local/stage → 통과(회귀 0). 기존 opt-in PRODREF-HARDGUARD 는 병존(2차 방벽).
+import { createClient } from '../e2e/critical-flow/_prodWriteGuard';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CANONICAL_ORIGIN, DEPRECATED_HOSTS } from '../../src/lib/canonicalHost';

@@ -86,7 +86,23 @@ export function createClient(
   key: string,
   opts?: Parameters<typeof _realCreateClient>[2],
 ): SupabaseClient {
+  // 1) env-target(process.env.VITE_SUPABASE_URL) 검문 — 기존.
   assertCriticalFlowDbSafe();
+  // 2) 실제 생성에 쓰이는 url 인자 검문 — 신규(T-20260822-meta-CLOSING-SPEC-UNCONDITIONAL-PRODGUARD-EXTEND).
+  //   env 미설정(VITE_SUPABASE_URL undefined) 상태에서 spec 이 하드코딩된 prod fallback url
+  //   (예: 'https://rxlomoozakkjesdqjtvd.supabase.co')을 직접 넘기면 env-검문만으로는 통과해
+  //   실환자 prod 로 write 되던 우회를 봉인한다. url 인자 자체가 알려진 PROD ref 이면 fail-closed.
+  //   dev/stage/local/unknown url → 통과(회귀 0). EXPECT_DEV_DB_REF opt-in 무관·UNCONDITIONAL.
+  const argRef = resolveTargetRef(url);
+  if (isProdRef(argRef)) {
+    throw new Error(
+      `[CF-PROD-WRITE-BAN] createClient 팩토리가 PROD Supabase(ref=${argRef}, url=${url}) 를 생성 대상으로 ` +
+        '삼으려 합니다 → fail-closed abort. E2E/마감 하네스는 dev/ephemeral DB 에서만 실행하세요 ' +
+        '(실환자 DB 마감 outbox phantom 오염 진원 봉인). SSOT: ' +
+        'T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN / ' +
+        'T-20260822-meta-CLOSING-SPEC-UNCONDITIONAL-PRODGUARD-EXTEND.',
+    );
+  }
   return _realCreateClient(url, key, opts);
 }
 

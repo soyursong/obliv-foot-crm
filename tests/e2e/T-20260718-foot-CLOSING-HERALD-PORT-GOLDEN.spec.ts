@@ -19,7 +19,12 @@
  *   AC3-1: foot_closing_herald_preflight() hard_gate_pass=true (slug 실재)
  */
 import { test, expect } from '@playwright/test';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+// T-20260822-meta-CLOSING-SPEC-UNCONDITIONAL-PRODGUARD-EXTEND (AC-2): 마감 spec 이 실환자 prod
+//   daily_closings/closing_confirmed_outbox 에 직접 write(rev0 슬롯 선점)하는 phantom 진원을
+//   봉인한다. 가드된 createClient(_prodWriteGuard)는 EXPECT_DEV_DB_REF opt-in 무관 UNCONDITIONAL
+//   로 target/url 이 PROD ref 이면 client 생성 이전에 fail-closed abort. dev/local → 통과(회귀 0).
+import { createClient } from './critical-flow/_prodWriteGuard';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
