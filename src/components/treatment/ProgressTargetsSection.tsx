@@ -10,7 +10,7 @@
 //   이름 인터랙션: 좌클릭=2번차트(부모 nameInteraction.onLeftClick→useChart), 우클릭=CRM 컨텍스트 메뉴(부모 onContextMenu) — ExamTargetsSection 과 동일 재사용.
 //   방어성: progress_check_required/label 미적용 prod(42703/PGRST204) → 빈 목록 폴백(섹션 무파손). ExamTargetsSection 선례 동일.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -85,6 +85,8 @@ import {
   chunkIds,
   IN_CHUNK_SIZE,
 } from '@/lib/progressSixMultiple';
+// T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격 설정값(하드코딩 6 → 런타임 조정 가능).
+import { useCheckpointInterval, DEFAULT_CHECKPOINT_INTERVAL, isValidCheckpointInterval } from '@/lib/progressCheckpointConfig';
 
 // T-20260701-foot-PROGRESS-LIST-ICON-LABEL-CLEAN: 경과분석 리스트 '회차' 표시 정리(FE-only, DDL0).
 //   회차 숫자는 기존 label(progress_check_label) 그대로 매핑 — 표시 문자열만 '{N}회차'로 통일.
@@ -123,9 +125,10 @@ interface ProgressTargetRow {
 //   판정 로직 기존 그대로(Reservations.tsx anticipatedSession = used_sessions + 1; 6배수: % 6 == 0).
 //   자매 SONGDO-FORM-DOWNLOAD(deployed) 다운로드 버튼 트리거 모집단과 동일 모집단(정합).
 //   read-only 조회만 — 신규 스키마/트리거/write 0 (db_change=false).
-function useProgressTargets(clinicId: string | null | undefined) {
+function useProgressTargets(clinicId: string | null | undefined, interval: number = DEFAULT_CHECKPOINT_INTERVAL) {
+  // T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: interval 을 queryKey 에 포함 → 설정 변경 시 즉시 재판정/재조회.
   return useQuery<ProgressTargetRow[]>({
-    queryKey: ['progress_targets_6multiple', clinicId],
+    queryKey: ['progress_targets_6multiple', clinicId, interval],
     enabled: !!clinicId,
     queryFn: async () => {
       if (!clinicId) return [];
@@ -157,7 +160,7 @@ function useProgressTargets(clinicId: string | null | undefined) {
         }
       }
 
-      // 3) 6배수 도래 필터: anticipatedSession = used + 1, anticipatedSession % 6 == 0 (tier 0 배제).
+      // 3) 도래 회차 필터: anticipatedSession = used + 1, anticipatedSession % interval == 0 (tier 0 배제·interval 기본6).
       const targets = packages
         .map((p) => {
           const used = usedMap.get(p.id) ?? 0;
@@ -169,7 +172,7 @@ function useProgressTargets(clinicId: string | null | undefined) {
             anticipatedSession: anticipatedSession(used),
           };
         })
-        .filter((t) => isSixMultipleTarget({ usedSessions: t.usedSessions, totalSessions: t.totalSessions }));
+        .filter((t) => isSixMultipleTarget({ usedSessions: t.usedSessions, totalSessions: t.totalSessions }, interval));
       if (targets.length === 0) return [];
 
       // 4) 고객 메타(이름·차트번호·연락처) 보강(read-only).
@@ -273,9 +276,38 @@ interface Props {
 export default function ProgressTargetsSection({ date, nameInteraction }: Props) {
   const clinic = useClinic();
   const { profile } = useAuth();
-  // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준이 예약일(date) 독립으로 변경(활성 패키지 6배수 도래 전부).
+  // T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격 설정값(기본 6). 변경 시 리스트/추출 즉시 재판정.
+  const [checkpointInterval, saveCheckpointInterval] = useCheckpointInterval();
+  // T-20260812-foot-PROGCHK-6MULTIPLE-LIST-FILTER: 나열 기준이 예약일(date) 독립으로 변경(활성 패키지 도래 회차 배수 전부).
   //   date prop 은 하단 위젯(ProgressAnalyticsWidgets)에만 전달 — 리스트 모집단에는 미사용.
-  const { data: rows = [], isLoading, isError, error } = useProgressTargets(clinic?.id);
+  const { data: rows = [], isLoading, isError, error } = useProgressTargets(clinic?.id, checkpointInterval);
+  // 설정 입력 로컬 상태(편집 중 값). 저장 시 검증 통과분만 반영.
+  const [intervalDraft, setIntervalDraft] = useState<string>(String(checkpointInterval));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // 훅 값이 외부(다른 탭/저장)에서 바뀌면 편집창 draft 동기화(편집창 닫힘 상태에서만).
+  useEffect(() => {
+    if (!settingsOpen) setIntervalDraft(String(checkpointInterval));
+  }, [checkpointInterval, settingsOpen]);
+  const handleSaveInterval = () => {
+    const n = Number(intervalDraft);
+    if (!isValidCheckpointInterval(n)) {
+      toast.error('도래 회차 간격은 1 이상의 정수만 입력할 수 있습니다.');
+      return;
+    }
+    if (saveCheckpointInterval(n)) {
+      toast.confirm(`도래 회차 간격을 ${n}회차(${n}의 배수)로 저장했습니다.`);
+      setSettingsOpen(false);
+    } else {
+      toast.error('설정을 저장하지 못했습니다. 값을 확인해 주세요.');
+    }
+  };
+  const handleResetInterval = () => {
+    setIntervalDraft(String(DEFAULT_CHECKPOINT_INTERVAL));
+    if (saveCheckpointInterval(DEFAULT_CHECKPOINT_INTERVAL)) {
+      toast.confirm(`도래 회차 간격을 기본값 ${DEFAULT_CHECKPOINT_INTERVAL}회차로 되돌렸습니다.`);
+      setSettingsOpen(false);
+    }
+  };
 
   // T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §1 (B안 additive): '내일(D-1)' 필터 토글.
   //   기본뷰 = 배포 canon(예약무관 6배수 도래자 전체) 그대로 유지(축소 아님). 토글 ON 시에만
@@ -776,13 +808,13 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
     setMdBusyId(row.rowKey);
     try {
       const today = seoulISODate(new Date());
-      const env = await fetchProgressAnalysisData(supabase, clinic.id, [row.customerId], today);
+      const env = await fetchProgressAnalysisData(supabase, clinic.id, [row.customerId], today, checkpointInterval);
       const patient: ProgressAnalysisPatient = {
         id: row.customerId,
         name: row.customerName,
         chart_number: row.chartNumber,
       };
-      const content = buildProgressAnalysisMd(patient, env);
+      const content = buildProgressAnalysisMd(patient, env, checkpointInterval);
       logProgressMdExport({
         actor: profile?.email ?? profile?.id ?? null,
         actorRole: profile?.role ?? null,
@@ -830,6 +862,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         clinic.id,
         patients.map((p) => p.id),
         today,
+        checkpointInterval,
       );
       // 파일명 dedupe(스크립트 usedNames 규칙 준용) — 동일 {차트}_{이름} 충돌 시 _n 접미.
       const usedNames = new Map<string, number>();
@@ -842,7 +875,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         } else {
           usedNames.set(base, 1);
         }
-        return { name: `${base}.md`, content: buildProgressAnalysisMd(p, env) };
+        return { name: `${base}.md`, content: buildProgressAnalysisMd(p, env, checkpointInterval) };
       });
       logProgressMdExport({
         actor: profile?.email ?? profile?.id ?? null,
@@ -895,6 +928,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         clinic.id,
         patients.map((p) => p.id),
         today,
+        checkpointInterval,
       );
       // 파일명 dedupe(handleZipDownload 와 동일 규칙) — 동일 {차트}_{이름} 충돌 시 _n 접미. downloadMd 는 .md 를 자동 부착.
       const usedNames = new Map<string, number>();
@@ -916,7 +950,7 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         } else {
           usedNames.set(base, 1);
         }
-        const content = buildProgressAnalysisMd(p, env);
+        const content = buildProgressAnalysisMd(p, env, checkpointInterval);
         downloadMd(content, base);
         // 브라우저 다중 순차 다운로드 차단 회피 — 마지막 파일 제외 짧은 간격.
         if (i < patients.length - 1) {
@@ -946,15 +980,34 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
             경과분석
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            활성 패키지 보유 환자 중 <span className="font-medium text-foreground">다음 회차가 6의 배수(6·12·18·24…)</span>에
-            도래하는 환자 전부를 보여줍니다. 오늘 예약 여부와 무관하며, 미예약 환자도 포함됩니다.
+            활성 패키지 보유 환자 중{' '}
+            <span className="font-medium text-foreground">
+              다음 회차가 {checkpointInterval}의 배수({[1, 2, 3, 4].map((k) => checkpointInterval * k).join('·')}…)
+            </span>
+            에 도래하는 환자 전부를 보여줍니다. 오늘 예약 여부와 무관하며, 미예약 환자도 포함됩니다.
             {d1Only && <span className="ml-1 font-medium text-teal-700">지금은 내일(D-1) 예약 도래자만 표시 중입니다.</span>}
           </p>
         </div>
         {(canExportCsv || rows.length > 0) && (
           <div className="flex shrink-0 items-center gap-2">
+            {/* T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격 수동 변경(설정) 토글.
+                발행/추출 권한자(canSelect)만 노출 — 값 변경 시 리스트/추출/파일명 회차 표기 즉시 반영. 기본값=6. */}
+            {canSelect && (
+              <Button
+                type="button"
+                size="sm"
+                variant={settingsOpen ? 'default' : 'outline'}
+                onClick={() => setSettingsOpen((v) => !v)}
+                title="도래 회차 간격 설정(기본 6회차)"
+                aria-pressed={settingsOpen}
+                data-testid="progress-interval-settings-btn"
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+                도래 간격 {checkpointInterval}회차
+              </Button>
+            )}
             {/* T-20260821-foot-PROGANALYSIS-BATCH-EXTRACT-LINK-DIRECTIVE §1: '내일(D-1)' 필터 토글(additive).
-                기본뷰(예약무관 6배수 전체 canon)는 불변 — 토글 ON 시에만 다음 예약이 내일인 대상만 표시. */}
+                기본뷰(예약무관 도래 회차 전체 canon)는 불변 — 토글 ON 시에만 다음 예약이 내일인 대상만 표시. */}
             <Button
               type="button"
               size="sm"
@@ -1087,6 +1140,55 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         )}
       </div>
 
+      {/* T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격 수동 변경 패널.
+          canSelect(발행/추출 권한자)만 열람·변경. 저장 시 리스트/추출/파일명 회차 표기 즉시 반영. 기본값=6. */}
+      {canSelect && settingsOpen && (
+        <div
+          className="rounded-lg border border-teal-200 bg-teal-50/40 p-3"
+          data-testid="progress-interval-settings-panel"
+        >
+          <p className="text-xs font-medium text-foreground">도래 회차 간격 설정</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            경과분석 도래 대상을 판정하는 회차 간격입니다. 기본 6회차(6·12·18…)이며, 바쁜 날 등 회차가 밀리거나
+            당겨질 때 값을 조정할 수 있습니다. 저장하면 대상자 리스트와 추출 파일명의 회차 표기가 함께 바뀝니다.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label htmlFor="progress-interval-input" className="text-xs text-muted-foreground">
+              간격(회차)
+            </label>
+            <input
+              id="progress-interval-input"
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              value={intervalDraft}
+              onChange={(e) => setIntervalDraft(e.target.value)}
+              className="h-9 w-24 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
+              data-testid="progress-interval-input"
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveInterval}
+              data-testid="progress-interval-save-btn"
+            >
+              저장
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleResetInterval}
+              data-testid="progress-interval-reset-btn"
+            >
+              기본값(6)
+            </Button>
+            <span className="text-[11px] text-muted-foreground">현재 적용: {checkpointInterval}회차</span>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-6">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1102,15 +1204,15 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         >
           <TrendingUp className="h-5 w-5 text-muted-foreground/40" />
           {d1Only
-            ? '내일(D-1) 6의 배수 예약 도래자가 없습니다.'
-            : '6의 배수 회차 도래 경과분석 대상자가 없습니다.'}
+            ? `내일(D-1) ${checkpointInterval}의 배수 예약 도래자가 없습니다.`
+            : `${checkpointInterval}의 배수 회차 도래 경과분석 대상자가 없습니다.`}
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-background">
           <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-2.5 py-1.5">
             <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
               <CalendarDays className="h-3.5 w-3.5 text-teal-600" />
-              {d1Only ? '내일(D-1) 6배수 예약 도래자' : '6배수 회차 도래 대상자'}
+              {d1Only ? `내일(D-1) ${checkpointInterval}배수 예약 도래자` : `${checkpointInterval}배수 회차 도래 대상자`}
             </span>
             <span className="text-[11px] font-medium text-muted-foreground" data-testid="progress-targets-group-count">
               {displayRows.length}명

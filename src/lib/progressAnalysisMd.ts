@@ -31,7 +31,7 @@
  * PHI: 산출 .md = 진료성 PHI. 호출부(경과분석 탭)에서 admin/manager(운영권한) 게이팅 + export 감사로그.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { anticipatedSession, isSixMultipleTarget, chunkIds, IN_CHUNK_SIZE } from './progressSixMultiple';
+import { anticipatedSession, isSixMultipleTarget, chunkIds, IN_CHUNK_SIZE, DEFAULT_CHECKPOINT_INTERVAL } from './progressSixMultiple';
 
 /* ────────────────────────── 순수 유틸 (스크립트 그대로 이식) ────────────────────────── */
 
@@ -433,6 +433,8 @@ export async function fetchProgressAnalysisData(
   clinicId: string,
   customerIds: string[],
   today: string,
+  // T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격(설정값). 미지정=6(base canon 하위호환).
+  interval: number = DEFAULT_CHECKPOINT_INTERVAL,
 ): Promise<ProgressAnalysisEnvelope> {
   const env: ProgressAnalysisEnvelope = {
     boilerSet: new Set(),
@@ -470,7 +472,7 @@ export async function fetchProgressAnalysisData(
     }
   }
 
-  // 1) 6배수 도래 마일스톤(고객별) — 활성 패키지 + used 카운트 + (used+1)%6==0. (스크립트 코호트 로직 그대로)
+  // 1) 도래 회차 마일스톤(고객별) — 활성 패키지 + used 카운트 + (used+1)%interval==0. (스크립트 코호트 로직 그대로·interval 기본6)
   try {
     const pkgs: Array<{ id: string; customer_id: string; total_sessions: number | null }> = [];
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
@@ -502,7 +504,7 @@ export async function fetchProgressAnalysisData(
     }
     for (const p of pkgs) {
       const used = usedMap.get(p.id) ?? 0;
-      if (!isSixMultipleTarget({ usedSessions: used, totalSessions: p.total_sessions })) continue;
+      if (!isSixMultipleTarget({ usedSessions: used, totalSessions: p.total_sessions }, interval)) continue;
       const list = env.milestonesByCust.get(p.customer_id) ?? [];
       list.push({ anticipated: anticipatedSession(used), used, total: p.total_sessions ?? 0 });
       env.milestonesByCust.set(p.customer_id, list);
@@ -979,6 +981,8 @@ export async function fetchProgressAnalysisData(
 export function buildProgressAnalysisMd(
   p: ProgressAnalysisPatient,
   env: ProgressAnalysisEnvelope,
+  // T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격(설정값). 기본6 시 헤더 문구 byte-identical.
+  interval: number = DEFAULT_CHECKPOINT_INTERVAL,
 ): string {
   const fvd = env.firstVisitByCust.get(p.id) ?? null;
   const memoList = env.memosByCust.get(p.id) ?? [];
@@ -1031,7 +1035,7 @@ export function buildProgressAnalysisMd(
         nr.registrar_name ? ' · 담당 ' + pad(nr.registrar_name) : ''
       }`
     : '(다음 예약 없음)';
-  L.push('### 6배수 예정 회차 · 예약일');
+  L.push(`### ${interval}배수 예정 회차 · 예약일`);
   L.push('');
   L.push(`- 도래 회차(예정): ${msLabels.length ? msLabels.join(' / ') : '(회차 정보 없음)'}`);
   L.push(`- 다음 예약일: ${resvLabel}`);

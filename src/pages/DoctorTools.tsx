@@ -152,7 +152,7 @@ export default function DoctorTools() {
                   경과분석지 발행 대상
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  6의 배수 회차(6·12·18·24…)에 도래한 경과분석지 발행 대상 환자입니다. 치료테이블 '경과분석' 목록과 동일 기준입니다.
+                  설정된 도래 회차 간격(기본 6회차)의 배수에 도래한 경과분석지 발행 대상 환자입니다. 치료테이블 '경과분석' 목록과 동일 기준입니다.
                 </p>
               </div>
               <ProgressTargetsSection date={seoulISODate(new Date())} nameInteraction={nameInteraction} />

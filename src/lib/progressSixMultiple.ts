@@ -5,6 +5,19 @@
 //   자매 SONGDO-FORM-DOWNLOAD(deployed) 다운로드 버튼 트리거 모집단(완료회차%6==5)과 동일 모집단(정합).
 //   순수 함수만(supabase/DOM 미의존) — read-only 필터·정렬 결정 로직을 spec 으로 못박기 위해 분리.
 
+// T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: 도래 회차 간격(현 하드코딩 6)을 설정값으로 승격.
+//   base canon(4f50d3e4)의 '6' 상수를 코드에 박아두지 않고 런타임 조정 가능한 파라미터로 변경.
+//   기본값=6 유지 → 설정 미변경 시 동작은 기존과 byte-identical(하위호환·회귀0).
+//   저장/조정 UI 는 progressCheckpointConfig.ts(localStorage) + ProgressTargetsSection.tsx 설정 경로 담당.
+//   본 순수 모듈은 상수·검증·판정만 소유(DOM/localStorage 미의존).
+/** 도래 회차 간격 기본값(= base canon 6배수 루틴). */
+export const DEFAULT_CHECKPOINT_INTERVAL = 6;
+
+/** 도래 회차 간격 유효성: 양의 정수만 허용(0·음수·비정수·NaN 방어 — AC-5). */
+export function isValidCheckpointInterval(n: unknown): n is number {
+  return typeof n === 'number' && Number.isInteger(n) && n > 0;
+}
+
 /** anticipatedSession = 지금까지 사용한 세션 수 + 1 (다음 내방 회차). */
 export function anticipatedSession(usedSessions: number): number {
   return usedSessions + 1;
@@ -26,14 +39,20 @@ export function chunkIds<T>(arr: T[], size: number = IN_CHUNK_SIZE): T[][] {
 }
 
 /**
- * 6배수 도래 대상 여부.
+ * 도래 회차 간격의 배수 도래 대상 여부.
  *   - 활성 패키지 tier(total_sessions>0)만 대상 — 체험/Re:Born tier 0 배제(기존 진행판정 가드 동일).
- *   - anticipatedSession(used+1) 이 6의 배수(6·12·18·24…)면 대상.
+ *   - anticipatedSession(used+1) 이 interval 의 배수(기본 6 → 6·12·18·24…)면 대상.
+ *   - interval 미지정/비정상 → DEFAULT_CHECKPOINT_INTERVAL(6) 폴백 = base canon(4f50d3e4) 과 동일 동작(하위호환).
+ * T-20260822-foot-PROGANALYSIS-DUE-CYCLE-CONFIGURABLE: '6' 하드코딩 → interval 파라미터로 승격(default=6).
  */
-export function isSixMultipleTarget(input: { usedSessions: number; totalSessions: number | null | undefined }): boolean {
+export function isSixMultipleTarget(
+  input: { usedSessions: number; totalSessions: number | null | undefined },
+  interval: number = DEFAULT_CHECKPOINT_INTERVAL,
+): boolean {
   const total = input.totalSessions ?? 0;
   if (total <= 0) return false;
-  return anticipatedSession(input.usedSessions) % 6 === 0;
+  const step = isValidCheckpointInterval(interval) ? interval : DEFAULT_CHECKPOINT_INTERVAL;
+  return anticipatedSession(input.usedSessions) % step === 0;
 }
 
 /** 회차 라벨(anticipatedSession 기반, 예: 6 → "6회 경과분석"). */
