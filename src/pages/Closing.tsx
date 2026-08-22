@@ -468,7 +468,14 @@ export default function Closing() {
         .gte('created_at', start)
         .lte('created_at', end)
         // T-20260514-foot-PAYMENT-EDIT-CANCEL-DELETE: 삭제된 수납은 일마감 집계에서 제외
-        .neq('status', 'deleted')
+        // T-20260822-foot-CLOSING-SUSU-CANCEL-FILTER-FIX: 취소(cancelled)도 제외 — 담당실장별 매출
+        //   canonical 필터(staffRevenue.ts L155 .not(status,in,(cancelled,deleted)) = foot_stats_revenue 동일규칙)에
+        //   정렬. 구 .neq(status,deleted) 는 cancelled 을 수납내역 목록/합계에 포함시켜 담당실장별(취소제외)과
+        //   구조적 비대칭 → 총매출·담당실장별 total ↔ 수납내역 total 불일치 유발(STAFFREV-AUGUST DIAG H1).
+        //   ★INV5 무회귀: HERALD 권위총액=daily_closings 확정컬럼(package_*+single_*) 내부정합(20260806150000
+        //   herald_totals_recompute_port L104-106/L357-361) — 라이브 payments 재조회 아님. FE totals→daily_closings
+        //   persist 가 cancelled 제외로 self-consistent → INV5 3중대조 통과(산식 재정의 아님·canonical 수렴).
+        .not('status', 'in', '(cancelled,deleted)')
         .order('created_at', { ascending: true });
       if (error) throw error;
       // T-20260727-foot-CLOSING-REFUND-PROCESSOR-DISPLAY: processor embed 은 PostgREST 생성타입상 배열추론 →
