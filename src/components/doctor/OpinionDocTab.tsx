@@ -39,7 +39,6 @@ import type { HepatitisType } from '@/lib/contraindicationCombine';
 import {
   composeOpinionDoc,
   buildContraindKeySet,
-  classifySelection,
   applyPrefillExclusivity,
   needsHepatitisType,
   needsOralXReason,
@@ -923,13 +922,9 @@ export function OpinionEditorDialog({
   // 검출용 원문 맵(치환 前 raw) — `B(C)`·경구약X 괄호·`[날짜]` 마커 유무 판정.
   const detectTemplates = useMemo(() => buildContraindTemplates(sections), [sections]);
   const selectedKeysArr = useMemo(() => [...selected], [selected]);
-  // 선택 그룹 분리(진단서 단일 / 금기증 복수) — 버튼 배타 disable 판정.
-  const { diagnosisKeys: selDiagnosis, contraindKeys: selContraind } = useMemo(
-    () => classifySelection(selectedKeysArr, contraindKeySet),
-    [selectedKeysArr, contraindKeySet],
-  );
-  const hasDiagnosis = selDiagnosis.length > 0;
-  const hasContraind = selContraind.length > 0;
+  // T-20260822-foot-DOCISSUE-DASH-BTN-MUTEX-DISABLE-REMOVE: 그룹 분리(classifySelection) 는 버튼 배타 disable
+  //   판정 전용이었으나, 원장 답변 B(자동전환)로 disable 자체가 제거돼 더 이상 필요 없다. 무결성은 handleOptionClick
+  //   의 radio-switch 로 확보(진단서 ⊕ 금기증). applyPrefillExclusivity 불변식은 그대로 유지.
   // 플레이스홀더 부가 UI 노출 여부 — 선택된 원문에 실제 마커가 있을 때만(data-driven).
   const showHepatitis = useMemo(() => needsHepatitisType(selectedKeysArr, detectTemplates), [selectedKeysArr, detectTemplates]);
   const showOralXReason = useMemo(() => needsOralXReason(selectedKeysArr, detectTemplates), [selectedKeysArr, detectTemplates]);
@@ -1065,14 +1060,21 @@ export function OpinionEditorDialog({
   //   - 금기증 클릭 → 토글(복수).
   //   - 진단서 클릭 → 이미 선택이면 해제, 아니면 그 1개만(다른 선택 전부 해제 = 단일배타).
   //   선택이 바뀌면 textTouched 해제 → 본문 재합성(조합 출력 = 선택 반영).
+  // T-20260822-foot-DOCISSUE-DASH-BTN-MUTEX-DISABLE-REMOVE (원장 답변 B = 자동전환/radio-switch):
+  //   버튼 disable 을 제거하고(전부 클릭 가능), 대신 다른 docType 그룹을 누르면 이전 그룹을 자동 해제해
+  //   진단서 ⊕ 금기증 단일 docType 무결성을 확보한다(§8 충돌 게이트 = 원장 confirm 완료). 무결성 축은 disable
+  //   에서 이 자동전환으로 이동 — applyPrefillExclusivity 불변식(진단서·금기증 절대 동시선택 불가)은 그대로 유지.
   const handleOptionClick = (opt: OpinionOption) => {
     const isContraind = contraindKeySet.has(opt.key);
     setSelected((prev) => {
       const next = new Set(prev);
       if (isContraind) {
+        // 자동전환: 진단서(비-금기증)가 선택돼 있으면 먼저 해제(그룹 간 radio-switch) → 혼합 상태 방지.
+        for (const k of [...next]) if (!contraindKeySet.has(k)) next.delete(k);
         if (next.has(opt.key)) next.delete(opt.key);
         else next.add(opt.key);
       } else {
+        // 진단서=단일배타: 이미 선택이면 해제, 아니면 그 1개만(금기증 포함 다른 선택 전부 해제).
         if (next.has(opt.key)) {
           next.delete(opt.key);
         } else {
@@ -1402,28 +1404,24 @@ export function OpinionEditorDialog({
   //   기존 인라인 버튼 마크업을 그대로 추출(회귀 0). child=true 면 소분류(대분류 펼침 내부) 스타일.
   const renderOptBtn = (opt: OpinionOption, child = false) => {
     const active = selected.has(opt.key);
-    const isContraindOpt = contraindKeySet.has(opt.key);
-    const disabled = hasDiagnosis ? !active : hasContraind ? !isContraindOpt : false;
+    // T-20260822-foot-DOCISSUE-DASH-BTN-MUTEX-DISABLE-REMOVE (원장 답변 B = 자동전환):
+    //   MUTEX-DISABLE 제거 — 모든 옵션 버튼은 항상 클릭 가능. 다른 docType 선택 시 handleOptionClick 이
+    //   이전 선택을 자동 해제(radio-switch)해 진단서 ⊕ 금기증 단일 docType 무결성을 유지한다.
     const fromQR = active && autoChecked.has(opt.key);
     return (
       <button
         key={opt.key}
         type="button"
         onClick={() => handleOptionClick(opt)}
-        disabled={disabled}
         aria-pressed={active}
         title={
-          disabled
-            ? hasDiagnosis
-              ? '진단서(표준)는 단일선택입니다. 선택을 해제한 뒤 다른 항목을 고르세요.'
-              : '금기증을 선택 중입니다. 진단서(표준)는 함께 선택할 수 없습니다.'
-            : fromQR
-              ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)`
-              : opt.phrase
+          fromQR
+            ? `${opt.phrase}\n\n(발건강 질문지에서 자동 체크됨 — 확인 후 확정/해제)`
+            : opt.phrase
         }
         data-testid={`opinion-opt-${opt.key}`}
         data-autocheck={fromQR ? 'qr' : undefined}
-        className={`relative rounded-md border ${child ? 'px-2 py-1.5' : 'px-2 py-2'} text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`relative rounded-md border ${child ? 'px-2 py-1.5' : 'px-2 py-2'} text-xs font-medium transition ${
           fromQR
             ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
             : active

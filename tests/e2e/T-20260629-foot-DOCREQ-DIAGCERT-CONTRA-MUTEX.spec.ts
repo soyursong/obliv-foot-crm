@@ -14,7 +14,8 @@
  *   R4 prefill 무결 — 직원 발행요청→원장 작성/발급 창 prefill 도 R1~R3 위반 0.
  *
  * 검증(티켓 현장 클릭 시나리오 4종 매핑):
- *   S1 (R1 배타)        — 선택 UI 배타 disable: 진단서 선택 시 금기증 비활성 / 금기증 선택 시 진단서 비활성.
+ *   S1 (R1 배타)        — [T-20260822 MUTEX-DISABLE-REMOVE, 원장 답변 B] 배타 disable 제거 → 자동전환(radio-switch):
+ *                          진단서 선택 중 금기증 클릭=진단서 자동해제 / 금기증 선택 중 진단서 클릭=금기증 전부 자동해제(혼합 0).
  *   S2 (R2/R3)          — 진단서 단일배타(다른 진단서 클릭=이전 해제) / 금기증 복수 토글.
  *   S3 (R4 prefill 무결)— 오염 큐(혼합) prefill 방어 → 진단서∧금기증 동시존재 0 + 진단서 ≤1.
  *   S4 (엣지)           — 빈 선택 제출 가드 / 금기증 복수 후 진단서 추가 클릭 = 배타 발동.
@@ -71,24 +72,18 @@ function applyPrefillExclusivity(
   return contraindKeys;
 }
 
-// ── 정본 모사: 선택 UI 배타 disable 판정 (OpinionRequestBox / OpinionDocTab handleOptionClick + disabled) ──
-//   진단서 선택 중(hasDiagnosis) → 선택 안 된 모든 항목 disable(단일배타).
-//   금기증 선택 중(hasContraind) → 진단서 항목만 disable(배타), 금기증끼리는 활성(복수).
-function isOptionDisabled(selected: Set<string>, optKey: string, contraindKeySet: Set<string>): boolean {
-  const arr = [...selected];
-  const { diagnosisKeys, contraindKeys } = classifySelection(arr, contraindKeySet);
-  const hasDiagnosis = diagnosisKeys.length > 0;
-  const hasContraind = contraindKeys.length > 0;
-  const active = selected.has(optKey);
-  const isContraindOpt = contraindKeySet.has(optKey);
-  return hasDiagnosis ? !active : hasContraind ? !isContraindOpt : false;
-}
-
-// ── 정본 모사: handleOptionClick (진단서 단일배타 / 금기증 토글 복수) ──────────
+// ── 정본 모사: handleOptionClick (진단서 단일배타 / 금기증 토글 복수 + 자동전환) ──────────
+//   T-20260822-foot-DOCISSUE-DASH-BTN-MUTEX-DISABLE-REMOVE (원장 답변 B = 자동전환/radio-switch):
+//     MUTEX-DISABLE(이전 isOptionDisabled) 제거 — 모든 버튼 항상 클릭 가능. 무결성 축이 disable →
+//     handleOptionClick 자동전환으로 이동. 그룹 간 클릭 시 이전 그룹을 자동 해제해 진단서 ⊕ 금기증 유지.
+//   - 금기증 클릭 → (진단서 선택돼 있으면 먼저 해제) + 금기증 토글(복수).
+//   - 진단서 클릭 → 이미 선택이면 해제, 아니면 그 1개만(금기증 포함 다른 선택 전부 해제 = 단일배타).
 function clickOption(prev: Set<string>, optKey: string, contraindKeySet: Set<string>): Set<string> {
   const isContraind = contraindKeySet.has(optKey);
   const next = new Set(prev);
   if (isContraind) {
+    // 자동전환: 진단서(비-금기증) 선택 해제 후 금기증 토글 → 혼합 상태 방지.
+    for (const k of [...next]) if (!contraindKeySet.has(k)) next.delete(k);
     if (next.has(optKey)) next.delete(optKey);
     else next.add(optKey);
   } else {
@@ -109,30 +104,39 @@ function assertInvariant(keys: string[]) {
 }
 
 test.describe('DOCREQ-DIAGCERT-CONTRA-MUTEX — 진단서↔금기증 배타 + 단일선택 가드', () => {
-  // ── S1 (R1 배타): 선택 UI 배타 disable ──────────────────────────────────────
-  test('S1 진단서 선택 중 → 금기증(및 다른 진단서) 전부 disable', () => {
-    const sel = new Set(['oral_o']); // 진단서 1 선택
-    // 금기증은 모두 disable.
-    for (const c of CONTRAIND_KEYS) expect(isOptionDisabled(sel, c, CONTRAIND_SET)).toBe(true);
-    // 다른 진단서도 disable(단일배타). 단, 현재 선택된 진단서 자신은 활성(해제 가능).
-    expect(isOptionDisabled(sel, 'oral_o', CONTRAIND_SET)).toBe(false);
-    for (const d of DIAGNOSIS_KEYS.filter((k) => k !== 'oral_o')) {
-      expect(isOptionDisabled(sel, d, CONTRAIND_SET)).toBe(true);
-    }
+  // ── S1 (R1 배타): 자동전환(radio-switch) — 이전 disable 을 대체 ──────────────
+  //   T-20260822-foot-DOCISSUE-DASH-BTN-MUTEX-DISABLE-REMOVE (원장 답변 B): 버튼 disable 제거 →
+  //   무결성은 clickOption 자동전환으로. 진단서↔금기증 혼합은 어떤 클릭 순서에서도 발생 0.
+  test('S1 진단서 선택 중 → 금기증 클릭 시 진단서 자동해제(혼합 0)', () => {
+    let sel = new Set(['oral_o']); // 진단서 1 선택
+    // 금기증 클릭 → 진단서 자동해제 + 금기증만.
+    sel = clickOption(sel, 'diabetes', CONTRAIND_SET);
+    expect([...sel]).toEqual(['diabetes']);
+    assertInvariant([...sel]);
   });
 
-  test('S1b 금기증 선택 중 → 진단서 전부 disable, 금기증끼리는 활성(복수)', () => {
-    const sel = new Set(['diabetes', 'bp_med']); // 금기증 2 선택
-    for (const d of DIAGNOSIS_KEYS) expect(isOptionDisabled(sel, d, CONTRAIND_SET)).toBe(true);
-    // 다른 금기증은 활성(추가 선택 가능 = 복수).
-    expect(isOptionDisabled(sel, 'liver_disease', CONTRAIND_SET)).toBe(false);
+  test('S1b 금기증 선택 중 → 다른 금기증 클릭 시 복수 유지(진단서 미침투)', () => {
+    let sel = new Set(['diabetes', 'bp_med']); // 금기증 2 선택
+    sel = clickOption(sel, 'liver_disease', CONTRAIND_SET);
+    expect([...sel].sort()).toEqual(['bp_med', 'diabetes', 'liver_disease'].sort());
+    assertInvariant([...sel]);
+    // 진단서 클릭 → 금기증 전부 자동해제 + 진단서 단독(단일배타).
+    sel = clickOption(sel, 'oral_o', CONTRAIND_SET);
+    expect([...sel]).toEqual(['oral_o']);
+    assertInvariant([...sel]);
   });
 
-  test('S1c 아무것도 선택 안 함 → 전부 활성(진입 자유)', () => {
-    const sel = new Set<string>();
-    for (const k of [...DIAGNOSIS_KEYS, ...CONTRAIND_KEYS]) {
-      expect(isOptionDisabled(sel, k, CONTRAIND_SET)).toBe(false);
-    }
+  test('S1c 진단서→금기증→진단서 왕복 어떤 순서에도 혼합 0(자동전환 무결식)', () => {
+    let sel = new Set<string>();
+    sel = clickOption(sel, 'oral_o', CONTRAIND_SET);        // 진단서
+    expect([...sel]).toEqual(['oral_o']);
+    sel = clickOption(sel, 'pregnant', CONTRAIND_SET);      // 금기증 → 진단서 자동해제
+    expect([...sel]).toEqual(['pregnant']);
+    sel = clickOption(sel, 'elderly', CONTRAIND_SET);       // 금기증 추가(복수)
+    expect([...sel].sort()).toEqual(['elderly', 'pregnant'].sort());
+    sel = clickOption(sel, 'medical_staff', CONTRAIND_SET); // 진단서 → 금기증 전부 자동해제
+    expect([...sel]).toEqual(['medical_staff']);
+    assertInvariant([...sel]);
   });
 
   // ── S2 (R2/R3): 진단서 단일배타 / 금기증 복수 토글 ──────────────────────────
@@ -261,8 +265,12 @@ test.describe('DOCREQ-DIAGCERT-CONTRA-MUTEX — 진단서↔금기증 배타 + �
     expect(src).toMatch(/applyPrefillExclusivity\(\s*rawKeys\s*,\s*contraindKeySet\s*,\s*initialDocType/);
     expect(src).toMatch(/setSelected\(new Set\(keys\)\)/);
     expect(src).not.toMatch(/setSelected\(new Set\(\(initialSelectedKeys/);
-    // 선택 UI 배타 disable + 자동체크 시 진단서 선택 상태면 금기증 추가 스킵(배타 보존).
-    expect(src).toMatch(/const disabled = hasDiagnosis/);
+    // T-20260822-foot-DOCISSUE-DASH-BTN-MUTEX-DISABLE-REMOVE (원장 답변 B): 옵션버튼 MUTEX-DISABLE 제거 →
+    //   무결성은 handleOptionClick 자동전환으로. 회귀 가드: 옵션버튼 disable 판정이 되살아나지 않도록 lock.
+    expect(src).not.toMatch(/const disabled = hasDiagnosis/);
+    // 자동전환 배선: 금기증 클릭 시 진단서(비-금기증) 선택을 먼저 자동해제(radio-switch).
+    expect(src).toMatch(/for \(const k of \[\.\.\.next\]\) if \(!contraindKeySet\.has\(k\)\) next\.delete\(k\)/);
+    // 자동체크 시 진단서 선택 상태면 금기증 추가 스킵(배타 보존)은 그대로 유지.
     expect(src).toMatch(/blockedByDiagnosis/);
   });
 
