@@ -1579,19 +1579,64 @@ export default function Closing() {
 
   // T-20260522-foot-DAILY-SETTLE-STAFF AC-2: 담당자별 매출 집계 — 카드/현금/이체 소계 추가
   // AC-3: NULL staff_id → '미지정' 표시 (enrichedRows 기준 — 필터 무관)
-  const staffTotals = useMemo<Array<{ name: string; total: number; card: number; cash: number; transfer: number }>>(() => {
-    const map = new Map<string, { name: string; total: number; card: number; cash: number; transfer: number }>();
+  //
+  // ── T-20260822-foot-CLOSING-STAFFREV-REFUND-GROSS-DISPLAY (seed-0 C-1) ──────────────────
+  //   [field] 김주연 총괄(08-22 09:48 "실장 매출 환불액 −쳐서 나오잖아") = 한 실장 매출 숫자에
+  //     환불이 −로 collapse 되어 '정상수납'이 안 보인다. → 하나의 net 을 두 성분으로 분해:
+  //       · gross(정상수납)  = Σ 비환불 amount
+  //       · refund(환불)     = Σ 환불 amount magnitude(양수)
+  //       · net(순매출)      = gross − refund  ← 旣 표시값(합계)과 byte-동일 · conservation 보존
+  //   ⚠ DISPLAY-decomposition 한정(DA da_decision_foot_closing_staff_revenue_refund_basis_gross
+  //     _20260822.md · CONDITIONAL-GO). NET-canonical 봉투(payments net·MGRSTAT·ARPU §9·payload·
+  //     daily_closings·A6)는 무접촉 — 산식 재정의 아님·표시층 재배치. 인센티브 base 무접촉(GROSS-as-
+  //     incentive-base = comp-gate REJECT 영역, 본 티켓 scope 아님).
+  //   [Q2 환불 귀속축] 환불행 = '원결제 credit 을 되돌리는 행위' → 원결제와 동일 실장에 귀속(linkage:
+  //     단건=linked_payment_id / 패키지=parent_payment_id → 원결제행 staff). ★HARD REJECT: 처리자
+  //     (created_by·processor_name)·registrar 귀속 금지 / refund-time live-inversion 금지.
+  //     원결제행이 당일 로드셋에 없는 고아환불 → honest fallback = refund 자체 staff_name(refund·원결제는
+  //     동일 고객 → 동일 배정담당·합성 아님). 합성(fabrication) 금지.
+  //   [census 근거] scripts/T-20260822-foot-CLOSING-STAFFREV-REFUND-GROSS_census.mjs 실측(8월·jongno-foot):
+  //     환불 67건 · 현행 live 축 vs DA 원결제-linkage 축 = 이동 0건(전건 동일 bucket) → 귀속 배선은
+  //     현재 데이터상 no-op(NET 봉투 byte-불변·conservation 유지)이나 linkage 명시로 향후 재배정 inversion 차단.
+  //   [축 주] 본 surface 의 gross 귀속축(live assigned_staff)의 attributed_staff_id 스냅샷 전환은 parent
+  //     티켓(T-20260820-foot-CLOSING-SALES-BASIS-FIX ①→②)의 별개 leg. 본 티켓은 refund 를 gross 와
+  //     동일 축(원결제 linkage)에 두어 coherence·conservation 을 보존한다.
+  const staffTotals = useMemo<Array<{ name: string; gross: number; refund: number; net: number; card: number; cash: number; transfer: number }>>(() => {
+    // 원결제행(비환불) staff 색인 — 환불행 귀속 resolve 소스(linkage).
+    const origStaffByPayId = new Map<string, string | null>();
+    const origStaffByPkgId = new Map<string, string | null>();
     for (const r of enrichedRows) {
-      const key = r.staff_name ?? '미지정';
-      const existing = map.get(key) ?? { name: key, total: 0, card: 0, cash: 0, transfer: 0 };
-      const amt = r.payment_type === 'refund' ? -r.amount : r.amount;
-      existing.total += amt;
-      if (r.method === 'card' || r.method === 'membership') existing.card += amt;
-      else if (r.method === 'cash') existing.cash += amt;
-      else if (r.method === 'transfer') existing.transfer += amt;
+      if (r.payment_type === 'refund') continue;
+      if (r.source === 'payment' && r.payment_id) origStaffByPayId.set(r.payment_id, r.staff_name);
+      if (r.source === 'package' && r.pkg_payment_id) origStaffByPkgId.set(r.pkg_payment_id, r.staff_name);
+    }
+    const map = new Map<string, { name: string; gross: number; refund: number; net: number; card: number; cash: number; transfer: number }>();
+    for (const r of enrichedRows) {
+      const isRefund = r.payment_type === 'refund';
+      // 환불행 귀속 = 원결제 실장(linkage) · 고아환불 → honest fallback(refund 자체 staff_name·동일 고객).
+      const origStaff = isRefund
+        ? (r.source === 'payment' && r.linked_payment_id
+            ? origStaffByPayId.get(r.linked_payment_id)
+            : r.source === 'package' && r.parent_payment_id
+            ? origStaffByPkgId.get(r.parent_payment_id)
+            : undefined)
+        : undefined;
+      const key = (isRefund ? (origStaff ?? r.staff_name) : r.staff_name) ?? '미지정';
+      const existing = map.get(key) ?? { name: key, gross: 0, refund: 0, net: 0, card: 0, cash: 0, transfer: 0 };
+      if (isRefund) {
+        // 환불 = 별도 성분(양수 magnitude). 방식별 카드/현금/이체 컬럼은 정상수납(gross)만 담는다.
+        existing.refund += r.amount;
+      } else {
+        existing.gross += r.amount;
+        if (r.method === 'card' || r.method === 'membership') existing.card += r.amount;
+        else if (r.method === 'cash') existing.cash += r.amount;
+        else if (r.method === 'transfer') existing.transfer += r.amount;
+      }
+      existing.net = existing.gross - existing.refund; // conservation: net == 旣 표시 합계
       map.set(key, existing);
     }
-    return [...map.values()].sort((a, b) => b.total - a.total);
+    // 정렬축 = 순매출(net) 내림차순 — 旣 '합계' 정렬과 동일.
+    return [...map.values()].sort((a, b) => b.net - a.net);
   }, [enrichedRows]);
 
   // ── T-20260717-foot-CLOSING-REFUND-STATS-MISSING: 금일 환불 별도 집계 섹션(표시 전용) ──
@@ -3100,6 +3145,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                 <CardTitle className="text-sm">담당자별 매출</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
+                {/* T-20260822-foot-CLOSING-STAFFREV-REFUND-GROSS-DISPLAY: 정상수납(gross)·환불·순매출 3분해.
+                    카드/현금/이체 = 정상수납(gross) 방식별 소계 · 환불 = 별도 라인(빨강) · 순매출 = 정상수납−환불.
+                    라벨 distinct('정상수납'⊥'환불'⊥'순매출') — 단일 ambiguous '매출' 라벨 금지(split-dialect 방지). */}
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-xs text-muted-foreground">
@@ -3107,11 +3155,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                       <th className="py-1.5 px-2 text-right font-medium">카드</th>
                       <th className="py-1.5 px-2 text-right font-medium">현금</th>
                       <th className="py-1.5 px-2 text-right font-medium">이체</th>
-                      <th className="py-1.5 px-3 text-right font-medium">합계</th>
+                      <th className="py-1.5 px-3 text-right font-medium">정상수납</th>
+                      <th className="py-1.5 px-3 text-right font-medium">환불</th>
+                      <th className="py-1.5 px-3 text-right font-medium">순매출</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {staffTotals.map(({ name, total, card, cash, transfer }) => (
+                    {staffTotals.map(({ name, gross, refund, net, card, cash, transfer }) => (
                       <tr
                         key={name}
                         className={cn(
@@ -3130,7 +3180,9 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{card !== 0 ? formatAmount(card) : '-'}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{cash !== 0 ? formatAmount(cash) : '-'}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-xs text-muted-foreground">{transfer !== 0 ? formatAmount(transfer) : '-'}</td>
-                        <td className="py-1.5 px-3 text-right tabular-nums font-medium text-emerald-700">{formatAmount(total)}</td>
+                        <td className="py-1.5 px-3 text-right tabular-nums text-emerald-700">{formatAmount(gross)}</td>
+                        <td className="py-1.5 px-3 text-right tabular-nums text-rose-600">{refund !== 0 ? `-${formatAmount(refund)}` : '-'}</td>
+                        <td className="py-1.5 px-3 text-right tabular-nums font-medium text-emerald-700">{formatAmount(net)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3147,7 +3199,13 @@ ${memo ? `<h3>메모</h3><div class="memo">${memo.replace(/</g, '&lt;')}</div>` 
                         {formatAmount(staffTotals.reduce((s, x) => s + x.transfer, 0))}
                       </td>
                       <td className="py-1.5 px-3 text-right tabular-nums text-sm text-emerald-700">
-                        {formatAmount(staffTotals.reduce((s, x) => s + x.total, 0))}
+                        {formatAmount(staffTotals.reduce((s, x) => s + x.gross, 0))}
+                      </td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-sm text-rose-600">
+                        {(() => { const rf = staffTotals.reduce((s, x) => s + x.refund, 0); return rf !== 0 ? `-${formatAmount(rf)}` : '-'; })()}
+                      </td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-sm text-emerald-700">
+                        {formatAmount(staffTotals.reduce((s, x) => s + x.net, 0))}
                       </td>
                     </tr>
                   </tfoot>
