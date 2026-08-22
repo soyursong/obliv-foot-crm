@@ -41,7 +41,7 @@ import {
 } from '@/lib/salesExport';
 import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
+  getNonRealCustomerIds,
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
@@ -283,7 +283,7 @@ async function fetchSalesRawRows(
   // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존).
   //   엑셀 raw도 표시매출 탭과 동일한 집계 소스이므로 동일하게 sim 제외.
   //   T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE
-  const simIds = await getSimulationCustomerIds(clinicId);
+  const simIds = await getNonRealCustomerIds(clinicId);
   const payRows = excludeSimulationPaymentRows(
     (payRes.data ?? []) as unknown as PaymentRawRow[],
     simIds,

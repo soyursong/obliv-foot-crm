@@ -27,7 +27,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
+  getNonRealCustomerIds,
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
@@ -308,7 +308,7 @@ export function SalesStaffTab({ filter, enableExcelExport = false, exportFilenam
         .lte('accounting_date', to);
       if (error) throw error;
       // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
-      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const simIds = await getNonRealCustomerIds(clinic!.id);
       return excludeSimulationPaymentRows(
         data as unknown as StaffPayRow[],
         simIds,
@@ -445,7 +445,7 @@ export function SalesStaffTab({ filter, enableExcelExport = false, exportFilenam
       if (error) throw error;
 
       // sim 고객 제외 (표시매출 방어 — customer_id 는 check_ins 경로).
-      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const simIds = await getNonRealCustomerIds(clinic!.id);
       const rows = data as unknown as CosmeticLineRow[];
       if (simIds.size === 0) return rows;
       return rows.filter(

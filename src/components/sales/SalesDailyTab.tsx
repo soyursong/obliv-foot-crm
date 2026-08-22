@@ -42,7 +42,7 @@ import { format, subDays } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
+  getNonRealCustomerIds,
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 import { useClinic } from '@/hooks/useClinic';
@@ -190,7 +190,7 @@ export function SalesDailyTab({ filter }: Props) {
           : (r.service_charges ?? null),
       })) as unknown as RawPayment[];
       // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
-      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const simIds = await getNonRealCustomerIds(clinic!.id);
       return excludeSimulationPaymentRows(rows, simIds);
     },
   });
@@ -208,7 +208,7 @@ export function SalesDailyTab({ filter }: Props) {
         .lte('accounting_date', to);
       if (error) throw error;
       // 방어필터: is_simulation=true 고객 결제 제외 (워크인 NULL 보존)
-      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const simIds = await getNonRealCustomerIds(clinic!.id);
       return excludeSimulationPaymentRows((data ?? []) as RawPayment[], simIds);
     },
   });
@@ -231,7 +231,7 @@ export function SalesDailyTab({ filter }: Props) {
         .lte('calculated_at', `${to}T23:59:59.999`);
       if (error) throw error;
       // 방어필터: is_simulation=true 고객 명세 제외 (워크인 NULL 보존) — payments와 동일 sim 집합.
-      const simIds = await getSimulationCustomerIds(clinic!.id);
+      const simIds = await getNonRealCustomerIds(clinic!.id);
       return excludeSimulationPaymentRows((data ?? []) as RawServiceCharge[], simIds);
     },
   });

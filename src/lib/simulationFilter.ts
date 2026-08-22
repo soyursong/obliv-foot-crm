@@ -119,7 +119,7 @@ export async function stripSimulationRows<R extends { customer_id?: string | nul
 //   ※ closing_manual_payments 는 customer FK가 없어(staff_name 귀속) grain별 sim 판별
 //     불가 → C2 폴백("판별 불가 시 무필터 유지, 부분 제거 금지")에 따라 필터 미적용.
 //     실운영 sim=0 이므로 수기수납 경로 sim 오염 위험 0.
-// [C3 follow-up] fail-open(빈 집합)을 로그로 표면화 — 아래 getSimulationCustomerIds 참조.
+// [C3 follow-up] fail-open(빈 집합)을 로그로 표면화 — 아래 getNonRealCustomerIds 참조.
 // [C4 follow-up] prod sim=0 이면 전 계층 no-op(현 divergence 0). 권위 매출 계층(마감
 //   payload·silver fct_revenue_daily)의 동일 sim 제외 정합은 dev-crm/dev-sales 후속 추적
 //   (본 FE 필터는 그 위의 방어심층 — 단독 진실원천 삼지 않음).
@@ -132,29 +132,40 @@ export async function stripSimulationRows<R extends { customer_id?: string | nul
 // 를 그대로 활용한다(시뮬레이션 집합만 조회 — 소량).
 
 /**
- * clinic 내 is_simulation=true 고객 id 집합 조회.
+ * clinic 내 non-real(sim∪test) 고객 id 집합 조회 = 표시매출·통계에서 제외할 코호트.
+ * 제외 술어: is_simulation IS TRUE OR is_test IS TRUE.
  * 조회 실패 시 빈 집합(무손상 우선 — 제외하지 않음).
  *
+ * ─── 제외코호트 단일 정본술어 (T-20260822-foot-FOOTSTATSREV-ISTEST-STAFFREV-ALIGN-LEDGERDOC) ───
+ *   서버측 권위 RPC foot_stats_revenue 는 매출을 non-real 고객
+ *   (is_simulation IS TRUE OR is_test IS TRUE)으로 제외한다. 본 FE 제외코호트를 그 술어와
+ *   문자적 동형으로 수렴한다 → 담당실장별 매출탭·통계 등 read-side 표시매출이 총매출 KPI(RPC)와 일치.
+ *   [DA da_decision_foot_footstatsrev_istest_exclusion_orphanledger_20260822]:
+ *     축1 canonical = is_test 고객은 총매출 KPI 모집단 밖 → 제외 REAFFIRM. RPC 술어 제거는
+ *     REJECT(4-CRM 공유 권위소스 오염) → foot-only, FE 를 RPC 에 정렬(정합 방향).
+ *   ※ 재발성 진원 = 제외코호트 2-정의(RPC=sim∪test vs 구 FE=sim 단독) → 본 함수를 유일 정본술어로 수렴.
+ *      함수명 getSimulationCustomerIds → getNonRealCustomerIds 로 정정(더 이상 sim 단독 아님).
+ *
  * [C3 follow-up — DA CONSULT] fail-open을 관측 가능하게:
- *   조회 실패 시 sim이 조용히 표시매출에 재유입될 수 있으므로(원사고 624 sim 부풀림 방향)
- *   실패를 console.warn 으로 표면화한다. silent no-op 금지 — 지속 실패 = "sim이 소리없이
+ *   조회 실패 시 non-real 고객이 조용히 표시매출에 재유입될 수 있으므로(원사고 624 sim 부풀림 방향)
+ *   실패를 console.warn 으로 표면화한다. silent no-op 금지 — 지속 실패 = "non-real 이 소리없이
  *   되살아남"을 로그로 감지 가능해야 함. (안정 prefix로 로그 수집·텔레메트리 편입 대상)
  */
-export async function getSimulationCustomerIds(
+export async function getNonRealCustomerIds(
   clinicId: string,
 ): Promise<Set<string>> {
   const { data, error } = await supabase
     .from('customers')
     .select('id')
     .eq('clinic_id', clinicId)
-    .eq('is_simulation', true);
+    .or('is_simulation.is.true,is_test.is.true'); // non-real(sim∪test) — prod RPC 술어와 문자적 동형
 
   if (error || !data) {
-    // C3: fail-open(빈 집합) 되 실패를 표면화 — sim silent 재유입 감지용.
+    // C3: fail-open(빈 집합) 되 실패를 표면화 — non-real silent 재유입 감지용.
     console.warn(
-      '[SIM-FILTER-FAILOPEN] getSimulationCustomerIds lookup failed — ' +
-        'sim 제외 미적용(fail-open, 실매출 누락 0 우선). ' +
-        'T-20260709-foot-SALES-SIMULATION-FILTER-DEFENSE C3',
+      '[SIM-FILTER-FAILOPEN] getNonRealCustomerIds lookup failed — ' +
+        'non-real(sim∪test) 제외 미적용(fail-open, 실매출 누락 0 우선). ' +
+        'T-20260822-foot-FOOTSTATSREV-ISTEST-STAFFREV-ALIGN-LEDGERDOC',
       { clinicId, error: error?.message ?? 'no-data' },
     );
     return new Set();

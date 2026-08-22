@@ -24,13 +24,22 @@
  *   → 이 코어에서 **status NOT IN ('cancelled','deleted')** 로 통일(1곳 수정 = 4경로 정합).
  *   package_payments 는 status/deleted_at/voided_at 컬럼 부재(foot 실측) → 필터 없음.
  *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * FIX-2B — non-real 제외축 통일 (총매출 KPI 정합, T-20260822-...-ISTEST-STAFFREV-ALIGN-LEDGERDOC)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *   총매출 KPI RPC foot_stats_revenue 는 non-real 고객
+ *   (is_simulation IS TRUE OR is_test IS TRUE)을 매출에서 제외한다. 구 read-side 는
+ *   sim 단독(.eq is_simulation)만 제외해 is_test 고객 매출이 실장별 합계에 잔류 → 총매출 KPI와
+ *   ~4.82M(8월) 발산했다. 제외코호트를 getNonRealCustomerIds(sim∪test) 단일 정본술어로 수렴 →
+ *   실장별 매출탭 총합 == foot_stats_revenue NET. (DA: is_test = 총매출 모집단 밖, REAFFIRM.)
+ *
  *   ⚠ 순수 READ-ONLY. 신규 컬럼/테이블/enum 0. write/RPC/DDL 무접촉(db_change=false).
  *     귀속축(customers.assigned_staff_id)·기간축(accounting_date)·환불 net 규칙 전부 불변.
  */
 
 import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
+  getNonRealCustomerIds,
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 
@@ -159,10 +168,11 @@ export async function fetchAttributedPayments(
         .range(off, off + lim - 1)),
   ]);
 
-  // sim 고객 결제 제외(매출 표시 방어필터). 워크인(customer_id NULL) 보존.
-  const simIds = await getSimulationCustomerIds(clinicId);
-  const single = excludeSimulationPaymentRows(payData, simIds);
-  const pkg = excludeSimulationPaymentRows(pkgData, simIds);
+  // non-real(sim∪test) 고객 결제 제외(매출 표시 방어필터, 총매출 KPI RPC 술어와 동형).
+  // 워크인(customer_id NULL) 보존. T-20260822-foot-FOOTSTATSREV-ISTEST-STAFFREV-ALIGN-LEDGERDOC.
+  const nonRealIds = await getNonRealCustomerIds(clinicId);
+  const single = excludeSimulationPaymentRows(payData, nonRealIds);
+  const pkg = excludeSimulationPaymentRows(pkgData, nonRealIds);
 
   // customer_id → assigned_staff_id ('2번차트 담당자'). 500건씩 청크 조회(URL 길이 안전).
   const custIds = [

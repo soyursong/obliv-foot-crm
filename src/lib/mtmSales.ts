@@ -21,7 +21,7 @@
 
 import { supabase } from '@/lib/supabase';
 import {
-  getSimulationCustomerIds,
+  getNonRealCustomerIds,
   excludeSimulationPaymentRows,
 } from '@/lib/simulationFilter';
 import { fetchAttributedPayments, STAFF_UNASSIGNED } from '@/lib/staffRevenue';
@@ -157,7 +157,7 @@ export async function fetchMtmCardMetrics(
   from: string,
   to: string,
 ): Promise<MtmCardMetrics> {
-  const simIds = await getSimulationCustomerIds(clinicId);
+  const simIds = await getNonRealCustomerIds(clinicId);
 
   // 1) payments — 급여/비급여/선수금/결제건수 (accounting_date 축, deleted 제외)
   //    장기간 조회 전행 수집(1000 cap 우회) — 과소집계 회귀 차단.
@@ -557,7 +557,7 @@ export async function fetchNoshowReturningPrev(
 //   · 분모(주 내원환자) = 기간 내 체크인(취소·삭제·테스트 제외) distinct customer_id
 //                        (fetchMtmCardMetrics visitPatients 정의 100% 미러 — 별도 분모 authoring 0).
 //   · 객단가 = 주 매출 ÷ 주 내원환자수, 내원환자 0 → null(0-div 가드, 화면 '-').
-//   · is_test(테스트고객) 제외 = getSimulationCustomerIds + 매출/체크인 양측 동일 필터(AC-3).
+//   · is_test(테스트고객) 제외 = getNonRealCustomerIds + 매출/체크인 양측 동일 필터(AC-3).
 //
 //   ★ db_change=false: 주단위 = 기존 read-path(fetchRevenue 일별 net + check_ins distinct)를
 //     ISO주(월요일 시작, resolveRange 'week' 와 동일 경계)로 재그룹만 한다. 신규 RPC/컬럼/테이블 0.
@@ -677,7 +677,7 @@ export async function fetchWeeklyRevenueBreakdown(
   from: string,
   to: string,
 ): Promise<WeeklyRevenueRow[]> {
-  const simIds = await getSimulationCustomerIds(clinicId);
+  const simIds = await getNonRealCustomerIds(clinicId);
 
   // 매출(순) 일별 (fetchRevenue = foot_stats_revenue SSOT).
   const revRows = await fetchRevenue(clinicId, from, to);
