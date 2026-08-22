@@ -55,6 +55,24 @@ export function safeName(s: unknown): string {
   );
 }
 
+/* ─── 【행정】 성별·주민번호 앞6자리 (T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN) ───
+ *   성별 = customers.gender('M'/'F') → '남'/'여'. 그 외(외국인/공란/미상)는 매핑 불가 → null(미표기, fabricate 금지).
+ *   주민번호 = fn_customer_birthdates 서버파생 birth_date_display(YYYY-MM-DD)에서 YYMMDD(앞6자리) 추출.
+ *     ⚠ 뒷자리·성별코드·하이픈 절대 미포함(AC-2, PHI 최소수집). 서버 파생 생년월일(6자리)만.
+ */
+function genderLabel(g: unknown): string | null {
+  const s = String(g ?? '').trim().toUpperCase();
+  if (s === 'M') return '남';
+  if (s === 'F') return '여';
+  return null; // 외국인/공란/미상 → 미표기(추측 채움 금지)
+}
+function birthFront6(display: unknown): string | null {
+  const d = String(display ?? '').replace(/\D/g, '');
+  if (d.length < 8) return null; // YYYYMMDD 미충족 → 미표기
+  const six = d.slice(2, 8); // YYYYMMDD → YYMMDD (연도 뒤2자리 + MMDD)
+  return /^\d{6}$/.test(six) ? six : null;
+}
+
 // 정규화: 공백류 단일화 + 좌우 trim (상용구/라인 비교 canonical form)
 function norm(s: unknown): string {
   return String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -371,7 +389,8 @@ export type ProgressSectionKey =
   | 'visits'
   | 'roomLogs'
   | 'activePkgs'
-  | 'reservations';
+  | 'reservations'
+  | 'ident';
 
 export interface SectionFetchError {
   reason: string; // 원인 요약(사람이 읽는 짧은 문구)
@@ -396,6 +415,9 @@ export interface ProgressAnalysisEnvelope {
   // 【8】【9】 (T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS) — additive·read-only·옵셔널(하위호환).
   activePkgsByCust?: Map<string, ActivePackage[]>; // 활성 패키지(status='active') + 시술구분별 총/사용/잔여
   reservationsByCust?: Map<string, ReservationEntry[]>; // 예약 전건(최신순) + 예약메모
+  // 【행정】 성별·주민번호 앞6자리 (T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN) — additive·read-only·옵셔널(하위호환).
+  genderByCust?: Map<string, string>; // customers.gender raw('M'/'F' 등) — 라벨 매핑은 build 단계(genderLabel)
+  birth6ByCust?: Map<string, string>; // 주민번호 앞6자리(생년월일 YYMMDD) — fn_customer_birthdates 서버파생(뒷자리 미수신)
   // 섹션별 fetch 실패 진단(옵셔널·하위호환). 존재 = 해당 섹션 조회 실패 → md 에 '⚠ 조회 실패' 표기.
   fetchErrors?: Map<ProgressSectionKey, SectionFetchError>;
 }
@@ -451,6 +473,8 @@ export async function fetchProgressAnalysisData(
     roomLogsByCheckIn: new Map(),
     activePkgsByCust: new Map(),
     reservationsByCust: new Map(),
+    genderByCust: new Map(),
+    birth6ByCust: new Map(),
     fetchErrors: new Map(),
   };
   const errs = env.fetchErrors!;
@@ -970,6 +994,46 @@ export async function fetchProgressAnalysisData(
     recordErr('reservations', e, clinicMissing); // 예약내역 조회 실패/권한/clinic-mismatch
   }
 
+  // 15) 【행정】 성별 — customers.gender('M'/'F'). additive·read-only. (T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN)
+  try {
+    for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, gender')
+        .eq('clinic_id', clinicId)
+        .in('id', slice);
+      assertNoQueryError({ error });
+      for (const c of arr<{ id: string; gender: string | null }>(data)) {
+        const cid = String(c.id ?? '');
+        if (!cid) continue;
+        const g = String(c.gender ?? '').trim();
+        if (g) env.genderByCust!.set(cid, g); // 원값 저장 — 라벨 매핑은 build(genderLabel). 공란은 미저장(fabricate 금지).
+      }
+    }
+  } catch (e) {
+    recordErr('ident', e, clinicMissing);
+  }
+
+  // 15b) 【행정】 주민번호 앞6자리(생년월일) — fn_customer_birthdates 서버파생(YYYY-MM-DD)→YYMMDD.
+  //   ⚠ PHI 최소수집: 뒷자리/성별코드/평문 미수신 — 서버 파생 생년월일(6자리)만. rrn_decrypt 미경유(Customers.tsx 계보 동일 RPC).
+  try {
+    for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
+      const { data, error } = await supabase.rpc('fn_customer_birthdates', {
+        p_clinic_id: clinicId,
+        p_ids: slice,
+      });
+      assertNoQueryError({ error });
+      for (const r of arr<{ customer_id: string; birth_date_display: string | null }>(data)) {
+        const cid = String(r.customer_id ?? '');
+        if (!cid) continue;
+        const six = birthFront6(r.birth_date_display);
+        if (six) env.birth6ByCust!.set(cid, six); // 파생 실패(형식 미충족)는 미저장(추측 금지).
+      }
+    }
+  } catch (e) {
+    recordErr('ident', e, clinicMissing);
+  }
+
   return env;
 }
 
@@ -1024,6 +1088,13 @@ export function buildProgressAnalysisMd(
   L.push('');
   L.push(`- 성함: ${pad(p.name ?? '(이름없음)')}`);
   L.push(`- 차트번호: ${p.chart_number ?? '(없음)'}`);
+  // 【행정】 성별·주민번호 앞6자리 (T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN)
+  //   성함·차트번호 바로 아래·같은 블록 내부(새 섹션 신설 금지). 값 없으면 미표기(추측 채움 금지, AC-4).
+  //   주민번호 = 앞6자리(생년월일 YYMMDD)만 — 뒷자리·하이픈 절대 미출력(AC-2). 만나이는 다운스트림 도구가 자동계산.
+  const gLabel = genderLabel(env.genderByCust?.get(p.id) ?? null);
+  if (gLabel) L.push(`- 성별: ${gLabel}`);
+  const birth6 = env.birth6ByCust?.get(p.id) ?? null;
+  if (birth6) L.push(`- 주민번호: ${birth6}`);
   L.push('');
   // 6배수 예정 회차·예약일 (★티켓 요구 헤더)
   const nr = env.nextResvByCust.get(p.id) ?? null;

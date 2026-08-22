@@ -22,6 +22,8 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
 import RxCountInput from '@/components/admin/RxCountInput';
 import { RX_COL } from '@/lib/rxFormat';
+// T-20260822-foot-RX-NOTATION-FORMAT-CANONICAL-SPEC (AC-4): 수기입력 약품명 표기 순서변형 게이트.
+import { validateRxNotation, displayRxName } from '@/lib/rxCanonical';
 import { searchServiceRxDrugs } from '@/lib/prescribableDrugs';
 import { Loader2, Plus, Pencil, Trash2, X, Folder, Check, Search, Link2, MoreVertical, Tag } from 'lucide-react';
 // T-20260615-foot-BUNDLERX-TAG-QUICKTRIGGER: 태그/아이콘 vocab SSOT 공유 — 빠른처방과 동일 어휘(분기 방지).
@@ -46,6 +48,20 @@ export interface PrescriptionItem {
   //   "회"는 값에 포함하지 않고 필드 배경(suffix)에서만 표기. 기존 frequency('1일 3회' 자유텍스트=용법)는
   //   분해하지 않고 별도 횟수칸 신설(additive·nullable, JSONB라 마이그 불요).
   count?: number | null;
+}
+
+// T-20260822-foot-RX-NOTATION-FORMAT-CANONICAL-SPEC (AC-4):
+//   저장 전 수기입력(마스터 미연결=prescription_code_id 없음) 약품명의 표기 순서변형을 검사.
+//   마스터 연결약(prescription_code_id 보유)은 원본 풀네임이므로 검증 제외(오탐 방지).
+//   위반 있으면 첫 위반 메시지, 없으면 빈 문자열.
+function firstFreeTextNotationError(items: PrescriptionItem[]): string {
+  for (const it of items) {
+    const linked = it.prescription_code_id != null && `${it.prescription_code_id}`.trim() !== '';
+    if (linked) continue; // 마스터 연결약은 원본 표기 — 검증 skip
+    const r = validateRxNotation(it.name);
+    if (!r.ok) return r.violations[0]?.message ?? '약품명 표기형식을 확인해주세요.';
+  }
+  return '';
 }
 
 // T-20260603-foot-RX-CHART-ENHANCE AC-5: prescription_codes.classification → 투여경로(route) 프록시 매핑.
@@ -428,7 +444,8 @@ function ItemRow({ item, idx, onChange, onSelectDrug, onRemove, canRemove }: Ite
                     data-testid="rx-set-drug-search-option"
                   >
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-foreground">{code.name_ko}</span>
+                      {/* AC-1: 검색결과 약품명 표시 = displayRxName SSOT(원본 풀네임 verbatim, 축약·순서변형 0). */}
+                      <span className="text-xs font-medium text-foreground" data-testid="rx-set-drug-search-option-name">{displayRxName(code.name_ko)}</span>
                       {code.code_source === 'custom' && (
                         <Badge variant="secondary" className="text-[9px] h-3.5 px-1">자체</Badge>
                       )}
@@ -912,6 +929,9 @@ export default function PrescriptionSetsTab() {
     if (createForm.items.length === 0) {
       return toast.error('약을 1개 이상 선택해주세요.');
     }
+    // AC-4: 수기입력(마스터 미연결) 약품명 표기 순서변형 차단.
+    const notationErr = firstFreeTextNotationError(createForm.items);
+    if (notationErr) return toast.error(notationErr);
     // 세트 name(NOT NULL) = 라벨 우선, 없으면 첫 약 이름 폴백.
     const setName = label !== '' ? label : (createForm.items[0]?.name ?? '묶음처방');
     // Part G2: editingSetId 있으면 수정(update {id}), 없으면 생성(insert).
@@ -975,6 +995,9 @@ export default function PrescriptionSetsTab() {
   async function handleSave() {
     if (!form.name.trim()) return toast.error('처방세트 이름을 입력해주세요.');
     if (form.items.some((i) => !i.name.trim())) return toast.error('각 처방 항목에 이름을 입력해주세요.');
+    // AC-4: 수기입력(마스터 미연결) 약품명 표기 순서변형 차단. 마스터 연결약은 원본 풀네임이므로 검증 제외.
+    const notationErr = firstFreeTextNotationError(form.items);
+    if (notationErr) return toast.error(notationErr);
     await upsert.mutateAsync({ id: editing?.id, form });
     setOpen(false);
   }

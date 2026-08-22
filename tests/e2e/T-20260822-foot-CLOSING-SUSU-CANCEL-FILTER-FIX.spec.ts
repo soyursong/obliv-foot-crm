@@ -15,7 +15,10 @@
  *   내부정합, 라이브 payments 재조회 아님 — 20260806150000 herald_totals_recompute_port).
  */
 import { test, expect } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
+// T-20260822-meta-CLOSING-SPEC-UNCONDITIONAL-PRODGUARD-EXTEND (AC-2): 가드된 createClient 로
+//   교체 — EXPECT_DEV_DB_REF opt-in 무관 UNCONDITIONAL 로 target/url 이 PROD ref 이면 client
+//   생성 이전 fail-closed abort(마감 spec 실환자 prod-write phantom 진원 봉인). dev → 통과(회귀 0).
+import { createClient } from './critical-flow/_prodWriteGuard';
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;

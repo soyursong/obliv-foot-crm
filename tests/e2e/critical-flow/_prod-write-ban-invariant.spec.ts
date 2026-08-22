@@ -132,4 +132,26 @@ test.describe('CF-PROD-WRITE-BAN 가드 유닛 (AC-1/AC-4)', () => {
       else process.env.VITE_SUPABASE_URL = prev;
     }
   });
+
+  // T-20260822-meta-CLOSING-SPEC-UNCONDITIONAL-PRODGUARD-EXTEND: env 미설정이라도 url 인자가
+  //   PROD 면 throw. 마감 spec 이 하드코딩된 prod fallback url 을 직접 넘기던 우회를 봉인.
+  test('createClient 팩토리 — env 미설정이라도 url 인자가 PROD 면 throw(fallback 우회 봉인)', () => {
+    const prev = process.env.VITE_SUPABASE_URL;
+    try {
+      // env 미설정(=env-검문 통과) 상태에서 prod fallback url 을 직접 넘겨도 url-검문이 abort.
+      delete process.env.VITE_SUPABASE_URL;
+      expect(() => createClient(`https://${FOOT_PROD_REF}.supabase.co`, 'service-key-dummy')).toThrow(
+        /CF-PROD-WRITE-BAN/,
+      );
+      // 형제 CRM(body) prod ref url 도 차단(cross-wired fallback 방어).
+      expect(() => createClient(`https://${BODY_PROD_REF}.supabase.co`, 'service-key-dummy')).toThrow(
+        /CF-PROD-WRITE-BAN/,
+      );
+      // dev url + env 미설정 → 통과(회귀 0, AC-4).
+      expect(() => createClient(`https://${DEV_REF}.supabase.co`, 'anon-key-dummy')).not.toThrow();
+    } finally {
+      if (prev === undefined) delete process.env.VITE_SUPABASE_URL;
+      else process.env.VITE_SUPABASE_URL = prev;
+    }
+  });
 });

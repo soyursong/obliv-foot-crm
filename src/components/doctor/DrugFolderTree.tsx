@@ -27,6 +27,8 @@ import {
 // T-20260615-foot-RX-WHITELIST-FOLDERTREE (DA Model B): 처방 화이트리스트 overlay.
 //   enforcement OFF(Phase 1)=필터 미적용(전량 노출, 무회귀). ON(Phase 2, 문지은 confirm 후)=enabled 코드만.
 import { usePrescriptionCodeAllowlist } from '@/lib/rxAllowlist';
+// T-20260822-foot-RX-NOTATION-FORMAT-CANONICAL-SPEC (AC-1): 약품명 표시 SSOT(원본 verbatim, 축약·순서변형 0).
+import { displayRxName } from '@/lib/rxCanonical';
 
 /** 처방내역에 추가할 약 1건의 최소 식별 정보 */
 export interface DrugPick {
@@ -171,7 +173,7 @@ export default function DrugFolderTree({ onAdd, disabled = false }: DrugFolderTr
                       {/* T-20260609-foot-DRUGINFO-TRUNCATE-FIX AC5-1/5-2: 약품명 말줄임(...) 제거 →
                           줄바꿈(break-words)으로 전체표시. 행 높이 자동확장 허용(AC5-3). */}
                       <div className="flex items-start gap-1.5">
-                        <span className="text-xs font-medium break-words flex-1 min-w-0">{d.name_ko}</span>
+                        <span className="text-xs font-medium break-words flex-1 min-w-0" data-testid="drug-folder-item-name">{displayRxName(d.name_ko)}</span>
                         {d.code_source === 'custom' && (
                           <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 mt-0.5">자체</Badge>
                         )}
