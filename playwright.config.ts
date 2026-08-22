@@ -232,6 +232,11 @@ export default defineConfig({
         //   2줄 additive. PHI 최소수집(뒷6자리 미수신, fn_customer_birthdates 서버파생 재사용). 순수함수 단언.
         //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak.
         '**/T-20260823-foot-PROGANALYSIS-MD-ADMIN-GENDER-RRN.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK: 결과 업로드 6-토큰 파일명 계약 파싱 +
+        //   예약(appointment) 1:1 링킹 결정트리(fail-closed). 순수 함수(parseProgressResultFilename/
+        //   resolveApptMatch/slipMatchKey/buildProgressResultFilename/hasEmoji) 단언 — AC-2/AC-3/AC-6.
+        //   auth/DB/server 불요·결정론. ZIP 바이너리 해제·실기기 드래그앤드롭/AC-5(노쇼 소프트삭제) = supervisor 갤탭 field-soak + §6 마이그(DB gate).
+        '**/T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
@@ -1009,6 +1014,11 @@ export default defineConfig({
         // T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE: unit 전용 순수 정적 가드 → desktop-chrome(auth/webServer)
         //   유입 차단(결정론 GREEN, env-불요).
         '**/T-20260820-foot-CLOSING-METHODTOTAL-REFUND-EXCLUDE.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK: 결과 업로드 6-토큰 파일명 계약 파싱 +
+        //   예약(appointment) 1:1 링킹 결정트리(fail-closed). 순수 함수(parseProgressResultFilename/
+        //   resolveApptMatch/slipMatchKey/buildProgressResultFilename/hasEmoji) 단언 — AC-2/AC-3/AC-6.
+        //   auth/DB/server 불요·결정론. ZIP 바이너리 해제·실기기 드래그앤드롭/AC-5(노쇼 소프트삭제) = supervisor 갤탭 field-soak + §6 마이그(DB gate).
+        '**/T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK.spec.ts',
       ],
     },
     {

@@ -53,6 +53,8 @@ import ProgressAnalyticsWidgets, { parseProgressSession } from '@/components/tre
 //   CSV-export(위)로 내보낸 뒤 외부에서 분석한 결과이미지를 되받아 차트번호 단독조인으로 자동첨부.
 //   admin/manager(운영권한, canExportCsv 동일 게이트)에서만 노출. DA-20260718-...-AUTOMATCH 계약.
 import ProgressResultBulkUploadDialog from '@/components/treatment/ProgressResultBulkUploadDialog';
+// T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK: 6-토큰 계약(경과분석_이름_차트_예정_N회차_YYMMDD) → 예약 1:1 링킹 업로드.
+import ProgressResultApptUploadDialog from '@/components/treatment/ProgressResultApptUploadDialog';
 // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 경과분석 인풋 .md 추출(행별) + 전체선택 ZIP.
 //   추출·조립 로직 = TXMEMO-3VISIT-MD-ZIP 계보(6MULTIPLE-PROGRESS-MD-ZIP 스크립트) 그대로 이식(재가공 금지).
 //   ZIP = 무의존 STORE 조립(새 npm 미추가). read-only 조회만(db_change=false).
@@ -311,6 +313,8 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
   const [txtBusyId, setTxtBusyId] = useState<string | null>(null);
   // T-20260702-foot-PROGRESS-CSV-BULKRESULT: 결과이미지 일괄업로드 다이얼로그 open 상태.
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  // T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK: 예약연결 결과 업로드 다이얼로그.
+  const [apptUploadOpen, setApptUploadOpen] = useState(false);
   // T-20260821-foot-PROGANALYSIS-EXTRACT-PHASE1: 경과분석 .md 추출 진행상태(행별 rowKey / ZIP).
   const [mdBusyId, setMdBusyId] = useState<string | null>(null);
   const [zipBusy, setZipBusy] = useState(false);
@@ -981,6 +985,20 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
                 결과 업로드
               </Button>
             )}
+            {/* T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK: 6-토큰 계약 → 예약 1:1 링킹 업로드(ZIP 지원·원장 확인 대기 보류·완료보고).
+                게이트 = canExtractProgress(원장+admin/manager) — 슬립(예약연결) 계열과 동일 tier. */}
+            {canExtractProgress && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setApptUploadOpen(true)}
+                data-testid="progress-result-appt-open-btn"
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                결과 업로드(예약연결)
+              </Button>
+            )}
             {/* T-20260701-foot-PROGRESS-DOCISSUE-BTN [Phase 1]: 상단 일괄처리 툴바(선택 개수 + 일괄처리 버튼). */}
             {rows.length > 0 && (
               <>
@@ -1315,6 +1333,15 @@ export default function ProgressTargetsSection({ date, nameInteraction }: Props)
         <ProgressResultBulkUploadDialog
           open={bulkUploadOpen}
           onOpenChange={setBulkUploadOpen}
+          onApplied={refreshSlipStates}
+        />
+      )}
+
+      {/* T-20260822-foot-PROGANALYSIS-RESULT-UPLOAD-LINK: 6-토큰 계약 → 예약 1:1 링킹 업로드(ZIP·보류·완료보고). */}
+      {canExtractProgress && (
+        <ProgressResultApptUploadDialog
+          open={apptUploadOpen}
+          onOpenChange={setApptUploadOpen}
           onApplied={refreshSlipStates}
         />
       )}
