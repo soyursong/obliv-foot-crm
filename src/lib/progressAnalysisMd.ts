@@ -352,6 +352,32 @@ interface ReservationEntry {
   registrar_name: string | null;
 }
 
+/* ─── 섹션 fetch 진단 (T-20260822-foot-PROGANALYSIS-EXTRACT-FETCH-SILENT-SWALLOW-HARDEN) ───
+ *   catch{} 무음삼킴 봉합: fetch 에러/clinic-mismatch 를 섹션별로 기록 → md 에서 '⚠ 조회 실패' 명시.
+ *   ⚠ supabase-js 쿼리 에러는 throw 가 아니라 { data:null, error } 로 반환 → 기존 try/catch 미포착.
+ *     ⇒ 각 쿼리에서 error 를 명시 검사(assertNoQueryError)해야 진짜 봉합. (RLS 거부·컬럼부재·권한 모두 이 경로)
+ */
+export type ProgressSectionKey =
+  | 'milestones'
+  | 'visitCount'
+  | 'nextResv'
+  | 'memos'
+  | 'rx'
+  | 'hq'
+  | 'firstVisit'
+  | 'consult'
+  | 'chart'
+  | 'boiler'
+  | 'visits'
+  | 'roomLogs'
+  | 'activePkgs'
+  | 'reservations';
+
+export interface SectionFetchError {
+  reason: string; // 원인 요약(사람이 읽는 짧은 문구)
+  clinicMismatch?: boolean; // 세션 clinic 컨텍스트 불일치(0-row 의심) → 별도 문구
+}
+
 export interface ProgressAnalysisEnvelope {
   boilerSet: Set<string>;
   milestonesByCust: Map<string, Milestone[]>;
@@ -370,11 +396,32 @@ export interface ProgressAnalysisEnvelope {
   // 【8】【9】 (T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS) — additive·read-only·옵셔널(하위호환).
   activePkgsByCust?: Map<string, ActivePackage[]>; // 활성 패키지(status='active') + 시술구분별 총/사용/잔여
   reservationsByCust?: Map<string, ReservationEntry[]>; // 예약 전건(최신순) + 예약메모
+  // 섹션별 fetch 실패 진단(옵셔널·하위호환). 존재 = 해당 섹션 조회 실패 → md 에 '⚠ 조회 실패' 표기.
+  fetchErrors?: Map<ProgressSectionKey, SectionFetchError>;
 }
 
 /* ────────────────────────── 데이터 fetch (browser supabase, read-only) ────────────────────────── */
 
 type SB = SupabaseClient;
+
+/* ─── fetch 진단 유틸 (FETCH-SILENT-SWALLOW-HARDEN) ─── */
+
+// supabase PostgrestError / throw 객체 → 사람이 읽는 짧은 원인 요약(개행제거·길이제한).
+function errText(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>;
+    const parts = [o['message'], o['code'], o['hint'], o['details']].filter(Boolean).map(String);
+    if (parts.length) return parts.join(' · ').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  }
+  const s = String(e ?? '').replace(/[\r\n]+/g, ' ').trim();
+  return s ? s.slice(0, 200) : '알 수 없는 오류';
+}
+
+// supabase 쿼리 결과 { error } 를 명시 검사 → 에러면 throw(기존 try/catch 가 섹션 기록으로 전환).
+//   ⚠ supabase-js 는 쿼리 실패 시 throw 하지 않고 error 를 반환 → 이 검사가 무음삼킴 봉합의 핵심.
+function assertNoQueryError(res: { error?: unknown }): void {
+  if (res && res.error) throw res.error;
+}
 
 /**
  * 선택된 고객들의 5섹션 인풋 데이터를 일괄 조회(read-only). RLS(admin/manager) 적용.
@@ -402,20 +449,38 @@ export async function fetchProgressAnalysisData(
     roomLogsByCheckIn: new Map(),
     activePkgsByCust: new Map(),
     reservationsByCust: new Map(),
+    fetchErrors: new Map(),
+  };
+  const errs = env.fetchErrors!;
+  const recordErr = (key: ProgressSectionKey, e: unknown, clinicMismatch = false): void => {
+    // 이미 clinicMismatch 로 기록된 섹션은 후속 일반에러로 덮어쓰지 않음(더 구체적인 진단 보존).
+    const prev = errs.get(key);
+    if (prev?.clinicMismatch && !clinicMismatch) return;
+    errs.set(key, { reason: errText(e), clinicMismatch });
   };
   const ids = [...new Set(customerIds.filter(Boolean))];
   if (ids.length === 0) return env;
+
+  // clinic 컨텍스트 오설정 감지: clinicId 공란/누락 → clinic-scoped 쿼리(.eq('clinic_id',…))가
+  //   silent 0-row 를 반환(에러 아님) → '데이터 없음(정상)' 으로 위장. 사전에 clinicMismatch 로 표기.
+  const clinicMissing = !clinicId || !String(clinicId).trim();
+  if (clinicMissing) {
+    for (const k of ['milestones', 'nextResv', 'activePkgs', 'reservations'] as ProgressSectionKey[]) {
+      errs.set(k, { reason: 'clinic 컨텍스트 미설정(clinic_id 공란)', clinicMismatch: true });
+    }
+  }
 
   // 1) 6배수 도래 마일스톤(고객별) — 활성 패키지 + used 카운트 + (used+1)%6==0. (스크립트 코호트 로직 그대로)
   try {
     const pkgs: Array<{ id: string; customer_id: string; total_sessions: number | null }> = [];
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('packages')
         .select('id, customer_id, total_sessions')
         .eq('clinic_id', clinicId)
         .eq('status', 'active')
         .in('customer_id', slice);
+      assertNoQueryError({ error });
       for (const p of arr<{ id: string; customer_id: string | null; total_sessions: number | null }>(data)) {
         if (p.id && p.customer_id && (p.total_sessions ?? 0) > 0) {
           pkgs.push({ id: p.id, customer_id: p.customer_id, total_sessions: p.total_sessions });
@@ -425,11 +490,12 @@ export async function fetchProgressAnalysisData(
     const usedMap = new Map<string, number>();
     const pkgIds = pkgs.map((p) => p.id);
     for (const slice of chunkIds(pkgIds, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('package_sessions')
         .select('package_id')
         .in('package_id', slice)
         .eq('status', 'used');
+      assertNoQueryError({ error });
       for (const s of arr<{ package_id: string }>(data)) {
         usedMap.set(s.package_id, (usedMap.get(s.package_id) ?? 0) + 1);
       }
@@ -441,18 +507,19 @@ export async function fetchProgressAnalysisData(
       list.push({ anticipated: anticipatedSession(used), used, total: p.total_sessions ?? 0 });
       env.milestonesByCust.set(p.customer_id, list);
     }
-  } catch {
-    /* 마일스톤 보강 실패 — 헤더 회차 라벨만 폴백 */
+  } catch (e) {
+    recordErr('milestones', e, clinicMissing); // 마일스톤 보강 실패 — 헤더 회차 라벨만 폴백
   }
 
   // 2) 내원 횟수(취소제외) — check_ins.
   try {
     const cnt = new Map<string, number>();
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('check_ins')
         .select('customer_id, status')
         .in('customer_id', slice);
+      assertNoQueryError({ error });
       for (const c of arr<{ customer_id: string | null; status: string | null }>(data)) {
         if (!c.customer_id) continue;
         if (c.status === 'cancelled') continue; // IS DISTINCT FROM 'cancelled'
@@ -460,14 +527,14 @@ export async function fetchProgressAnalysisData(
       }
     }
     env.visitCountByCust = cnt;
-  } catch {
-    /* 무시 */
+  } catch (e) {
+    recordErr('visitCount', e);
   }
 
   // 3) 다음 예약(오늘 이후 미취소 최이른) per customer.
   try {
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('reservations')
         .select('customer_id, reservation_date, reservation_time, registrar_name, status')
         .eq('clinic_id', clinicId)
@@ -476,6 +543,7 @@ export async function fetchProgressAnalysisData(
         .neq('status', 'cancelled')
         .order('reservation_date', { ascending: true })
         .order('reservation_time', { ascending: true });
+      assertNoQueryError({ error });
       for (const rv of arr<Record<string, unknown>>(data)) {
         const cid = rv['customer_id'] ? String(rv['customer_id']) : '';
         if (!cid) continue;
@@ -494,19 +562,20 @@ export async function fetchProgressAnalysisData(
         });
       }
     }
-  } catch {
-    /* 미예약 취급 */
+  } catch (e) {
+    recordErr('nextResv', e, clinicMissing); // 미예약 취급 → 조회 실패 표기
   }
 
   // 4) 치료메모(활성).
   try {
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('customer_treatment_memos')
         .select('customer_id, content, created_at, created_by, created_by_name')
         .in('customer_id', slice)
         .is('deleted_at', null)
         .order('created_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const m of arr<Record<string, unknown>>(data)) {
         const cid = String(m['customer_id'] ?? '');
         if (!cid) continue;
@@ -520,19 +589,20 @@ export async function fetchProgressAnalysisData(
         env.memosByCust.set(cid, list);
       }
     }
-  } catch {
-    /* 기록 없음 처리 */
+  } catch (e) {
+    recordErr('memos', e);
   }
 
   // 5) 처방내역(prescriptions + items). 테이블 미사용 가능 → 방어.
   try {
     const allRx: Array<Rx & { customer_id: string }> = [];
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('prescriptions')
         .select('id, customer_id, prescribed_at, prescribed_by_name, diagnosis, memo, created_at')
         .in('customer_id', slice)
         .order('created_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const r of arr<Record<string, unknown>>(data)) {
         allRx.push({
           id: String(r['id'] ?? ''),
@@ -549,11 +619,12 @@ export async function fetchProgressAnalysisData(
     const rxIds = allRx.map((r) => r.id).filter(Boolean);
     const itemsByRx = new Map<string, RxItem[]>();
     for (const slice of chunkIds(rxIds, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('prescription_items')
         .select('prescription_id, medication_name, dosage, duration_days, quantity, memo, sort_order')
         .in('prescription_id', slice)
         .order('sort_order', { ascending: true });
+      assertNoQueryError({ error });
       for (const it of arr<Record<string, unknown>>(data)) {
         const rid = String(it['prescription_id'] ?? '');
         if (!rid) continue;
@@ -574,19 +645,20 @@ export async function fetchProgressAnalysisData(
       list.push(r);
       env.rxByCust.set(r.customer_id, list);
     }
-  } catch {
-    /* 처방 미사용 — 기록 없음 */
+  } catch (e) {
+    recordErr('rx', e);
   }
 
   // 6) 과거력(health_q_results, 고객당 최초 제출).
   try {
     const seen = new Set<string>();
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('health_q_results')
         .select('customer_id, form_data, submitted_at, created_at')
         .in('customer_id', slice)
         .order('created_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const h of arr<Record<string, unknown>>(data)) {
         const cid = String(h['customer_id'] ?? '');
         if (!cid || seen.has(cid)) continue; // DISTINCT ON (customer_id) ORDER BY created_at ASC → 최초 1건
@@ -598,18 +670,19 @@ export async function fetchProgressAnalysisData(
         });
       }
     }
-  } catch {
-    /* 기록 없음 */
+  } catch (e) {
+    recordErr('hq', e);
   }
 
   // 7) 첫 방문일(check_ins min date, 취소제외).
   try {
     const minBy = new Map<string, string>();
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('check_ins')
         .select('customer_id, checked_in_at, status')
         .in('customer_id', slice);
+      assertNoQueryError({ error });
       for (const c of arr<Record<string, unknown>>(data)) {
         const cid = String(c['customer_id'] ?? '');
         if (!cid || c['status'] === 'cancelled') continue;
@@ -620,19 +693,20 @@ export async function fetchProgressAnalysisData(
       }
     }
     env.firstVisitByCust = minBy;
-  } catch {
-    /* 무시 */
+  } catch (e) {
+    recordErr('firstVisit', e);
   }
 
   // 8) 상담메모(활성 전량).
   try {
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('customer_consult_memos')
         .select('customer_id, content, created_at, created_by_name')
         .in('customer_id', slice)
         .is('deleted_at', null)
         .order('created_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const c of arr<Record<string, unknown>>(data)) {
         const cid = String(c['customer_id'] ?? '');
         if (!cid) continue;
@@ -645,14 +719,14 @@ export async function fetchProgressAnalysisData(
         env.consultByCust.set(cid, list);
       }
     }
-  } catch {
-    /* 없음 */
+  } catch (e) {
+    recordErr('consult', e);
   }
 
   // 9) 진료차트(medical_charts, is_deleted 제외 = IS NOT TRUE).
   try {
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('medical_charts')
         .select(
           'customer_id, visit_date, chief_complaint, diagnosis, treatment_record, clinical_progress, materials_used, treatment_result, created_by_name, created_at, is_deleted',
@@ -661,6 +735,7 @@ export async function fetchProgressAnalysisData(
         .or('is_deleted.is.null,is_deleted.eq.false')
         .order('visit_date', { ascending: true })
         .order('created_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const c of arr<Record<string, unknown>>(data)) {
         const cid = String(c['customer_id'] ?? '');
         if (!cid) continue;
@@ -679,44 +754,47 @@ export async function fetchProgressAnalysisData(
         env.chartByCust.set(cid, list);
       }
     }
-  } catch {
-    /* 진료차트 없음 */
+  } catch (e) {
+    recordErr('chart', e);
   }
 
   // 10) 루틴상용구 사전(섹션5 R1) = phrase_templates + super_phrases (clinic-global, 1회).
   try {
-    const { data: pt } = await supabase
+    const { data: pt, error } = await supabase
       .from('phrase_templates')
       .select('content, phrase_type')
       .in('phrase_type', ['customer_chart', 'medical_chart', 'pen_chart']);
+    assertNoQueryError({ error });
     for (const r of arr<{ content: string | null }>(pt)) {
       const n = norm(r.content);
       if (n) env.boilerSet.add(n);
     }
-  } catch {
-    /* 상용구 사전 로드 실패 — 섹션5 발췌는 R1 미적용으로 진행(무해) */
+  } catch (e) {
+    recordErr('boiler', e); // 상용구 사전 로드 실패 — 섹션5 발췌는 R1 미적용으로 진행(무해)
   }
   try {
-    const { data: sp } = await supabase.from('super_phrases').select('diagnosis, clinical_progress');
+    const { data: sp, error } = await supabase.from('super_phrases').select('diagnosis, clinical_progress');
+    assertNoQueryError({ error });
     for (const r of arr<{ diagnosis: string | null; clinical_progress: string | null }>(sp)) {
       for (const v of [r.diagnosis, r.clinical_progress]) {
         const n = norm(v);
         if (n) env.boilerSet.add(n);
       }
     }
-  } catch {
-    /* 무시 */
+  } catch (e) {
+    recordErr('boiler', e);
   }
 
   // 11) 【6】 진료내역 — check_ins 방문 전건(취소 제외), 방문일 오름차순. (id 는 【7】 동선 조인 키)
   try {
     const byCust = new Map<string, VisitRecord[]>();
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('check_ins')
         .select('id, customer_id, checked_in_at, completed_at, visit_type, treatment_category, status')
         .in('customer_id', slice)
         .order('checked_in_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const c of arr<Record<string, unknown>>(data)) {
         const cid = String(c['customer_id'] ?? '');
         if (!cid) continue;
@@ -734,8 +812,8 @@ export async function fetchProgressAnalysisData(
       }
     }
     env.visitsByCust = byCust;
-  } catch {
-    /* 진료내역 없음 처리 */
+  } catch (e) {
+    recordErr('visits', e);
   }
 
   // 12) 【7】 동선 로그 — check_in_room_logs (방문별 슬롯 체류). check_in_id 기준, logged_at 오름차순.
@@ -746,11 +824,12 @@ export async function fetchProgressAnalysisData(
     for (const list of visitsMap.values()) for (const v of list) if (v.id) checkInIds.push(v.id);
     const uniqCheckInIds = [...new Set(checkInIds)];
     for (const slice of chunkIds(uniqCheckInIds, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('check_in_room_logs')
         .select('check_in_id, assigned_room, room_type, logged_at')
         .in('check_in_id', slice)
         .order('logged_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const r of arr<Record<string, unknown>>(data)) {
         const kid = String(r['check_in_id'] ?? '');
         if (!kid) continue;
@@ -765,8 +844,8 @@ export async function fetchProgressAnalysisData(
       }
     }
     env.roomLogsByCheckIn = roomLogMap;
-  } catch {
-    /* 동선 로그 테이블 미존재/권한 — 해당 섹션 "동선 로그 없음" 정직 표기 */
+  } catch (e) {
+    recordErr('roomLogs', e); // 동선 로그 테이블 미존재/권한 → '조회 실패' 표기
   }
 
   // 13) 【8】 활성 패키지 — packages(status='active') 시술구분별 발급 총회차 + package_sessions 소진(used) 카운트.
@@ -786,7 +865,7 @@ export async function fetchProgressAnalysisData(
     }
     const pkgs: PkgRaw[] = [];
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('packages')
         .select(
           'id, customer_id, package_name, package_type, unheated_sessions, heated_sessions, podologe_sessions, iv_sessions, trial_sessions, reborn_sessions',
@@ -795,6 +874,7 @@ export async function fetchProgressAnalysisData(
         .eq('status', 'active')
         .in('customer_id', slice)
         .order('created_at', { ascending: true });
+      assertNoQueryError({ error });
       for (const p of arr<Record<string, unknown>>(data)) {
         const cid = String(p['customer_id'] ?? '');
         const pid = String(p['id'] ?? '');
@@ -817,11 +897,12 @@ export async function fetchProgressAnalysisData(
     const usedByPkgType = new Map<string, Record<string, number>>();
     const pkgIds = pkgs.map((p) => p.id);
     for (const slice of chunkIds(pkgIds, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('package_sessions')
         .select('package_id, session_type')
         .in('package_id', slice)
         .eq('status', 'used');
+      assertNoQueryError({ error });
       for (const s of arr<{ package_id: string; session_type: string | null }>(data)) {
         const pid = String(s.package_id ?? '');
         if (!pid) continue;
@@ -850,14 +931,14 @@ export async function fetchProgressAnalysisData(
       });
       env.activePkgsByCust!.set(p.customer_id, list);
     }
-  } catch {
-    /* 활성 패키지 없음/권한 — "활성 패키지 없음" 정직 표기 */
+  } catch (e) {
+    recordErr('activePkgs', e, clinicMissing); // 활성 패키지 조회 실패/권한/clinic-mismatch
   }
 
   // 14) 【9】 예약내역 — reservations 전건(취소 포함), 최신순. 예약메모(booking_memo canonical)+memo+brief_note.
   try {
     for (const slice of chunkIds(ids, IN_CHUNK_SIZE)) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('reservations')
         .select(
           'customer_id, reservation_date, reservation_time, status, booking_memo, memo, brief_note, registrar_name',
@@ -866,6 +947,7 @@ export async function fetchProgressAnalysisData(
         .in('customer_id', slice)
         .order('reservation_date', { ascending: false })
         .order('reservation_time', { ascending: false });
+      assertNoQueryError({ error });
       for (const rv of arr<Record<string, unknown>>(data)) {
         const cid = String(rv['customer_id'] ?? '');
         if (!cid) continue;
@@ -882,8 +964,8 @@ export async function fetchProgressAnalysisData(
         env.reservationsByCust!.set(cid, list);
       }
     }
-  } catch {
-    /* 예약내역 없음/권한 — "예약내역 없음" 정직 표기 */
+  } catch (e) {
+    recordErr('reservations', e, clinicMissing); // 예약내역 조회 실패/권한/clinic-mismatch
   }
 
   return env;
@@ -910,6 +992,26 @@ export function buildProgressAnalysisMd(
   const visitList = env.visitsByCust?.get(p.id) ?? [];
   const activePkgs = env.activePkgsByCust?.get(p.id) ?? [];
   const reservationList = env.reservationsByCust?.get(p.id) ?? [];
+
+  // ─── fetch 실패 진단(FETCH-SILENT-SWALLOW-HARDEN) ───
+  //   빈 섹션이 (a)데이터없음(정상) 인지 (b)조회실패 인지 구분. 아래 문구는 '데이터 없음' 브랜치에서만
+  //   덮어쓴다(list 비어있을 때 한정) → 데이터가 있는 정상 경로 출력은 절대 불변(회귀0).
+  const fetchErrors = env.fetchErrors;
+  const sectionError = (...keys: ProgressSectionKey[]): SectionFetchError | null => {
+    if (!fetchErrors) return null;
+    for (const k of keys) {
+      const e = fetchErrors.get(k);
+      if (e) return e;
+    }
+    return null;
+  };
+  const errLine = (e: SectionFetchError): string =>
+    e.clinicMismatch ? '⚠ 조회 실패(clinic 컨텍스트 확인 필요)' : `⚠ 조회 실패: ${e.reason}`;
+  // 빈 섹션 문구 산출: 조회실패면 '⚠ 조회 실패…', 아니면 기존 '없음' 문구 그대로.
+  const emptyOrError = (fallback: string, ...keys: ProgressSectionKey[]): string => {
+    const e = sectionError(...keys);
+    return e ? errLine(e) : fallback;
+  };
 
   const L: string[] = [];
   L.push(`# 경과분석 자료 — ${pad(p.name ?? '(이름없음)')}`);
@@ -952,7 +1054,7 @@ export function buildProgressAnalysisMd(
   L.push('# 【1】 치료메모');
   L.push('');
   if (memoList.length === 0) {
-    L.push('_기록 없음_');
+    L.push(`_${emptyOrError('기록 없음', 'memos')}_`);
     L.push('');
   } else {
     memoList.forEach((m, i) => {
@@ -973,7 +1075,8 @@ export function buildProgressAnalysisMd(
   L.push('# 【2】 처방내역');
   L.push('');
   if (rxList.length === 0) {
-    L.push('_기록 없음_  (처방 테이블·차트/접수 처방필드 전부 미기재)');
+    const rxErr = sectionError('rx');
+    L.push(rxErr ? `_${errLine(rxErr)}_` : '_기록 없음_  (처방 테이블·차트/접수 처방필드 전부 미기재)');
     L.push('');
   } else {
     rxList.forEach((r, i) => {
@@ -1007,7 +1110,7 @@ export function buildProgressAnalysisMd(
   L.push('# 【3】 과거력 (QR 셀프접수 입력)');
   L.push('');
   if (!hq || !hq.form_data) {
-    L.push('_기록 없음_');
+    L.push(`_${emptyOrError('기록 없음', 'hq')}_`);
     L.push('');
   } else {
     const fd = hq.form_data;
@@ -1063,7 +1166,7 @@ export function buildProgressAnalysisMd(
     L.push(String(c.content ?? '').replace(/\r\n/g, '\n'));
     L.push('');
   } else {
-    L.push('_기록 없음_');
+    L.push(`_${emptyOrError('기록 없음', 'consult')}_`);
     L.push('');
   }
 
@@ -1111,7 +1214,7 @@ export function buildProgressAnalysisMd(
   L.push('### 상담메모 발췌 (전 방문)');
   L.push('');
   if (consultList.length === 0) {
-    L.push('_상담메모 없음_');
+    L.push(`_${emptyOrError('상담메모 없음', 'consult')}_`);
     L.push('');
   } else {
     consultList.forEach((c) => {
@@ -1133,7 +1236,7 @@ export function buildProgressAnalysisMd(
   L.push('### 진료차트 발췌 (전 방문, 의사 임상필드)');
   L.push('');
   if (chartList.length === 0) {
-    L.push('_진료차트(디지털) 기록 없음_');
+    L.push(`_${emptyOrError('진료차트(디지털) 기록 없음', 'chart')}_`);
     L.push('');
   } else {
     let chartAny = false;
@@ -1173,7 +1276,7 @@ export function buildProgressAnalysisMd(
   L.push('# 【6】 진료내역 (방문별 · check_in 기준 전건, 취소 제외)');
   L.push('');
   if (visitList.length === 0) {
-    L.push('_진료내역 없음_');
+    L.push(`_${emptyOrError('진료내역 없음', 'visits')}_`);
     L.push('');
   } else {
     L.push('| 방문일 | 접수시각 | 귀가시각 | 사유 |');
@@ -1194,19 +1297,25 @@ export function buildProgressAnalysisMd(
   L.push('# 【7】 동선 로그 (방문별 슬롯 체류 · 레이저 슬롯 유무 = 치료 시행 판정)');
   L.push('');
   if (visitList.length === 0) {
-    L.push('_진료내역 없음 — 동선 로그 대조 대상 없음_');
+    L.push(`_${emptyOrError('진료내역 없음 — 동선 로그 대조 대상 없음', 'visits')}_`);
     L.push('');
   } else {
+    const roomLogErr = sectionError('roomLogs');
     for (const v of visitList) {
       const inn = seoulDateTime(v.checked_in_at);
       const logs = (env.roomLogsByCheckIn?.get(v.id) ?? []).filter((l) => l.logged_at);
       const laserDone = logs.some((l) => isLaserRoom(l.room_type, l.assigned_room));
       L.push(`## 방문일 ${inn.date} (접수 ${inn.time})`);
       L.push('');
-      L.push(`- 치료 시행 판정: ${laserDone ? '**치료 시행(레이저 슬롯 있음)**' : '치료 시행 근거 없음(레이저 슬롯 없음)'}`);
+      const laserVerdict = laserDone
+        ? '**치료 시행(레이저 슬롯 있음)**'
+        : roomLogErr
+          ? `**판정 불가(${errLine(roomLogErr)})**`
+          : '치료 시행 근거 없음(레이저 슬롯 없음)';
+      L.push(`- 치료 시행 판정: ${laserVerdict}`);
       L.push('');
       if (logs.length === 0) {
-        L.push('_동선 로그 없음_');
+        L.push(`_${roomLogErr ? errLine(roomLogErr) : '동선 로그 없음'}_`);
         L.push('');
         continue;
       }
@@ -1235,7 +1344,7 @@ export function buildProgressAnalysisMd(
   L.push('# 【8】 활성 패키지 (status=active · 시술구분별 총/사용/잔여)');
   L.push('');
   if (activePkgs.length === 0) {
-    L.push('_활성 패키지 없음_');
+    L.push(`_${emptyOrError('활성 패키지 없음', 'activePkgs')}_`);
     L.push('');
   } else {
     activePkgs.forEach((pkg, i) => {
@@ -1265,7 +1374,7 @@ export function buildProgressAnalysisMd(
   L.push('# 【9】 예약내역 (전건 · 최신순 · 예약메모)');
   L.push('');
   if (reservationList.length === 0) {
-    L.push('_예약내역 없음_');
+    L.push(`_${emptyOrError('예약내역 없음', 'reservations')}_`);
     L.push('');
   } else {
     for (const rv of reservationList) {

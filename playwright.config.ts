@@ -222,6 +222,12 @@ export default defineConfig({
         //   예약 최신순·취소표기·가열/힐러↔비가열 판정(예약메모 1순위>가열잔여 2순위)·하위호환 단언.
         //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak.
         '**/T-20260822-foot-PROGANALYSIS-EXTRACT-PKGRESV-SECTIONS.spec.ts',
+        // T-20260822-foot-PROGANALYSIS-EXTRACT-FETCH-SILENT-SWALLOW-HARDEN: 경과분석 fetch catch{} 무음삼킴 봉합.
+        //   각 쿼리 error 명시검사(assertNoQueryError) → 섹션별 fetchErrors 기록 → buildProgressAnalysisMd 가
+        //   빈 섹션에 '⚠ 조회 실패: {원인}' / clinic-mismatch '⚠ 조회 실패(clinic 컨텍스트 확인 필요)' 표기.
+        //   정상 '데이터 없음'(성공·0행)은 기존 '…없음' 유지(회귀0). fetchProgressAnalysisData(가짜 supabase)+순수함수 단언.
+        //   auth/DB/server 불요·결정론(read-only). 실기기 .md 렌더 = supervisor 갤탭 field-soak(CF phishing 해제 後).
+        '**/T-20260822-foot-PROGANALYSIS-EXTRACT-FETCH-SILENT-SWALLOW-HARDEN.spec.ts',
         // T-20260812-meta-CLOSING-HERALD-CF5-E2E-PROD-WRITE-BAN (AC-1/AC-4): critical-flow prod-write
         //   금지 불변식 + 가드 유닛. 순수 fs-grep + 로직 단언(auth/DB/server 불요·결정론). desktop-chrome
         //   testIgnore 로 브라우저 프로젝트 유입 차단 → unit 에서만 실행(무-project 실행도 setup 미유입).
