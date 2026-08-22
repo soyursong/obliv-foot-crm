@@ -1092,6 +1092,16 @@ export function OpinionEditorDialog({
     });
   };
 
+  // T-20260822-foot-OPINIONDOC-POPUP-PREVIEW-EMOJI (요구1 '초기화'): 첫 창 상태(이미 요청받은 항목이 다시 선택된 상태)로 복귀.
+  //   구현 = 재바인딩 강제(boundTo=null) → 위 bind 블록(open && bindKey !== boundTo)의 초기화 로직을 그대로 재실행
+  //     (selected=초기 요청항목 applyPrefillExclusivity·docDate/발행자/실장메모/textTouched 등 전부 첫 상태로 스냅).
+  //     단일 소스 재사용 = 초기화 규칙 drift 0. healthQAppliedFor=null 로 발건강 질문지 자동체크도 재적용해 '첫 창'과 동일.
+  //   ★display_only: 발급 데이터(form_submissions)·발행 RPC 경로 무접촉 — 로컬 UI 상태만 리셋(회귀 0).
+  const handleReset = () => {
+    setBoundTo(null);
+    setHealthQAppliedFor(null);
+  };
+
   const resolveIssuer = () => {
     const doc = doctors.find((d) => d.id === doctorId) ?? null;
     return {
@@ -1352,6 +1362,42 @@ export function OpinionEditorDialog({
     </div>
   );
 
+  // T-20260822-foot-OPINIONDOC-POPUP-PREVIEW-EMOJI (요구1): 우측단 '서류 미리보기' 패널.
+  //   현재 작성 중인 소견/진단 본문(text = editor SSOT)의 read-only 렌더 — 좌측 문서유형 항목을 눌러 내용을 바꿔가며
+  //   서류 형태로 미리 볼 수 있다. 헤더 우측 [초기화]로 첫 창(이미 요청받은 항목이 선택된 상태)으로 되돌린다.
+  //   ★편집은 가운데 '소견 내용'(Textarea, SSOT)에서만 — 이 패널은 표시 전용. 발급 데이터/발행 경로 무접촉(display_only).
+  const previewPanel = (
+    <div className="flex min-h-0 flex-1 flex-col rounded-md border bg-muted/20" data-testid="opinion-preview">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2 py-1.5">
+        <p className="text-base font-bold text-foreground">서류 미리보기</p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+          onClick={handleReset}
+          data-testid="opinion-preview-reset-btn"
+          title="첫 창(이미 요청받은 항목이 선택된 상태)으로 되돌립니다. 작성 중인 내용은 사라집니다."
+        >
+          초기화
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {text.trim() ? (
+          <div
+            className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
+            data-testid="opinion-preview-body"
+          >
+            {text}
+          </div>
+        ) : (
+          <p className="py-2 text-center text-sm text-muted-foreground" data-testid="opinion-preview-empty">
+            왼쪽에서 항목을 선택하면 서류 내용을 미리 볼 수 있습니다.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
   // T-20260625-foot-OPINIONDOC-CONTRAIND-REORDER-SUBCAT — 옵션 버튼 렌더러(leaf·소분류 공용).
   //   기존 인라인 버튼 마크업을 그대로 추출(회귀 0). child=true 면 소분류(대분류 펼침 내부) 스타일.
   const renderOptBtn = (opt: OpinionOption, child = false) => {
@@ -1470,8 +1516,8 @@ export function OpinionEditorDialog({
       >
         {/* ① 헤더 1줄: 왼쪽 서류명(크고 볼드) · 오른쪽 환자이름(클릭→진료차트 drawer)·생년(만나이)·차트번호. ×는 Dialog 기본(우측). */}
         <DialogTitle className="flex shrink-0 items-center justify-between gap-3 pr-7">
+          {/* T-20260822-foot-OPINIONDOC-POPUP-PREVIEW-EMOJI (요구2): 소견서 헤더 좌측 문서 이모지(FileText) 제거 — 순수 표시. */}
           <span className="flex shrink-0 items-center gap-2">
-            <FileText className="h-5 w-5 text-teal-600" />
             <span className="text-lg font-bold text-foreground" data-testid="opinion-doc-title">{docTitle}</span>
           </span>
           {visitor && (
@@ -1733,14 +1779,20 @@ export function OpinionEditorDialog({
                   }
                   data-testid="opinion-publish-btn"
                 >
-                  {publishMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                  {/* T-20260822-foot-OPINIONDOC-POPUP-PREVIEW-EMOJI (요구2): '발행하기' 좌측 문서 이모지(FileText) 제거.
+                      발행 중 스피너(Loader2)는 진행상태 표시라 유지(이모지 아님). */}
+                  {publishMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {publishMut.isPending ? '발행 중…' : '발행하기'}
                 </Button>
               </div>
             </div>
 
-            {/* 3단: 발행 이력 / 서류 출력 (독립 우측 단) */}
-            <div className="flex min-h-0 flex-col lg:max-h-full">{historyPanel}</div>
+            {/* 3단: 발행 이력/출력(상단) + 서류 미리보기(하단, T-20260822-foot-OPINIONDOC-POPUP-PREVIEW-EMOJI 요구1).
+                첨부 스샷(F0BRWG7MGUE) 우측 큰 빈 박스 위치 = '서류 미리보기' 패널. 이력은 상단 고정(최대 40%), 미리보기 flex-1. */}
+            <div className="flex min-h-0 flex-col gap-3 lg:max-h-full">
+              <div className="flex min-h-0 max-h-[40%] flex-col">{historyPanel}</div>
+              {previewPanel}
+            </div>
           </div>
         ) : (
           /* ⑥ 직원(비의사) 출력전용 뷰 — editor/발행자/발행하기 숨김, 발행이력에서 저장(PDF)·인쇄만. */
