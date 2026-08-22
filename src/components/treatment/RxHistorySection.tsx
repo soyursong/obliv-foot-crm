@@ -75,6 +75,8 @@ import {
 } from '@/lib/rxIssuanceHistory';
 import { fetchRxDrugMaster, type ServiceRxDrug } from '@/lib/prescribableDrugs';
 import { downloadRxHistoryExcel, rxHistoryExportFilename } from '@/lib/rxHistoryExport';
+// T-20260822-foot-RX-NOTATION-FORMAT-CANONICAL-SPEC (AC-5): 조회화면 약품명 표시 SSOT.
+import { displayRxName } from '@/lib/rxCanonical';
 
 /** 발행 이력 조회 상한(전체 발행 494건 규모 — DA-20260806 기준). read-only 목록 조회. */
 const RX_HISTORY_LIMIT = 2000;
@@ -149,7 +151,10 @@ function RxDetail({ row }: { row: RxIssuancePatientRow }) {
       </div>
       <div>
         <span className="text-gray-500">처방약품</span>{' '}
-        {row.medications.length > 0 ? row.medications.join(', ') : '—'}
+        {/* AC-5: 처방전 조회 약품명 = displayRxName SSOT(원본 verbatim, 축약·순서변형 0). */}
+        <span data-testid="rxhist-detail-medications">
+          {row.medications.length > 0 ? row.medications.map((m) => displayRxName(m)).join(', ') : '—'}
+        </span>
       </div>
     </div>
   );
